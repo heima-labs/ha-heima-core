@@ -591,6 +591,56 @@ def test_house_state_sleep_candidate_requires_charging_threshold(monkeypatch: py
     assert sleep_trace["inputs"]["sleep_charging_requirement_met"] is False
 
 
+def test_house_state_sleep_candidate_charging_accepts_battery_state_text_sensor(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # battery_state sensors (e.g. iOS/Android companion apps) report "Charging"/"Full"/
+    # "Not Charging", not a generic on/off. sleep_charging_entities must recognize both this
+    # vocabulary AND plain binary_sensor on/off in the same list — a user can mix both.
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.sleep_window":
+            return SimpleNamespace(state="on", attributes={})
+        if entity_id == "sensor.phone_battery_state":
+            return SimpleNamespace(state="Charging", attributes={})
+        if entity_id == "binary_sensor.dock_charging":
+            return SimpleNamespace(state="off", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 3500.0,
+    )
+
+    domain.compute(
+        options={
+            "house_state_config": {
+                "sleep_charging_entities": [
+                    "sensor.phone_battery_state",
+                    "binary_sensor.dock_charging",
+                ],
+                "sleep_charging_min_count": 1,
+            }
+        },
+        house_signal_entities={"sleep_window": "binary_sensor.sleep_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    diagnostics = domain.diagnostics()
+    sleep_trace = diagnostics["candidate_trace"]["sleep_candidate"]
+    assert sleep_trace["inputs"]["charging"]["active_count"] == 1
+    assert sleep_trace["inputs"]["charging"]["active_entities"] == ["sensor.phone_battery_state"]
+    assert sleep_trace["inputs"]["sleep_charging_requirement_met"] is True
+
+
 def test_house_state_sleep_candidate_enters_when_charging_threshold_met(
     monkeypatch: pytest.MonkeyPatch,
 ):
