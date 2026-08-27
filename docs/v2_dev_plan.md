@@ -138,39 +138,27 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
-**Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
-(`core/house_state_learning_completion_viz_spec.md`). **AW1, AW2, and AW3 all done** on
-`feat/aw-house-state-learning-viz` (`proposal_id` join + 7×24 matrix rendering; per-slot detail
-view; Remove action wired to `heima/observability/action`/`review_proposal` by reusing the panel's
-existing generic action-button mechanism). AW1's first pass was implemented by Mistral Vibe, then
-code-reviewed and corrected (4 real issues fixed, see AW1's own section for the full list) and
-live-verified against the developer's test lab (`context_key` ⇄ `proposal_id` join rate 2/2 after
-forcing a learning run — see AW1's own section). While verifying live, also found and fixed a real
-bug in the live-test harness itself (`scripts/lib/ha_websocket.py` dropping bytes past the HTTP
-upgrade headers) — with that fixed, `087_actuator_registry_live.py` (AU4) and
-`088_actuator_discovery_live.py` (AV1-3) both ran live successfully for the first time this
-session, closing that outstanding verification debt from Phase AV. Also fixed, on its own separate
-branch `fix/boolean-signal-charging-states` (not part of AW — cherry-picked off `main` after being
-committed to the AW branch by mistake): `InputNormalizer.boolean_signal()` never recognized
-battery_state text sensors ("Charging"/"Full") as truthy, permanently blocking
-`sleep_charging_min_count` regardless of actual device state — found while diagnosing why the
-developer's house never proposed the `sleeping` state, using ~29 real nightly diagnostics snapshots
-in `debug/diagnostics_snapshots/`. Phase AV (AV1-3 + two follow-on UI fixes) concluded and merged
-to `main` beforehand; Phase AU (AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and
-merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3); Phase AW — House State Learning Completion Viz (AW1-3); `InputNormalizer.boolean_signal()` battery_state charging-states fix (unrelated to AW, merged separately).
+**Active slice:** none — Phase AW (AW1-3) is complete, backend- and browser-verified, and merged to
+`main` as `v0.18.0`, alongside the unrelated `boolean_signal()` battery_state charging-states fix
+(merged first, as `v0.17.0`; found while diagnosing why the developer's house never proposed the
+`sleeping` state, using ~29 real nightly diagnostics snapshots in `debug/diagnostics_snapshots/`).
+AW1's first pass was implemented by Mistral Vibe, then code-reviewed and corrected (4 real issues
+fixed, see AW1's own section) and live-verified against the developer's test lab (`context_key` ⇄
+`proposal_id` join rate 2/2 after forcing a learning run). While verifying live, also found and
+fixed a real bug in the live-test harness itself (`scripts/lib/ha_websocket.py` dropping bytes past
+the HTTP upgrade headers) — with that fixed, `087_actuator_registry_live.py` (AU4) and
+`088_actuator_discovery_live.py` (AV1-3) both ran live successfully for the first time that
+session, closing that outstanding verification debt from Phase AV. AW3's Remove action has its own
+live e2e test, `089_house_state_remove_proposal_live.py`. Phase AV (AV1-3 + two follow-on UI fixes)
+concluded and merged to `main` beforehand; Phase AU (AU1-4) concluded and merged earlier still; AR
+(AR1-4) concluded and merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
 `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/aw-house-state-learning-viz` (AW1-3 committed, not yet merged to `main`).
-`fix/boolean-signal-charging-states` (unmerged, unrelated fix, branched from `main`).
-`feat/av-actuator-discovery` and `feat/au-actuator-registry` both merged to `main` (branches
-retained, not deleted).
-**Next action:** Phase AW is feature-complete, backend-verified end-to-end live
-(`scripts/live_tests/089_house_state_remove_proposal_live.py` for AW3's reject/restore round trip,
-plus AW1's own live join-rate check), and **now also confirmed working in an actual browser by the
-developer** (2026-08-27) — the last outstanding verification gap is closed. Not yet merged to
-`main`: awaits the mandatory pre-merge procedure (bump minor version, changelog entry,
-`ci_local.sh`) and an explicit merge request from the developer. `fix/boolean-signal-charging-states`
-also awaits an explicit merge request, separately.
+**Branch:** `feat/aw-house-state-learning-viz` and `fix/boolean-signal-charging-states` both merged
+to `main` (retained, not deleted, matching this project's convention for prior merged phases).
+**Next action:** none currently active — no phase past AW is planned or spec'd yet. Start the next
+slice of work by reading this document's own instructions above (spec-first, explicit approval
+gate) before making any architectural decision not already covered here.
 
 ### Phase AO — Admin Observability Panel
 
