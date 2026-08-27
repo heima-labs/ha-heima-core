@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.17.0] — 2026-08-27
+
+- Fixed: `InputNormalizer.boolean_signal()` only recognized a generic on/off vocabulary
+  (`on`/`home`/`open`/`occupied`/`detected`/`true`/`1`), so battery_state companion-app sensors
+  reporting `"Charging"`/`"Full"` always normalized to `off` — permanently blocking
+  `sleep_charging_min_count` regardless of the device's actual state. Adds an additive
+  `extra_on_states` parameter (not a full override, since a single `sleep_charging_entities` list
+  can legitimately mix a plain binary_sensor with a battery_state text sensor) and wires the
+  house-state charging-evidence call site to recognize `"charging"`/`"full"`.
+
 ## [0.16.0] — 2026-08-26
 
 - Actuator Discovery (Phase AV, AV1-3): Phase L's rule-based discovery now suggests `Actuator`
