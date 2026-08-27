@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.18.0] — 2026-08-27
+
+- House State Learning Completion Viz (Phase AW, AW1-3): a 7×24 (weekday × hour_bucket) matrix in
+  the House State admin page showing which house-state patterns have been learned and accepted —
+  completion index, per-cell state color/abbreviation, hover tooltips — resolved entirely
+  client-side (`proposal_id` joined against the existing observability snapshot's own accepted
+  proposals; no new backend, no new websocket command). Click any cell to expand a per-slot detail
+  table (state, rooms, anyone-home, confidence, support, proposal id) with a Remove action that
+  rejects an accepted proposal that's no longer valid, confirmed via the panel's existing
+  destructive-action pattern.
+- Matrix hour headers are now zero-padded `HH:00`, weekday headers are two-letter abbreviations
+  (`Mo`/`Tu`/.../`Su`), and a spinner now shows while a stale (not-yet-recomputed) learning model
+  is force-recalculated instead of leaving the section looking broken.
+- Fixed: page/matrix scroll position was reset on every re-render (matrix cell clicks, the 15s
+  observability poll), not just while typing in a filter — scroll capture/restore now happens
+  generically in the panel's own render cycle instead of being scoped to filter input handling.
+
 ## [0.17.0] — 2026-08-27
 
 - Fixed: `InputNormalizer.boolean_signal()` only recognized a generic on/off vocabulary
