@@ -379,8 +379,7 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "this._escape(this._houseStateSlotTooltip(slot))" in text
     # House State per-slot detail view (AW2): click any matrix cell (learned or empty) to expand
     # a detail table below the matrix, one slot open at a time. Details reuses the existing
-    # _rawDetails() raw-JSON pattern (not a new inspection mechanism); Remove is rendered per the
-    # spec's own table but not yet wired to the endpoint — that's AW3.
+    # _rawDetails() raw-JSON pattern (not a new inspection mechanism).
     assert "_houseStateSlotDetail" in text
     assert "_onHouseStateSlotClick" in text
     assert (
@@ -388,9 +387,14 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     )
     assert "td[data-slot-key]" in text
     assert "this._rawDetails(entry, detailKey)" in text
-    assert 'data-house-state-action="remove_proposal"' in text
     assert 'data-house-state-action="close_detail"' in text
     assert "No accepted proposals for this time slot." in text
+    # Remove (AW3) reuses the existing generic button[data-action="review_proposal"] wiring
+    # (_runAction/_actionPayload/_actionConfirmation) instead of a bespoke handler — same
+    # heima/observability/action review_proposal endpoint _proposalReviewButtons() already uses.
+    assert 'data-action="review_proposal"' in text
+    assert 'data-decision="rejected"' in text
+    assert ">Remove</button>" in text
     # Force one learning pass when the matrix would render empty only because the module's
     # (unpersisted) in-memory model hasn't recomputed yet, not because nothing is genuinely
     # accepted — one-shot per route visit (this._houseStateRecalcAttempted), not a retry loop.

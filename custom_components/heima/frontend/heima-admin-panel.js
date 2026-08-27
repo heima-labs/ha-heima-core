@@ -660,17 +660,6 @@ class HeimaAdminPanel extends HTMLElement {
           margin-top: 8px;
           color: var(--secondary-text-color);
         }
-        .house-state-remove {
-          color: #F44336;
-        }
-        .house-state-remove:hover:not(:disabled) {
-          background: #F44336;
-          color: white;
-        }
-        .house-state-remove:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
         .house-state-loading {
           display: flex;
           align-items: center;
@@ -783,8 +772,6 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-actuators-action]").forEach((button) => {
       button.addEventListener("click", () => this._onActuatorsActionButton(button));
     });
-    // td[data-slot-key], not the bare attribute selector: the AW3 Remove button also carries
-    // data-slot-key (for its own future use) but must not toggle the detail view when clicked.
     this.shadowRoot.querySelectorAll("td[data-slot-key]").forEach((cell) => {
       cell.addEventListener("click", () => {
         this._onHouseStateSlotClick(cell.getAttribute("data-slot-key") || "");
@@ -2268,10 +2255,10 @@ class HeimaAdminPanel extends HTMLElement {
                     <td>
                       ${this._rawDetails(entry, detailKey)}
                       <button
-                        class="inline danger house-state-remove"
-                        data-house-state-action="remove_proposal"
+                        class="inline danger"
+                        data-action="review_proposal"
                         data-proposal-id="${this._escape(proposalId)}"
-                        data-slot-key="${this._escape(slotKey)}"
+                        data-decision="rejected"
                         ${proposalId ? "" : "disabled"}
                       >Remove</button>
                     </td>
@@ -2306,11 +2293,10 @@ class HeimaAdminPanel extends HTMLElement {
     if (action === "close_detail") {
       this._openHouseStateSlot = null;
       this._render();
-      return;
     }
-    // "remove_proposal" is wired in AW3 — the button exists now (per the spec's own table) but
-    // has no handler yet, matching how AW1's matrix cells got cursor:pointer before AW2 wired
-    // their click.
+    // Remove (AW3) reuses the generic button[data-action="review_proposal"] wiring/_runAction
+    // instead of a bespoke case here — it's the same heima/observability/action review_proposal
+    // endpoint _proposalReviewButtons() already uses elsewhere in this file.
   }
 
   _reactions(snapshot) {

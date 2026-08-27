@@ -140,26 +140,36 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
 **Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
-(`core/house_state_learning_completion_viz_spec.md`). **AW1 and AW2 done** on
+(`core/house_state_learning_completion_viz_spec.md`). **AW1, AW2, and AW3 all done** on
 `feat/aw-house-state-learning-viz` (`proposal_id` join + 7×24 matrix rendering; per-slot detail
-view). AW1's first pass was implemented by Mistral Vibe, then code-reviewed and corrected (4 real
-issues fixed, see AW1's own section for the full list) and live-verified against the developer's
-test lab (`context_key` ⇄ `proposal_id` join rate 2/2 after forcing a learning run — see AW1's own
-section). While verifying live, also found and fixed a real bug in the live-test harness itself
-(`scripts/lib/ha_websocket.py` dropping bytes past the HTTP upgrade headers) — with that fixed,
-`087_actuator_registry_live.py` (AU4) and `088_actuator_discovery_live.py` (AV1-3) both ran live
-successfully for the first time this session, closing that outstanding verification debt from
-Phase AV. Phase AV (AV1-3 + two follow-on UI fixes) concluded and merged to `main` beforehand;
-Phase AU (AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and merged earlier
-still, AR5-8 split out to Phase AT (`DEFERRED`, see
+view; Remove action wired to `heima/observability/action`/`review_proposal` by reusing the panel's
+existing generic action-button mechanism). AW1's first pass was implemented by Mistral Vibe, then
+code-reviewed and corrected (4 real issues fixed, see AW1's own section for the full list) and
+live-verified against the developer's test lab (`context_key` ⇄ `proposal_id` join rate 2/2 after
+forcing a learning run — see AW1's own section). While verifying live, also found and fixed a real
+bug in the live-test harness itself (`scripts/lib/ha_websocket.py` dropping bytes past the HTTP
+upgrade headers) — with that fixed, `087_actuator_registry_live.py` (AU4) and
+`088_actuator_discovery_live.py` (AV1-3) both ran live successfully for the first time this
+session, closing that outstanding verification debt from Phase AV. Also fixed, on its own separate
+branch `fix/boolean-signal-charging-states` (not part of AW — cherry-picked off `main` after being
+committed to the AW branch by mistake): `InputNormalizer.boolean_signal()` never recognized
+battery_state text sensors ("Charging"/"Full") as truthy, permanently blocking
+`sleep_charging_min_count` regardless of actual device state — found while diagnosing why the
+developer's house never proposed the `sleeping` state, using ~29 real nightly diagnostics snapshots
+in `debug/diagnostics_snapshots/`. Phase AV (AV1-3 + two follow-on UI fixes) concluded and merged
+to `main` beforehand; Phase AU (AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and
+merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
 `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/aw-house-state-learning-viz` (AW1-2 committed). `feat/av-actuator-discovery` and
-`feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
-**Next action:** AW3 — Remove Proposal Action (wire the already-rendered, already-disabled-when-
-unresolvable Remove button to `heima/observability/action` `review_proposal`). Not yet smoke-tested
-in an actual browser: the matrix (AW1) and detail view (AW2) are both verified via automated
-real-websocket data checks and static-asset assertions, not manual browser interaction — same
-outstanding caveat as most panel features added this session.
+**Branch:** `feat/aw-house-state-learning-viz` (AW1-3 committed, not yet merged to `main`).
+`fix/boolean-signal-charging-states` (unmerged, unrelated fix, branched from `main`).
+`feat/av-actuator-discovery` and `feat/au-actuator-registry` both merged to `main` (branches
+retained, not deleted).
+**Next action:** Phase AW is feature-complete but **not yet smoke-tested in an actual browser** —
+the matrix (AW1), detail view (AW2), and Remove action (AW3) are all verified via automated
+real-websocket data checks and static-asset assertions, not manual browser interaction. Before
+merging to `main`: live browser verification (developer's own test lab), then the mandatory
+pre-merge procedure (bump minor version, changelog entry, `ci_local.sh`) — not yet requested by the
+developer. `fix/boolean-signal-charging-states` also awaits an explicit merge request.
 
 ### Phase AO — Admin Observability Panel
 
@@ -2211,7 +2221,8 @@ clean, `node --check` passed. Not yet verified live in a browser — pending dev
 
 ### Phase AW — House State Learning Completion Viz
 
-- Status: `PLANNED`.
+- Status: `DONE` (AW1-3 all implemented; not yet smoke-tested in an actual browser — see AW3's own
+  section).
 - Spec source: `docs/specs/core/house_state_learning_completion_viz_spec.md` (Status: Planned —
   approved after design discussion, all Open Questions resolved; not yet phased/numbered until
   this section).
@@ -2447,21 +2458,29 @@ this slice).
 
 #### AW3 — Remove Proposal Action
 
-- Status: `PLANNED`.
+- Status: `DONE` (2026-08-27).
 - Depends on: AW2 (the detail view's Remove button), Phase AC (proposal review plumbing —
   `review_proposal`/`async_review_proposal` already shipped, reused as-is, not modified).
-- New `_removeHouseStateProposal(proposalId)`: `window.confirm()` then
-  `this._hass.callWS({ type: "heima/observability/action", action: "review_proposal", payload:
-  { proposal_id, decision: "rejected" } })` — payload nested, matching `heima/topology/action`/
-  `heima/actuators/action`'s convention (a real bug in the spec's first draft, corrected before
-  approval — see the spec's own §2.4). On success: reload snapshot, re-render matrix + detail. On
-  error: error toast, detail table stays open.
-- Tests: real-websocket e2e exercising `review_proposal` for a house-state proposal (accept via
-  the existing config-flow/options path or a coordinator-level fixture, then reject via this
-  action, confirm it disappears from `snapshot.proposals.raw.proposals` and from the matrix's
-  join). No new coordinator/backend code — this slice only wires the frontend to an
-  already-shipped endpoint, so no new backend unit tests are needed beyond what already covers
-  `async_review_proposal`/`async_review_house_state_proposal`.
+- Implementation note: rather than a bespoke `_removeHouseStateProposal()` handler, the Remove
+  button was switched from the inert `data-house-state-action="remove_proposal"` marker to the
+  panel's existing generic `button[data-action="review_proposal"]` wiring
+  (`_runAction`/`_actionPayload`/`_actionConfirmation`, already used by `_proposalReviewButtons()`
+  elsewhere in the file) — `data-proposal-id` + `data-decision="rejected"`. This is the exact same
+  `heima/observability/action`/`review_proposal` call with nested payload the spec calls for, with
+  zero new call-site code: confirm message, `heima/observability/action` call, snapshot
+  reload/re-render, and error handling (error shown, detail stays open since
+  `this._openHouseStateSlot` is untouched by `_runAction`) all come from the existing generic path.
+  Removed the now-redundant `.house-state-remove` CSS (the generic `button.danger` +
+  `button:disabled` rules already cover it) and the `_onHouseStateActionButton`'s dead
+  `remove_proposal` branch/comment.
+- Tests: static-asset assertions added to `test_admin_panel.py` for the button's
+  `data-action="review_proposal"`/`data-decision="rejected"` wiring. No new backend code (reuses
+  `async_review_proposal`/`async_review_house_state_proposal` as-is), no new coordinator tests
+  needed. Full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check` passed,
+  full `ci_local.sh` green. **Not yet exercised against a live instance or an actual browser** —
+  same outstanding caveat as AW1/AW2's own click/render behavior; the underlying
+  `review_proposal`/rejection path itself is already covered by Phase AC's existing tests, only the
+  new button wiring is unverified live.
 
 **Phase AW acceptance** (from the spec's own Acceptance Criteria): see
 `docs/specs/core/house_state_learning_completion_viz_spec.md` §10 — reproduced here only by
