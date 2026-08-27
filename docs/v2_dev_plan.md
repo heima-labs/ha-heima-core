@@ -164,13 +164,13 @@ merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
 `fix/boolean-signal-charging-states` (unmerged, unrelated fix, branched from `main`).
 `feat/av-actuator-discovery` and `feat/au-actuator-registry` both merged to `main` (branches
 retained, not deleted).
-**Next action:** Phase AW is feature-complete and backend-verified end-to-end live
+**Next action:** Phase AW is feature-complete, backend-verified end-to-end live
 (`scripts/live_tests/089_house_state_remove_proposal_live.py` for AW3's reject/restore round trip,
-plus AW1's own live join-rate check) but **not yet smoke-tested in an actual browser** — no test in
-this repo clicks the rendered matrix cells/buttons; the developer's own manual browsing so far
-("a me pare funzionare") is the closest thing to that. Before merging to `main`: the mandatory
-pre-merge procedure (bump minor version, changelog entry, `ci_local.sh`) — not yet requested by the
-developer. `fix/boolean-signal-charging-states` also awaits an explicit merge request.
+plus AW1's own live join-rate check), and **now also confirmed working in an actual browser by the
+developer** (2026-08-27) — the last outstanding verification gap is closed. Not yet merged to
+`main`: awaits the mandatory pre-merge procedure (bump minor version, changelog entry,
+`ci_local.sh`) and an explicit merge request from the developer. `fix/boolean-signal-charging-states`
+also awaits an explicit merge request, separately.
 
 ### Phase AO — Admin Observability Panel
 
@@ -2222,8 +2222,8 @@ clean, `node --check` passed. Not yet verified live in a browser — pending dev
 
 ### Phase AW — House State Learning Completion Viz
 
-- Status: `DONE` (AW1-3 all implemented; not yet smoke-tested in an actual browser — see AW3's own
-  section).
+- Status: `DONE` (AW1-3 all implemented, backend-verified live, and confirmed working in an actual
+  browser by the developer on 2026-08-27).
 - Spec source: `docs/specs/core/house_state_learning_completion_viz_spec.md` (Status: Planned —
   approved after design discussion, all Open Questions resolved; not yet phased/numbered until
   this section).
@@ -2378,8 +2378,9 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
   Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check`
   passed, full `ci_local.sh` green. No new websocket surface, so nothing new to live-verify beyond
   what AW1 already confirmed (the underlying `learning`/`proposals` data this slices is the same
-  data AW1's live join test already proved correct) — not smoke-tested in an actual browser,
-  same outstanding caveat as every other panel feature this session.
+  data AW1's live join test already proved correct). Confirmed working in an actual browser by the
+  developer on 2026-08-27 (alongside AW1's matrix and AW3's Remove action, all exercised in the
+  same manual pass).
 
 **Post-AW2 fix — force one learning pass when the matrix would render empty for a stale-model
 reason, not a genuinely-empty one (2026-08-26):** live-verified against the developer's test lab
@@ -2486,9 +2487,9 @@ this slice).
   button now sends, confirms `status` flips to `rejected` and the context_key drops out of a
   from-scratch reimplementation of `_houseStateAcceptedProposalsByContextKey()`'s join, then
   restores it to `accepted` in `finally` (confirmed via a fresh snapshot fetch after the script
-  exits — state matched the pre-test baseline exactly). Passed on the first run. **Still not
-  exercised in an actual browser** — this validates the real backend contract end-to-end
-  (websocket → coordinator → ProposalEngine → ApprovalStore), not clicking the rendered button.
+  exits — state matched the pre-test baseline exactly). Passed on the first run. Confirmed working
+  in an actual browser by the developer on 2026-08-27 — the last outstanding verification gap for
+  Phase AW is now closed.
 
 **Phase AW acceptance** (from the spec's own Acceptance Criteria): see
 `docs/specs/core/house_state_learning_completion_viz_spec.md` §10 — reproduced here only by
