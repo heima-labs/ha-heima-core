@@ -164,10 +164,11 @@ merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
 `fix/boolean-signal-charging-states` (unmerged, unrelated fix, branched from `main`).
 `feat/av-actuator-discovery` and `feat/au-actuator-registry` both merged to `main` (branches
 retained, not deleted).
-**Next action:** Phase AW is feature-complete but **not yet smoke-tested in an actual browser** —
-the matrix (AW1), detail view (AW2), and Remove action (AW3) are all verified via automated
-real-websocket data checks and static-asset assertions, not manual browser interaction. Before
-merging to `main`: live browser verification (developer's own test lab), then the mandatory
+**Next action:** Phase AW is feature-complete and backend-verified end-to-end live
+(`scripts/live_tests/089_house_state_remove_proposal_live.py` for AW3's reject/restore round trip,
+plus AW1's own live join-rate check) but **not yet smoke-tested in an actual browser** — no test in
+this repo clicks the rendered matrix cells/buttons; the developer's own manual browsing so far
+("a me pare funzionare") is the closest thing to that. Before merging to `main`: the mandatory
 pre-merge procedure (bump minor version, changelog entry, `ci_local.sh`) — not yet requested by the
 developer. `fix/boolean-signal-charging-states` also awaits an explicit merge request.
 
@@ -2477,10 +2478,17 @@ this slice).
   `data-action="review_proposal"`/`data-decision="rejected"` wiring. No new backend code (reuses
   `async_review_proposal`/`async_review_house_state_proposal` as-is), no new coordinator tests
   needed. Full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check` passed,
-  full `ci_local.sh` green. **Not yet exercised against a live instance or an actual browser** —
-  same outstanding caveat as AW1/AW2's own click/render behavior; the underlying
-  `review_proposal`/rejection path itself is already covered by Phase AC's existing tests, only the
-  new button wiring is unverified live.
+  full `ci_local.sh` green.
+- Live verification: `scripts/live_tests/089_house_state_remove_proposal_live.py`, run against the
+  test lab (`localhost:8823`). Finds the currently-accepted `house_state_learned_context` proposal
+  (does not manufacture one from a pending proposal — that setup wouldn't be cleanly reversible),
+  rejects it via the exact `heima/observability/action`/`review_proposal` call the panel's Remove
+  button now sends, confirms `status` flips to `rejected` and the context_key drops out of a
+  from-scratch reimplementation of `_houseStateAcceptedProposalsByContextKey()`'s join, then
+  restores it to `accepted` in `finally` (confirmed via a fresh snapshot fetch after the script
+  exits — state matched the pre-test baseline exactly). Passed on the first run. **Still not
+  exercised in an actual browser** — this validates the real backend contract end-to-end
+  (websocket → coordinator → ProposalEngine → ApprovalStore), not clicking the rendered button.
 
 **Phase AW acceptance** (from the spec's own Acceptance Criteria): see
 `docs/specs/core/house_state_learning_completion_viz_spec.md` §10 — reproduced here only by
