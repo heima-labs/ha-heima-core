@@ -108,7 +108,20 @@ class InputNormalizer:
             reason="default_off",
         )
 
-    def boolean_signal(self, entity_id: str | None) -> NormalizedObservation:
+    def boolean_signal(
+        self, entity_id: str | None, *, extra_on_states: set[str] | None = None
+    ) -> NormalizedObservation:
+        """Normalize a raw entity state into on/off/unknown.
+
+        `extra_on_states` adds to (never replaces) the default truthy vocabulary, for device
+        families whose raw states aren't a generic on/off (e.g. battery_state sensors report
+        "Charging"/"Full"/"Not Charging", not "on"/"off"). Additive rather than a full
+        override because a single config field (e.g. sleep_charging_entities) can legitimately
+        mix a plain binary_sensor with a battery_state text sensor — both must keep working.
+        """
+        effective_on_states = (
+            _PRESENCE_ON_STATES | extra_on_states if extra_on_states else _PRESENCE_ON_STATES
+        )
         raw = self._read_state(entity_id)
         if not entity_id:
             return build_observation(
@@ -142,7 +155,7 @@ class InputNormalizer:
                 reason=lowered,
             )
         # Intentionally keep behavior aligned with legacy truthy parser in N1.
-        if lowered in _PRESENCE_ON_STATES:
+        if lowered in effective_on_states:
             return build_observation(
                 kind="boolean_signal",
                 state="on",

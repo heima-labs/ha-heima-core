@@ -33,6 +33,9 @@ _LOGGER = logging.getLogger(__name__)
 _APPROVED_HOUSE_STATE_SIGNAL_SOURCE_ID = "house_state_inference"
 _HOUSE_STATE_SIGNAL_MIN_CONFIDENCE = 0.60
 _HOME_SUBSTATES = frozenset(HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE)
+# battery_state sensors (e.g. iOS/Android companion apps) report "Charging"/"Full"/
+# "Not Charging", not a generic on/off — boolean_signal()'s default vocabulary never matches.
+_CHARGING_ON_STATES = {"charging", "full"}
 
 
 @dataclass(frozen=True)
@@ -179,7 +182,8 @@ class HouseStateDomain:
             list(house_state_cfg.get("media_active_entities", []))
         )
         charging_evidence = self._compute_boolean_count_evidence(
-            list(house_state_cfg.get("sleep_charging_entities", []))
+            list(house_state_cfg.get("sleep_charging_entities", [])),
+            extra_on_states=_CHARGING_ON_STATES,
         )
         work_activity_evidence = self._compute_boolean_count_evidence(
             list(house_state_cfg.get("work_activity_entities", []))
@@ -548,12 +552,16 @@ class HouseStateDomain:
             "active_entities": active_entities,
         }
 
-    def _compute_boolean_count_evidence(self, entity_ids: list[str]) -> dict[str, Any]:
+    def _compute_boolean_count_evidence(
+        self, entity_ids: list[str], *, extra_on_states: set[str] | None = None
+    ) -> dict[str, Any]:
         entity_states: dict[str, str | None] = {}
         active_entities: list[str] = []
         observations: dict[str, dict[str, Any]] = {}
         for entity_id in entity_ids:
-            observation = self._normalizer.boolean_signal(entity_id)
+            observation = self._normalizer.boolean_signal(
+                entity_id, extra_on_states=extra_on_states
+            )
             entity_states[entity_id] = observation.raw_state
             observations[entity_id] = observation.as_dict()
             if observation.state == "on":
