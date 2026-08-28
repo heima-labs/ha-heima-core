@@ -276,7 +276,7 @@ class _RoomsStepsMixin:
             vol.Optional("display_name", default=defaults.get("display_name", "")): cv.string,
             vol.Optional("area_id"): _sel({"area": {}}),
             vol.Optional("learning_sources"): _entity_selector(
-                ["binary_sensor", "sensor", "switch"], multiple=True
+                ["binary_sensor", "sensor", "switch", "media_player"], multiple=True
             ),
             vol.Optional(
                 "signals", default=defaults.get("signals", "")
