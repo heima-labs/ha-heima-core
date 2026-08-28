@@ -53,6 +53,7 @@ Related reference docs also live outside this tree, under `docs/`:
 - `core/room_topology_consumers_spec.md` — deferred, not scheduled: HouseState/Occupancy/Security consumption of `rooms.topology` (originally AR5-8), split out of Phase AR once AR1-4 shipped without needing them
 - `core/actuator_registry_spec.md` — generic actuator inventory (room/opening placement for cover/fan/climate entities) feeding future comfort/climate Reactions; implemented (AU1-4) on `main`
 - `core/actuator_discovery_spec.md` — extends Phase L rule-based discovery to suggest `Actuator` candidates and prioritizes the AU4 admin-panel entity picker with known-room entities; depends on `actuator_registry_spec.md`; implemented (AV1-3) on `main`
+- `core/topology_climate_reactions_spec.md` — draft, not yet approved/phased: Ventilation Advisor and Weather Safety Close Reactions combining Room Topology, Actuator Registry, and `ExternalContext`; adds `wind_bearing` to the external context contract and an optional `opening_id` to room signals
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/manual_hold_framework_spec.md` — draft shared runtime contract for implicit/explicit manual holds across automations
 - `core/apply_step_contract.md` — canonical runtime action contract, including `target` vs `params.entity_id`
