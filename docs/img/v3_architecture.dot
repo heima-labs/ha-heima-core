@@ -1,0 +1,135 @@
+digraph HeimaV3 {
+  rankdir=TB;
+  bgcolor="white";
+  fontname="Helvetica";
+  compound=true;
+  splines=polyline;
+  nodesep=0.4;
+  ranksep=0.7;
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", color="#555555", margin="0.15,0.1"];
+  edge [fontname="Helvetica", fontsize=9, color="#666666"];
+
+  // ---------- Layer 0 ----------
+  subgraph cluster_L0 {
+    label="Layer 0 — Cross-cutting runtime"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#f2f2f2";
+    Timing   [label="Timing\nWindow / LearnedWindow / WarmupGate\nAtJob / CronEntry / CalendarWindow", fillcolor="#eeeeee"];
+    Persist  [label="Persistence\nEventStore (disk) + SnapshotBuffer (memory)", fillcolor="#eeeeee"];
+    FactSrc  [label="FactSource / ApplyStepSource\ncorrelation_id chain", fillcolor="#eeeeee"];
+    Hold     [label="Manual Hold Manager\nHouseFact-based, restart-unsafe", fillcolor="#eeeeee"];
+    Recovery [label="Recovery / Checkpoint\nminimal, restart-unsafe", fillcolor="#eeeeee"];
+    {rank=same; Timing; Persist; FactSrc; Hold; Recovery}
+  }
+
+  // ---------- Layer 1 ----------
+  subgraph cluster_L1 {
+    label="Layer 1 — Substrate primitive"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#eef2fb";
+    HF   [label="HouseFact\nfact_type + value + where + when + how", fillcolor="#dbe6fa", shape=box, style="rounded,filled,bold"];
+    Loc  [label="Location / Zone / Topology", fillcolor="#dbe6fa"];
+    {rank=same; HF; Loc}
+  }
+
+  // ---------- Layer 2 ----------
+  subgraph cluster_L2 {
+    label="Layer 2 — Registries"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#eaf7ea";
+    Sensor   [label="Sensor + Interpretation\nBoolean / Bucket / Presence / Calendar / Categorical", fillcolor="#d3efd3"];
+    Fusion   [label="FusionRule + FusionStrategy\nDirect / BooleanSet / Quorum / Precedence / formula", fillcolor="#d3efd3"];
+    Actuator [label="Actuator\ninventory only, never a command", fillcolor="#d3efd3"];
+    {rank=same; Sensor; Fusion; Actuator}
+  }
+
+  // ---------- Layer 3 ----------
+  subgraph cluster_L3 {
+    label="Layer 3 — Learning / pattern recognition"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#fbf3df";
+    PL        [label="PatternLearner\nbucket + min_support + warmup + confidence + tiers", fillcolor="#f7e6bd"];
+    LiveSig   [label="3 bounded live signals\nActivity / Occupancy / HouseState", fillcolor="#f7e6bd"];
+    Analyzers [label="Registry analyzers\nHeating / Lighting / Presence / Composite / Security", fillcolor="#f7e6bd"];
+    {rank=same; PL; LiveSig; Analyzers}
+  }
+
+  // ---------- Layer 4 ----------
+  subgraph cluster_L4 {
+    label="Layer 4 — Domain resolution (the DAG)"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#fbe9e7";
+    Core    [label="Core\nPeople → Occupancy → Activity → HouseState", fillcolor="#f6cdc6"];
+    Plugins [label="Plugins\nLighting · Heating · Security", fillcolor="#f6cdc6"];
+    {rank=same; Core; Plugins}
+  }
+
+  // ---------- Layer 5 ----------
+  subgraph cluster_L5 {
+    label="Layer 5 — Action / reaction generation"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#efe6f7";
+    Reactions    [label="Reactions → ApplyStep", fillcolor="#ddc9ef"];
+    TemplateMatch[label="TemplateRequirement matcher\n→ auto-proposals", fillcolor="#ddc9ef"];
+    {rank=same; Reactions; TemplateMatch}
+  }
+
+  // ---------- Layer 6 ----------
+  subgraph cluster_L6 {
+    label="Layer 6 — Notification / communication"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#e3f1fb";
+    EventsPipeline [label="Event pipeline\nquiet hours: bypass / defer / silent", fillcolor="#bfe0f5"];
+    Digest         [label="Digest\n(not yet built)", fillcolor="#bfe0f5", style="rounded,filled,dashed"];
+    {rank=same; EventsPipeline; Digest}
+  }
+
+  // ---------- Layer 7 ----------
+  subgraph cluster_L7 {
+    label="Layer 7 — Extensibility"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#f8e2ea";
+    PluginAPI [label="register_plugin(IDomainPlugin)\nread_only / apply tiers, fault isolation", fillcolor="#f2c2d6"];
+  }
+
+  // ---------- Layer 8 ----------
+  subgraph cluster_L8 {
+    label="Layer 8 — Admin / config surface"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#f1f1f1";
+    ConfigFlow [label="config_flow\nlinear settings", fillcolor="#dcdcdc"];
+    Panel      [label="Admin panel\ndedicated CRUD + generic dispatcher", fillcolor="#dcdcdc"];
+    {rank=same; ConfigFlow; Panel}
+  }
+
+  // ---------- vertical order lock (invisible) ----------
+  Timing -> HF [style=invis];
+  HF -> Sensor [style=invis];
+  Sensor -> PL [style=invis];
+  PL -> Core [style=invis];
+  Core -> Reactions [style=invis];
+  Reactions -> EventsPipeline [style=invis];
+  EventsPipeline -> PluginAPI [style=invis];
+  PluginAPI -> ConfigFlow [style=invis];
+
+  // ---------- real runtime edges ----------
+  Persist -> HF [style=dotted, label="persists", constraint=false];
+  FactSrc -> HF [style=dotted, label="tags", constraint=false];
+  Timing -> Fusion [style=dotted, constraint=false];
+  Timing -> PL [style=dotted, constraint=false];
+
+  HF -> Sensor [color="#333333", penwidth=1.6];
+  HF -> Fusion [color="#333333", penwidth=1.6];
+  HF -> PL [color="#333333", penwidth=1.6];
+  HF -> Core [color="#333333", penwidth=1.6];
+
+  Sensor -> Fusion [color="#2e7d32"];
+  Sensor -> Core [color="#2e7d32"];
+  Fusion -> Core [color="#2e7d32"];
+
+  PL -> Analyzers [color="#b8860b"];
+  PL -> LiveSig [color="#b8860b", style=dashed, label="bounded"];
+  LiveSig -> Core [color="#b8860b", style=dashed, label="bounded"];
+
+  Core -> Plugins [color="#c0392b"];
+  Core -> Reactions [color="#7b3f9e"];
+  Plugins -> Reactions [color="#7b3f9e"];
+  Sensor -> Reactions [color="#7b3f9e"];
+  Analyzers -> Reactions [color="#b8860b", style=dashed, label="admin review"];
+  TemplateMatch -> Reactions [color="#7b3f9e"];
+
+  Reactions -> EventsPipeline [color="#1565c0"];
+  Core -> EventsPipeline [color="#1565c0"];
+  EventsPipeline -> Digest [color="#1565c0", style=dashed];
+
+  PluginAPI -> Plugins [color="#ad1457", constraint=false];
+  PluginAPI -> Panel [style=dotted, label="registers via", constraint=false];
+
+  Panel -> Sensor [style=dotted, label="configures", constraint=false];
+  Panel -> Actuator [style=dotted, label="configures", constraint=false];
+  Panel -> Fusion [style=dotted, label="configures", constraint=false];
+  Panel -> Reactions [style=dotted, label="configures", constraint=false];
+  ConfigFlow -> EventsPipeline [style=dotted, label="configures", constraint=false];
+}
