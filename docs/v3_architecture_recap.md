@@ -176,17 +176,22 @@ changing mid-cycle, and nothing here depends on any domain.
   state already *is* the target category — nothing to decode, just relabel).
 - **`FusionRule`**: how N `Sensor` facts become one derived `HouseFact` — a genuinely separate
   concept from `Sensor`, not folded into it, because not every sensor needs fusing (a
-  context-recording sensor can stand alone) and not every fusion has just one shape. Four kinds of
-  combination, live in an extensible registry rather than a fixed closed list: direct passthrough
-  (relabel one fact under a new `fact_type`/`Location`, unchanged), boolean-set (any/all), weighted
-  quorum (also covers a plain count threshold — every weight equal to 1), precedence (an ordered
-  fallback chain: try each source in order, first definitive value wins), and formula-based
-  strategies for cases where the combination is a genuine calculation rather than a generic pattern
-  (e.g. combining temperature, wind, and humidity into one effective value) — these live in a
-  registry precisely so a new one doesn't require reopening a closed type everywhere it's consumed.
-  A `FusionRule`'s output can carry its own stability/dwell `Window`, independent of which strategy
-  produced it — debounce and hysteresis are a property of *any* derived fact's stability over time,
-  not specific to one combination method.
+  context-recording sensor can stand alone) and not every fusion has just one shape. `FusionStrategy`
+  is a **closed union of five kinds**, not an open-ended registry (resolved 2026-09-02, AR-4
+  follow-up — an earlier version of this recap described the strategies as living in "an extensible
+  registry," which turned out to conflict with the actual drafted type; the closed union preserves
+  exhaustive pattern-matching, which the project favors consistently elsewhere in this model):
+  direct passthrough (relabel one fact under a new `fact_type`/`Location`, unchanged), boolean-set
+  (any/all), weighted quorum (also covers a plain count threshold — every weight equal to 1),
+  precedence (an ordered fallback chain: try each source in order, first definitive value wins), and
+  a fifth, deliberately narrow `FormulaStrategy` for cases where the combination is a genuine
+  calculation rather than a generic pattern (e.g. combining temperature, wind, and humidity into one
+  effective value, or Heating's Season derivation) — this one variant carries no calculation logic
+  itself, only a reference into a separate, core-team-curated formula registry (mirroring
+  `NormalizationFusionRegistry`'s existing plugin pattern), so a new formula never requires reopening
+  `FusionStrategy` or any code that pattern-matches on it. A `FusionRule`'s output can carry its own
+  stability/dwell `Window`, independent of which strategy produced it — debounce and hysteresis are a
+  property of *any* derived fact's stability over time, not specific to one combination method.
 - **`Actuator`**: an inventory fact only — which entity, where, optionally which physical opening it
   operates, optionally which coarse role it plays (light, shutter, HVAC unit, water valve...) —
   never a command itself. Commands live only in whichever Reaction decides to send them.

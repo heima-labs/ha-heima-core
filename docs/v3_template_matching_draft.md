@@ -88,7 +88,12 @@ the proposal engine already use elsewhere, not a new mechanism) becomes a `House
 fact_type = "template_match"
 where     = <the matched Location>
 value     = {template_id, matched_sensor_ids, matched_actuator_ids}
-how       = Provenance(confidence=1.0, source="template_matcher", evidence={...})
+how       = Provenance(confidence=1.0,
+                        source=FactSource(kind="analyzer", source_id="template_matcher"),
+                        evidence={...})
+# source is a FactSource, never a free string (corrected 2026-09-02 — this example predated the
+# 2026-08-31 Provenance.source correction and was never updated to match; see
+# docs/specs/v3/layer0_runtime_spec.md §5)
 ```
 
 ...wrapped as a `ReactionProposal` (`status: pending`) exactly like every other proposal in this

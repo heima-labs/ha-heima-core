@@ -153,7 +153,25 @@ class PrecedenceStrategy:
     # also hand-rolled in `_resolve_home_substate`. Both should express as a `PrecedenceStrategy`
     # once this exists, instead of two separate ad hoc implementations of the same idea.
 
-FusionStrategy = DirectStrategy | BooleanSetStrategy | WeightedQuorumStrategy | PrecedenceStrategy
+@dataclass(frozen=True)
+class FormulaStrategy:
+    formula_id: str
+    # Resolved 2026-09-02 (v3_backlog.md, AR-4 follow-up) — closes the "genuine calculation" gap
+    # (Heating's Season derived from outdoor_temp with hysteresis; a future "effective outdoor
+    # temperature" from temp+wind+humidity) that the other 4 strategies don't cover, without
+    # reopening this union for every future calculation. Carries no calculation logic itself — only
+    # a reference into a separate, core-team-curated formula registry, mirroring
+    # NormalizationFusionRegistry's existing plugin pattern (already precedented in the current
+    # codebase, per the Layer 7 fault-isolation discussion in v3_backlog.md) — a new formula is a
+    # new registry entry, never a change to FusionStrategy or to code that pattern-matches on it.
+    # Always continuous-shaped by definition (a formula combines multiple continuous inputs into one
+    # derived value) — its confidence always uses Layer 1's `continuous_confidence`, with dispersion
+    # computed however the specific registered formula defines it, the same way a
+    # `PatternLearnerConfig` supplies its own `continuous_params`.
+
+FusionStrategy = (
+    DirectStrategy | BooleanSetStrategy | WeightedQuorumStrategy | PrecedenceStrategy | FormulaStrategy
+)
 ```
 
 Dwell/hysteresis (today's `on_dwell_s`/`off_dwell_s`) is **not** part of `FusionStrategy` — it's a

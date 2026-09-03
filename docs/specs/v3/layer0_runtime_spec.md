@@ -322,15 +322,29 @@ around it; Layer 1 and Layer 5 own the envelopes it's embedded in. Every `HouseF
 
 ```python
 @dataclass(frozen=True)
-class FactSource:  # and, symmetrically, ApplyStepSource for actions
+class FactSource:
     kind: FactSourceKind
-    source_id: str                          # stable id within that kind, e.g. a reaction id,
-                                              # an analyzer id, an entity id
+    source_id: str                          # stable id within that kind, e.g. an entity id,
+                                              # an analyzer id, a reaction id
     source_type: str | None = None          # optional family, e.g. reaction type
     actor_type: FactSourceActorType = "heima"
-    actor_id: str | None = None
     correlation_id: str = field(default_factory=lambda: str(uuid4()))  # see §5.2 — this default is
                                               # a safety net only, never relied on in production code
+    # deliberately no actor_id: a fact isn't produced by a human the way an admin_command/
+    # resident_response action is authorized by one — add it back only if a concrete need surfaces,
+    # not by default symmetry with ApplyStepSource
+
+@dataclass(frozen=True)
+class ApplyStepSource:
+    kind: FactSourceKind                    # minus the 3 fact-only kinds below — an action is never
+                                              # kind="sensor"/"analyzer"/"third_party_plugin"
+    source_id: str
+    source_type: str | None = None
+    actor_type: FactSourceActorType = "heima"
+    actor_id: str | None = None              # the one field that differs from FactSource: which
+                                              # human/service actually authorized this action, when
+                                              # known (an admin user id, a resident's response id)
+    correlation_id: str = field(default_factory=lambda: str(uuid4()))
 
 FactSourceKind = Literal[
     "sensor", "analyzer", "third_party_plugin",       # fact-only kinds
@@ -343,10 +357,12 @@ FactSourceActorType = Literal[
 ]
 ```
 
-`ApplyStepSource` (the action-side sibling, produced whenever a `Reaction` emits an `ApplyStep`)
-carries exactly the same shape and the same closed vocabularies, minus the 3 fact-only kinds. One
-type, two roles — a fact's `FactSource` and an action's `ApplyStepSource` are never two independently
-evolving shapes.
+One vocabulary, two shapes with one deliberate difference — never two independently evolving
+designs. `ApplyStepSource` (the action-side sibling, produced whenever a `Reaction` emits an
+`ApplyStep`) shares `kind`'s closed vocabulary (minus the 3 fact-only kinds), `actor_type`, and the
+`correlation_id` mechanism; it carries `actor_id` because an action can be traced to a specific human
+or service that authorized it, while a fact — even one produced as a side effect of a resident's
+action — is not itself "authorized by" anyone the way a command is.
 
 ### 5.1 Non-forgeability: trust is derived, never stored
 

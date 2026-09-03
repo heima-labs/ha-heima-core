@@ -1979,3 +1979,54 @@ itself cannot (a redundant, event-triggered checkpoint entry, not the durable `H
 
 `v3_architecture_recap.md`'s Layer 0 / Manual Hold Manager entry is updated to match (still states the
 default rule, now with a pointer to the narrow exception instead of presenting it as absolute).
+
+---
+
+## Layer 1 promoted to a real spec — AR-4 finally closed, one boundary bug found (2026-09-02)
+
+`v3_house_fact_draft.md` promoted into `docs/specs/v3/layer1_substrate_spec.md` (`HouseFact`,
+`Provenance`, `Location`, `Zone`, `Topology`), same self-contained discipline as Layer 0. Two findings
+during a cross-spec coherence pass (developer-requested, checking the new spec against
+`v3_sensors_actuators_draft.md` and `v3_template_matching_draft.md`, not just against itself) turned
+out to matter more than the promotion itself.
+
+**AR-4 finally resolved — `FusionStrategy` stays a closed union, gains a fifth, deliberately narrow
+member.** AR-4 (2026-09-01) was left explicitly open: Heating's "Season" (derived from `outdoor_temp`
+with hysteresis, a genuine calculation) has no clean home among the 4 confirmed `FusionRule`
+strategies. It stayed open long enough that **AR-5, resolved the very next day, silently assumed an
+answer to it** — AR-5's own resolution text lists `FusionRule`'s synchronous logic as
+"boolean/quorum/precedence/**registered formula**," using a term AR-4 never actually defined. Found
+only because the Layer 1 promotion forced a direct read of `v3_architecture_recap.md`'s Layer 2
+section side by side with `v3_sensors_actuators_draft.md`'s actual `FusionStrategy` type — and the two
+disagreed: the recap described "formula-based strategies... in an extensible registry," while the
+concrete draft type was `DirectStrategy | BooleanSetStrategy | WeightedQuorumStrategy |
+PrecedenceStrategy` — a closed 4-member union, no formula variant, no registry mechanism at all.
+
+Weighed both pure positions (open registry vs. closed union) before deciding — full reasoning in the
+session transcript, not repeated here. **Resolved 2026-09-02, hybrid**: `FusionStrategy` stays a
+**closed, exhaustively pattern-matchable union**, consistent with how this model treats every other
+closed vocabulary (`HouseState`, `FactSourceKind`, `RecurrencePattern`'s two variants) — but gains a
+fifth member, `FormulaStrategy(formula_id: str)`, which carries no calculation logic itself, only a
+reference into a **separate, core-team-curated formula registry** (mirroring
+`NormalizationFusionRegistry`'s existing plugin pattern, already precedented in the current codebase —
+not a new mechanism). A new formula (Season, a future "effective outdoor temperature") is a new
+registry entry, never a change to `FusionStrategy` or to code that pattern-matches on it — this is
+what the recap's "extensible registry" language was actually reaching for, just misplaced onto the
+wrong type. Bonus: `FormulaStrategy` is continuous-shaped by definition (a formula combines multiple
+continuous inputs into one value), so its confidence treatment is settled for free —
+`continuous_confidence` (Layer 1 §4.2), always. `v3_sensors_actuators_draft.md` and
+`v3_architecture_recap.md` (Layer 2 section) updated to match; `layer1_substrate_spec.md` §9 narrowed
+accordingly (boolean-set's confidence mapping is still genuinely open, formula-based no longer is).
+
+**Boundary bug found in the new Layer 1 spec itself, self-inflicted**: `layer1_substrate_spec.md` had
+defined `TopologyRequirement` inside Layer 1, justified in its own text as "a requirement kind for
+automation template matching (**Layer 5**)" — while correctly *not* defining its siblings
+`SensorRequirement`/`ActuatorRequirement` there, since those clearly belong to Layer 5's
+template-matching concern even though they reference Layer 1/2 types. `TopologyRequirement` is in
+exactly the same category (a Layer 5 predicate referencing Layer 1's `Topology`) and was carried over
+into Layer 1 only because the original `v3_house_fact_draft.md` draft happened to place it textually
+next to `Topology`, never re-examined against the boundary the spec itself later established.
+**Resolved 2026-09-02**: removed from `layer1_substrate_spec.md`; canonical definition stays where it
+already correctly lived, `v3_template_matching_draft.md`, alongside `SensorRequirement`/
+`ActuatorRequirement`. Layer 1 states only that `Topology` is queryable by Reactions and template
+requirements, same as it already did for `Sensor`/`Actuator`.
