@@ -130,7 +130,7 @@ EvidenceValue = str | int | float | bool | None | dict[str, "EvidenceValue"] | l
 
 @dataclass(frozen=True)
 class Provenance:
-    confidence: float                          # 0.0-1.0
+    confidence: float | None                   # 0.0-1.0, or None — see §4.1/§4.2
     source: FactSource                          # Layer 0 §5 — never a free string
     available: bool = True
     evidence: dict[str, EvidenceValue] = field(default_factory=dict)
@@ -168,13 +168,27 @@ without creating a false positive for every ordinary stable value. Unavailabilit
 positive signal, recorded at the moment the observation fails, which is precisely the kind of thing
 that is correctly static and correctly stored once.
 
+**`confidence` is `None` exactly when `available=False`, never a numeric placeholder.** An earlier
+draft of this section used `0.0` for this case — rejected: `0.0` is a legitimate, meaningful point
+inside the real `0.0`-`1.0` range, so a consumer that forgets to check `available` first would read a
+plausible-looking "very low confidence" instead of an unmistakable "not applicable." `None` mirrors
+`value`'s own use of the same sentinel (`EvidenceValue` already includes `None`, §3) and, unlike a
+magic number, lets a type-checker flag a producer or consumer that touches `confidence` without
+narrowing `available` first — a mistake stays *visible*, not silently plausible. Every producer must
+set `available=False` and `confidence=None` together, never `available=False` with a numeric
+`confidence`, and never `available=True` with `confidence=None`.
+
 ### 4.2 `confidence`
 
-**Exactly two standardized forms, chosen by whether the underlying value is categorical or
-continuous — never a third, never reinvented per producer.** This standardization exists because an
-audit of the current codebase found four different, mutually incompatible formulas across modules
-all called "confidence," not comparable to each other, one of them (`min(1.0, support /
-min_support)`) actually wrong — mistaking data volume for confidence.
+**A closed, deliberately small set of standardized forms — never an ad hoc, uncentralized formula
+reinvented per producer.** This standardization exists because an audit of the current codebase found
+four different, mutually incompatible formulas across modules all called "confidence," not comparable
+to each other, one of them (`min(1.0, support / min_support)`) actually wrong — mistaking data volume
+for confidence. **The lesson from that audit is discipline, not a hard cap of two**: every confidence
+computation goes through a function Layer 1 owns and vets, never one a producer writes itself at its
+own call site. The set can grow — deliberately, rarely, the same way `FusionStrategy` (Layer 2) grew a
+fifth member instead of staying artificially capped at four — when a genuinely distinct, principled
+computation pattern is found, not when a producer wants a shortcut.
 
 ```python
 def categorical_confidence(count_best_outcome: float, total_observations: float) -> float:
@@ -193,46 +207,62 @@ def continuous_confidence(dispersion: float, scale: float, floor: float) -> floa
     Precondition: scale > 0. A zero or negative scale makes the normalization meaningless; the
     caller chooses a scale appropriate to its own value's units and must never pass zero."""
     return max(floor, 1.0 - dispersion / scale)
+
+def combined_confidence(confidences: Sequence[float], combinator: Literal["min", "max"]) -> float:
+    """For a deterministic logical combination (AND/OR) over several sources' own confidence values
+    — not a statistical match-ratio (no "population" here, just already-known inputs) and not a
+    passthrough (more than one source feeds it). `min` for a conjunction: a logical AND is only as
+    trustworthy as its weakest premise. `max` for a disjunction: a logical OR is as trustworthy as
+    its strongest confirming premise. Never a mean — averaging would let a weak AND premise get
+    diluted by strong ones, or a weak OR confirmation get dragged down by irrelevant weak ones,
+    neither of which matches how a boolean combination's own reliability actually behaves.
+
+    Precondition: `confidences` is non-empty (same "no meaningful confidence for nothing observed"
+    rule as the other two — an empty combination is `available=False`, not a call to this function)."""
+    return min(confidences) if combinator == "min" else max(confidences)
 ```
 
-**Neither function is ever called with a zero/empty population — that case is `available=False`
-(§4.1), not a degenerate confidence.** This is exactly the kind of edge case centralizing these
-formulas exists to handle consistently, so it needs to be stated explicitly, not left implicit: a
-`PatternLearner` already guarantees `total_observations > 0` by construction (`min_support` is
-checked, and gates on a positive count, before confidence is ever computed). A `FusionRule` producer
-must apply the same discipline itself — if every input to a weighted-quorum fusion is itself
-`available=False` this cycle, the derived `HouseFact` is `available=False` too, and neither
-confidence function is called at all. There is no meaningful confidence for a value that was never
-actually produced.
+**Neither `categorical_confidence`/`continuous_confidence` is ever called with a zero/empty
+population, and `combined_confidence` is never called with an empty sequence — that case is
+`available=False`/`confidence=None` (§4.1), not a degenerate confidence.** This is exactly the kind of edge case
+centralizing these formulas exists to handle consistently, so it needs to be stated explicitly, not
+left implicit: a `PatternLearner` already guarantees `total_observations > 0` by construction
+(`min_support` is checked, and gates on a positive count, before confidence is ever computed). A
+`FusionRule` producer must apply the same discipline itself — if every input to a fusion is itself
+`available=False` this cycle, the derived `HouseFact` is `available=False` too, and none of these
+functions is called at all. There is no meaningful confidence for a value that was never actually
+produced.
 
-**Layer 1 owns these two functions as pure, shared, callable implementations — it does not decide
-when either applies.** That decision requires knowing what's actually being combined or predicted,
-which only the producer has: a `PatternLearnerConfig`'s declared `target_shape` (Layer 3), or which
-`FusionRule` strategy produced a value (Layer 2) — Layer 1 has no visibility into either and should
-not need any to provide two correctly-implemented formulas. This split matters concretely, not just
-as a layering nicety: the standardization exists because an audit found **four incompatible
-formulas**, all called "confidence," scattered across modules — if every producer reimplemented the
-arithmetic itself instead of calling one shared, tested function, the same drift risk (a subtly
-different edge-case handling here, a rounding difference there) would reappear even with the "right"
-two formulas nominally agreed on. One canonical implementation, called from wherever it's needed, is
-what actually prevents that — not just documenting the formulas and trusting every call site to copy
-them faithfully.
+**Layer 1 owns these three functions as pure, shared, callable implementations — it does not decide
+when any of them applies.** That decision requires knowing what's actually being combined or
+predicted, which only the producer has: a `PatternLearnerConfig`'s declared `target_shape` (Layer 3),
+or which `FusionRule` strategy produced a value and which of its inputs' confidences feed the
+combination (Layer 2) — Layer 1 has no visibility into either and should not need any to provide
+three correctly-implemented functions. This split matters concretely, not just as a layering nicety:
+the standardization exists because an audit found **four incompatible formulas**, all called
+"confidence," scattered across modules — if every producer reimplemented the arithmetic itself
+instead of calling one shared, tested function, the same drift risk (a subtly different edge-case
+handling here, a rounding difference there) would reappear even with the "right" formulas nominally
+agreed on. One canonical implementation per pattern, called from wherever it's needed, is what
+actually prevents that — not just documenting the formulas and trusting every call site to copy them
+faithfully.
 
-**A third legitimate option, not a third formula: inherit, don't compute.** Some producers select or
+**A fourth legitimate option, not a fourth formula: inherit, don't compute.** Some producers select or
 pass through one specific upstream fact unchanged rather than combining several (a `FusionRule`'s
 direct-passthrough or precedence strategy, Layer 2) — for these, `confidence` is simply the selected
 source's own `confidence`, carried forward as-is. This is not a new formula requiring Layer 1 to
 define anything further; it is the absence of a new computation. A raw `Sensor`-sourced fact, having
-no upstream fact to inherit from and no "target shape" to predict, defaults to `1.0` under the same
-principle — a direct reading is either available and fully trusted, or `available=False` (§4.1)
-already expresses its absence. Reporting anything other than `1.0` for a raw reading requires a
-concrete evidentiary reason (e.g. a sensor known to be noisy), not a guess.
+no upstream fact to inherit from and no "target shape" to predict, defaults to `1.0` when
+`available=True` under the same principle — a direct reading is either available and fully trusted,
+or `available=False`/`confidence=None` (§4.1) expresses its absence, never a numeric value in
+between. Reporting anything other than `1.0` for an available raw reading requires a concrete
+evidentiary reason (e.g. a sensor known to be noisy), not a guess.
 
 **No consumer ever needs to know which of these applied to a given fact.** This is precisely the
-point of standardizing to two comparable, normalized forms: a `confidence` value means the same thing
-regardless of which path produced it, so nothing about which formula (or whether inheritance) was
-used is ever recorded on the `HouseFact` itself — doing so would reintroduce the kind of
-producer-specific interpretation the standardization exists to eliminate. A producer may optionally
+point of standardizing to a small set of comparable, normalized forms: a `confidence` value means the
+same thing regardless of which path produced it, so nothing about which formula (or whether
+inheritance) was used is ever recorded on the `HouseFact` itself — doing so would reintroduce the kind
+of producer-specific interpretation the standardization exists to eliminate. A producer may optionally
 note its own method in `evidence` (§4.3) for diagnostic purposes, but this is never load-bearing for
 how the number is read downstream.
 
@@ -453,14 +483,6 @@ in Layer 0 depends on anything defined here, preserving Layer 0's own invariant.
   no field on `HouseFact` or `Provenance` to live in. This is a real gap, not a detail to gloss over:
   it directly affects Layer 6 (Notification), which is the actual consumer of today's `HeimaEvent`
   shape. Needs a decision — likely when Layer 6 is spec'd — not assumed resolved by this document.
-- **Per-`FusionRule`-strategy confidence mapping is mostly resolved, boolean-set is not.** §4.2
-  establishes that Layer 2 decides which of {categorical formula, continuous formula,
-  inherit-unchanged} applies to a given producer, not Layer 1. Weighted-quorum maps to the categorical
-  formula, direct-passthrough/precedence map to inherit-unchanged, and `FormulaStrategy` (Layer 2,
-  resolved 2026-09-02 — `v3_backlog.md`, closing AR-4) always maps to the continuous formula by
-  construction. Boolean-set (any/all) is the one strategy still without an obvious mapping — "any"
-  logic firing on one source out of five isn't meaningfully "low confidence" the way a low categorical
-  match-ratio is — left for Layer 2's own spec to resolve, not assumed here.
 - `evidence`'s maximum serialized size (§4.3) — a concrete number in KB, not an architectural
   question, to be set when this moves toward implementation.
 
@@ -472,14 +494,16 @@ in Layer 0 depends on anything defined here, preserving Layer 0's own invariant.
   codebase today (`NormalizedObservation`, `DerivedObservation`, room-signal buckets, per-room
   occupancy booleans, `Activity`, `HouseState`) is expressible as a `HouseFact` with no residual
   parallel representation left standing.
-- No `confidence` value anywhere in the codebase is computed by a formula other than the two pure
+- No `confidence` value anywhere in the codebase is computed by a formula other than the pure
   functions in §4.2 (called, not reimplemented) or the inherit-unchanged case, no `min_support`-style
   gate is blended into a `confidence` float, and no field anywhere records which formula/path produced
   a given `confidence` value.
-- Neither `categorical_confidence` nor `continuous_confidence` is ever called with
-  `total_observations == 0` or `scale <= 0` in any test — the zero/empty-population case always
-  produces `available=False` instead, verified for at least one `FusionRule` strategy with all inputs
-  unavailable.
+- None of `categorical_confidence`/`continuous_confidence`/`combined_confidence` is ever called with
+  an empty population (`total_observations == 0`, `scale <= 0`, or an empty `confidences` sequence) in
+  any test — the zero/empty-population case always produces `available=False`/`confidence=None`
+  instead, verified for at least one `FusionRule` strategy with all inputs unavailable.
+- `available` and `confidence` are never set inconsistently — `available=False` always pairs with
+  `confidence=None` and vice versa, in a test that tries both wrong pairings and rejects them.
 - `HouseFact` construction rejects a `value` that isn't `EvidenceValue`-shaped or a qualifying frozen
   dataclass, exceeds the maximum nesting depth, or exceeds the size cap — a hard failure, in a test
   that tries each violation.

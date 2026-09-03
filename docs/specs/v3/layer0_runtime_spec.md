@@ -347,13 +347,52 @@ class ApplyStepSource:
     correlation_id: str = field(default_factory=lambda: str(uuid4()))
 
 FactSourceKind = Literal[
-    "sensor", "analyzer", "third_party_plugin",       # fact-only kinds
-    "reaction", "domain", "admin_command", "resident_response",
-    "timeout", "recovery", "system", "test", "legacy",  # shared with ApplyStepSource
+    # fact-only — an action (ApplyStepSource) is never one of these three:
+    "sensor",             # a direct read of one raw HA entity, interpreted (Layer 2 Sensor) — one
+                            # entity in, one fact out, no combination
+    "analyzer",            # derived from combining or analyzing existing data rather than one direct
+                            # entity read — a same-cycle deterministic combination (Layer 2 FusionRule),
+                            # a slow-cycle statistical computation (Layer 3 PatternLearner), or a
+                            # structural match (Layer 5's template matcher). The unifying property is
+                            # "derived from something other than a single direct entity read", not
+                            # "statistical" specifically — FusionRule belongs here, not under "sensor"
+    "third_party_plugin",  # produced by a Layer 7 plugin's own compute(), reading its own registered
+                            # entities or combining them
+    # shared with ApplyStepSource — both a fact and an action can carry these:
+    "reaction",            # a fact recorded as a byproduct of a Reaction firing (Layer 5) — distinct
+                            # from the ApplyStep(s) the same Reaction issues, which carry
+                            # ApplyStepSource with this same kind on the action side
+    "domain",               # produced by a Layer 4 domain's own resolution logic (e.g. HouseState's
+                            # resolved value), not sourced from Sensor/FusionRule directly
+    "admin_command",        # a direct consequence of an admin-panel action, assignable only after HA
+                            # confirms the connection's user is an admin (§5.1)
+    "resident_response",    # a direct consequence of a resident's explicit action (an explicit manual
+                            # hold, Layer 0 §6; a runtime confirmation response) — assignable only
+                            # after matching an active request, never from an unmatched payload
+    "timeout",              # recorded because an expected response/confirmation window elapsed with
+                            # nothing arriving — assignable only by the in-process timeout controller
+    "recovery",             # produced by Recovery/Checkpoint itself (§7) — e.g. an implicit hold
+                            # restored after a clean restart (§6.3)
+    "system",               # produced by system-owned runtime infrastructure not covered by a more
+                            # specific kind above (e.g. a system-owned CronEntry's own bookkeeping)
+    "test",                 # produced by test code — never present in production data
+    "legacy",               # predates structured provenance, could not be reassigned a real kind at
+                            # migration time — never produced by new code
 ]
 
 FactSourceActorType = Literal[
-    "ha_admin", "resident", "heima", "scheduler", "service", "system", "test", "unknown",
+    "ha_admin",    # a Home Assistant user confirmed as admin by HA's own permission check
+    "resident",    # a non-admin resident (a mobile-app response, an explicit-hold helper toggle)
+    "heima",       # Heima itself, autonomously — no human in the loop for this specific fact/action;
+                    # the default
+    "scheduler",   # Timing's own execution (an AtJob/CronEntry firing), not a domain decision
+    "service",     # an external HA service call not attributable to a specific admin/resident (e.g.
+                    # an automation outside Heima calling into a Heima service)
+    "system",      # Heima's own startup/runtime infrastructure (Recovery, Persistence), not a domain
+                    # or a human
+    "test",        # test code
+    "unknown",     # could not be determined — never treated as authoritative for anything requiring
+                    # a specific actor
 ]
 ```
 

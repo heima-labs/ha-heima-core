@@ -2030,3 +2030,94 @@ next to `Topology`, never re-examined against the boundary the spec itself later
 already correctly lived, `v3_template_matching_draft.md`, alongside `SensorRequirement`/
 `ActuatorRequirement`. Layer 1 states only that `Topology` is queryable by Reactions and template
 requirements, same as it already did for `Sensor`/`Actuator`.
+
+---
+
+## `confidence` standardization corrected: "never ad hoc" was overloaded into "never a third", these
+## are different rules (2026-09-03)
+
+Drafting Layer 2's `BooleanSetStrategy` confidence mapping (the one item left open by Layer 1 §9)
+exposed that Layer 1 §4.2's own wording — "exactly two standardized forms... never a third" — had
+quietly turned a discipline rule into a cardinality cap, and developer pushback ("non sono convinto
+che 'mai una terza formula, punto' sia corretto") was right to distrust it.
+
+**What the original LP-1/LP-2 audit actually established**: four incompatible, ad hoc, uncentralized
+formulas existed, one demonstrably wrong. The fix that matters is that every confidence computation
+goes through a function Layer 1 owns and vets — never one a producer invents at its own call site.
+That a hard cap of exactly two happened to fall out of the audit's specific findings was incidental,
+not the actual rule, and treating it as load-bearing made the model brittle against a computation
+pattern the audit's two source-domains (Learning's categorical/continuous predictions) never needed to
+cover: a *deterministic logical combination* over already-known confidences (`BooleanSetStrategy`'s
+AND/OR), which is neither a statistical match-ratio nor a passthrough.
+
+**Resolved 2026-09-03**: `combined_confidence(confidences, combinator: "min"|"max")` added as a third
+pure function Layer 1 owns (§4.2) — `min` for a conjunction (an AND is only as trustworthy as its
+weakest premise), `max` for a disjunction (an OR is as trustworthy as its strongest confirming
+premise), by De Morgan symmetry across a `BooleanSetStrategy`'s True/False branches. This closes the
+last open item from Layer 1's own confidence-mapping table: `WeightedQuorumStrategy` →
+`categorical_confidence`, `DirectStrategy`/`PrecedenceStrategy` → inherit-unchanged, `FormulaStrategy`
+→ `continuous_confidence` (already resolved with AR-4), `BooleanSetStrategy` → `combined_confidence`.
+The set of functions Layer 1 owns is still closed and small, and still never grown for a producer's
+convenience — this one addition was deliberate, vetted, and precedented by the exact same treatment
+already given to `FusionStrategy` gaining a fifth member instead of staying artificially capped at
+four. `layer1_substrate_spec.md` §4.2 rewritten to state the corrected rule ("never ad hoc," not "never
+a third") and §9's boolean-set item is closed.
+
+---
+
+## Layer 2 promoted to a real spec; a process check paid off — closed vocabularies needed per-value
+## definitions, not just a closed list (2026-09-03)
+
+`v3_sensors_actuators_draft.md` promoted into `docs/specs/v3/layer2_registries_spec.md` (`Sensor`,
+`Interpretation`, `FusionRule`, `Actuator`), same self-contained discipline as Layers 0-1. Assigning
+`FusionRule`-produced facts a `FactSource.kind` surfaced a real ambiguity — is a same-cycle
+deterministic combination `"sensor"` or `"analyzer"`? — that Layer 0 §5 could not actually answer:
+`FactSourceKind`/`FactSourceActorType` were a closed `Literal` list with **no per-value definition**,
+unlike `RecoveryState` in the same document, which has one.
+
+Developer asked directly whether this meant Layer 0 and Layer 1 needed re-reviewing before trusting
+Layer 2 further. **Answer worked out, not just asserted**: a full re-review of both wasn't warranted
+(both had already been through multiple targeted critical passes that found and fixed real issues —
+redoing all of that would be expensive and mostly redundant) — but a **targeted scan for the same bug
+class** (a closed vocabulary listed without per-value definitions) was, and did find exactly one real
+instance: `FactSourceKind`/`FactSourceActorType`. Everything else checked (`Location.scope`,
+`implicit_hold_restore_class`, `combined_confidence`'s combinator) already had adequate surrounding
+definition. Layer 1 had none of this class of gap at all.
+
+**Resolved 2026-09-03**: `layer0_runtime_spec.md` §5 — every `FactSourceKind` (12) and
+`FactSourceActorType` (8) value now has a one-line definition, same treatment `RecoveryState` already
+had. This resolved the ambiguity that started this: `"analyzer"` is defined as "derived from combining
+or analyzing existing data rather than one direct entity read" — `FusionRule` qualifies by that
+property regardless of being same-cycle and deterministic, "analyzer" was never meant to mean
+"statistical" specifically. `layer2_registries_spec.md` §7 updated to cite the resolved definition
+with confidence instead of asserting it.
+
+**Two further corrections found drafting Layer 2's confidence mapping, both from the same underlying
+instinct** (developer: "non sono convinto" applied a second time, this session, productively):
+
+1. **`confidence=0.0` as the unavailable-placeholder was itself the wrong kind of fix.** `0.0` is a
+   legitimate point inside the real confidence range, so a producer/consumer that forgets to check
+   `available` first reads a plausible low number instead of an unmistakable absence.
+   **Resolved**: `Provenance.confidence` (Layer 1 §4) is now `float | None` — `None` exactly when
+   `available=False`, mirroring `value`'s own use of `None` (already part of `EvidenceValue`) for the
+   same case, and letting a type-checker catch a missing `available` check that a magic number never
+   could.
+2. **`WeightedQuorumStrategy`/`BooleanSetStrategy` excluding unavailable inputs (§5.5) can leave a
+   *nonempty* population that's still too thin to trust** — e.g. 4 of 5 sensors going `available=False`
+   together (a lost Zigbee segment) leaves one sensor's vote to compute a confident-looking ratio from
+   alone. Not the same case as the fully-empty population (already handled), and not something
+   Recovery's system-wide `degraded_recovery` classification (Layer 0 §7.1) reliably catches either —
+   that operates at a different, whole-runtime granularity, not per-`FusionRule`. **Resolved**: applied
+   the same discipline Layer 1 §4.2 already established for `min_support` (a completeness gate,
+   deliberately kept separate from confidence itself) to this case — `min_available_weight`
+   (`WeightedQuorumStrategy`) and `min_available` (`BooleanSetStrategy`), both new fields, below which
+   the derived fact is `available=False` without a confidence call, same outcome as the empty-population
+   case, a less extreme trigger, still never blended into the confidence number.
+
+Also fixed while drafting Layer 2, lower-stakes: the `workday_entity` `PrecedenceStrategy` example
+(inherited verbatim from `v3_sensors_actuators_draft.md`, predating `CalendarInterpretation`'s own
+`priority_order`) read like a flat 5-way precedence chain when the correct shape is 2 sensors, with
+`CalendarInterpretation`'s own `priority_order` resolving the 4 calendar categories internally first —
+clarified in `layer2_registries_spec.md` §5.1. `RegisteredFormula.compute` (§5.3) gained a `min_inputs`
+field and an escape hatch (`-> tuple[Any, float] | None`) to report "insufficient inputs" instead of
+being forced to always return a value.
