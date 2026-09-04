@@ -2181,3 +2181,49 @@ existing general rule, previously unhonored in Layer 2's own type annotations), 
 `stability` was "a plain `Window`, no Layer-2-specific timing concept" was corrected — the
 pending-transition tracking mechanism itself *is* new here, `Window`/`Stability` are only the
 comparison values it's built from.
+
+---
+
+## Performance/latency review of Layers 0-2, and `FusionRule` chaining (2026-09-04)
+
+Developer asked directly whether the architecture as built so far actually serves Heima's "decide and
+act fast" goal — a cross-cutting review, not tied to one layer. Found the foundations already
+latency-conscious (event-driven, durable writes batched off the hot path, `Stability`'s default is
+zero wait, confidence functions are trivial pure math) but two things worth making explicit rather
+than assumed, both resolved this session.
+
+**No blocking-I/O contract stated for Layer 2's own execution points.** Architecture invariant #2
+(no blocking I/O on the hot path) was never restated for `Interpretation` decoding, `FusionStrategy`
+evaluation, or specifically `RegisteredFormula.compute` — the one place Layer 2 hands control to an
+arbitrary core-team `Callable` with nothing in its type signature preventing a slow implementation.
+**Resolved**: new §2.2 in `layer2_registries_spec.md`, a normative constraint enforced by code review
+at registration time (not runtime-checkable in general).
+
+**`FusionRule` could not consume another `FusionRule`'s output — reconsidered, and reversed, after
+working through why the original 2-wave design wasn't actually buying what it seemed to.** Initial
+read: bounding `FusionRule` to only ever consume `Sensor` facts caps evaluation at 2 sequential
+"waves," good for predictable latency. Reconsidered once the "core-team-authored only" governance
+(§2.1) was factored in properly: since the `FusionRule` dependency graph is static and fully known
+before any cycle runs, cycle detection and evaluation ordering are a **one-time, registration-time**
+cost (a topological sort), not a per-cycle one — so the 2-wave cap wasn't protecting against a real
+per-cycle cost, it was giving up real reuse value (e.g. "zone occupancy" needing to re-derive from raw
+per-room sensors instead of reusing an already-correct "room occupancy" `FusionRule`, duplicating
+weights/threshold/stability at every consumer) for no latency benefit that a registration-time sort
+doesn't already provide for free.
+
+**Resolved**: `FusionRule.sensor_ids: tuple[str, ...]` replaced with `inputs: tuple[FactRef, ...]`
+(`FactRef` = `fact_type` + `Location`, the same addressing every other consumer in this model already
+uses) — a `FusionRule` never needs to know whether an input came from a `Sensor` or another
+`FusionRule`. Cycles rejected loudly at registration; evaluation order is the precomputed topological
+sort. The one genuine, non-obvious risk found while working through this: `Stability` (§5.2) **stacks**
+across chained `FusionRule`s specifically on the debounced side — a tier-2 fusion watching a
+tier-1 fusion's already-debounced output waits its own configured window *on top of* tier-1's, so two
+independently-reasonable 120s/60s settings compound to 180s end-to-end, invisibly to whoever configures
+either tier in isolation. The instant side (`to_true=None`) does not compound the same way, which is
+exactly the case the developer's original light-latency concern cared most about — but the debounced
+side is still a real correctness risk (e.g. security-arming logic waiting far longer than intended to
+treat a zone as clear), not a low-stakes one. Resolved as a documented review discipline for now
+(§5.6), not a structural restriction — two stronger options (a stacking-delay diagnostic; restricting
+`stability` to only the top-level `FusionRule` in a chain) considered and deliberately left for later,
+recorded in §8, not adopted without data on what a chained configuration actually looks like in
+practice.

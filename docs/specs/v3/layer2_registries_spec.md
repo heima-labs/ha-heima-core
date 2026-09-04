@@ -25,8 +25,8 @@ become one derived `HouseFact`. Three concepts:
 
 1. **`Sensor`** — registers exactly one HA entity as exactly one `fact_type` at exactly one
    `Location`, with an `Interpretation` that turns its raw state into a typed `HouseFact.value`.
-2. **`FusionRule`** — how N `Sensor`-produced facts become one derived `HouseFact`, via one of five
-   closed strategies.
+2. **`FusionRule`** — how N facts (`Sensor`-produced, or produced by another `FusionRule` — §5.6)
+   become one derived `HouseFact`, via one of five closed strategies.
 3. **`Actuator`** — an inventory record of a commandable entity. Never itself a fact producer, never
    itself a command.
 
@@ -42,8 +42,9 @@ selected list with its own admin-panel section.
 Layer 2 is responsible for:
 - `Sensor` and `Interpretation` — which HA entities Heima reads, and how their raw state becomes a
   typed `HouseFact.value`;
-- `FusionRule` and its five strategies — how multiple `Sensor` facts combine into one derived fact,
-  and which of Layer 1's confidence functions (§4.2 of the Layer 1 spec) each strategy uses;
+- `FusionRule` and its five strategies — how multiple facts combine into one derived fact, which of
+  Layer 1's confidence functions (§4.2 of the Layer 1 spec) each strategy uses, and the
+  registration-time ordering that lets a `FusionRule` consume another `FusionRule`'s output (§5.6);
 - the separate formula registry `FormulaStrategy` (one of the five) points into;
 - `Actuator` — the commandable-entity inventory.
 
@@ -63,6 +64,23 @@ Layer 2 is **not** responsible for:
   consistent with `PatternLearnerConfig` (Layer 3) being declared the same way.
 - Redesigning the `Room`/device inventory model — `where: Location` and `device_id` reference it,
   Layer 2 does not own it (same boundary Layer 1 already states for `room_id`).
+
+### 2.2 Performance contract — no blocking I/O on the hot path
+
+Every execution point this layer introduces runs on the engine's hot, same-cycle path: a `Sensor`'s
+`Interpretation` decoding a raw HA state (§4), a `FusionRule`'s strategy combining current facts
+(§5.1), and specifically `RegisteredFormula.compute` (§5.3) — the one place in this layer where
+control passes to an arbitrary core-team-authored `Callable`, not a closed strategy the engine
+evaluates itself. All three must be pure, synchronous, and bounded: no network calls, no disk reads,
+no blocking waits of any kind. Any input a decoder/strategy/formula needs must already be present in
+the `HouseFact`s and registry data handed to it — never fetched fresh at evaluation time.
+
+This restates architecture invariant #2 (no blocking I/O on the hot path) explicitly for this layer's
+own execution points, rather than leaving it assumed. It matters most for `RegisteredFormula.compute`
+specifically: its type signature (`Callable[[Sequence[HouseFact]], tuple[Any, float] | None]`) does
+not itself prevent a slow or blocking implementation — nothing in the type system enforces this, so
+it is a normative constraint on every registration, verified by code review at registration time, not
+something a runtime check can generally guarantee.
 
 ---
 
@@ -190,7 +208,7 @@ logic, not a shared blocking path or a shared timing policy.
 
 ---
 
-## 5. `FusionRule` — how N `Sensor` facts become one derived `HouseFact`
+## 5. `FusionRule` — how N facts become one derived `HouseFact`
 
 **Genuinely separate from `Sensor`, not folded into it** — not every `Sensor` needs fusing (a
 context-recording sensor can stand alone with no `FusionRule` referencing it), and not every fusion
@@ -198,9 +216,19 @@ has the same shape.
 
 ```python
 @dataclass(frozen=True)
+class FactRef:
+    fact_type: str   # Layer 1 §3 naming convention
+    where: Location  # Layer 1 §5
+    # Identifies "the current HouseFact for this fact_type at this Location" — the same address
+    # every other consumer in this architecture already queries by (Layer 0: "every HouseFact true
+    # in Location X" is the generic query shape). A FusionRule's inputs are addressed this way, not
+    # by producer id, specifically so it never needs to know or care whether a given input came from
+    # a Sensor or from another FusionRule — see §5.6.
+
+@dataclass(frozen=True)
 class FusionRule:
     fusion_id: str
-    sensor_ids: tuple[str, ...]   # order matters for PrecedenceStrategy, irrelevant otherwise
+    inputs: tuple[FactRef, ...]    # order matters for PrecedenceStrategy, irrelevant otherwise
     strategy: FusionStrategy
     produces: str                  # fact_type of the derived HouseFact
     where: Location                 # location of the derived fact — may be coarser than its
@@ -223,7 +251,7 @@ class DirectStrategy:
 class BooleanSetStrategy:
     mode: Literal["any", "all"]
     min_available: int = 1
-    # a floor on how many configured sensor_ids must be available before this strategy reports
+    # a floor on how many configured inputs must be available before this strategy reports
     # anything at all — see §5.5. Default 1 restates the general "empty population ->
     # available=False" rule with no extra requirement; raise it deliberately for a strategy where a
     # single surviving input shouldn't be trusted to speak for the rest (e.g. a 5-sensor security
@@ -231,7 +259,7 @@ class BooleanSetStrategy:
 
 @dataclass(frozen=True)
 class WeightedQuorumStrategy:
-    weights: dict[str, float] = field(default_factory=dict)   # sensor_id -> weight, default 1.0
+    weights: dict[FactRef, float] = field(default_factory=dict)   # input -> weight, default 1.0
     threshold: float = 1.0
     min_available_weight: float = 0.0
     # a floor on total available weight (not configured weight) before this strategy reports
@@ -245,7 +273,7 @@ class WeightedQuorumStrategy:
 
 @dataclass(frozen=True)
 class PrecedenceStrategy:
-    pass   # tries sensor_ids in order, first Fact with a definitive (available) value wins — e.g.
+    pass   # tries inputs in order, first Fact with a definitive (available) value wins — e.g.
            # HouseState's own top-level resolution order, one layer up (§5.1 continued below for
            # workday_entity, which needs care not to be misread as a flat 5-way chain)
 
@@ -277,9 +305,9 @@ category's keywords. `PrecedenceStrategy` solves a different problem — falling
 *Sensor* when one has nothing to say — not classifying ambiguity within one. The correct shape is
 **one** `Sensor` with a `CalendarInterpretation` whose `keywords`/`priority_order` resolve
 office/day_off/holiday/wfh internally, and **one** `FusionRule(strategy=PrecedenceStrategy())` with
-exactly two `sensor_ids`: that calendar-derived `Sensor`, then the raw `workday_entity` `Sensor` as
-the fallback when the calendar `Sensor` produces no match (`available=False`) at all. Four Sensors
-feeding a flat 5-item precedence chain would work mechanically too, but would leave
+exactly two `inputs`: that calendar-derived `Sensor`'s `FactRef`, then the raw `workday_entity`
+`Sensor`'s `FactRef` as the fallback when the calendar `Sensor` produces no match (`available=False`)
+at all. Four Sensors feeding a flat 5-item precedence chain would work mechanically too, but would leave
 `CalendarInterpretation.priority_order` doing nothing for this case — a sign the modeling is wrong,
 not just a stylistic choice between two equally-valid shapes.
 
@@ -317,7 +345,7 @@ applied to `FusionStrategy`'s own five members, add complexity when a real case 
 of one.
 
 **The mechanism, concretely — not just "debounce happens," but how.** Every cycle, a `FusionRule`
-computes its raw candidate value from current `Sensor` facts per its strategy, exactly as if
+computes its raw candidate value from its current `inputs` per its strategy, exactly as if
 `stability` were absent. This candidate is compared against the value of the last derived `HouseFact`
 this `FusionRule` actually **committed** (wrote):
 
@@ -384,7 +412,7 @@ Layer 1 (§4.2) owns three pure confidence functions and one non-computation opt
 |---|---|
 | `DirectStrategy` | Inherit — the single source's own `confidence`, unchanged. |
 | `WeightedQuorumStrategy` | `categorical_confidence(winning_weight, total_weight_considered)` — the same-cycle votes *are* the "observations" (Layer 1 §4.2's `total_observations` is deliberately general for exactly this). `winning_weight` is the weight backing whichever outcome is actually being reported — the weight *for* threshold if it was reached, the remaining weight *against* it if it wasn't (`total_weight_considered - winning_weight` in that case) — never always the "for" side regardless of which way the vote went. `total_weight_considered` excludes any `available=False` input entirely (§5.5). |
-| `PrecedenceStrategy` | Inherit — the first definitive (available) source's own `confidence`; if every `sensor_ids` entry is `available=False`, none wins and the derived fact is itself `available=False` (§5.5), following directly from the strategy's own definition. |
+| `PrecedenceStrategy` | Inherit — the first definitive (available) source's own `confidence`; if every `inputs` entry is `available=False`, none wins and the derived fact is itself `available=False` (§5.5), following directly from the strategy's own definition. |
 | `FormulaStrategy` | `continuous_confidence(dispersion, scale, floor)` — always, by construction, since a formula combines multiple continuous inputs into one derived value; `scale`/`floor` come from the formula's own `RegisteredFormula` entry (§5.3). |
 | `BooleanSetStrategy` | `combined_confidence(...)` — see below, the one genuinely new case. |
 
@@ -405,7 +433,8 @@ symmetry across the outcome branch:**
 
 ### 5.5 `available=False` inputs never enter a fusion's confidence computation
 
-For every strategy above, a `Sensor`-produced input with `available=False` (§3.1) is **excluded**
+For every strategy above, an input (whether `Sensor`- or `FusionRule`-produced, §5.6) with
+`available=False` (§3.1) is **excluded**
 from whichever population feeds the confidence computation — never treated as a "False" vote for
 `BooleanSetStrategy`, never contributing weight to `WeightedQuorumStrategy`'s total. If excluding
 unavailable inputs leaves nothing to combine (every relevant input is `available=False`), the derived
@@ -429,6 +458,67 @@ gate, per `FusionRule`, not a duplicate of Recovery's system-wide `degraded_reco
 fire when only this one `FusionRule`'s specific inputs are affected while the rest of the house's
 entities are fine — the two operate at different granularities and are not meant to substitute for
 each other.
+
+### 5.6 A `FusionRule` may consume another `FusionRule`'s output
+
+**Resolved 2026-09-04, developer-requested performance review.** `FactRef` (§5) addresses an input by
+`fact_type`/`Location`, never by producer id — so nothing in `FusionRule` itself distinguishes "this
+input came from a `Sensor`" from "this input came from another `FusionRule`". A `FusionRule` may
+freely list, in `inputs`, a `FactRef` that another `FusionRule`'s own `produces`/`where` matches.
+Concrete motivating case: "zone occupancy" reusing "room occupancy" (itself already a
+`WeightedQuorumStrategy` `FusionRule`) instead of re-deriving from every room's raw sensors again,
+duplicating weights/threshold/stability across every consumer that wants a coarser view.
+
+**Why this is safe for the "decide and act fast" goal, not a regression from the earlier "two waves
+only" position.** `FusionRule` is core-team-authored only (§2.1) — the dependency graph between
+`FusionRule`s is therefore **static and fully known before the engine ever runs a cycle**, not
+something that changes at runtime. This means the two expensive-sounding operations — detecting a
+cycle (a `FusionRule` must never depend on itself, directly or transitively) and computing an
+evaluation order — happen **once, at registration/startup**, via a standard topological sort over the
+`FusionRule` dependency graph (an edge from A to B when A's `produces`/`where` matches one of B's
+`inputs`). A registration that would introduce a cycle is rejected at startup, loudly, never silently
+accepted. Per-cycle, the engine simply evaluates `FusionRule`s in that precomputed order — one wave
+per level of real chaining, not a fixed two. The actual latency cost is therefore proportional to how
+deep the *real* dependency graph gets, which stays small under core-team curation (nobody is
+registering 50 levels of derived aggregates) — the earlier "cap at two waves" position was protecting
+against a cost that a registration-time topological sort already avoids paying per cycle.
+
+**The real performance risk from chaining is not compute time — it's `stability` (§5.2) stacking, and
+it deserves to be understood precisely, not just flagged.** Each additional level of chaining is
+still pure, synchronous computation (§2.2) — microseconds, not a measurable latency concern on its
+own. The actual risk is that **debounce windows accumulate across levels, silently, for whoever
+configures a higher tier without knowing what a lower tier already waited.** Worked through with
+concrete numbers:
+
+- Tier 1 — `room_occupancy` (`FusionRule`, `WeightedQuorumStrategy` over room sensors):
+  `Stability(to_true=None, to_false=Window(seconds=120))`. Occupied is reported instantly; vacant is
+  reported only after the room has read empty for 120s.
+- Tier 2 — `zone_occupancy` (`FusionRule`, `inputs` = several rooms' `room_occupancy` `FactRef`s,
+  `BooleanSetStrategy(mode="any")`): if configured with its *own*
+  `Stability(to_true=None, to_false=Window(seconds=60))`, the intent is "wait 60s before calling the
+  zone vacant." But tier 2 is watching tier 1's **already-debounced** output, not the raw sensors — so
+  the zone doesn't actually go vacant until `room_occupancy` itself commits vacant (120s after the
+  room emptied) *plus* tier 2's own 60s dwell on top of that. **Total: 180s, not 60s** — a number
+  nobody configuring either tier in isolation would arrive at by reading either one's own definition.
+- The instant-on side does **not** compound the same way: if every tier uses `to_true=None`, an
+  "occupied"/"true" transition stays instant no matter how many levels are chained, since a `None`
+  window never waits regardless of what fed it. The stacking risk is specific to the debounced
+  direction — good news for exactly the kind of case (a light that must react immediately) that
+  motivated `Stability` in the first place, but no reason to treat the debounced side as low-stakes:
+  an unexpectedly slow "vacant"/"off" propagation is still a real, user-visible correctness problem
+  (e.g. security arming logic waiting 3 minutes longer than anyone intended to treat a zone as clear).
+
+**Resolved as a documentation/review discipline for now, not a structural restriction** — matching how
+§2.2's I/O contract is handled, not enforced by a runtime check: whoever configures `stability` on a
+`FusionRule` whose `inputs` include another `FusionRule`'s output must account for that input's own
+`stability` when reasoning about end-to-end latency. Two stronger alternatives were considered and
+**not** adopted, left in §8 for later reconsideration rather than decided now: a diagnostic that warns
+when a chain's cumulative `to_false` delay exceeds some threshold (more tooling, no data yet on what
+threshold would be right); restricting non-`None` `stability` to the top-level `FusionRule` in a chain
+only (simpler to reason about, but forecloses debouncing at each semantic level for its own reason —
+e.g. room-level debounce against motion-sensor gaps and zone-level debounce against people moving
+between adjacent rooms are genuinely different timescales, and forcing only one debounce point loses
+that).
 
 ---
 
@@ -482,7 +572,13 @@ one itself, and nothing in Layer 2 reads or writes actuator state beyond this in
   ("derived from combining or analyzing existing data rather than one direct entity read" —
   `FusionRule` qualifies by that property regardless of being same-cycle and deterministic, not by
   being statistical; this was genuinely ambiguous before Layer 0 §5 got per-value definitions,
-  resolved 2026-09-03, `v3_backlog.md`). `source_id` is the `sensor_id`/`fusion_id`.
+  resolved 2026-09-03, `v3_backlog.md`). `source_id` is the `sensor_id`/`fusion_id`, unchanged by a
+  `FusionRule` chaining onto another `FusionRule`'s output (§5.6) — that's still just a fact read by
+  `fact_type`/`Location` like any other input.
+- **Evaluation ordering**: the topological sort that lets a `FusionRule` consume another
+  `FusionRule`'s output (§5.6) is Layer 2's own registration-time mechanism, not something Layer 0's
+  Timing owns — Layer 0's `AtJob`/`CronEntry` schedule *when* a cycle runs, not the *order* in which
+  Layer 2 evaluates its own registrations within one.
 
 Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anything defined here.
 
@@ -508,6 +604,12 @@ Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anythi
   Layer-2-owned ephemeral structure, or grown out of Layer 0's existing short-term in-memory buffer
   (Layer 0 §4.1)? Both are consistent with "ephemeral, not restart-safe"; which one is a mechanical
   choice not made here.
+- **`stability` stacking across chained `FusionRule`s (§5.6) is resolved as a documentation/review
+  discipline for now, not tooled.** Two stronger alternatives were considered and explicitly not
+  adopted: a diagnostic warning when a chain's cumulative debounce delay crosses some threshold (no
+  data yet on what threshold would be meaningful); restricting non-`None` `stability` to only the
+  top-level `FusionRule` in a chain (simpler, but forecloses debouncing at each semantic level for
+  its own distinct reason). Revisit once real chained configurations exist to learn from.
 
 ---
 
@@ -534,11 +636,23 @@ Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anythi
   `True` the same cycle the candidate first appears, and a transition to `False` only after the
   candidate has held for `N` seconds — with a test that flips back to `True` mid-window and verifies
   the pending transition is discarded, never partially applied.
+- Every `RegisteredFormula` registration is reviewed against §2.2's no-blocking-I/O contract before
+  being merged — a checklist item, not an automated test (this cannot generally be verified at
+  runtime).
 - `FormulaStrategy` additions (a new `RegisteredFormula` entry) require no change to `FusionStrategy`
   or to any code that pattern-matches on it, verified by adding a second formula in a test without
   touching the union type.
 - `Actuator`'s `light` role is a valid `actuator_role`, and no reaction's `entity_steps` duplicates a
   raw light `entity_id` outside the registry.
+- Registering a set of `FusionRule`s whose `inputs` form a cycle (directly or transitively through
+  another `FusionRule`'s `produces`) is rejected at registration time, loudly, never accepted and
+  never discovered only at evaluation time.
+- The registration-time topological sort produces a per-cycle evaluation order in which every
+  `FusionRule` runs strictly after every other `FusionRule` whose output it consumes, verified for a
+  chain at least 3 levels deep.
+- A `FusionRule` chained onto another `FusionRule`'s output correctly excludes it from its confidence
+  computation when that input reports `available=False` (§5.5), with no special-casing versus a
+  `Sensor`-produced input.
 
 ---
 
