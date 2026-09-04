@@ -97,20 +97,34 @@ property of the sensor itself. `ExternalContext`'s slots become
 `Sensor(fact_type="external.<slot>", where=Location(scope="casa"))` — the adapters behind them (OWM,
 Protezione Civile) stay ordinary HA integrations exposing ordinary entities, not a Layer 7 concern.
 
-### 3.1 `available` and `value` when the entity is unavailable
+### 3.1 `available` when the entity — or its interpretation — has nothing to report
 
-A `Sensor` is what actually sets `Provenance.available` (Layer 1 §4.1) — this is where "the source
-was unreachable at the moment of observation" is first observed, and it is a concrete, resolved
-rule, not left to each producer's discretion:
+A `Sensor` is what actually sets `Provenance.available` (Layer 1 §4.1) — this is where "there is no
+real observation here" is first decided, and it is a concrete, resolved rule with two distinct
+triggers, not left to each producer's discretion:
 
-- If HA reports the entity as `unavailable`, `unknown`, or the entity does not exist:
-  `available=False`, `value=None`, `confidence=None` (Layer 1 §4.1 — `confidence` is `float | None`
-  specifically so this case has no numeric value to be misread as meaningful; `value=None` is a
-  valid `EvidenceValue`, Layer 1 §3-4, no special-case type needed). The `Interpretation` (§4) is not
-  run at all in this case; there is no raw state to interpret.
-- Otherwise, the `Interpretation` runs and produces `available=True` with a real `value` and
-  `confidence=1.0` (Layer 1 §4.2 — a raw reading is either fully trusted or absent, no in-between
-  without a concrete evidentiary reason).
+- **The entity itself is unreachable**: HA reports `unavailable`, `unknown`, or the entity does not
+  exist. `available=False`, `confidence=None` (Layer 1 §4.1). The `Interpretation` (§4) is not run at
+  all in this case; there is no raw state to interpret. (`value` carries no defined content here —
+  Layer 1 §3 — a producer may leave it at `None`, but nothing downstream may rely on that.)
+- **The entity is reachable, but its `Interpretation` cannot produce an interpretable value from what
+  it read**: `available=False`, `confidence=None`, same as above. This is **not** a property every
+  `Interpretation` has — `BooleanInterpretation`/`BucketInterpretation`/`MediaActivityInterpretation`/
+  `PresenceInterpretation` all decode from a vocabulary HA itself defines and closes (a fixed
+  `media_player`/`device_tracker` state enum, or bucket bounds that cover the entire real line by
+  construction, §4) — once the entity is reachable, they always produce a value, no "can't interpret"
+  case exists for them. `CalendarInterpretation` is the one exception: its vocabulary
+  (`keywords`) is admin-defined and open, so a real event can legitimately match no configured
+  category — and "no current event to classify" is the same case. This is *not* a value in the
+  category-space `keywords` produces (there is no implicit "none" category) — it is the absence of a
+  signal from this `Sensor`, which is exactly what `available=False` exists to mean, not a value to
+  invent. (This is what makes `PrecedenceStrategy`'s `workday_entity` fallback, §5.1, actually work:
+  it falls through to the raw entity specifically because the calendar `Sensor` reports
+  `available=False` here, never because it reports some "none" value `PrecedenceStrategy` would have
+  to special-case.)
+- **Otherwise**: the `Interpretation` produces `available=True` with a real `value` and `confidence=1.0`
+  (Layer 1 §4.2 — a raw reading is either fully trusted or absent, no in-between without a concrete
+  evidentiary reason).
 
 ---
 
@@ -169,8 +183,8 @@ pattern is found, not for a single sensor's convenience.
 **Room occupancy vs. whole-house presence — same `Interpretation`/`FusionRule` shape, independently
 tuned, never a shared timing policy.** Both are `Sensor(fact_type="occupancy"/"presence")` combined
 by a `FusionRule` with `WeightedQuorumStrategy` (§5), but each `FusionRule` instance carries its own
-stability `Window` (Layer 0 §3.2) — room occupancy keeps a fast-on/slow-off default (instant-on,
-debounced-off), whole-house presence can use a more conservative window independently. They run in
+`stability` (§5.2) — room occupancy keeps a fast-on/slow-off default (`Stability(to_true=None,
+to_false=Window(seconds=120))`), whole-house presence can use a more conservative pair independently. They run in
 separate consumers evaluated independently per cycle; reusing the same strategy *type* reuses pure
 logic, not a shared blocking path or a shared timing policy.
 
@@ -193,9 +207,9 @@ class FusionRule:
                                      # members (e.g. room occupancy derived from several
                                      # room-placed sensors, or a casa-scoped fact from several
                                      # room-scoped ones)
-    stability: Window | None = None  # Layer 0 §3.2 — debounce/hysteresis on the *output*, applies
-                                       # uniformly regardless of which strategy produced it; not
-                                       # part of FusionStrategy itself (§5.2)
+    stability: Window | Stability | None = None  # §5.2 — debounce/hysteresis on the *output*,
+                                                   # applies regardless of which strategy produced
+                                                   # it; not part of FusionStrategy itself
 ```
 
 ### 5.1 The five strategies
@@ -271,10 +285,60 @@ not just a stylistic choice between two equally-valid shapes.
 
 ### 5.2 Stability is orthogonal to strategy
 
-Dwell/hysteresis (`FusionRule.stability`, a `Window`) applies to the **output**'s stability over
-time, independent of which strategy produced it — debounce and hysteresis are a property of *any*
-derived fact settling before it's trusted, not specific to one combination method. It composes with
-all five strategies identically; `FusionStrategy` itself carries no timing concept.
+Dwell/hysteresis (`FusionRule.stability`) applies to the **output**'s stability over time,
+independent of which strategy produced it — debounce and hysteresis are a property of *any* derived
+fact settling before it's trusted, not specific to one combination method. It composes with all five
+strategies identically; `FusionStrategy` itself carries no timing concept.
+
+**Asymmetric by default need, not just by option — a single `Window` cannot express "instant on,
+debounced off."** A room's light triggered by presence must turn on the instant presence is
+detected, never after a dwell delay (the room would sit dark for no reason); the same fact should
+often *not* revert to vacant on the first gap in motion, to avoid flicker from an ordinary pause.
+This asymmetry is already real and working in today's code (`on_dwell_s=0`, `off_dwell_s=120s` for
+room occupancy) — a single symmetric `stability: Window` would either delay the light turning on
+(reintroducing exactly the problem it must not have) or drop hysteresis on the off-transition
+entirely. For strategies with a natural true/false polarity (`BooleanSetStrategy`,
+`WeightedQuorumStrategy` used with a boolean threshold):
+
+```python
+@dataclass(frozen=True)
+class Stability:
+    to_true: Window | None = None    # e.g. None — a presence-triggered light turns on instantly
+    to_false: Window | None = None   # e.g. Window(seconds=120) — debounce the off-transition
+```
+
+`FusionRule.stability: Window | Stability | None` — a plain `Window` (or `None`, no dwell at all)
+still covers strategies without a boolean polarity (`FormulaStrategy`'s numeric output settling,
+`DirectStrategy`/`PrecedenceStrategy` passing through a non-boolean value) with symmetric dwell in
+both directions; `Stability` is available specifically where "toward more active" and "toward less
+active" are genuinely different questions. Not generalized further (e.g. per-transition dwell across
+an N-valued bucket label) — no concrete need for that exists today; the same discipline already
+applied to `FusionStrategy`'s own five members, add complexity when a real case demands it, not ahead
+of one.
+
+**The mechanism, concretely — not just "debounce happens," but how.** Every cycle, a `FusionRule`
+computes its raw candidate value from current `Sensor` facts per its strategy, exactly as if
+`stability` were absent. This candidate is compared against the value of the last derived `HouseFact`
+this `FusionRule` actually **committed** (wrote):
+
+- If the candidate matches the last committed value: nothing to do, no new fact (Layer 0's
+  write-on-change policy already covers this).
+- If the candidate differs and no transition is currently pending toward it: start tracking one — a
+  small, **ephemeral, in-memory** `(pending_value, pending_since)` pair, per `FusionRule` instance.
+  Not persisted, not restart-safe, and deliberately so — nothing here carries a safety consequence
+  that would justify surviving a restart (Layer 0 §0's general default: state starts clean unless a
+  concrete reason says otherwise), and a fresh restart correctly begins with a full dwell period
+  before committing anything, consistent with Recovery's own `startup_recovery` caution (Layer 0 §7).
+- If the candidate matches an already-pending transition: check the applicable window (`to_true`,
+  `to_false`, or the plain `stability` `Window`, whichever applies to this transition's direction) —
+  computed live against `pending_since`, the same monotonic-safe elapsed-time discipline as every
+  other `Window` comparison in this architecture (Layer 0 §3.2), never cached as a stored "is it
+  stable yet" flag. If the window has elapsed (or is `None`, meaning no dwell at all — instant),
+  commit: write the new `HouseFact` (`value`/`available`/`confidence` computed fresh at commit time,
+  not stale from when the candidate first appeared), clear the pending state.
+- If the candidate reverts to match the currently-committed value before its pending window elapses:
+  discard the pending transition entirely — this is what makes it real debounce, not just a delay: a
+  brief flicker never commits and never leaves a trace, exactly like today's working dwell logic.
 
 ### 5.3 The formula registry
 
@@ -319,8 +383,8 @@ Layer 1 (§4.2) owns three pure confidence functions and one non-computation opt
 | Strategy | Confidence treatment |
 |---|---|
 | `DirectStrategy` | Inherit — the single source's own `confidence`, unchanged. |
-| `WeightedQuorumStrategy` | `categorical_confidence(winning_weight, total_weight_considered)` — the same-cycle votes *are* the "observations" (Layer 1 §4.2's `total_observations` is deliberately general for exactly this). `total_weight_considered` excludes any `available=False` input entirely (§5.5). |
-| `PrecedenceStrategy` | Inherit — the first definitive (available) source's own `confidence`. |
+| `WeightedQuorumStrategy` | `categorical_confidence(winning_weight, total_weight_considered)` — the same-cycle votes *are* the "observations" (Layer 1 §4.2's `total_observations` is deliberately general for exactly this). `winning_weight` is the weight backing whichever outcome is actually being reported — the weight *for* threshold if it was reached, the remaining weight *against* it if it wasn't (`total_weight_considered - winning_weight` in that case) — never always the "for" side regardless of which way the vote went. `total_weight_considered` excludes any `available=False` input entirely (§5.5). |
+| `PrecedenceStrategy` | Inherit — the first definitive (available) source's own `confidence`; if every `sensor_ids` entry is `available=False`, none wins and the derived fact is itself `available=False` (§5.5), following directly from the strategy's own definition. |
 | `FormulaStrategy` | `continuous_confidence(dispersion, scale, floor)` — always, by construction, since a formula combines multiple continuous inputs into one derived value; `scale`/`floor` come from the formula's own `RegisteredFormula` entry (§5.3). |
 | `BooleanSetStrategy` | `combined_confidence(...)` — see below, the one genuinely new case. |
 
@@ -405,8 +469,14 @@ one itself, and nothing in Layer 2 reads or writes actuator state beyond this in
 - **Confidence functions**: called, never reimplemented (§5.4) — Layer 2's only job is picking which
   Layer-1-owned function applies and supplying its inputs, per the split Layer 1 §4.2 establishes.
 - **Storage/timing**: every produced `HouseFact` goes through Layer 0's Persistence and Timing
-  exactly as any other fact — a `FusionRule`'s `stability` field (§5.2) is a plain `Window`, no
-  Layer-2-specific timing concept exists.
+  exactly as any other fact. `FusionRule.stability` (§5.2) is the one Layer-2-specific addition on
+  top: `Window`/`Stability` themselves are comparison values (`Stability` composed of two
+  `Window`s), reusing Layer 0's own elapsed-time discipline (§3.2) for the actual check — but the
+  pending-transition *tracking* that debounce requires (which candidate is pending, since when) is
+  new here, not something Layer 0's `Window` type provides on its own. Every `Window`-typed field in
+  this document (`BucketInterpretation.burst`, `FusionRule.stability`, `Stability.to_true`/`to_false`)
+  accepts a `LearnedWindow` in its place, per Layer 0 §3.2's general substitution rule — not
+  restated at each field individually.
 - **`FactSource`**: a `Sensor`-produced fact carries `kind="sensor"` — a direct single-entity read.
   A `FusionRule`-produced fact carries `kind="analyzer"`, per Layer 0 §5's now-precise definition
   ("derived from combining or analyzing existing data rather than one direct entity read" —
@@ -434,6 +504,10 @@ Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anythi
 - **Whether `Interpretation`/`FusionStrategy` ever open to third-party registration** (§2.1) — tied to
   the same still-open "no backward compatibility vs. a plugin API" tension already on record for
   Layer 7; not decided here, deliberately out of scope for this document.
+- **Where a `FusionRule`'s pending-transition state (§5.2) actually lives** — a distinct
+  Layer-2-owned ephemeral structure, or grown out of Layer 0's existing short-term in-memory buffer
+  (Layer 0 §4.1)? Both are consistent with "ephemeral, not restart-safe"; which one is a mechanical
+  choice not made here.
 
 ---
 
@@ -441,8 +515,10 @@ Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anythi
 
 - All 9 entity-list mechanisms named in §1 are removed from the codebase, replaced by `Sensor`
   registrations with no residual parallel list left standing.
-- Every `Sensor` sets `available`/`value`/`confidence` exactly per §3.1's rule on an unavailable
-  entity, in a test that forces each of `unavailable`, `unknown`, and a nonexistent entity_id.
+- Every `Sensor` sets `available=False`/`confidence=None` exactly per §3.1's rule, in a test that
+  forces each of an unreachable entity (`unavailable`, `unknown`, nonexistent entity_id) and, for a
+  `CalendarInterpretation` `Sensor` specifically, a reachable entity whose current event matches no
+  configured category.
 - Every `FusionRule` strategy's confidence is computed exactly per the §5.4 table — called through
   Layer 1's pure functions, never reimplemented — verified for all five strategies including both
   outcome branches of `BooleanSetStrategy`.
@@ -454,6 +530,10 @@ Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anythi
   distinct from and in addition to the fully-empty case above.
 - `RegisteredFormula.compute` returning `None`, and a `FusionRule` below a `FormulaStrategy`'s
   `min_inputs`, both produce `available=False` without calling `continuous_confidence`.
+- A `Stability(to_true=None, to_false=Window(seconds=N))` `FusionRule` commits a transition to
+  `True` the same cycle the candidate first appears, and a transition to `False` only after the
+  candidate has held for `N` seconds — with a test that flips back to `True` mid-window and verifies
+  the pending transition is discarded, never partially applied.
 - `FormulaStrategy` additions (a new `RegisteredFormula` entry) require no change to `FusionStrategy`
   or to any code that pattern-matches on it, verified by adding a second formula in a test without
   touching the union type.

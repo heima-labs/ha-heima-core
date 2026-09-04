@@ -2121,3 +2121,63 @@ Also fixed while drafting Layer 2, lower-stakes: the `workday_entity` `Precedenc
 clarified in `layer2_registries_spec.md` §5.1. `RegisteredFormula.compute` (§5.3) gained a `min_inputs`
 field and an escape hatch (`-> tuple[Any, float] | None`) to report "insufficient inputs" instead of
 being forced to always return a value.
+
+---
+
+## Layer 2 critical pass (round 2): a real gap in `available`'s scope, a redundant field dropped, an
+## asymmetric-timing gap found from a concrete product concern (2026-09-04)
+
+A second critical pass on `layer2_registries_spec.md`, developer-requested, checking Layer 2 against
+Layer 0/Layer 1 and against itself. Three findings, each worked through in discussion before editing,
+not applied on the first idea.
+
+**1. `available`'s scope was incomplete, and the document already silently depended on the missing
+part.** §3.1 only covered raw HA entity unavailability. But §5.1's `workday_entity` `PrecedenceStrategy`
+example (added in round 1, same session) already assumed a *second* trigger — the calendar `Sensor`
+producing `available=False` when no `CalendarInterpretation` keyword category matches an event, even
+though the entity itself is fine. Never stated as a rule. Developer proposed the alternative first (a
+default fallback "no event" value) — checked, and rejected on the developer's own reasoning applied
+one step further: a fallback value would make the calendar `Sensor` always `available=True`, so
+`PrecedenceStrategy` (which selects on `available`, not on value content) would never fall through to
+the raw `workday_entity` fallback at all — the very mechanism it exists for stops working. **Resolved**:
+§3.1 rewritten with two explicit triggers (entity unreachable; entity reachable but its
+`Interpretation` can't produce a value) — the second is not a property of every `Interpretation`, only
+`CalendarInterpretation`'s open, admin-defined keyword vocabulary can fail to match; the other four
+decode from closed HA-defined vocabularies and always produce a value once available.
+
+**2. `value=None` alongside `available=False` was redundant, and asymmetric with `confidence=None`
+for a real reason, not by oversight.** Developer noticed §3.1 set `value=None` *and* `available=False`
+together and asked directly: if one implies the other, why two fields? Correct, for `value` — but not
+for `confidence`, and the difference matters: `confidence: float | None` becoming `Optional` was
+motivated by a genuine type-checker benefit (Layer 1 §4.1, round 1) — a narrow type lets static
+analysis force a caller to handle the `None` case. `value: Any` can never get that benefit under any
+convention, since `Any` accepts everything regardless of what sentinel is chosen — so making `value`
+`None` alongside `available=False` bought nothing, it was redundancy without a reason, plus an
+acceptance criterion that only existed to keep two fields in sync for no benefit. **Resolved**: `value`
+has no contractual relationship to `available` (Layer 1 §3) — its content is undefined, not
+necessarily `None`, when `available=False`; only `confidence`'s `None`-pairing with `available` stays
+a real, enforced invariant, for the type-safety reason that doesn't apply to `value`.
+
+**3. A single symmetric `stability: Window` cannot express "instant on, debounced off" — found from a
+concrete product scenario, not abstractly.** Developer: a presence-triggered light must turn on
+instantly, never after a dwell delay (the room would sit dark for no reason), while the same fact
+should often *not* revert on a brief motion gap (avoid flicker). A single `Window` would either delay
+the "on" transition (recreating exactly the dark-room problem) or drop debounce on "off" entirely — and
+this asymmetry is already real, working code today (`on_dwell_s=0`/`off_dwell_s=120s` for room
+occupancy), so losing it would be a regression, not a simplification. **Resolved**: added
+`Stability(to_true: Window | None, to_false: Window | None)` for strategies with boolean polarity
+(`BooleanSetStrategy`, `WeightedQuorumStrategy` used with a threshold); `FusionRule.stability: Window |
+Stability | None` — plain `Window` still covers non-boolean strategies (`FormulaStrategy`) with
+symmetric dwell. Not generalized further (e.g. per-transition dwell across N-valued bucket labels) —
+no concrete need for that exists, same "add complexity only when a real case demands it" discipline as
+`FusionStrategy`'s own five members. This also forced specifying the actual debounce **mechanism**
+(§5.2), never previously written down: a `FusionRule` tracks an ephemeral, in-memory, per-instance
+pending-transition (`pending_value`, `pending_since`), not persisted (no restart-safety reason exists
+for it, matching Layer 0's general "starts clean" default) — committing only once the applicable
+window has elapsed, checked live per Layer 0's own elapsed-time discipline, discarded entirely if the
+candidate reverts before then. Two Layer 0 consistency fixes made in passing while writing this: every
+`Window`-typed field in Layer 2 now explicitly accepts a `LearnedWindow` substitute (Layer 0 §3.2's
+existing general rule, previously unhonored in Layer 2's own type annotations), and §7's claim that
+`stability` was "a plain `Window`, no Layer-2-specific timing concept" was corrected — the
+pending-transition tracking mechanism itself *is* new here, `Window`/`Stability` are only the
+comparison values it's built from.

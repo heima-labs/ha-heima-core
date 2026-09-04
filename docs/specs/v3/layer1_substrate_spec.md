@@ -106,6 +106,17 @@ discipline already applied to `Location` (§5) — not something the `Any` annot
 Same nesting-depth and size limits as `evidence` apply, for consistency, not because the two fields
 are interchangeable.
 
+**`value` has no contractual relationship to `available` (§4.1) — considered and rejected.** An
+earlier draft required `value=None` whenever `available=False`, mirroring `confidence`'s own
+`None`-when-unavailable rule. Dropped: `available: bool` is already the sole, sufficient signal for
+"is there a real observation here" — requiring `value` to *also* encode that fact is pure redundancy,
+two fields that must be kept in sync for no benefit (unlike `confidence`, see §4.1, where making the
+field itself `Optional` buys real protection from a type-checker; `value: Any` cannot buy that
+protection under any convention, `Any` accepts everything regardless). `value`'s content is simply
+**undefined** when `available=False` — a producer may leave it at `None` out of habit, or at a stale
+prior value, or anything else; it carries no meaning either way, and no consumer may read `value`
+without checking `available` first, full stop.
+
 **Naming convention for `fact_type`**: dot-separated, namespaced, stable identifiers — `house_state`,
 `occupancy`, `room_signal.bucket`, `activity.pattern`, `heating.temperature_rate`,
 `manual_hold.<domain>` (Layer 0 §6), `external.<slot>`. This reuses the same convention Heima's
@@ -171,12 +182,16 @@ that is correctly static and correctly stored once.
 **`confidence` is `None` exactly when `available=False`, never a numeric placeholder.** An earlier
 draft of this section used `0.0` for this case — rejected: `0.0` is a legitimate, meaningful point
 inside the real `0.0`-`1.0` range, so a consumer that forgets to check `available` first would read a
-plausible-looking "very low confidence" instead of an unmistakable "not applicable." `None` mirrors
-`value`'s own use of the same sentinel (`EvidenceValue` already includes `None`, §3) and, unlike a
-magic number, lets a type-checker flag a producer or consumer that touches `confidence` without
-narrowing `available` first — a mistake stays *visible*, not silently plausible. Every producer must
-set `available=False` and `confidence=None` together, never `available=False` with a numeric
-`confidence`, and never `available=True` with `confidence=None`.
+plausible-looking "very low confidence" instead of an unmistakable "not applicable." Unlike a magic
+number, `float | None` lets a type-checker flag a producer or consumer that touches `confidence`
+without narrowing `available` first — a mistake stays *visible*, not silently plausible. This is a
+real, independent benefit specific to `confidence`'s own narrow type, not shared by every field that
+happens to correlate with `available` — `value` (§3) correlates with `available` exactly the same
+way but gets no such benefit from being made `Optional`, because `value: Any` accepts anything either
+way and a type-checker can't narrow `Any` into meaning anything; `value` is deliberately left with no
+`None` requirement for that reason, not by oversight. Every producer must set `available=False` and
+`confidence=None` together, never `available=False` with a numeric `confidence`, and never
+`available=True` with `confidence=None`.
 
 ### 4.2 `confidence`
 
