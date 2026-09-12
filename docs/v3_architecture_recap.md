@@ -8,8 +8,8 @@ itself should be enough to understand the system on its own.
 
 Out of scope, explicitly: `chi` (per-person learning — Heima learns at the household level, not per
 resident), push-model plugins (third-party extensions are pulled by the core, never push data in on
-their own), migration planning (how an existing install moves to this model is a separate, later
-concern).
+their own). V3 uses a deliberate clean-start cutover: it does not migrate V2 configuration, history,
+runtime state, or learning; a V2 export can exist only outside V3 as rollback/reference material.
 
 ```
 Layer 8  Admin / config surface        config_flow forms + admin panel (registries + actions)
@@ -23,9 +23,12 @@ Layer 1  Substrate primitive           HouseFact: WHAT/WHERE/WHEN/HOW, Location/
 Layer 0  Cross-cutting runtime         Timing, Persistence, FactSource/ApplyStepSource, holds, recovery
 ```
 
-Layers 0-1 are what everything else is built *from*. Layers 2-5 are what the engine *does* each
-cycle. Layers 6-8 are how a human (or another program) *sees and steers* it. Layer numbering is
-current as of this revision; it is not load-bearing outside this document.
+Layers 0-1 are one foundation slice, with distinct ownership and a bounded reciprocal dependency on
+immutable contracts: Layer 0 owns runtime mechanisms and `FactSource`; Layer 1 owns `HouseFact`,
+`Provenance`, and spatial value objects. Neither invokes the other's behavior in a cycle. Layers 2-5
+are what the engine *does* each cycle. Layers 6-8 are how a human (or another program) *sees and
+steers* it. Layer numbering is current as of this revision; it is not load-bearing outside this
+document.
 
 ---
 
@@ -64,24 +67,36 @@ changing mid-cycle, and nothing here depends on any domain.
 
 - **Timing**: one execution primitive, an "at" job — a scheduled one-shot deadline. A "cron" policy
   layer sits on top of it: a `RecurrencePattern` computes the next due time and re-arms an "at" job
-  each time it fires. This is also how every recurring or periodic thing in the system works — an
-  admin-authored scheduled routine, a periodic safety-net re-evaluation — each is a `CronEntry`
-  owned by whichever subsystem needs it, not a separate bespoke timer mechanism per feature.
+  each time it fires. This is how every **Heima-owned** recurring or periodic job works — a periodic
+  safety-net re-evaluation, for example — each is a `CronEntry` owned by whichever subsystem needs it,
+  not a separate bespoke timer mechanism per feature. Admin-authored recurrence instead belongs to an
+  HA `schedule.*` helper; Heima consumes only its effective state as an ordinary sensor fact and never
+  duplicates HA's schedule picker or timezone/DST logic.
   `Window` (a bounded time span) is a separate, non-executing comparison type used for dwell timers
   and correlation/follow-up matching — "has this been true for at least N seconds," "did Y happen
   within N seconds of X." `LearnedWindow` is a `Window` that starts from a seed value and calibrates
   itself from observed `HouseFact` history over time, usable anywhere a plain `Window` is used, not
   a feature bolted onto one specific reaction. `CalendarWindow` extends the same "something at
   instant T" idea to an externally-sourced, named interval with an absolute start/end (a vacation,
-  a holiday, a work day) instead of a relative or recurring one — calendar awareness is Timing
-  infrastructure, evaluated before the core DAG runs each cycle, not a domain or a plugin.
+  a holiday, a work day) instead of a relative or recurring one. Layer 0 exposes both active windows
+  for current facts and complete future windows within a consumer-declared horizon for predictive work
+  such as notifying today about tomorrow's event; calendar awareness is Timing infrastructure,
+  evaluated before the core DAG runs each cycle, not a domain or a plugin.
+  Duration and civil-time values are validated at configuration staging or dynamic job registration,
+  never repaired or rechecked per cycle.
   → `v3_house_fact_draft.md` §WHEN.
 - **Persistence**: `HouseFact` storage is **always atomic** — one fact per WHAT/WHERE/WHEN/HOW,
   never a bundled record. It has two tiers: a durable long-term store (for learning and audit) and
   a short-term in-memory buffer (for correlation/follow-up matching within a bounded recent window),
   because those two needs have genuinely different cost profiles — the fast path can never wait on
-  disk I/O. A "snapshot" (everything true at one instant, or in one place, over one window) is never
-  its own stored shape; it's a query reconstructed at read time.
+  disk I/O. A producer declares each fact family as `state` or `event` at composition: state facts use
+  canonical identity and write-on-change; unchanged state observations append nowhere, while every
+  distinct state transition is retained in deterministic internal append order and latest-state lookup
+  remains O(1). Events append every occurrence and are never current state.
+  The same bootstrap pass reserves fact-type ownership across layers, preventing a registry producer
+  from colliding with a Layer-0-owned family such as manual holds. A "snapshot" (everything true at
+  one instant, or in one place, over one window) is never its own stored shape; it's a query
+  reconstructed at read time.
   → `v3_backlog.md` §`HouseFact` persistence model.
 - **`FactSource` / `ApplyStepSource`**: one structured-provenance vocabulary spanning both facts and
   actions — every `HouseFact` and every `ApplyStep` carries a `kind` (sensor, analyzer, third-party
@@ -93,9 +108,22 @@ changing mid-cycle, and nothing here depends on any domain.
   produced them.
   → `v3_backlog.md` §Observability, re-grounded.
 - **Manual Hold Manager**: a manual hold — a resident's explicit override that suppresses some
-  automated behavior in some functional domain — is represented as a `HouseFact`
-  (`fact_type: "manual_hold.<domain>"`, scoped by `Location`, sourced with
-  `FactSource(kind="resident_response", actor_type="resident")`), with its expiry handled by
+  automated behavior in some functional domain — has a state `HouseFact`
+  (`fact_type: "manual_hold.<domain>"`, scoped by `Location`, with an immutable `hold_id`,
+  `active`, `kind`, and optional pinned state) plus one audit `HouseFact` per transition
+  (`fact_type: "manual_hold.<domain>.lifecycle"`: activated, cleared, expired, replaced, restored,
+  or restoration discarded). State facts alone answer live-state queries; lifecycle facts make every
+  decision auditable. Their `FactSource` is deterministic and complete: a resident-attributed helper
+  entity edge, domain inference, admin command, timeout, or Recovery as appropriate. The same helper
+  accepts an admin-attributed activation or clear as `admin_command`; automation, service, and
+  unattributable edges are rejected rather than misreported as resident action.
+- **Operational events**: `HeimaEvent` is a transient notification envelope, never a second audit
+  store. Each event maps to one append-only `HouseFact`: its type becomes `fact_type`; a structured
+  value retains the notification key, severity, rendered title/message, and JSON-compatible context;
+  its `Location` and correlation id remain mandatory. Notification deduplication/rate limiting uses
+  the key at delivery time without deleting or coalescing historical event facts. The transient
+  delivery id is neither fact identity nor a durable parallel field.
+  An implicit hold's expiry is handled by
   `Window`/`AtJob` instead of a bespoke timer. A hold's functional `domain` (which behavior is being
   suppressed — lighting, heating, security...) is a separate, orthogonal field from `Location`
   (where), not folded into it.
@@ -106,11 +134,33 @@ changing mid-cycle, and nothing here depends on any domain.
   with the resident unaware it's still blocking a security-relevant behavior. Same `HouseFact`
   shape, two deliberately different read paths: one for history, one for live state, with different
   restart guarantees.
+  **Power recovery is baseline-plus-recalculation, not command replay.** For an actuator explicitly
+  configured to participate, Heima coalesces its last accepted desired target into the checkpoint;
+  after a confirmed outage it combines that baseline with current facts, time, safety, and manual
+  holds before calculating one final delta. Thus unchanged conditions restore the house's prior
+  desired state, while elapsed time can correctly change it. The coalesced snapshot deliberately has
+  no synchronous per-target flush; a target not yet committed at power loss may be absent or older.
+  `FactRef.previous_cycle` is likewise performance-bounded: it reads a small snapshot sealed in memory
+  after the preceding evaluation, never disk. A clean shutdown lets Layer 0 pre-hydrate that snapshot
+  before the next DAG; an unclean restart starts this input unavailable for one cycle rather than
+  pretending an older durable record is the immediate predecessor.
+  Manual-hold transitions have the opposite durability profile: a small, `fsync`-backed journal makes
+  their state/lifecycle facts and restart checkpoint idempotently crash-consistent. If the medium is
+  unavailable, the hold remains live for safety but is explicitly `durability_pending`, never quietly
+  represented as durable.
+  Registry reload is an immutable, atomically swapped configuration generation. Staging computes and
+  compares per-producer execution-semantic fingerprints only once, outside the hot path: any changed,
+  added, removed, relocated, Zone-affected, or formula-version-affected producer and every
+  current-cycle Fusion dependent enter the direct/transitive impact set. Their dwell and prior-cycle
+  memory reset and retained facts receive a new semantic configuration fingerprint; display-only
+  metadata leaves unrelated runtime state intact.
   Two kinds of hold, not one, with different restart behavior: an **explicit** hold (helper-entity
-  backed) is already restart-safe for free, re-read live from Home Assistant every cycle, no Heima
-  mechanism involved. An **implicit** hold (inferred from an unexpected state divergence) follows
+  backed) is re-read live from Home Assistant every cycle. A narrow checkpoint mapping preserves its
+  immutable `hold_id` and pinned state across a restart, but can never override an inactive helper;
+  a missing mapping produces a newly observed Recovery activation rather than a fabricated historic
+  identity. An **implicit** hold (inferred from an unexpected state divergence) follows
   the default above — with one narrow, opt-in, never-silent exception: an installer may mark a
-  specific actuator/sensor class eligible for conditional restoration after a *clean* restart (no
+  specific `Actuator` record eligible for conditional restoration after a *clean* restart (no
   power-restore ambiguity for that entity, current state still coherent with what triggered the
   hold); every such restoration is itself recorded as a `HouseFact` that reaches the resident
   through notification, never quietly. Resolved 2026-09-02, amending this rule's original
@@ -165,37 +215,91 @@ changing mid-cycle, and nothing here depends on any domain.
 
 ## Layer 2 — Registries (who produces / consumes facts)
 
-- **`Sensor`**: `entity_id` + `where: Location` + `fact_type` + an `Interpretation`. Every Home
-  Assistant entity Heima cares about is registered exactly once, here — one registry, not several
-  independently-configured entity lists for different purposes. An `Interpretation` is how a raw HA
-  entity state becomes a typed `HouseFact` value: a boolean vocabulary (with an additive list of
-  extra "on" states, so a new device's quirky state name doesn't need special-casing elsewhere), a
-  bucket vocabulary (ordered thresholds, e.g. dark/dim/bright, with an optional "sudden jump"
-  detector), a media-activity vocabulary, a presence vocabulary, a calendar-category vocabulary
-  (keyword matching with a priority order for conflicts), or a plain categorical vocabulary (the raw
-  state already *is* the target category — nothing to decode, just relabel).
-- **`FusionRule`**: how N `Sensor` facts become one derived `HouseFact` — a genuinely separate
-  concept from `Sensor`, not folded into it, because not every sensor needs fusing (a
-  context-recording sensor can stand alone) and not every fusion has just one shape. `FusionStrategy`
-  is a **closed union of five kinds**, not an open-ended registry (resolved 2026-09-02, AR-4
-  follow-up — an earlier version of this recap described the strategies as living in "an extensible
-  registry," which turned out to conflict with the actual drafted type; the closed union preserves
-  exhaustive pattern-matching, which the project favors consistently elsewhere in this model):
-  direct passthrough (relabel one fact under a new `fact_type`/`Location`, unchanged), boolean-set
-  (any/all), weighted quorum (also covers a plain count threshold — every weight equal to 1),
-  precedence (an ordered fallback chain: try each source in order, first definitive value wins), and
+- **`Sensor`**: `binding: ReadBinding` + `where: Location` + `fact_type` + an `Interpretation`
+  (resolved 2026-09-08, Layer 2 §3.1). Every Home Assistant **readable signal path** Heima cares
+  about is registered exactly once, here — one registry, not several independently-configured entity
+  lists for different purposes. A signal path is more precise than an entity id: the same HA entity can
+  legitimately produce several `Sensor`s through distinct bindings (e.g. `climate.*` state,
+  `current_temperature`, `hvac_action`) while the producer uniqueness invariant stays
+  `(fact_type, Location)`, not "one sensor per entity." A `ReadBinding` only extracts the raw input for
+  the current cycle (`state`, one attribute, or Layer-0-extracted active calendar windows); an
+  `Interpretation` is how that raw input becomes a typed `HouseFact` value, one per genuinely distinct
+  decoding mechanism, not one per HA domain (resolved 2026-09-05, collapsing three hardcoded-vocabulary
+  variants — boolean/presence/media-activity — into one): an exact-match mapping (a configurable
+  raw-string-to-value table plus a default for anything outside it — a `default` value makes it total,
+  e.g. boolean on/off; `default=NO_DEFAULT` makes an unmapped state mean "no signal," e.g. a lock or
+  alarm vocabulary that only speaks for the states it knows; `default=None` is a real produced value,
+  not the sentinel), strict finite numeric normalization to a `float`, a bucket vocabulary (ordered
+  numeric thresholds, e.g. dark/dim/bright), or calendar-window aggregation composed with the reusable
+  pure `KeywordClassifier` (fuzzy keyword matching with a priority order for conflicts, open-ended by
+  nature since admins define the keywords).
+- **`FusionRule`**: how N facts become one derived `HouseFact` — inputs may come from `Sensor`s, or
+  (resolved 2026-09-04) from another `FusionRule`'s own output, addressed uniformly by
+  `fact_type`/`Location` rather than by producer id. A genuinely separate concept from `Sensor`, not
+  folded into it, because not every sensor needs fusing (a context-recording sensor can stand alone)
+  and not every fusion has just one shape. `FusionStrategy` is a **closed union of five kinds**, not
+  an open-ended registry (resolved 2026-09-02, AR-4 follow-up — an earlier version of this recap
+  described the strategies as living in "an extensible registry," which turned out to conflict with
+  the actual drafted type; the closed union preserves exhaustive pattern-matching, which the project
+  favors consistently elsewhere in this model): direct passthrough (relabel one fact under a new
+  `fact_type` — always exactly one input, `Location` unchanged; resolved 2026-09-05, no real use case
+  survived for changing location during a passthrough), unanimity (true only if every currently-
+  available input agrees — resolved 2026-09-08, renamed and narrowed from a `BooleanSetStrategy`
+  with an any/all mode: "any" was a pure redundancy with weighted quorum at weight=1/threshold=1.0,
+  since "at least one" never needs its bar to scale with population size; "all" survives as its own
+  strategy because unanimity's boolean-`True` bar must scale with how many inputs are actually available each cycle,
+  which a fixed weighted-quorum threshold cannot express), weighted quorum (also covers a plain count
+  threshold — every weight equal to 1 — and, resolved 2026-09-07, deliberately never folds in each
+  input's own confidence/reliability, only its configured weight, since weight already is that lever
+  and a second one would risk contradicting it), precedence (an ordered fallback chain: try each
+  source in order, first definitive value wins — the one strategy allowed to mix source locations
+  freely, since a fallback may legitimately be coarser or differently-scoped than what it
+  approximates), and
   a fifth, deliberately narrow `FormulaStrategy` for cases where the combination is a genuine
   calculation rather than a generic pattern (e.g. combining temperature, wind, and humidity into one
   effective value, or Heating's Season derivation) — this one variant carries no calculation logic
   itself, only a reference into a separate, core-team-curated formula registry (mirroring
   `NormalizationFusionRegistry`'s existing plugin pattern), so a new formula never requires reopening
-  `FusionStrategy` or any code that pattern-matches on it. A `FusionRule`'s output can carry its own
+  `FusionStrategy` or any code that pattern-matches on it. Each registered formula explicitly declares
+  whether confidence is continuous (value plus dispersion), categorical (value plus support/total),
+  or inherited from one declared available input; it receives the complete ordered input sequence,
+  including unavailable facts, so it can distinguish missing from negative evidence without I/O or
+  hidden state. `occupancy.weighted_evidence` additionally receives a typed per-input binding of
+  role, true/false weights, and vacancy requirement, so new sensor kinds alter configuration rather
+  than formula code. A formula configuration is persisted as bounded canonical JSON and compiled once
+  during generation staging into that formula's private immutable type; the evaluator never parses it.
+  The formula catalog is core-built and frozen before cycles; its immutable id and semantic
+  implementation version are persisted with each resolved binding, while callables are not.
+  A changed version selectively invalidates only dependent fusion rules. No formula is assumed
+  continuous merely because it calculates something. `Stability` commits a no-dwell transition in the
+  same cycle, while a positive dwell owns one token-checked deadline that re-evaluates current
+  in-memory inputs at expiry rather than polling or committing an old candidate. It can additionally
+  retain a committed boolean result for an explicitly bounded unavailable grace, armed by one deadline
+  and never restored after restart; it cancels, rather than completes, an interrupted directional
+  dwell. A
+  `FusionRule`'s output can carry its own
   stability/dwell `Window`, independent of which strategy produced it — debounce and hysteresis are a
   property of *any* derived fact's stability over time, not specific to one combination method.
+  Each fusion owns its compact ephemeral control state, while Layer 0 supplies only deadline jobs and
+  historical fact buffering; this keeps control lookups O(1) and avoids treating runtime state as
+  history.
+  Resolved 2026-09-12: only a `FormulaStrategy`, after its core binding validator has explicitly
+  allowed it, can address its exact own *previous*-cycle value (`FactRef.previous_cycle=True`). This
+  narrow self-memory makes a recursive/temporal computation (a Bayesian filter using its own last
+  posterior as this cycle's prior, an exponential moving average) expressible without a sixth strategy
+  or breaking `compute`'s pure signature. The memory arrives as an ordinary `HouseFact` input from
+  Layer 0's sealed in-memory snapshot; only after a clean restart is that snapshot pre-hydrated from
+  the matching committed durable state.
 - **`Actuator`**: an inventory fact only — which entity, where, optionally which physical opening it
-  operates, optionally which coarse role it plays (light, shutter, HVAC unit, water valve...) —
-  never a command itself. Commands live only in whichever Reaction decides to send them.
-  → `v3_sensors_actuators_draft.md`.
+  operates, optionally which coarse role it plays (light, shutter, HVAC unit, water valve, switch...
+  — deliberately an open string, never a closed enum, since HA's own device domains keep growing),
+  and (resolved 2026-09-06, restoring a dropped Layer 0 decision) whether it's eligible for implicit
+  manual-hold restoration after a restart — never a command itself. One HA command endpoint has one
+  Actuator record; an optional opening must belong to its room, while lights and other ordinary room
+  equipment have no opening relation. Commands live only in whichever
+  Reaction decides to send them. → `docs/specs/v3/layer2_registries_spec.md`; the older
+  `v3_sensors_actuators_draft.md` remains background only and no longer reflects the current `Sensor`
+  shape.
 
 ---
 
@@ -204,6 +308,12 @@ changing mid-cycle, and nothing here depends on any domain.
 Mines the history Layer 2 produces; it is not itself a fact producer in the live, per-cycle sense
 Layer 2 is — it runs on its own slow cycle (on the order of hours), reading accumulated `HouseFact`
 history rather than the current cycle's live entity states.
+
+Learning requests a retention duration from Layer 0, but that request is not allowed to defeat the
+50,000-record per-`fact_type` hard ceiling or the 512 MiB global pruning watermark. Each history read
+carries retention coverage; a pruned requested window keeps the learner in warm-up/degraded mode rather
+than letting it infer from a silently shortened sample. Latest state records remain protected even
+under global storage pressure.
 
 **Disambiguation from Layer 2's `FusionRule`** — same surface shape ("combine multiple facts into
 one"), genuinely different job. `FusionRule` combines *current* facts, same cycle, synchronous
@@ -287,10 +397,12 @@ every cycle before Domains even consume them, so anyone reading them afterward �
 its own output, or a Reaction reading a fine-grained detail like a room's current lux bucket — sees
 the current cycle's value.
 
-- **Reactions** produce `ApplyStep`s, each carrying an `ApplyStepSource` (Layer 0's provenance
-  vocabulary). A `ReactionProposal` is a `HouseFact` plus `Provenance`, wrapped with a review status
-  (pending/accepted/rejected) and an identity/fingerprint for deduplication — not a separate, bespoke
-  shape.
+- **Reactions** produce ordered `ApplyStep`s, each carrying an `ApplyStepSource` (Layer 0's provenance
+  vocabulary) and addressing exactly one Layer-2 `Actuator` by id. The runtime alone resolves the HA
+  endpoint; a step cannot override it with a target selector, while HA remains the source of truth for
+  the service schema and supported operation. A `ReactionProposal` is a `HouseFact` plus `Provenance`,
+  wrapped with a review status (pending/accepted/rejected) and an identity/fingerprint for deduplication
+  — not a separate, bespoke shape.
 - **Template-driven auto-proposals**: an admin-authored automation template can declare what it
   needs — some `Sensor` fact types, some `Actuator` roles, optionally a topology requirement (e.g.
   "needs an opening to the outside"). A generic matcher scans every `Location` against every
@@ -396,11 +508,9 @@ explainability system built on top.
 5. Whether Reactions configuration moves fully into the admin panel (Layer 8).
 6. The "no backward compatibility" project rule vs. a public plugin API (Layer 7) — needs a
    conscious amendment, not a silent exception.
-7. How an existing, already-running install migrates from its current configuration to this model —
-   deliberately deferred, not forgotten.
-8. A namespacing convention for third-party-registered identifiers
+7. A namespacing convention for third-party-registered identifiers
    (`"plugin.<plugin_id>.<name>"`) — not yet enforced anywhere, needed before Layer 7 ships to avoid
    cross-plugin collisions. Covers `fact_type`, `proposal_type`, and `reaction_type` alike.
-9. ~~Domain-specific redesign work...~~ Resolved 2026-09-02 — promoted to `v3_domains_draft.md`
+8. ~~Domain-specific redesign work...~~ Resolved 2026-09-02 — promoted to `v3_domains_draft.md`
    (Lighting's `PrecedenceRelation`, Heating's reconciled `HeatingBranch` and thermal model,
    Security's `SequentialConfirmationPolicy`).

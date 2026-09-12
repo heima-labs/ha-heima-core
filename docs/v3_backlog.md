@@ -1579,7 +1579,8 @@ gaps, not a vague "needs more polish":
   `FusionRule` output, with `heating_preference` itself rebuilt as a `PatternLearnerConfig` instead
   of a bespoke analyzer. `SequentialConfirmationPolicy` for Security's optional upgrade, composed
   from `Window`+`Importance` alone.
-- **SR-3** — resolved 2026-09-02. Simplified by `CLAUDE.md`'s own "no backward compatibility, sole
+- **SR-3** — resolved 2026-09-02. **Superseded by the clean-start decision of 2026-09-10 below.**
+  Simplified by `CLAUDE.md`'s own "no backward compatibility, sole
   user of the project" stance — there's exactly one real install to migrate, no generic tool needed
   for unknown configs.
   - **Config migration**: a one-time, throwaway script (not a maintained compatibility layer) that
@@ -2227,3 +2228,1587 @@ treat a zone as clear), not a low-stakes one. Resolved as a documented review di
 `stability` to only the top-level `FusionRule` in a chain) considered and deliberately left for later,
 recorded in §8, not adopted without data on what a chained configuration actually looks like in
 practice.
+
+---
+
+## Final critical re-read of Layer 2, round 3 (2026-09-05)
+
+Developer asked for one more adversarial pass over `layer2_registries_spec.md` before starting Layer
+3, specifically hunting for problems, duplications, and rough edges rather than confirming the
+already-settled design. Seven findings isolated; discussed one by one, in order.
+
+**1. No registration-time uniqueness invariant for `(fact_type, Location)` → producer.** `FactRef`
+addressing ("the current `HouseFact` for this `fact_type` at this `Location`") and §5.6's topological
+sort (an edge from A to B when A's `produces`/`where` matches one of B's `inputs`) both silently
+assume exactly one producer per `(fact_type, Location)` pair — nothing enforced it. **Resolved,
+implemented**: new §2.3 — a `Sensor` or `FusionRule` registration that collides with an existing one
+on the same `(fact_type, Location)` is rejected loudly at registration, never accepted, same
+discipline as §5.6's cycle rejection; §5.6 itself now cross-references §2.3 as what makes its edge
+construction well-defined. Two new acceptance criteria added (§9).
+
+**2. `WeightedQuorumStrategy.weights: dict[FactRef, float]` duplicated `FusionRule.inputs: tuple[FactRef,
+...]`** — two parallel structures with no stated rule for divergence, and the only one of the five
+strategies not relying solely on `FusionRule.inputs` for its membership. **Resolved, implemented**:
+`FusionRule.inputs` stays the single source of truth for every strategy, no exception; `weights` is now
+documented as a sparse override dict (only entries that need a non-default weight), and a key in
+`weights` absent from `inputs` is a registration-time error, same discipline as finding 1. One new
+acceptance criterion added (§9).
+
+**3. §3.1 justified "these 4 Interpretations always produce a value" by assuming HA's vocabulary for
+those domains is closed — an assumption about an external system, not a property Heima's own code
+enforces.** Cross-checked against the real historical sleep-normalizer bug
+([[project_sleep_normalizer_bug]]): `boolean_signal()` silently mistreated `"Charging"`/`"Full"` as
+"off" instead of failing loudly — proof the actual existing behavior for boolean-style sensors is
+already "unrecognized state → catch-all default," not "vocabulary is closed by HA," and that leaving
+this implicit already caused one real bug. Developer's own follow-up went further: `BooleanInterpretation`,
+`PresenceInterpretation`, and `MediaActivityInterpretation` are not three mechanisms — they are the
+same exact-match-lookup mechanism applied to three separately hardcoded vocabularies, one of which
+(media) the developer specifically flagged as not wanting hardcoded any longer.
+
+**Resolved, implemented this session**: the three collapse into one `MappingInterpretation(mapping:
+dict[str, EvidenceValue], default: EvidenceValue | None = None)`. `default=<value>` is how today's
+boolean/presence/media-activity "always available" behavior is now expressed *explicitly*, as a
+declared property of the registration, instead of assumed from a hardcoded vocabulary;
+`default=None` is how a producer declares "I only speak for these specific states" — the same
+mechanism `CalendarInterpretation`'s open-vocabulary "no match" already used, now generalized instead
+of being `CalendarInterpretation`'s unique special case. `Interpretation` shrinks from five members to
+three, organized by decoding **mechanism** (exact-match lookup / numeric range / fuzzy keyword scan)
+rather than by HA domain — and extends for free to any future closed-discrete-vocabulary HA domain
+(lock, alarm panel, vacuum, `climate.hvac_action`...) without ever reopening the union for that
+pattern again. Applied to `layer2_registries_spec.md` (§4 definition and prose, §3.1's
+available/interpretable rule rewritten per-mechanism instead of per-type, §9 acceptance criteria
+extended to test both `default` branches distinctly), `v3_sensors_actuators_draft.md`, and
+`v3_architecture_recap.md`'s Layer 2 summary. `v3_backlog.md`'s own historical entries referencing the
+old three-variant names (the `PresenceInterpretation` grounding pass, 2026-08-31) are left as-is,
+append-only.
+
+**4. `Sensor.unit`'s drift-diagnostic had no defined consumer/mechanism** — the field's purpose was
+stated but nobody checks it, when, or what happens on a mismatch. **Resolved, implemented**: new §3.2
+— checked at the same point an `Interpretation` already reads the entity's raw state (the live unit is
+already in hand there, so this costs nothing beyond what decoding needs anyway, §2.2 unaffected); a
+mismatch raises a Layer-0-§9-style diagnostic event, never touching `available`/`confidence`/`value`
+for that cycle — a stale unit is a configuration problem for a human, not a data-quality judgment on
+this reading. One new acceptance criterion added (§9).
+
+**5. Retracted on re-examination — not a real duplication.** The initial pass flagged the "instant-on
+light" example and the "core-team-authored only" governance point as each restated three times. Rereading
+every occurrence in full context showed this doesn't hold: the "instant-on" narrative (with its
+motivating reasoning) appears exactly once (§5.2); the other two mentions are a one-line dataclass
+comment and a numeric restatement inside a different worked example (§5.6), not a re-narration.
+"Core-team-authored" similarly appears once as the original definition (§2.1) and once to justify a
+different point (the formula registry's governance, §5.3); the §5.6 mention is a literal
+cross-reference with a section number, not a restatement. No edit made — the original flag was too
+hasty, not verified against the actual text before being raised.
+
+**6. No relationship stated between `FusionRule.where` (destination) and its `inputs`' own locations
+(sources) — and the naive fix ("destination must be coarser than or equal to every source") turns out
+to be actively wrong for one strategy, not just unstated.** Concrete counter-example found while
+discussing this: a `PrecedenceStrategy` computing "effective bedroom temperature," preferring a
+dedicated room TRV but falling back to a whole-house outdoor reading
+(`where=Location(scope="casa")`) — here the derived fact's destination (`room="bedroom"`) is *finer*
+than one of its sources (`casa`), the opposite of "coarser or equal." A single universal rule would
+have rejected this legitimate case. **Resolved, implemented** by separating **source location**
+(`FactRef.where`, per input) from **destination location** (`FusionRule.where`) and working out the
+relationship per strategy, new §5.7: `DirectStrategy` (exactly one input, a registration-time arity
+check that was previously only implied in prose — destination must equal that one input's location,
+and the strategy's own comment claiming it could relabel "a new fact_type/**Location**" was corrected,
+since no real use case for that surfaced); `BooleanSetStrategy`/`WeightedQuorumStrategy`/`FormulaStrategy`
+(destination must equal or be coarser than the join of every source, checked via `Zone.room_ids`
+membership — these three combine every input simultaneously into one value, so the result can never
+be about something finer than any one source); `PrecedenceStrategy` (deliberately exempt — the
+bedroom/casa fallback is exactly its intended use, not an edge case to guard against). Four new
+acceptance criteria added (§9).
+
+**7. Layer 1 §4.2's escape hatch for a raw `Sensor` reporting `confidence != 1.0` "with a concrete
+evidentiary reason" turned out to already be quoted in Layer 2 §3.1 — the actual gap was that Layer 2
+gave `Sensor` no mechanism to ever exercise it, so in practice every available `Sensor` fact reported
+exactly `confidence=1.0`, making the field's `float` type misleading for this entire producer class:
+a value that can only ever be `1.0` or `None` is a boolean wearing a float's clothes.** Developer
+pushed back hard on the first proposed fix (formally closing the escape hatch, `confidence=1.0`
+always) with the sharper question underneath: what would a genuinely continuous `Sensor` confidence
+even mean? A follow-up question then surfaced real confusion worth resolving explicitly: if the value
+is supposedly fixed (a device property), why does it become `None` on `available=False` — doesn't
+that contradict treating it as an invariant?
+
+**Resolved.** Two separate questions were being asked in one field: `Sensor.reliability` (new,
+§3) is a fixed, per-device, registration-time property — a device's own known trustworthiness when it
+*has* something to report (e.g. a WiFi-based presence sensor's known false-negative rate,
+`reliability=0.85`), never recomputed, never guessed. `Provenance.confidence`, unchanged in shape, is
+a property of one specific `HouseFact` — one cycle's specific claim of trust in one specific
+observation. `confidence=None` when `available=False` is not a contradiction of `reliability` being
+fixed: it does not mean "the device's reliability became unknown," it means there is no observation
+this cycle for a trust-value to describe at all — the same "no meaningful confidence for a value that
+was never produced" principle Layer 1 §4.2 already applies to every other producer, now correctly
+separated from the device-level constant it was being confused with. Mechanically: `available=True`
+→ `confidence = Sensor.reliability` (default `1.0`, unchanged behavior for the common case);
+`available=False` → `confidence = None` unconditionally, `reliability` simply not consulted. Applied
+to `layer2_registries_spec.md` (`Sensor.reliability` field in §3, §3.1's "Otherwise" branch, §7's
+Layer 1 relationship note, one new acceptance criterion in §9).
+
+---
+
+## Full cross-layer coherence pass after the Layer 2 round-3 fixes (2026-09-06)
+
+Developer asked for a fresh, full re-read of Layer 0/1/2 together (not just Layer 2 in isolation)
+after the round-3 fixes above, explicitly from a senior-service-designer angle: is everything still
+coherent, correct, and complete across layers, not just within one document. This surfaced a serious
+pre-existing gap (present since Layer 2 was first promoted, not introduced by round 3) and a factual
+error in an earlier decision, both corrected.
+
+**`implicit_hold_restore_class` was a decision already made (2026-09-02, Manual Hold restoration) and
+written into `layer0_runtime_spec.md` §6.3 as living on "Layer 2's `Sensor`/`Actuator` registry
+entries" — but was never actually added to either dataclass when `layer2_registries_spec.md` was
+promoted.** Layer 0's entire conditional-restoration mechanism (§6.3) depends on reading this field at
+hold-creation time; without it in Layer 2, that mechanism references a contract that doesn't exist.
+Found by reading Layer 0 and Layer 2 side by side in full, not by reviewing either in isolation —
+exactly the kind of gap a single-layer review misses. Discussed and narrowed to `Actuator` only (not
+both, as Layer 0's prose loosely suggested): an implicit hold is defined (Layer 0 §6) as an
+*actuator* Heima manages diverging from a commanded state — the eligibility lookup is always on the
+commanded entity's `Actuator` record, and a duplicate `Sensor`-side copy would have no call site that
+would ever read it, the same "don't keep unexercised flexibility" reasoning already applied to
+`Sensor.confidence` above.
+
+**While verifying `Actuator` is generic enough to cover this (developer's question: does it handle
+smart bulbs/plugs, any "does something" device?), a second, independent problem surfaced: a
+2026-09-01 backlog entry ("Heating needs the same per-room precedence treatment as Lighting") claimed
+"`VALID_ACTUATOR_ROLES` already has `hvac_unit` (`actuators.py:50`)" as grounds for "no actuator-role
+gap."** Checked against the actual repository, not assumed: no such constant exists anywhere in the
+codebase, and today's real `Actuator` class (`custom_components/heima/actuators.py`) has no role
+concept at all — `actuator_id`/`entity_id`/`room_id`/`opening_id`/`display_name` only. The citation was
+false. The addendum's *conclusion* (no registry redesign needed for per-room TRVs) still holds, but
+for a different, correct reason: v2's own actual spec
+(`docs/specs/core/actuator_registry_spec.md:205`) already states the registry accepts "one HA entity
+(any domain — `cover.*`, `fan.*`, `climate.*`, `switch.*`, …)" — genericity was always structural
+(`entity_id: str`, no domain constraint), never dependent on a role list that turns out never to have
+existed.
+
+**`actuator_role` itself — new in v3, no v2 precedent — was found under-specified in a way that
+mattered once the false citation was cleared: was it meant to be a closed, validated vocabulary (as
+"a valid `actuator_role`" in §9's acceptance criteria implied) or an open convention?** Developer's
+objection, decisive: Home Assistant has no closed vocabulary of device domains/classes itself — it
+adds new ones continuously — so closing `actuator_role` here would mean a new HA device class cannot
+be represented until a core-team code release, exactly the risk a naming convention should avoid.
+Layer 1 §3 already establishes the identical precedent for `fact_type`, with the identical reasoning
+("a closed vocabulary here would fight" routine growth) — applied here the same way. **Resolved**:
+`actuator_role` stays a plain, open `str`, documented as deliberately so (mirroring `fact_type`'s own
+wording), with a `"switch"` example added (a generic on/off outlet, previously missing even as an
+example) — never formalized into an enum. §9's acceptance criterion rewritten to check usage (every
+light-commanding reaction goes through the registry) rather than membership in a closed set that was
+never going to exist. Applied to `layer2_registries_spec.md` §6 and §9.
+
+**Back to the original gap: `implicit_hold_restore_class` added to `Actuator` only** (§6), restoring
+the 2026-09-02 decision. `layer0_runtime_spec.md` §6.3 corrected to say "Layer 2's `Actuator` registry
+entries" (was "Sensor`/`Actuator`") — a wording imprecision, not a second decision reopened. Layer 2
+§7 updated to state the one point of contact in the Layer-0-depends-on-nothing-above-it direction
+(Layer 0 §6.3's restoration mechanism is *defined in terms of* this field, but Layer 0's own runtime
+never queries the registry live — only the domain/reaction logic that creates the hold reads it,
+once, freezing the result into evidence before Layer 0 ever sees it). One new acceptance criterion
+added (§9), verifying the field reaches Layer 0's restoration algorithm end-to-end through a
+simulated restart.
+
+**Moderate finding also resolved**: `v3_architecture_recap.md`'s Layer 2 section had drifted from
+`layer2_registries_spec.md` on two points introduced by round-3's own fixes — "how N `Sensor` facts
+become one derived `HouseFact`" (no longer true once `FusionRule` chaining was added, 2026-09-04) and
+"direct passthrough (relabel one fact under a new `fact_type`/`Location`, unchanged)" (now false per
+§5.7's `DirectStrategy`-never-changes-`Location` fix). Both corrected, plus the `Actuator` bullet
+updated for `implicit_hold_restore_class` and the open `actuator_role` convention.
+
+**Minor finding resolved**: §5.7's join rule was stated as a simple membership check ("every source is
+a member of the destination's room set"), correct only when every source is itself `room`-scoped.
+Generalized to a coverage check (every room covered by a source, including a `zone`- or
+`rooms`-scoped one, must be covered by the destination) so the rule is correct for chained
+`FusionRule`s whose sources are themselves coarser than a single room.
+
+**Not a problem, no action taken**: `v3_sensors_actuators_draft.md` still shows pre-round-3 shapes
+(`sensor_ids`, `weights: dict[str, float]`, "4 strategies") — left as is. `layer2_registries_spec.md`'s
+own footer already states the precedence rule for exactly this situation ("where this document and
+any of those differ, this document is the current word") — chasing full parity in a document
+explicitly kept as historical grounding would be busywork with no coherence payoff, unlike the two
+`v3_architecture_recap.md` staleness points above, which are a live summary presented as current.
+
+---
+
+## Multi-agent adversarial audit of Layers 0-2, and its corrections (2026-09-06/07)
+
+Developer's demand after the round-3 fixes above: a full, skeptical, senior-service-designer re-read
+of all three layers together, on the explicit worry that a foundational layer written wrong makes the
+whole architecture unsound "by design." Four adversarial review passes were run in parallel (one per
+layer plus one cross-layer pass), each instructed to hunt for genuine logical/type defects, not style.
+Findings were spot-verified against the actual document text (not taken on faith) before being
+reported. Real, confirmed defects found: 7 structural/cross-layer issues, ~9 narrower but real issues,
+~10 minor hygiene issues — a materially higher defect count than any single-layer review this session
+had produced, confirming the developer's instinct that repeated local edits without a periodic global
+re-check accumulate real drift. Corrections below, in the order worked through.
+
+**`WeightedQuorumStrategy`'s confidence formula (§5.4) was self-referential** — the "threshold not
+reached" branch defined `winning_weight = total_weight_considered - winning_weight`, solvable only to
+a constant (`total/2`) regardless of the actual vote distribution, not implementable as written.
+Concrete counterexample worked through with the developer: 3 unit-weight inputs, threshold=3
+(unanimity); `weight_for=0` (unanimous rejection) should yield near-total confidence in `False`,
+`weight_for=2` (a near-miss) should yield much less — the broken formula couldn't distinguish these
+correctly. Before fixing, the developer pushed back on my first proposed replacement (`weight_for`
+itself, unmodified, for both branches) with a sharper question: what does this number actually
+*represent*? Resolved by cross-checking against how every *other* row in the §5.4 table already treats
+confidence — `DirectStrategy`/`PrecedenceStrategy` inherit confidence in the *specific value actually
+reported*; `BooleanSetStrategy`'s four De Morgan branches always compute confidence in whichever
+outcome (`True` or `False`) is being reported, never an outcome-independent raw signal strength. Given
+`Provenance.confidence` is itself defined (Layer 1 §4) as "how much to trust this specific reported
+fact," `WeightedQuorumStrategy` must follow the identical rule. **Resolved**: `winning_weight =
+weight_for` when `weight_for >= threshold` (confidence in the reported `True`); `winning_weight =
+total_weight_considered - weight_for` when it isn't (confidence in the reported `False` — the weight
+that did *not* back the "for" side, never `weight_for` itself, which would invert the intended trend:
+a near-miss would read as *more* confident than a unanimous rejection). One acceptance criterion (§9)
+extended to explicitly test both branches, including the near-miss-vs-unanimous-rejection distinction
+by name.
+
+**`categorical_confidence`/`continuous_confidence` (Layer 1 §4.2) had no precondition preventing an
+out-of-range result** — `categorical_confidence(6, 5) = 1.2`, `continuous_confidence(dispersion=-2,
+scale=1, floor=0) = 3.0`, both violating `Provenance.confidence`'s own documented `0.0`-`1.0` contract
+from inside the very functions this architecture centralizes confidence in specifically to prevent
+this class of mistake. **Resolved**: explicit preconditions added (`0 <= count_best_outcome <=
+total_observations`; `dispersion >= 0`, `0 <= floor <= 1`).
+
+**Self-caught mistake while touching the same code block, corrected before it could compound**: my
+first pass also "fixed" a genuine but separate finding — `combined_confidence`'s docstring claimed
+"not a passthrough (more than one source feeds it)" while its actual precondition only required a
+non-empty sequence (length >= 1), a real mismatch. I tightened the precondition to `len >= 2` — but
+before finishing, checked this against Layer 2's actual call sites (the discipline the developer had
+just demanded) and found it would have broken a legitimate, expected case: `BooleanSetStrategy` with
+`min_available=1` (its own default) can validly have exactly one available/confirming/dissenting
+source in a given cycle, and calls `combined_confidence` with that single-element list — a real
+runtime occurrence, not a caller bug. Reverted the precondition change; fixed the actual mismatch by
+softening the docstring instead, clarifying that a length-1 call is a legitimate degenerate case
+(`min`/`max` of a singleton is correctly that source's own confidence), not an error the function
+needs to guard against. This is the exact "local fix without a global coherence check" pattern the
+developer had just called out — caught this time before it reached the document, not after.
+
+**Layer 1 §10's acceptance criterion directly contradicted Layer 1 §4.2 in the same document.** §4.2
+explicitly permits a producer to "note its own method in `evidence`... for diagnostic purposes"; §10
+banned recording "which formula/path produced a given `confidence` value" in *any* field whatsoever —
+literally the same thing, one permitted, one forbidden. **Resolved**: §10 rewritten to match §4.2's
+actual rule — no *dedicated schema field* for this outside `evidence`, and nothing downstream ever
+treats such a note as load-bearing, rather than a blanket ban that would fail a spec-compliant
+implementation.
+
+**`Provenance.evidence.trigger_state` (Layer 0 §6.3) was typed `dict[str, Any]`, while Layer 1 §4.3
+cites this exact field, by name, as its own compliant example of `evidence`'s `EvidenceValue` shape
+constraint** ("one level of nested attributes, not deeper"). The type annotation didn't actually say
+what Layer 1 claimed it was an example of. **Resolved**: retyped `dict[str, EvidenceValue]`.
+
+**Layer 0 §6.3's restoration algorithm had two further, related gaps, both found and fixed in the same
+pass**: (a) steps referenced `recorded_expiry` as though persisted, but the checkpoint's own field list
+(`restore_eligible`/`trigger_entity_id`/`trigger_state`) never included an expiry — added
+`Provenance.evidence.expiry: datetime`, now carried through the checkpoint and referenced correctly in
+the algorithm; (b) nothing said what the algorithm should do if `evidence` had been wiped to `{}` by
+Layer 1 §4.3's fail-soft policy — added an explicit first step: if any of the four expected keys is
+missing, discard, same conservative outcome as failing eligibility, never undefined behavior on a
+safety-relevant decision. §12's acceptance criterion updated from "four checks" to "five checks," with
+the fail-soft interaction named explicitly as its own required test case.
+
+**Self-caught slip while renumbering**: my first draft of the new step 1 said "same step as
+`restore_eligible=false`" when it is actually a distinct, earlier step (step 1 vs. step 3) — caught on
+my own re-read before reporting this batch done, corrected to "same conservative outcome... checked
+earlier as its own step." Consistent with the developer's standing instruction this round: re-read
+before declaring closed, don't trust the first pass.
+
+All 5 objectively-broken Tier-1 findings from the multi-agent audit are now fixed and cross-checked.
+Still open, pending explicit design decisions (not bugs with one obvious fix): `CalendarWindow`'s
+missing producer mechanism, and whether `WeightedQuorumStrategy` should also fold each input's own
+`confidence`/`reliability` into its result (current answer: no, documented as an intentional
+distinction from `BooleanSetStrategy`, not yet written into the spec text). Tier 2 (~9 items) and Tier
+3 (~10 items) from the audit remain entirely undiscussed.
+
+---
+
+## `CalendarWindow`'s missing producer, resolved (2026-09-08)
+
+Layer 0 §3.4 said `CalendarWindow` was "classified by a calendar interpretation (Layer 2)" and evaluated
+pre-DAG — but Layer 2's actual `CalendarInterpretation` produces a category string on the ordinary
+hot-cycle path from a `Sensor`'s current state, not an absolute `start`/`end` interval, and Layer 0 has
+no mechanism of its own to run keyword matching without depending on Layer 2. First checked whether
+`CalendarWindow` was even needed given `Sensor`+`CalendarInterpretation` already answers "what category
+is active right now" every cycle — concluded it's genuinely not redundant: `CalendarWindow` is the only
+way to answer forward-looking questions ("is a vacation starting in 3 days") or get an event's actual
+end time, neither of which a current-state-only `Sensor` read can provide.
+
+**Resolved** by splitting extraction from classification instead of forcing them together: Layer 0
+produces `CalendarWindow(start, end, summary, source_entity)` by mechanically reading a `calendar.*`
+entity's raw event list via HA's calendar API, pre-DAG — `summary` is the event's raw, unclassified
+text (renamed from `category`, which wrongly implied Layer 0 already classified it). Classifying that
+text into a named category ("vacation", "day_off"...) stays exactly where it already lived —
+`CalendarInterpretation`'s keyword-matching (Layer 2 §4) — now explicitly documented as a reusable pure
+function a Layer 4/5 consumer applies to a `CalendarWindow`'s raw `summary`, against the same
+`keywords`/`priority_order` already configured for whichever `Sensor` is registered on the same
+`source_entity` — never a second, separately-maintained keyword configuration. This preserves "Layer 0
+depends on nothing above it" exactly, at the cost of `CalendarWindow` instances needing a classification
+step at the point of consumption rather than arriving pre-classified. Applied to `layer0_runtime_spec.md`
+(§2 scope bullet, §3.4 full rewrite, one new §12 acceptance criterion) and `layer2_registries_spec.md`
+(`CalendarInterpretation`'s comment, §4).
+
+---
+
+## `WeightedQuorumStrategy`/`BooleanSetStrategy` overlap, resolved; temporal recursion added (2026-09-08)
+
+**Why `WeightedQuorumStrategy` doesn't fold in each input's own reliability, worked through properly.**
+Developer wasn't satisfied with the first-pass answer ("they answer different questions") and pushed
+for the real reason. Resolved with a concrete counterexample: a group-presence quorum, threshold=1.5,
+resident (weight=1.0) and guest (weight=1.0, but a sensor known to be `reliability=0.3`), both report
+present. Folding reliability into the vote weight (`effective_weight = weight × reliability`) computes
+`weight_for = 1.0 + 0.3 = 1.3 < 1.5` — the low-reliability vote **flips the outcome** from "present" to
+"not present," even though two independent readings agreed. The real point: `weight` and `reliability`
+are *both* static, core-team-declared properties of the same input — `weight` is already the lever for
+"how much should this input count," so a producer who wants to distrust a specific input can already
+say so directly by lowering its `weight`. A second channel for the identical intent adds no new
+expressive power, only a redundant, ambiguous combination rule. `UnanimityStrategy` (below) is the
+mirror case: it has *no* weight field, so `combined_confidence` over each input's own confidence is
+its only available lever — this asymmetry is principled, not an oversight. Documented in
+`layer2_registries_spec.md` §5.1 (WeightedQuorumStrategy's own comment), not a mechanism change.
+
+**`BooleanSetStrategy` renamed to `UnanimityStrategy`, `mode="any"` removed as a pure redundancy.**
+Prompted by developer's own suggestion to unify vote-counting under one interface — worked through
+numerically (a 3-sensor "all doors closed to arm" security check) rather than assumed:
+- `mode="any"` unifies cleanly and for free: `WeightedQuorumStrategy(weight=1 for every input,
+  threshold=1.0)` produces the identical outcome in every availability scenario, since "at least one"
+  never needs its bar to scale with population size.
+- `mode="all"` does **not** unify the same way: a fixed `threshold` cannot express "100% of whoever is
+  currently available" — the bar must track `total_weight_considered`, which shrinks as inputs go
+  `available=False` (§5.5). Worked concretely: 3 unit-weight sensors, `threshold=3.0` fixed; if one
+  goes offline and the remaining two both agree, `weight_for=2 < threshold=3.0` — the strategy reports
+  "not reached" even though every sensor that could respond did agree, a real behavioral regression
+  from today's `mode="all"`, not merely a different confidence number.
+- An early framing mistake was caught and corrected mid-discussion: the differing *confidence values*
+  between the two formulations (e.g. 0.9 via `combined_confidence`'s min vs. 1.0 via
+  `categorical_confidence`) is not itself a cost — Layer 1 §4.2 already establishes no consumer ever
+  needs to compare which formula produced a confidence value. Only the "all" case's *outcome* breaking
+  is the real, disqualifying argument; a tangential side-thread comparing confidence values for `any`
+  was a distraction the developer had to explicitly redirect away from.
+
+**Resolved**: kept `BooleanSetStrategy`, renamed `UnanimityStrategy`, `mode` field dropped entirely
+(only "all" semantics remain) — the one case with a genuine technical requirement a linear weighted
+threshold cannot express. `"any"` documented as `WeightedQuorumStrategy(weight=1, threshold=1.0)` in
+that strategy's own comment. `FusionStrategy` stays a 5-member union (extending `threshold` to support
+a relative/dynamic bar and eliminating `UnanimityStrategy` entirely — rejected as speculative
+complexity with no concrete forcing case, the same discipline already applied elsewhere in this
+document, e.g. `FusionStrategy`'s and `Interpretation`'s own growth history). Applied across
+`layer2_registries_spec.md` §5.1, §5.4 (De Morgan reduced from four branches to two), §5.5, §5.6
+(worked example updated), §5.7, §8, §9, and `v3_architecture_recap.md`'s Layer 2 summary.
+
+**Temporal recursion — `FactRef.previous_cycle` — added after developer pushed back hard on filing a
+Bayesian-filter question as "not yet decided."** Asked whether `WeightedQuorumStrategy` could express a
+Bayesian filter; answer was no (linear weighted-vote math cannot correctly express multiplicative
+likelihood-ratio updating) — a single-cycle Bayesian combination fits `FormulaStrategy` cleanly today,
+but a genuinely *recursive* filter (using its own last posterior as this cycle's prior) could not:
+`RegisteredFormula.compute` is pure/stateless (§2.2), and §5.6's cycle-detection rule rejects any
+`FusionRule` depending on itself, undifferentiated by *when* the dependency is from. Developer's
+explicit challenge: don't file this away, find a structural fix that doesn't require revisiting the
+layers later. Resolved by generalizing a distinction the architecture already has rather than
+inventing one: Layer 0 §10 already lets a domain read `CanonicalState` — the *previous* cycle's
+resolved output — never another domain's *current*-cycle output, specifically to keep the DAG acyclic.
+The same distinction, applied to `FactRef`, resolves the Bayesian case directly: a previous-cycle
+value is already fixed and immutable before the current cycle starts, so referencing it — including a
+`FusionRule` referencing its own `produces`/`where` — can never create an ordering conflict, unlike a
+current-cycle self-reference (a genuine cycle, correctly still rejected). `Stability`'s own
+pending-transition mechanism (§5.2) was already doing something conceptually similar ("compare to my
+last committed value") as a hidden, strategy-specific special case; this generalizes the same idea into
+an explicit, reusable primitive any `RegisteredFormula.compute` can use, receiving its own "memory" as
+one more ordinary `HouseFact` input rather than a hidden side channel — preserving purity, and (an
+unplanned bonus) surviving restarts for free via Persistence's durable tier, unlike `Stability`'s
+deliberately ephemeral state. Enables not just Bayesian filters but any recursive computation
+(exponential moving averages, accumulators) through the existing, closed `FormulaStrategy` mechanism —
+no sixth strategy. Added `layer2_registries_spec.md` new §5.8, `FactRef.previous_cycle: bool = False`
+in §5, cross-references in §5.6/§5.7/§7/§8, three new acceptance criteria in §9, and a summary in
+`v3_architecture_recap.md`.
+
+**Self-caught errors during this batch, both fixed before reporting done** (per the developer's
+standing instruction to re-read before declaring closed): a garbled, incomplete sentence left in
+`WeightedQuorumStrategy`'s own comment mid-edit ("This differs from `BooleanSetStrategy`... see
+`combined_confidence` below deliberately"); and a cross-reference in `FactRef`'s own comment pointing
+to "§5.6 for the full mechanism" when the full mechanism is actually in the newly-added §5.8. Both
+caught on my own re-read of the diff, not by the developer.
+
+---
+
+## Tier 2 audit items, worked through (2026-09-08 continued)
+
+**Layer 0's reliance on `Provenance.evidence` without restating it — re-examined, found not to be a
+real gap.** Layer 0 already discloses the identical "consumes, doesn't own" relationship for
+`HouseFact`/`Location` (§2) and, explicitly, for `Provenance` itself (§5: "a `HouseFact`'s `how` field,
+`Provenance`, owned by Layer 1"). What Layer 0 defines inside `evidence` (`restore_eligible`,
+`trigger_entity_id`, `trigger_state`, `expiry`) is Layer-0-specific *content* placed into a
+Layer-1-owned generic *container* — the same pattern Layer 0 already uses for `ManualHoldValue` as
+`HouseFact.value` (§6.1), and the same pattern every producer in every layer uses. The one real
+violation of Layer 1's `evidence` contract (`trigger_state` typed `dict[str, Any]`) was already found
+and fixed in an earlier round. No further action — retracted, not a genuine open item.
+
+**`layer2_registries_spec.md`'s header omitted `Zone` from its declared Layer 1 dependencies**, despite
+§5.7 depending on `Zone.room_ids` for the join/coverage check. Resolved: added `Zone` to the header's
+dependency list.
+
+**Layer 1 §8 omitting Manual Hold Manager — re-examined the same way, same conclusion.** §8's four
+existing bullets are all *structural* dependencies (Layer 1's own type definitions require them —
+`Provenance.source: FactSource` must exist, `HouseFact.when` follows Layer 0's UTC convention, etc.).
+`ManualHoldValue`/`manual_hold.<domain>` are cited elsewhere only as *illustrative examples* (one
+compliant-dataclass example among possible others; one naming-convention example among six) — Layer
+1's own correctness doesn't require either to exist. By the same logic, Recovery/Checkpoint (cited for
+its "§9-style" diagnostic-event convention) isn't in §8 either, correctly. No real gap — retracted.
+
+**Six objectively-broken Tier-2 items fixed, no design decision needed for any of them:**
+- `Location`'s "`room_ids` needs at least 2 entries when `scope='rooms'`" lived only in a field
+  comment, not the normative construction rule or §10's acceptance criteria (asymmetric vs. `Zone`'s
+  parallel, enforced "at least 1" floor) — added to both.
+- `ManualHoldValue.held_state` was typed `dict[str, Any]` while cited by Layer 1 §3 as its own
+  compliant `EvidenceValue`-shaped example — retyped `dict[str, EvidenceValue]` in both documents.
+- `external.<slot>` (a `fact_type` naming example) was never explained — added a one-clause gloss
+  pointing to Layer 2's own external-adapter example (OWM, Protezione Civile).
+- "an enum value" as a `HouseFact.value` example was ambiguous against `EvidenceValue`'s closed set
+  (an `Enum` member itself doesn't qualify) — clarified it means the member's own primitive `.value`.
+- No acceptance criterion tested rejecting a `DirectStrategy` with correct arity (one input) but a
+  `where` that doesn't match that input's location — a distinct failure mode from wrong arity, never
+  separately stated as enforced. Added both the explicit enforcement statement (§5.7) and the
+  acceptance criterion (§9).
+- §2.2 names three hot-path execution points needing no-blocking-I/O review (`Interpretation`
+  decoding, `FusionStrategy` combination, `RegisteredFormula.compute`), but §9's checklist criterion
+  only covered the third — extended to cover all three explicitly.
+
+Full multi-agent audit (2026-09-06/07) previously believed closed except Tier 3 — **found to be a
+false close**: re-verifying the original four agent reports against what had actually been discussed
+turned up 9 findings, several rated HIGH by the originating agent, that never made it into any
+discussion round at all — dropped during my own synthesis, not flagged as retracted, just silently
+missing. Corrected the record and started working through them for real, gravest first.
+
+---
+
+## Layer 0 Persistence: write-on-change vs. retention, worked through properly (2026-09-08)
+
+**Finding**: `HouseFact`/`Provenance`, §4's "query reconstructed at read time" promise silently breaks
+once write-on-change (§4.2) is factored in — a fact stable for a long time has exactly one durable
+record, dated when it first became true; a naive range scan for `[t1, t2]` finds nothing whenever that
+record predates `t1`, even though the fact was true throughout the window.
+
+Developer pushed back twice on the first two proposed fixes, each time surfacing a sharper version of
+the problem:
+1. First fix proposed: state the "as-of + range" reconstruction algorithm explicitly (find the latest
+   record at-or-before `t1`, plus every record inside `(t1, t2]`). Developer asked whether a hybrid
+   with periodic re-writes (motivated by reaction-latency concerns) made more sense.
+2. Checked the actual text before answering: **batching** (§4.2, all writes deferred to end-of-cycle)
+   is what protects reaction latency, not write-on-change — even a write-every-cycle policy would
+   still be off the hot path. Write-on-change is a separate optimization for disk volume. This meant
+   a latency-motivated hybrid wasn't solving the problem it was proposed for.
+3. Developer's sharper follow-up: even with correct as-of reconstruction, what happens when the
+   at-or-before-`t1` record itself has aged past the `fact_type`'s own retention window and been
+   evicted? This exposed something worse than a query bug: **retention could delete the only evidence
+   a still-true fact exists at all**, not just make one query return the wrong answer for one range.
+4. Resolved: retention must never evict the single most recent record per WHAT/WHERE/HOW key,
+   regardless of age — only records superseded by a newer one for the same key are eligible for
+   time-based or count-based eviction.
+5. Developer's cost objection to (4): doesn't this require a group-by-and-sort over all stored records
+   every time pruning runs, more expensive than a slow daily rewrite? Re-derived properly rather than
+   asserted: write-on-change's own comparison ("value differs from the last stored value for this
+   key," every cycle, for every fact) **already requires** Persistence to maintain a fast,
+   incrementally-updated per-key "latest record" lookup — retention's exemption is then just a lookup
+   against a structure that has to exist anyway, not a fresh computation, and costs nothing beyond
+   what write-on-change already pays. A periodic full rewrite, by contrast, is a real recurring cost,
+   forever, for every stable fact in the house.
+
+**Resolved and applied to `layer0_runtime_spec.md`**: §4 states the reconstruction algorithm
+explicitly; §4.2 explicitly separates batching (latency) from write-on-change (volume), and names the
+latest-value index as a required, explicit structure (not merely implied); §4.3 states the
+never-evict-the-latest-record exemption and why it doesn't undermine the count ceiling's own purpose
+(a flapping sensor's *superseded* records stay evictable, only its single current record per key is
+protected). Two new acceptance criteria added (§12).
+
+---
+
+## `resident_response`'s missing boundary check for the explicit-hold path (2026-09-08)
+
+§5.1's non-forgeability list gave `kind="resident_response"` exactly one boundary condition
+("assignable only after matching an active runtime confirmation request") — but the enum's own
+comment (§5) says this `kind` covers *two* cases: an explicit manual hold (§6) and a runtime
+confirmation response. An explicit hold has no "active request" to match at all, so the stated
+boundary simply doesn't apply to it — nothing in the document said what *does* gate this kind for that
+case, meaning nothing prevented internal code from constructing
+`FactSource(kind="resident_response", actor_type="resident")` for a hold that was never actually
+triggered by a resident.
+
+**Resolved**: the real boundary for the explicit-hold case, derived from §6.2's own description
+("re-read fresh from that entity's current state every cycle, the same way any other `Sensor`-backed
+fact is") — `kind="resident_response"` is assignable there only when constructed from the dedicated
+helper/control entity's own `Sensor`-backed state (already trust-checked at Layer 2 §3), never
+asserted directly with no such entity read behind it. Stated as its own bullet in §5.1, alongside the
+existing confirmation-response one — two independent boundary checks for two cases that don't reduce
+to each other, not one rule covering both. The enum's own comment (§5) corrected to point to §5.1
+instead of restating (and getting wrong) a single-condition summary. One acceptance criterion (§12)
+added, testing both boundaries independently — also closes a separate, previously-unaddressed minor
+finding (the existing non-forgeability criterion only checked that fields were carried, never that
+forgery attempts are actually rejected).
+
+---
+
+## `LearnedWindow.seed` not clamped to its own `min_seconds`/`max_seconds` (2026-09-08)
+
+§3.2 stated the clamp as an unconditional guarantee ("never allowed to drift below/above it... a Layer
+0 guarantee precisely so every call site doesn't have to remember to add its own floor and ceiling"),
+citing real flicker/stuck-actuator risk — but nothing constrained `seed` itself against the clamp at
+construction time, only calibration's *output*. Since every dwell check runs against `seed` directly
+before the first calibration ever completes, an out-of-range seed would defeat the guarantee during
+exactly the window (warm-up, no real data yet) where it matters most.
+
+**Resolved**: added an explicit construction-time invariant, `min_seconds <= seed.seconds <=
+max_seconds`, validated procedurally the same way `Location`'s construction rule already is. One
+acceptance criterion added (§12), testing both an under-range and an over-range seed independently
+from calibration's own clamping test.
+
+---
+
+## Short-term buffer horizon vs. `Window`/`LearnedWindow.max_seconds` (2026-09-08)
+
+A dwell check ("has fact X been true for at least `seconds`, continuously") or correlation check
+("did Y occur within `seconds` after X") needs the short-term in-memory buffer to actually hold every
+change within that `seconds`/`max_seconds` — not just the current value (the separate latest-value
+index, §4.2, addresses a different question). Nothing tied the buffer's own bounded horizon to how
+large a `seconds` a consumer might configure; a check requiring more history than the buffer retains
+can never be satisfied, correctly or not — a silent, permanent false negative.
+
+Developer's directive: reuse §4.3's retention-floor declaration pattern rather than invent a second
+mechanism (a hard ceiling on `Window.seconds`, or a disk fallback that would violate the already-stated
+"never wait on a disk read" hot-path guarantee, were both considered and dropped for exactly this
+reason). **Resolved**: whichever subsystem registers a `Window`-/`LearnedWindow`-based dwell/
+correlation check declares its own `seconds`/`max_seconds` requirement against Persistence at
+registration time; the buffer's effective horizon is the larger of a system-wide default and every
+declared requirement — identical mechanism to §4.3's retention floor, applied to the in-memory tier
+instead of the durable one. Applied to `layer0_runtime_spec.md` §3.2 (cross-reference) and §4.1 (the
+mechanism itself), with the system-wide default listed in §11 alongside the analogous retention
+defaults, and one new acceptance criterion in §12.
+
+All four "grave" findings from the multi-agent audit's Layer 0 report are now resolved.
+
+---
+
+## Backlog ordering bug, found and fixed (2026-09-08)
+
+While closing out the four "grave" items above, noticed the `CalendarWindow` entry (chronologically
+resolved right after the multi-agent audit corrections, before the `WeightedQuorumStrategy`/
+`UnanimityStrategy` work) had ended up physically appended at the true end of this file instead —
+after `LearnedWindow.seed`, several sections later than it belongs. Root cause not fully diagnosed
+(likely an `old_string` anchor that matched later than intended during editing), but the effect
+violates this file's own append-only-in-order discipline. **Resolved**: moved the `CalendarWindow`
+section to its correct chronological position, immediately after the multi-agent audit corrections
+and before `WeightedQuorumStrategy`/`UnanimityStrategy`. Content unchanged, position only. Flagged to
+the developer rather than silently corrected, consistent with this session's standing instruction to
+surface — not hide — coherence slips.
+
+---
+
+## `Topology`'s undefined `Opening`/`ResolvedConnection` types, resolved (2026-09-08)
+
+Layer 1 §7 said `Opening`/`ResolvedConnection` "carry forward unchanged in shape from Heima's existing
+room-topology model... Layer 1 does not redefine them" — without ever stating what that shape actually
+is. Rated HIGH by the originating audit agent, and rightly so: this is a sharper self-containment
+violation than the `Room`/`room_id` deferral it was modeled on. `room_id` really is opaque everywhere
+Layer 1 uses it (never inspected internally), but `Topology` treats `Opening`/`ResolvedConnection` as
+*structured* data — `orientation`, `connection_type`, `access_type` are fields a reader needs to
+understand to know what `Topology`'s own worked examples ("does this room have an operable opening to
+the outside") actually mean. A reader with only this document could not have constructed a valid
+`Topology` instance.
+
+Checked the actual source, not assumed: `custom_components/heima/room_topology.py` defines `Opening`
+(`opening_id`, `room_id`, `type`, `orientation`, `entity_id`) and `ResolvedConnection` (wrapping an
+admin-authored `Connection` plus `room_a`/`connection_type`). **Resolved**: both restated in full in
+Layer 1 §7, matching the real fields unchanged — `ResolvedConnection` flattened to the query-time
+shape a Layer 1 consumer actually reads (`room_a`, `room_b`, `opening_id`, `connection_type`,
+`access_type`), leaving the admin-authored `Connection` intermediate type (how these get created) to
+Layer 8, which already owns admin-authoring concerns elsewhere in this model. `room_id` fields kept as
+plain strings, not `Location` — `Topology` is structural graph data addressed by room id throughout
+(`exposure_by_room`/`floor_by_room` already were), not fact attribution, so introducing `Location`
+here would be a real, unmotivated change, not a restatement. One new acceptance criterion added (§10),
+constructing a full `Topology` instance from the document alone with no reference to the real code's
+own internal `Connection` type.
+
+---
+
+## Last four minor Layer 0 findings, closed (2026-09-08)
+
+All objective, no design decision needed:
+
+- **§6.1 overgeneralized** "the in-memory table... determines restart behavior for either kind of
+  hold" — §6.2 already says an explicit hold never has an entry in that table at all. Narrowed the
+  claim to implicit holds specifically, with an explicit note on why explicit holds are exempt.
+- **§5.2's closing instruction said the opposite of its own preceding rule**: "pass down an
+  *inherited* `correlation_id` at every one of the origin points" — but an origin point is, by this
+  same section's own definition, precisely where there's nothing to inherit *from*. Rewritten as the
+  two genuinely separate obligations: mint fresh at each origin, then propagate unchanged downstream.
+- **The non-forgeability acceptance criterion only checked that `FactSource` fields were present**,
+  never that a forgery attempt is actually rejected — broadened to name all three concrete forgery
+  scenarios from §5.1 (fabricated `admin_command`, `third_party_plugin` claiming a closed kind,
+  `resident_response`'s two boundaries), not just the one already covered incidentally by the
+  `resident_response` fix.
+- **The `manual_hold.<domain>.restored` fact (§6.3) left `actor_type` unset**, silently defaulting to
+  `"heima"`, when §5's own definition of `"system"` ("Heima's own startup/runtime infrastructure") is
+  exactly what Recovery producing this fact actually is. Set explicitly.
+
+**The full multi-agent audit (2026-09-06/07) is now closed for real** — all four Layer 0 "grave" items,
+the rediscovered Layer 1 `Topology` HIGH finding, both `Livello 2` cross-layer items, all six objective
+Tier-2 fixes, and these four minor items. One backlog-ordering bug (`CalendarWindow`'s misplaced entry)
+was also found and corrected along the way, flagged rather than silently fixed. Layers 0-2 have not had
+this level of adversarial scrutiny applied and resolved at any earlier point in this planning branch.
+
+---
+
+## Second full multi-agent re-audit (2026-09-08) — developer's 99% prediction confirmed
+
+Developer refused to move to Layer 3 after the above, explicitly predicting at least one more grave
+defect remained, and asked for a fresh line-by-line re-read of everything given how much editing had
+accumulated. A second round of four parallel adversarial agents (one per layer, one cross-layer) was
+run, instructed to re-verify even today's own fixes skeptically rather than trust them. Confirmed
+correct: this found real, serious defects — including two I introduced myself today while fixing
+other things, and one earlier fix that silently reverted. Findings verified against the actual repo
+(including cross-checking Layer 1's `Topology` restatement against the real
+`custom_components/heima/room_topology.py`) before being written up, not taken on the agents' word.
+
+**Already fixed while verifying (documented in the findings-report turn, not repeated here in full)**:
+fabricated `connection_type`/`access_type` example values in Layer 1 §7 that contradicted the real
+enums (`CONNECTION_TYPES`/`ACCESS_TYPES`) I had just restated from that same file minutes earlier;
+`Provenance.evidence.expiry: datetime` (added by me 2026-09-07) not `EvidenceValue`-shaped, the exact
+class of bug I had just fixed for the sibling `trigger_state` field in the same edit, reintroduced for
+the new one; Layer 1 §10's confidence-formula acceptance criterion had reverted to contradicting §4.2
+again, despite being fixed 2026-09-07 — re-fixed, cause of the reversion not fully diagnosed;
+`Actuator`'s "`room_id`/`opening_id` both collapse into `where`" contradicted `opening_id`'s own field
+comment and its continued existence as a separate field — only `room_id` actually collapsed.
+
+**`CronEntry` offline-restart semantics — Layer 0 §3.1 vs §8 gave contradictory policies for the same
+scenario.** §3.1: a `CronEntry`'s `due` is simply recomputed against current time on restart, "nothing
+about the interrupted countdown needs to be recovered" — zero catch-up. §8: "it fires once
+immediately, then resumes its normal cadence... not zero, not N" — exactly one catch-up. Resolved by
+recognizing the two `RecurrencePattern` variants genuinely warrant different behavior, not a single
+rule papering over both: `IntervalRecurrence` (a periodic safety-net re-check) gets §8's one-time
+immediate catch-up fire, where promptness after an outage is the whole point; `WeeklyRecurrence` (a
+calendar-anchored routine, "every Monday at 07:00") gets §3.1's zero-catch-up recompute, since firing
+a calendar-anchored routine at an arbitrary off-schedule restart moment isn't equivalent to running it
+on schedule and could be actively wrong depending on what the routine does. Applied to
+`layer0_runtime_spec.md` §3.1 (cross-reference added) and §8 (split into the two cases explicitly).
+
+---
+
+## `Topology.floor_by_room`, and the remaining `Topology` fabrications, closed (2026-09-08)
+
+**`floor_by_room` has no counterpart on the real `TopologyGraph`** (floor lives on the Room registry,
+read per-room via `room_floor_of()`), and Layer 1 §2 explicitly disclaims Layer 1 owning a room's
+floor "as an inventory record." Resolved by distinguishing *owning/defining* from *reading*: `Zone`
+and `room_id` already get this treatment throughout the document (opaque references to data Layer 1
+doesn't own) — `floor_by_room` gets the same, an explicit note that it's a read-only aggregate view
+over the Room registry's own `floor` attribute, not a redefinition of what floor means or where it's
+stored. Applied to Layer 1 §7's `Topology` dataclass comment.
+
+**The rest of `Topology`'s fabrications, found by the same audit, fixed in the same pass**:
+- `ResolvedConnection.connection_type`/`access_type` example values (`"door"/"open_plan"`,
+  `"normal"/"restricted"`) were invented, not checked against the real code — actual values are
+  `"indoor"/"outdoor"/"separate"` and `"direct"/"stairs"/"elevator"` (default `"direct"`, not
+  `"normal"`). Corrected against `custom_components/heima/room_topology.py`'s real
+  `CONNECTION_TYPES`/`ACCESS_TYPES`, not assumed a second time.
+- The "does the house have an outdoor opening" worked example queried `exposure_by_room` for the
+  literal string `"outside"` — but `exposure_by_room` holds compass *orientations*
+  (`"north"`/`"south"`/etc.), never that string; the query could never return `True` for any house.
+  Corrected to `any(c.room_b == "outside" for c in connections)`, `room_b`'s actual reserved value.
+- The "nothing lost or renamed" claim about `ResolvedConnection` overstated it slightly — the real
+  `Connection.connection_id` (admin-side edit/delete identity) has no counterpart in the flattened,
+  read-only shape. Acknowledged explicitly rather than left as an unqualified absolute claim.
+- Self-caught while editing: a duplicate leftover sentence fragment ("produces it, which is Layer 8's
+  concern, not Layer 1's.") survived from the original text after an edit rewrote the sentence around
+  it — removed on re-read before reporting done.
+
+All of `Topology`'s content is now either verified against the real implementation or explicitly
+marked as a deliberate simplification, not assumed correct by construction.
+
+---
+
+## `WeightedQuorumStrategy` confidence degenerating to 0.0 under reduced availability, closed (2026-09-08)
+
+**Second-audit finding: `WeightedQuorumStrategy` can report `confidence=0.0` on a `False` outcome even
+when every currently-available input actually agrees "for."** Concrete counterexample: 5 sensors at
+`weight=1`, `threshold=5.0` (calibrated for the full configured population); 2 go `available=False`;
+the remaining 3 are unanimous "for," so `weight_for = total_weight_considered = 3`; `3 < 5` so the
+strategy still reports `False` (threshold not reached); `winning_weight = total_weight_considered -
+weight_for = 0`, `confidence = 0.0`. Read naively this looks like a formula bug — a unanimous "for"
+population producing zero confidence in the opposite outcome.
+
+**Considered and rejected: rescaling `threshold` to `total_weight_considered` so it tracks reduced
+availability.** This is exactly the semantics `UnanimityStrategy` already provides (§5.1's own comment
+on why "all" cannot be expressed as a fixed `WeightedQuorumStrategy` threshold, and symmetrically why
+`WeightedQuorumStrategy` exists at all: to offer an *absolute*, admin-configured bar independent of
+current population size, e.g. "need at least 5.0 combined trust-weight to arm"). Making `threshold`
+relative would silently turn `WeightedQuorumStrategy` into a re-weighted `UnanimityStrategy` and erase
+the reason the two strategies coexist — rejected as removing the one feature that justifies this
+strategy's existence, not as a neutral formula fix.
+
+**Resolved by naming, not by changing, the formula**: `winning_weight = total_weight_considered -
+weight_for` was already arithmetically correct in every case; what was missing was recognizing that
+its `False` branch actually covers three distinguishable situations, only one of which is surprising.
+Added an explicit three-way breakdown to Layer 2 §5.4, right after the `WeightedQuorumStrategy` table
+row: partial dissent (ordinary), unanimous rejection (ordinary, `confidence=1.0`), and unanimous
+non-dissent below a fixed threshold (the counterexample above, `confidence=0.0`, now stated as
+**intentional**: zero of the considered weight actually contradicts the opposite outcome, so `0.0` is
+the honest signal that this `False` is backed by no dissenting evidence at all, purely a threshold
+artifact). No new mechanism, no new parameter — the existing `min_available_weight` gate (§5.5)
+already exists for exactly this risk, so the practical resolution is an **operational recommendation**,
+not a structural one: whoever sets `threshold` close to the strategy's full configured weight should
+set `min_available_weight` close to `threshold` too, so the derived fact goes `available=False` before
+this sub-case can be emitted at all. Applied to `layer2_registries_spec.md` §5.4.
+
+---
+
+## Full v3 docs reread after Layer 2 `ReadBinding` change (2026-09-08)
+
+Second manual pass across the whole v3 document set after introducing `ReadBinding` into Layer 2:
+`docs/specs/v3/layer0_runtime_spec.md`, `docs/specs/v3/layer1_substrate_spec.md`,
+`docs/specs/v3/layer2_registries_spec.md`, `v3_architecture_recap.md`, `v3_house_fact_draft.md`,
+`v3_sensors_actuators_draft.md`, `v3_domains_draft.md`, `v3_pattern_learner_draft.md`,
+`v3_template_matching_draft.md`, and `docs/img/v3_architecture.dot`.
+
+**Document-state finding**: the three promoted specs under `docs/specs/v3/` are now the only documents
+close enough to implementation shape to use as a technical-spec base. The older draft files still
+carry known-superseded forms (`Sensor.entity_id`, `BooleanSetStrategy`, `Freshness`,
+`dict[str, Any]` evidence, older recurrence shapes). They are still useful as reasoning history, but
+must not be consumed as current source material without a visible "superseded by promoted spec"
+banner or a rewrite.
+
+**Interventions to complete before writing code-level technical specs:**
+
+**Document hygiene interventions:**
+
+1. Add visible supersession banners to `v3_house_fact_draft.md` and `v3_sensors_actuators_draft.md`, or
+   delete/rewrite them once Layer 0-2 are approved; they currently contradict the promoted specs in
+   ways that would mislead an implementer.
+2. Update domain/template/learner drafts only after the Layer 0-2 blocking items above are closed, so
+   they reference `ReadBinding`, `FactRef`, `UnanimityStrategy`, and the promoted `HouseFact` shape
+   rather than older draft vocabulary.
+3. Keep `v3_backlog.md` as decision history, not as a normative source. New unresolved items should be
+   mirrored into the relevant promoted spec's "Not yet decided" section when they affect
+   implementation.
+
+---
+
+## Persistence `FactIdentityKey`, resolved (2026-09-08)
+
+Closed the first intervention from the full v3 docs reread. The ambiguous phrase "same
+WHAT/WHERE/HOW key" in Layer 0 Persistence was unsafe because HOW includes volatile provenance:
+`correlation_id`, evidence, source metadata, and actor/source detail can legitimately change without
+changing which real-world fact is being tracked. If HOW participated in the current-value key,
+write-on-change would create new latest-value slots for ordinary provenance changes and retention
+would protect the wrong "latest" records.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §4.0/§4.2/§4.3/§12**:
+`FactIdentityKey = (fact_type, canonical Location)`. `value`, `when`, and `how` are record content,
+not identity. This matches Layer 2's one-producer-per-`(fact_type, Location)` invariant: competing raw
+sources must be resolved by `FusionRule` before Persistence sees the final fact, never by storing
+separate current values for the same fact under different provenance.
+
+This deliberately does **not** resolve the next intervention ("what fields count as changed for
+write-on-change"). The key is now stable; the persisted-change tuple still needs its own decision.
+
+---
+
+## Persistence `FactChangeFingerprint`, resolved (2026-09-08)
+
+Closed the second intervention from the full v3 docs reread. Layer 0 §4.2 previously said
+write-on-change compared only `value`, which would lose meaningful current-state transitions:
+available sensor -> unavailable sensor with stale/unchanged value, same value with lower confidence,
+or same value produced by a different stable source path.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §4.0/§4.2/§12**:
+write-on-change compares `FactChangeFingerprint`, not `value` alone. The fingerprint contains
+`available`, `confidence`, canonical `value`, and a stable `FactSourceFingerprint`
+(`kind`/`source_id`/`source_type`/`actor_type`). It deliberately excludes `when`, `correlation_id`,
+and `evidence`, because including them would reintroduce write-every-cycle churn.
+
+Special case made explicit: when `available=False`, Layer 1 already says `HouseFact.value` is
+undefined, so Persistence canonicalizes the fingerprint's `value` to `None` regardless of what the
+producer left in the field. Repeated unavailability therefore writes once unless availability,
+confidence, or stable source changes.
+
+---
+
+## `MappingInterpretation` no-default sentinel, resolved (2026-09-08)
+
+Closed the third intervention from the full v3 docs reread. Layer 2 overloaded
+`MappingInterpretation.default=None` to mean "no fallback / unavailable when unmapped", but Layer 1's
+`EvidenceValue` explicitly allows `None`. That made a legitimate output value indistinguishable from
+the absence of a default.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §3.2/§4/§9 and
+`v3_architecture_recap.md` Layer 2 recap**: introduce a typed sentinel:
+
+```python
+@dataclass(frozen=True)
+class NoDefault:
+    pass
+
+NO_DEFAULT = NoDefault()
+MappingDefault = EvidenceValue | NoDefault
+```
+
+`MappingInterpretation.default = NO_DEFAULT` means an unmapped raw string produces
+`available=False`/`confidence=None`. `MappingInterpretation.default=<EvidenceValue>` means the mapping
+is total for unmapped raw strings, including the explicit case `default=None`, which now produces
+`HouseFact.value = None` with `available=True`.
+
+Config/storage rule: prefer an absent `default` field to represent `NO_DEFAULT`; a present JSON
+`null` means the real `None` value, not the sentinel.
+
+---
+
+## Evidence instant serialization, resolved (2026-09-08)
+
+Closed the first intervention from the full v3 docs reread. `EvidenceValue` is deliberately
+JSON-compatible, but Layer 0 had declared the manual-hold `Provenance.evidence.expiry` as a Python
+`datetime`, making the checkpoint's supposedly portable evidence payload internally inconsistent.
+
+**Resolution applied to `docs/specs/v3/layer1_substrate_spec.md` §4/§10 and
+`docs/specs/v3/layer0_runtime_spec.md` §6.3/§12**: `EvidenceInstant` is the semantic `str` subtype
+for a canonical timezone-aware UTC ISO-8601 timestamp with six fractional-second digits and `+00:00`.
+`expiry` uses that representation, never a raw datetime object. The hold creator normalizes before
+writing; restart recovery parses it once and discards any missing, malformed, naive, or non-UTC value
+before it can restore a hold.
+
+---
+
+## Boolean vote semantics, resolved (2026-09-08)
+
+Closed the next intervention from the full v3 docs reread. `UnanimityStrategy` said its inputs must
+"agree" and `WeightedQuorumStrategy` counted votes "for", but neither term defined a value domain.
+Relying on host-language truthiness would have let values such as `1`, `"on"`, or a non-empty object
+be silently treated as votes, despite `HouseFact.value` intentionally admitting many non-boolean
+`EvidenceValue` forms.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §5.1/§5.4/§5.5/§9 and
+`v3_architecture_recap.md` Layer 2 recap**: both strategies are strictly boolean. Exact `True` is a
+vote for and exact `False` a vote against; every other available value is a type mismatch. Rather
+than coercing it or silently excluding it, the fusion emits `available=False`/`confidence=None` and a
+diagnostic for that cycle. The check occurs at evaluation time because generic `FactRef` carries no
+static value-schema declaration; this makes an invalid value visible without inventing a broad type
+system solely for two boolean strategies.
+
+---
+
+## Formula confidence contract, resolved (2026-09-08)
+
+Closed the next intervention from the full v3 docs reread. `RegisteredFormula.compute` returned
+`tuple[Any, float]`, implicitly treating every formula as a continuous measurement with a dispersion.
+That contradicted the existing `heating.season_hysteresis` example and gave formulas an `Any` escape
+hatch around Layer 1's `EvidenceValue` contract.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §5.1/§5.3/§5.4/§5.8/§9 and
+`v3_architecture_recap.md` Layer 2 recap**: `RegisteredFormula` declares one
+`FormulaConfidenceMode` and returns the matching structured result. `continuous` supplies a numeric
+value plus dispersion and uses `continuous_confidence`; `categorical` supplies an `EvidenceValue` plus
+support/total and uses `categorical_confidence`; `inherit_input` supplies an `EvidenceValue` plus the
+configured-sequence index of an available input whose confidence it copies. Result/mode mismatches and invalid mode-specific
+parameters fail closed for that cycle with a diagnostic. This makes confidence selection mechanical
+while keeping `FormulaStrategy` a narrow, core-team-curated extension point rather than a second
+general type system.
+
+---
+
+## Numeric and cardinality validation, resolved (2026-09-08)
+
+Closed the next intervention from the full v3 docs reread. The promoted specs named many necessary
+preconditions, but most were prose attached to individual types rather than one implementable
+registration boundary. That left open whether a malformed bucket chain, an impossible threshold, a
+negative weight, or a zero input population should fail on startup, during evaluation, or not at all.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §2.4/§9 and
+`docs/specs/v3/layer1_substrate_spec.md` §4.1/§4.2/§10**: all static numeric and cardinality rules are
+validated at registration, before the hot path. This covers finite reliability, total/open-ended bucket
+ordering, non-empty fusion inputs, min-available/min-input bounds, strictly positive weights,
+threshold and availability-weight bounds, and formula scale/floor constraints. Negative weights were
+explicitly rejected: inverse evidence must be normalized to a semantically oriented fact before a
+quorum, or modeled as a `FormulaStrategy` calculation.
+
+Layer 1's confidence helpers and `Provenance` construction independently validate their numeric
+domains and raise `ValueError` on an invalid call, providing a second boundary against coding errors.
+Those runtime guards are constant-time checks over the already-present values; they add no I/O or
+waiting to the hot path.
+
+---
+
+## Calendar timeline and predictive reads, resolved (2026-09-08)
+
+Closed the next intervention from the full v3 docs reread. The calendar contract said Layer 0 exposed
+active/upcoming windows, but did not define timezone normalization, all-day dates, empty versus failed
+reads, overlap resolution, or restart behavior. An initial attempt to narrow the binding to active
+windows alone also exposed an essential product requirement: Heima must retain future events so a
+consumer can decide today about an event tomorrow.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §3.4/§12,
+`docs/specs/v3/layer2_registries_spec.md` §3.1/§4/§9, and `v3_architecture_recap.md` Layer 0/2**:
+Layer 0 owns an asynchronously refreshed, UTC-normalized timeline cache with explicit `ready` versus
+`failed` status. It exposes two distinct views: `active_now` for the current fact and
+`upcoming_starts_within(..., horizon)` for predictive consumers. A consumer declares its horizon
+(e.g. seven days), receives complete future windows rather than categories, and Layer 0 prefetches far
+enough to serve it and schedule boundaries without synchronous provider I/O.
+
+All-day events use HA-local midnight-to-midnight-exclusive conversion before UTC normalization;
+intervals are `[start, end)`. Calendar matching is now deterministic for active windows only: normalized
+keyword substring matching, then configured `priority_order`; future events cannot accidentally change
+today's category. Restart takes a fresh snapshot, exposes currently active events, and never replays
+past boundaries or trusts checkpointed calendar data.
+
+---
+
+## Canonical Location, Zone, and Topology identity, resolved (2026-09-08)
+
+Closed the next intervention from the full v3 docs reread. Spatial references previously had clear
+business meanings but no complete equality, serialization, or validation-boundary contract. That made
+duplicate producer detection and durable identity vulnerable to container order and registry-load order.
+
+**Resolution applied to `docs/specs/v3/layer1_substrate_spec.md` §5-§7/§10 and
+`docs/specs/v3/layer2_registries_spec.md` §2.3**: `Location` now has a concrete `LocationKey`, with a
+`rooms` set serialized in Unicode-code-point order; equality, hashing, `FactIdentityKey`, and producer
+uniqueness use it. `ZoneKey` is stable `zone_id`, while its separately ordered definition fingerprint
+detects a membership or display-name change. The installation-wide `Topology` canonically orders
+openings and connections, validates one opening owner per connection, recomputes derived exposure/floor
+views, and fingerprints the deterministic result.
+
+Lightweight value objects validate shape, cardinality, and non-empty opaque identifiers at construction.
+References are resolved when their owning registry registers, and Layer 2 resolves each producer's
+`Location` in the same pass as its dependency graph: configuration can load in any order, but no unknown
+room or zone can reach a running producer.
+
+---
+
+## HouseFact state/event semantics and producer ownership, resolved (2026-09-09)
+
+The manual-hold lifecycle resolution exposed a foundational contradiction: Layer 1 prohibited a
+`HouseFact` from representing a transition, while Layer 0 deliberately emitted lifecycle facts; the
+existing producer-uniqueness rule also covered only Layer 2 and could not protect Layer-0 facts from
+a colliding Sensor or FusionRule.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §4/§12,
+`docs/specs/v3/layer1_substrate_spec.md` §3/§10,
+`docs/specs/v3/layer2_registries_spec.md` §2.3/§5/§9, and the architecture recap**: a `HouseFact` is
+one immutable atomic assertion, either `state` or `event`, selected by producer metadata rather than a
+field on the fact. State facts retain `FactIdentityKey`, write-on-change, latest-value reconstruction,
+and latest-record retention protection. Event facts append every occurrence, have no current value or
+`FactRef` address, and follow ordinary retention.
+
+`FactTypeClaim` is a composition-time ownership table, not a runtime registry: claims are resolved into
+producers before a cycle starts and reject overlapping ownership or state-producer collisions. Layer 0
+reserves `manual_hold.*` as state and `manual_hold.*.lifecycle` as event; Layer 2 contributes only
+state claims. This makes later layers declare their own fact ownership explicitly without adding I/O or
+lookup cost to the reaction path.
+
+---
+
+## HeimaEvent to HouseFact mapping, resolved (2026-09-09)
+
+`HeimaEvent` had a useful operational shape (`type`, `key`, `severity`, `context`) but no complete
+translation into the universal fact model. In particular, silently dropping the delivery key or
+severity would have broken Layer 6, while persisting a parallel event envelope would have recreated
+the competing-model problem Layer 1 is meant to eliminate.
+
+**Resolution applied to `docs/specs/v3/layer1_substrate_spec.md` §3.1/§10 and the architecture
+recap**: a `HeimaEvent` is now a transient delivery envelope derived from exactly one append-only
+`HouseFact` event. The V3-approved event type maps to `fact_type`; `key`, `severity`, rendered
+`title`/`message`, and JSON-compatible `context` live in the named `OperationalEventValue`; the fact
+has mandatory typed `Location` and normal Layer-0 causal provenance. The transient delivery id is not
+fact identity and is not separately persisted. Only V3-approved event types are admitted; V2 events
+remain external archive material and have no migration map or runtime fallback. Persistence never deduplicates event facts. Layer 6 uses
+`notification_key` only for delivery deduplication/rate limiting, so suppressing a notification does
+not remove an occurrence from audit history, and severity never becomes a fact identity or ownership
+key.
+
+---
+
+## Formula inputs retain unavailable evidence, resolved (2026-09-09)
+
+The prior formula contract passed only available inputs to `RegisteredFormula.compute`. That was
+insufficient for a room-presence formula: it could not distinguish a sensor reporting definitive
+`False` from a sensor that was unavailable, and could therefore declare a room vacant on incomplete
+evidence.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §5.3/§5.5/§5.8/§10 and the
+architecture recap**: a formula receives every declared input in stable `FusionRule.inputs` order,
+retaining each fact's availability. `min_inputs` continues to count only available facts, so it still
+prevents a formula from running with no observation at all. Above that floor the formula can use a
+positive available input while noticing a missing peer, or return unavailable conservatively. The
+generic Direct/Unanimity/WeightedQuorum/Precedence strategies retain their existing unavailable-input
+exclusion semantics. An inherited-confidence result may select only an available configured input.
+
+---
+
+## Per-sensor room-occupancy evidence namespace, resolved (2026-09-09)
+
+The one-state-producer identity `(fact_type, Location)` made the earlier shorthand “fuse N occupancy
+sensors in one room” impossible: two PIRs producing the same `occupancy.raw` fact would collide and
+could not be addressed independently by a `FusionRule`.
+
+**Resolution applied to `docs/specs/v3/layer1_substrate_spec.md` §3 and
+`docs/specs/v3/layer2_registries_spec.md` §3/§4/§9**: each room-occupancy source produces
+`occupancy.evidence.<kind>.<sensor_id>`. `<sensor_id>` is the stable Heima logical-reading id, never
+the mutable HA `entity_id`; it preserves source identity across a binding rename or replacement.
+The canonical derived state remains `occupancy` at the room `Location`. This preserves direct
+`FactRef` addressing of every contributing sensor without adding a new global fact identity field.
+
+---
+
+## Configurable weighted room-occupancy formula, resolved (2026-09-09)
+
+Hardcoding `motion`, `presence`, and future sensor kinds inside a room-occupancy formula would have
+made every new device category a code change. A single undifferentiated vote weight was also
+insufficient: a sensor's `True` and `False` readings can carry materially different meaning, and a
+missing source must be distinguishable from both.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §2.4/§5.1/§5.3/§9 and the
+architecture recap**: the core `occupancy.weighted_evidence` formula takes a closed typed config with
+one binding per ordered input. Each binding declares primary/supporting role, independent true and
+false weights, and whether availability is required before vacancy can be concluded. It evaluates
+only available exact booleans; any primary true or sufficient weighted positive evidence yields
+occupied, while vacancy requires sufficient weighted negative evidence plus all required sources.
+The categorical result confidence uses evidence scores and potential available weights, preserving
+low source reliability and disagreement. New sensor kinds require only a normalized Sensor plus
+binding.
+
+---
+
+## Stability unavailable grace, resolved (2026-09-10)
+
+Immediate unavailable output on every short source flap would cause unnecessary downstream churn,
+but allowing a pending true/false dwell to complete after its supporting evidence vanished would be
+incorrect.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §2.4/§2.5/§5.2/§9 and the
+architecture recap**: boolean `Stability` gains optional `unavailable_grace`. On unavailability it
+first cancels directional pending state; it then retains only the last committed available output for
+the bounded interval, with one Layer-0 `AtJob` and no polling or per-cycle writes. Recovery before
+expiry cancels the grace; expiry emits one unavailable fact. Grace is not restart-safe and is cleared
+by an impacted reload. It defaults off; room occupancy may opt into 30 seconds, while security rules
+remain immediate-unavailable. Diagnostics expose each active grace and its unavailable inputs.
+
+---
+
+## Fusion runtime-state ownership, resolved (2026-09-10)
+
+The pending dwell and unavailable-grace state of a `FusionRule` was known to be ephemeral, but its
+owner was left ambiguous between a Layer-2 structure and Layer 0's short-term fact buffer.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §5.2/§8 and the architecture
+recap**: Layer 2 owns an O(1) `FusionRuleRuntimeState` by `fusion_id`, containing pending transition
+and grace/deadline-token data. Layer 0 owns only the `AtJob`. The state is never persisted, checkpointed,
+or encoded as history; it is discarded on restart and selectively at an impacted reload. This prevents
+historical `Window` storage from becoming a second control-state mechanism and keeps the hot path
+bounded.
+
+---
+
+## Immutable formula registry and selective version reload, resolved (2026-09-09)
+
+The formula contract had a shape and hot-path constraints but no lifecycle: a missing formula, a
+semantically wrong input sequence, or a changed implementation could otherwise reach evaluation
+without a deterministic staging failure or a scoped recovery path.
+
+**Resolution applied to `docs/specs/v3/layer2_registries_spec.md` §2.5/§5.3/§9 and the architecture
+recap**: core modules register formulas only during bootstrap, then freeze an immutable O(1) catalog.
+Each entry has an explicit semantic implementation version and a pure binding validator. Staging
+resolves the formula and validates inputs, order, output, `previous_cycle`, and typed configuration;
+the durable generation records only id, version, and canonical configuration, never code callables.
+At a later startup, a changed resolved `(formula_id, implementation_version)` enters the existing
+selective impact set: only its dependent/transitive fusion rules reset their ephemeral state, lose
+old-generation prior-cycle memory, and force-write under the new configuration fingerprint.
+
+---
+
+## Manual-hold provenance boundary, resolved (2026-09-09)
+
+The lifecycle contract still left `FactSource.source_id` implicit, used the invalid actor value
+`"admin"`, and treated a helper merely being active as proof of a resident action. It also split one
+replacement operation into two causal chains.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §5.1/§6.1/§12 and the Layer 0 recap**:
+each hold transition now has a complete `kind`/`source_id`/`source_type`/`actor_type` tuple. Explicit
+resident actions require a state edge whose HA context identifies a non-admin resident; an
+admin-attributed edge on the same dedicated helper legitimately produces `admin_command` with
+`actor_type="ha_admin"` for activation or clear. Service, automation, and unknown edges are rejected
+with diagnostics. A replacement's old terminal and new activation pairs share the single correlation
+id of the action that caused both.
+
+---
+
+## Manual-hold lifecycle facts, resolved (2026-09-09)
+
+Closed the final architecture intervention from the full v3 docs reread. The previous manual-hold
+contract declared an active fact and mentioned restoration, but made closing facts optional and left
+discarded restoration as diagnostics only. Audit, Recovery, and any future notification consumer could
+therefore disagree about what happened to one hold.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §6/§12 and
+`v3_architecture_recap.md` Layer 0**: each hold instance has one immutable `hold_id`. The state fact
+`manual_hold.<domain>` records the current transition with `active=True` or `False`; its paired
+`manual_hold.<domain>.lifecycle` event records activated, cleared, expired, replaced, restored, or a
+specific restoration-discard reason. The state is the only live-state input; events are audit and
+notification material.
+
+The source is fixed by transition: helper-backed resident response, legitimate domain inference,
+admin command, system timeout, or Recovery. A successful restore recreates both active state and
+`restored` event under one fresh Recovery correlation id. Every failed restore emits exactly one
+`restoration_discarded` event, including the reason, and never emits an active state fact. This remains
+transition-driven and introduces no synchronous I/O or extra polling on the evaluation path.
+
+---
+
+## Explicit manual-hold identity after restart, resolved (2026-09-09)
+
+The helper entity is authoritative for the live state of an explicit hold, but cannot itself retain
+the immutable `hold_id` required by the state/lifecycle contract. Treating the helper as wholly
+restart-safe therefore left an identity gap: after a restart with the helper still active, Layer 0
+could neither prove which instance was active nor close it reliably later.
+
+**Resolution applied to `docs/specs/v3/layer0_runtime_spec.md` §6.2/§7.3/§12 and the Layer 0 recap**:
+the immediate checkpoint now contains a narrow active `ExplicitHoldIdentity` record keyed by helper,
+domain, and `Location`. It is identity/audit metadata only, never a live-state source. Bootstrap
+reconciles it once with the helper: active plus matching record restores the same id; active without
+one mints a new id and records a Recovery activation; inactive plus a stale record emits a Recovery
+clear and removes it. Normal cycles retain their fresh helper read and incur no additional I/O.
+
+---
+
+## Power-recovery baseline plus current reconciliation, resolved (2026-09-09)
+
+Restoring only the physical states observed before a blackout would replay stale intent after a long
+outage; relying only on a fresh policy evaluation loses non-reconstructible desired targets. The
+required behavior is both: recover the house baseline, then immediately account for what changed
+while it was unavailable.
+
+**Resolution applied to Layer 0 §7.4 and Layer 2 `Actuator`**: opt-in actuators maintain a compact,
+last-write-wins checkpoint of their accepted desired target. The checkpoint is batch-coalesced, never
+synced for every target change; the resulting bounded staleness is explicitly accepted for
+performance. On a confirmed power recovery, current evaluation starts from that baseline but current
+facts, time/calendar state, safety, and manual holds take precedence before a single final delta is
+applied. No historical command is replayed. Per-actuator policy is `reconcile`, `never` (default), or
+`require_confirmation`; Layer 0 stores/exposes opaque targets but never reads the live Actuator
+registry or sends a command.
+
+---
+
+## Manual-hold journal and crash consistency, resolved (2026-09-09)
+
+The immediate checkpoint for a hold and the end-of-cycle facts batch are separate durable writes. A
+crash between them could leave a `hold_id`, its state fact, and its lifecycle audit disagreeing.
+
+**Resolution applied to Layer 0 §6.2-§6.4/§7.3/§8/§12 and the Layer 0 recap**: every explicit and
+implicit hold transition first enters a narrowly scoped `fsync`-backed `ManualHoldJournalEntry` with
+its complete fact roles and intended checkpoint update. Fact writes are idempotent by operation/role;
+bootstrap replays incomplete entries before any ordinary hold reconciliation and compacts them only
+after the facts batch acknowledges. This is not a general event journal. A journal I/O failure keeps
+the hold live for safety but marks it `durability_pending`, retries outside the hot path, and honestly
+accepts that a crash before successful persistence loses its identity/audit continuity.
+
+---
+
+## `FactRef.previous_cycle` snapshot and restart semantics, resolved (2026-09-09)
+
+The previous contract alternated between “either Persistence tier” and “durable tier after every
+restart”. That could put disk I/O into formula evaluation or silently supply an older value after an
+unclean stop or failed batch.
+
+**Resolution applied to Layer 0 §4/§12, Layer 2 §5/§5.8/§7/§9, and the recap**: composition declares
+the finite set of previous-cycle keys. Layer 0 seals only those values in an O(1) in-memory snapshot
+after each cycle; it remains valid through a durable-batch failure while the process is alive. A batch
+atomically carries a cycle marker and one clean-shutdown marker is written at orderly exit, allowing
+pre-DAG hydration after a clean restart. Any unclean/mismatched/known-failed restart exposes
+`available=False` for the first cycle, never an ambiguous older record. No per-cycle fsync and no
+formula-side disk read are introduced.
+
+---
+
+## Atomic registry reload and Zone semantic generations, resolved (2026-09-09)
+
+Zone identity intentionally stays stable when membership changes, but the meaning of zone-scoped facts
+and Fusion coverage changes with it. A piecemeal reload could therefore mix old membership, a new
+Fusion graph, stale debounce state, and old recovery policies in one cycle.
+
+**Resolution applied to Layer 0 §5/§7.4/§12, Layer 1 Zone, Layer 2 §2.5/§9, and the recap**: config
+reload stages and fully validates one immutable generation, persists its definition fingerprints, and
+swaps it only between cycles. It computes the changed Zone’s direct/transitive Fusion impact set;
+only that set loses `Stability` and `previous_cycle` memory. Retained impacted facts are force-emitted
+with a non-forgeable configuration fingerprint, removed producers emit terminal unavailable state, and
+Actuator recovery targets are discarded when their candidate fingerprint/policy no longer matches.
+An invalid candidate leaves the running generation exactly unchanged.
+
+---
+
+## V3 clean-start cutover, resolved (2026-09-10)
+
+The earlier one-time migration-script decision was re-evaluated against the only data worth carrying
+forward: the historical learned house state. That history was materially unreliable for a prolonged
+period, so converting the old configuration would preserve setup effort without preserving trustworthy
+learning value.
+
+**Resolution applied to Layers 0-2, the recap, and this backlog**: V3 starts from new explicit
+configuration and cold durable/in-memory fact stores and learning models. It imports neither the nine
+legacy entity lists nor any other V2 options, event/history records, runtime checkpoints, or learned
+state. There is no one-shot importer, compatibility adapter, legacy event-type map, or silent
+in-place conversion. This keeps bootstrap and the cycle hot path free of legacy branches and avoids
+claiming semantic continuity that the old learned data cannot support.
+
+A V2 export may be retained outside the V3 runtime solely as rollback/reference material. Cutover is
+an explicit operator action that creates or resets V3 configuration; it must not destructively rewrite
+the existing V2 configuration. The concrete Layer-8 user interface remains to be specified, but it
+cannot alter these semantic guarantees.
+
+---
+
+## Stability dwell deadlines and fast path, resolved (2026-09-10)
+
+The prior `Stability` wording created pending state for every changed candidate and only described an
+`AtJob` for availability grace. That delayed a configured no-dwell transition by at least one later
+cycle and could delay a positive dwell indefinitely until an unrelated event or periodic fallback.
+Both outcomes contradict Heima's reaction-time requirement.
+
+**Resolution applied to Layer 2 §5.2/§9 and the recap**: `None` is a same-cycle fast path, not a
+one-cycle dwell: a changed available candidate with no applicable dwell commits immediately. A positive
+dwell records one ephemeral pending value/since/due/token/generation and arms exactly one Layer-0
+`AtJob`. At expiry, the callback re-evaluates the fusion slice against current in-memory facts and
+commits only if its token, generation, and candidate still match; it never writes the value captured
+when the deadline was armed. Input changes, unavailability, restart, and impacted reload cancel or
+replace the pending deadline. This provides prompt bounded transitions without polling, disk/network
+I/O, or a stale-callback race.
+
+---
+
+## Semantic reload fingerprints and complete impact propagation, resolved (2026-09-10)
+
+The prior reload rule identified direct impact only from Zone membership and formula-version changes.
+A changed Sensor binding/interpretation/reliability or FusionRule strategy/inputs/stability could
+therefore retain old dwell, prior-cycle memory, or current output. It also followed only same-cycle
+dependencies even though a `previous_cycle=True` reader still depends semantically on its producer.
+
+**Resolution applied to Layers 0-2, the recap, and acceptance criteria**: staging alone computes one
+execution-semantic fingerprint per producer after resolving the complete candidate generation and
+compares it with the active generation's already-stored value. The fingerprint contains only
+execution-relevant fields; full definition fingerprints retain display/UI metadata for audit but do
+not cause runtime churn. The impact set begins with every added, removed, relocated, or semantically
+changed producer, including Zone and formula-version effects, then propagates through both current and
+previous-cycle Fusion dependencies. Only that set resets fusion control state, invalidates its output
+previous-cycle keys, and force-writes retained output under its new semantic fingerprint. This has no
+per-cycle hash, comparison, or lookup cost.
+
+---
+
+## Bucket burst removed pending a real event contract, resolved (2026-09-10)
+
+`BucketInterpretation` exposed `burst` and `burst_direction`, but defined neither an output nor
+event/state semantics, retention, consumer, or temporal comparison rule. It was configuration without
+an implementable behavior.
+
+**Resolution applied to Layer 2 and the recap**: both fields are removed. A future burst requirement
+must be modeled as its own explicit fact, normally an event carrying previous/current observation,
+direction, and observed window; it must not be hidden in a bucket value or `evidence`, whose
+non-load-bearing semantics would make the signal unreliable for policy decisions.
+
+---
+
+## Explicit interpretation input contracts and reusable keyword classification, resolved (2026-09-10)
+
+`CalendarInterpretation` previously combined two separate concerns: aggregation of active calendar
+windows and a reusable textual keyword classifier. Numeric continuous readings also had no formal
+interpretation despite being required by outdoor temperature and climate attributes; consequently a
+future implementation could have guessed coercions or attached an interpretation to incompatible raw
+binding input.
+
+**Resolution applied to Layers 0-2, recap, and acceptance criteria**: `KeywordClassifier` is a pure,
+configured text-sequence classifier, composed by the calendar-specific active-window wrapper
+`CalendarInterpretation` and reusable by a predictive consumer through an explicit configuration.
+`NumericInterpretation` normalizes only strictly accepted finite values to `float`; it has no unit,
+range, rounding, or fallback policy. Candidate staging enforces the closed binding/interpretation pairing
+and all numeric parsing remains deterministic, non-throwing, and free of silent coercions in the hot
+path.
+
+---
+
+## `available` means usable fact assertion, resolved (2026-09-10)
+
+Layer 1 described `available=False` primarily as an unreachable or offline source, while Layer 2 also
+used it when a successful raw read could not yield a meaningful normalized fact. That made a valid
+interpretation failure look like an undocumented exception to the substrate contract.
+
+**Resolution applied to Layers 1-2 and acceptance criteria**: availability is the single consumer
+contract for whether a producer can assert a usable value for its fact at that instant. Read failure,
+failed interpretation, and insufficient derived evidence are distinct producer-local causes of the
+same unavailable result. No shared reason enum is introduced: diagnostics and optional non-load-bearing
+evidence retain details without forcing all consumers or all producers into a premature global taxonomy.
+
+---
+
+## Transition history versus current state, resolved (2026-09-11)
+
+The short-term buffer said that every write reached memory immediately, while durable persistence used
+write-on-change. It did not establish whether unchanged observations consumed history, nor whether
+several real transitions of one state claim in a single cycle could be coalesced and lost.
+
+**Resolution applied to Layer 0, recap, and acceptance criteria**: the O(1) latest-value index and the
+transition history are distinct views. A state candidate unchanged against the in-memory current
+fingerprint appends nowhere; every changed candidate appends to both the buffer and ordered durable
+retry queue, even when the same key changes several times in one cycle. Internal
+`AppendOrder(cycle_id, ordinal)` resolves equal timestamp ties without changing `HouseFact` identity or
+public shape. A failed batch retains its queue and never makes the live current comparison regress to
+an older durable record.
+
+---
+
+## Temporal primitive construction validation, resolved (2026-09-11)
+
+`Window`, learned bounds, recurrence intervals, civil weekly fields, and dynamic deadlines had semantic
+descriptions but no single construction contract. Invalid zero/negative/non-finite values or Python
+`bool` values could otherwise reach scheduling, retention sizing, or a dwell calculation.
+
+**Resolution applied to Layer 0, recap, and acceptance criteria**: a pure shared validator admits only
+finite strictly positive non-boolean durations and validates weekly civil ranges plus UTC-aware
+deadlines. Static values are checked while staging startup/reload configuration; a dynamic `AtJob` is
+checked once at scheduler registration. Equal learned min/max bounds deliberately remain valid. Nothing
+is clamped, corrected, or revalidated in the hot evaluation cycle.
+
+---
+
+## Actuator endpoint ownership and opening coherence, resolved (2026-09-11)
+
+The Actuator registry identified entities but did not forbid duplicate command ownership or connect an
+optional opening reference to the candidate topology. Two records could then compete for one recovery
+target or implicit-hold classification; a rebind could also leave a target keyed to an endpoint no
+longer owned by the logical actuator.
+
+**Resolution applied to Layer 2, recap, and acceptance criteria**: `actuator_id` and command
+`entity_id` are each unique within a generation, while Sensors may still observe the same entity and a
+device may expose several actuator endpoints. `opening_id` is optional; only when supplied must it
+resolve and match the actuator's room. Removal or entity rebind deletes the old recovery target rather
+than migrating intent across HA endpoints automatically.
+
+---
+
+## ApplyStep actuator-target boundary, resolved (2026-09-11)
+
+Preventing duplicate Actuator records alone was insufficient: a Reaction could still nominally select
+one logical actuator while placing another HA entity, device, or area in the service payload. A Heima
+capability catalog was considered and rejected because it would duplicate Home Assistant service and
+feature logic.
+
+**Resolution applied to Layer 2, recap, and acceptance criteria**: each ordered `ApplyStep` addresses
+one `actuator_id` and carries only one HA service plus non-target parameters. The execution boundary
+resolves the entity from the active registry and rejects caller-supplied target selectors. HA validates
+the actual service/schema/support at application time. Multi-command reactions emit individual ordered
+steps, preserving per-command provenance without reimplementing HA capabilities.
+
+---
+
+## Formula configuration compilation boundary, resolved (2026-09-11)
+
+The formula registry was extensible but `FormulaConfiguration` was a closed union containing only the
+occupancy configuration. Replacing it with Layer 1 `EvidenceValue` would have been equally wrong:
+formula configuration may legitimately contain an ordered array of binding objects, deeper than that
+fact-evidence type intentionally permits.
+
+**Resolution applied to Layer 2, recap, and acceptance criteria**: a `FormulaStrategy` persists only
+a bounded canonical JSON object (or `None`). Each core `RegisteredFormula` compiles and validates that
+payload once during candidate staging into its own immutable internal configuration type; binding
+validation and `compute` receive only this compiled form. The active generation holds that object in
+memory, while persistence holds id/version/canonical JSON only. New configured formulas no longer
+reopen a global configuration union or add parsing work to the hot path.
+
+---
+
+## Layer 0/1 foundation dependency, resolved (2026-09-11)
+
+The documents correctly had Layer 0 Persistence consume Layer-1 `HouseFact`/`Location` values and
+Layer-1 `Provenance` embed Layer-0 `FactSource`, but Layer 1 simultaneously claimed that nothing in
+Layer 0 depended on Layer 1. That was a false one-directional layering claim and would invite an
+implementation-level import cycle or an ownership workaround disconnected from the actual contracts.
+
+**Resolution applied to Layers 0-1 and the recap**: Layers 0 and 1 are one foundation slice with
+separate ownership. Their only reciprocal references are immutable data contracts; Layer 0 never
+queries Layer-1 registries or policy, and Layer 1 never executes Layer-0 runtime behavior while
+constructing value objects. Bootstrap composes both before cycles, the hot path contains no behavioral
+cycle, and code may use a neutral contracts module or type-only references without creating a new
+architectural layer.
+
+---
+
+## `IntervalRecurrence` restart policy, resolved (2026-09-11)
+
+An earlier policy required a one-time interval catch-up after restart but persisted neither the
+interrupted `due` nor an execution watermark. It therefore asked the implementation to decide whether
+an interval was missed without possessing the information required to decide it.
+
+**Resolution applied to Layer 0 and acceptance criteria**: no `CronEntry` replays missed occurrences.
+An interval's first post-restart deadline is `now + interval`; a weekly recurrence arms its next civil
+occurrence. An owner that needs a startup action declares and executes it in explicit bootstrap logic,
+never as an accidental side effect of scheduler recovery. This avoids durable per-interval runtime
+state and makes startup work independently reviewable and testable. This supersedes the earlier
+interval catch-up decision recorded in the 2026-09-08 review.
+
+---
+
+## Numeric scalar validity, resolved (2026-09-11)
+
+`EvidenceValue` permitted Python `float` without explicitly rejecting `NaN`/infinity despite its JSON
+serialization contract. Several quantitative validators also relied on range checks that would accept
+Python `bool` as `1` or `0`, although a boolean is evidence semantics, not a numeric configuration.
+
+**Resolution applied to Layers 1-2 and acceptance criteria**: every float carried in fact value or
+evidence is finite, recursively; a contract field requiring a quantitative number accepts only a
+non-boolean `int` or finite `float`. Explicit boolean fact values and flags remain valid. The shared
+confidence helpers and `Provenance` validation enforce the same distinction, so a `bool` cannot enter
+confidence, weight, threshold, reliability, support, dispersion, or another numeric path by Python
+subclass accident.
+
+---
+
+## Bounded Heima payload boundary, resolved (2026-09-11)
+
+The evidence-size decision needed an explicit ownership boundary as well as a number: accepting a
+bounded JSON shape is insufficient if a raw mutable HA `State`, complete attribute map, or event
+context can leak by reference into a fact or a runtime buffer.
+
+**Resolution applied to Layers 0-1 and acceptance criteria**: canonical UTF-8 `evidence` and normalized
+`HouseFact.value` are each capped at 8 KiB. HA runtime objects are boundary input only; bindings copy
+only declared, normalized scalar or small structured projections before fact construction. No Heima
+buffer, durable queue, journal, previous-cycle snapshot, recovery snapshot, or checkpoint keeps an HA
+runtime object. The calendar cache is explicitly limited to its normalized window fields, not the
+provider response.
+
+---
+
+## `FactTypeClaim` glob ownership, resolved (2026-09-11)
+
+The prior wildcard wording did not define whether `*` applied to a whole fact type, one namespace
+segment, or a substring, so a claim such as `manual_hold.*.lifecycle` could be implemented differently
+by different consumers. Full regex was considered but rejected as unnecessary for this ownership
+contract.
+
+**Resolution applied to Layers 0-1 and acceptance criteria**: claims use a minimal dotted glob. A
+pattern full-matches the same number of non-empty fact-type segments; `*` matches zero or more
+non-dot Unicode code points within one segment, allowing both `*` and partial forms such as `*door*`.
+Staging computes pattern overlap. It permits overlapping claims only when their owner and emission kind
+are identical, and rejects every other overlap so each concrete fact type has one owner and one
+persistence semantic. Matching is compiled at staging and never performed in the hot path.
+
+---
+
+## Retention target versus hard count ceiling, resolved (2026-09-11)
+
+The retention-floor wording claimed that a learner's declared historical duration was guaranteed,
+while the same persistence policy allowed the per-`fact_type` count ceiling to evict older records
+early for a noisy source. Both statements could not be true.
+
+**Resolution applied to Layer 0 and the recap**: a declared duration is a target honored by ordinary
+time-based pruning, while the count ceiling remains a hard per-`fact_type` safety limit. Persistence
+durably records the latest count-ceiling eviction and returns `retention_coverage` with every history
+read. A consumer requiring a complete window, including a PatternLearner, remains warm-up/degraded
+when that window is truncated and emits diagnostics; it never learns from a silently shortened
+history. This preserves storage and latency bounds without producing misleading learned output.
+
+---
+
+## Default durable retention, resolved (2026-09-11)
+
+**Decision applied to Layer 0**: the system-wide durable retention baseline is **14 days**. A
+fact type with no declared historical requirement uses that target; a consumer that declares 30 or
+90 days raises the target for that fact type to the maximum declared duration. The per-fact-type
+count ceiling remains a separately chosen hard safety bound and can still surface truncated coverage.
+
+---
+
+## Durable record ceilings and global storage pressure, resolved (2026-09-11)
+
+**Decision applied to Layer 0 and the recap**: each `fact_type` has a hard default ceiling of
+**50,000 records**. The durable fact store also has a **512 MiB global pruning watermark**. Above it,
+background maintenance removes globally oldest evictable records after normal time/per-type pruning;
+affected history reports truncated retention coverage. The watermark is intentionally not an admission
+quota: latest state records are never removed and observations are never rejected. If protected latest
+states alone exceed it, Heima reports `storage_pressure` for operator action rather than sacrificing
+the current house state. Both values are operational defaults and may be revised from evidence in a
+future release.
+
+---
+
+## Short-term buffer horizon and isolation, resolved (2026-09-11)
+
+The prior rule used the largest registered `Window` as one global in-memory horizon. One unusually
+long correlation would therefore retain every unrelated fact for that duration.
+
+**Decision applied to Layer 0**: each addressable input stream has a **15-minute** default horizon.
+State requirements apply to one `FactIdentityKey`; event requirements apply to one `(fact_type,
+Location)` stream. A longer declared window extends only its own stream. No absolute maximum is set
+before operational evidence exists; diagnostics expose the largest declared horizon and aggregate
+buffer memory for a later evidence-based limit.
+
+---
+
+## Recovery checkpoint cadence, resolved (2026-09-11)
+
+**Decision applied to Layer 0**: Recovery owns one 60-second `IntervalRecurrence`. Its callback
+performs a checkpoint replacement only when state is dirty, so an idle system incurs no periodic disk
+write. Accepted recovery targets coalesce last-write-wins until the next dirty commit; manual-hold
+journaling and the already-defined critical recovery transitions retain their stricter immediate
+durability semantics. This bounds ordinary target-snapshot staleness without synchronous I/O on every
+actuator action.
+
+---
+
+## Admin-authored schedule authority, resolved (2026-09-11)
+
+**Decision applied to Layer 0 and the recap**: an admin-configured routine uses Home Assistant's
+`schedule.*` helper as its sole recurrence authority. Heima maps only the helper's effective state
+through the ordinary Sensor/Mapping path and lets Reactions consume the resulting boolean fact. It
+does not add its own picker, schedule persistence, timezone/DST calculation, or recurrence callback.
+`CronEntry`/`AtJob` remain exclusively for Heima-internal timing such as checkpointing and retries.
+
+---
+
+## Implicit-hold restoration eligibility, resolved (2026-09-11)
+
+**Decision applied to Layers 0-2**: `implicit_hold_restore_class` has no global or role-level
+inheritance. It defaults to `"never"`, and restoration is enabled only by explicit
+`"eligible"` configuration on the individual `Actuator` entry. The resolved value remains frozen
+into the hold at creation, preserving the existing restart audit and avoiding hidden policy precedence.
+
+---
+
+## Unanimity under partial availability, resolved (2026-09-11)
+
+**Decision applied to Layer 2**: `available=False` is excluded from `UnanimityStrategy`, never
+converted to a `False` vote. Missing observation is not negative evidence. `min_available` is now
+mandatory: strict unanimity is expressed as `len(inputs)`, while a lower value is an explicit choice
+to operate with partial availability. This prevents both fabricated dissent and an accidental
+one-surviving-sensor default.
+
+---
+
+## Closed semantic registries and plugin boundary, resolved (2026-09-11)
+
+**Decision applied to Layer 2**: `Interpretation`, `FusionStrategy`, and `RegisteredFormula` remain
+closed core-owned registries. They are not a third-party extension surface because they define hot-path
+fact semantics, availability, confidence, DAG behavior, reload impact, and failure handling. A future
+general strategy is a core specification change, not a plugin callback. Layer-7 plugins may instead
+stage as ordinary fact producers with `FactTypeClaim`/`HouseFact` contracts; their outputs may feed
+existing fusion strategies but cannot mutate their union or install callables in the evaluation path.
+
+---
+
+## Cumulative Fusion stability visibility, resolved (2026-09-11)
+
+**Decision applied to Layer 2**: stability may remain at each semantic level in a fusion chain; it is
+not restricted to top-level rules and carries no arbitrary warning threshold. Registry staging instead
+computes immutable `StabilityPathSummary` metadata: maximum cumulative delay and a deterministic
+responsible path for each transition direction, over same-cycle Fusion edges only. The summary is
+diagnostic/UI metadata with no runtime behavior or fingerprint impact, making configurations such as
+120-second room debounce plus 60-second zone debounce visibly 180 seconds end-to-end.
+
+---
+
+## Prior-cycle references limited to formula self-memory, resolved (2026-09-12)
+
+**Decision applied to Layer 2**: `FactRef.previous_cycle=True` is valid only for an exact
+`FormulaStrategy` self-reference: same `produces` and `where`, explicitly permitted by the resolved
+core formula's binding validator. It models a prior posterior, moving average, or accumulator without
+hidden mutable state. Non-formula use and every cross-producer delayed reference are rejected during
+staging. This avoids opaque temporal state machines such as mutual one-cycle dependencies while
+retaining the only demonstrated use case; a future cross-producer delay requires its own explicit
+temporal contract.

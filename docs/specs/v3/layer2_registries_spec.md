@@ -2,9 +2,10 @@
 
 **Status:** Draft — pending developer approval. Not implemented.
 **Layer:** 2 of 8. Builds on Layer 1 (`docs/specs/v3/layer1_substrate_spec.md` — `HouseFact`,
-`Provenance`, `Location`) and Layer 0 (`docs/specs/v3/layer0_runtime_spec.md` — `Window`,
-`FactSource`, Persistence). This document does not restate either contract; it assumes the reader
-has them, since all three are the same v3 architecture and Layer 2 does not exist without them.
+`Provenance`, `Location`, `Zone`, `EvidenceValue`) and Layer 0 (`docs/specs/v3/layer0_runtime_spec.md`
+— `Window`, `FactSource`, Persistence). This document does not restate either contract; it assumes the
+reader has them, since all three are the same v3 architecture and Layer 2 does not exist without
+them.
 
 This document is self-contained with respect to Heima's v2 specs: it defines what Layer 2 is and
 does without assuming the reader has read them.
@@ -20,11 +21,12 @@ reference implementation, not the source of truth.
 
 ## 1. Purpose
 
-Layer 2 is where raw Home Assistant entities become `HouseFact`s, and where several `HouseFact`s
+Layer 2 is where raw Home Assistant data becomes `HouseFact`s, and where several `HouseFact`s
 become one derived `HouseFact`. Three concepts:
 
-1. **`Sensor`** — registers exactly one HA entity as exactly one `fact_type` at exactly one
-   `Location`, with an `Interpretation` that turns its raw state into a typed `HouseFact.value`.
+1. **`Sensor`** — registers exactly one HA read binding as exactly one `fact_type` at exactly one
+   `Location`, with an `Interpretation` that turns the raw value from that binding into a typed
+   `HouseFact.value`.
 2. **`FusionRule`** — how N facts (`Sensor`-produced, or produced by another `FusionRule` — §5.6)
    become one derived `HouseFact`, via one of five closed strategies.
 3. **`Actuator`** — an inventory record of a commandable entity. Never itself a fact producer, never
@@ -37,15 +39,28 @@ Layer 2 collapses **9 independently-invented entity-list mechanisms** found in t
 each becomes a `Sensor` record distinguished by `fact_type`, not a separately-validated, separately
 selected list with its own admin-panel section.
 
+### 1.1 V3 clean-start cutover
+
+This is a design derivation, **not a migration contract**. V3 does not import or translate any V2
+entity list, configuration, `HouseFact`/event history, runtime checkpoint, or learned model. A V3
+installation starts with new, explicit registry configuration and empty fact and learning stores. An
+operator must explicitly create or reset that V3 configuration; implementation must never overwrite
+V2 options in place or silently synthesize `Sensor`, `FusionRule`, `Actuator`, or `Zone` records.
+
+An exported V2 artifact may be retained outside V3 as rollback/reference material, but no V3 runtime
+path may read, bind, interpret, or derive state from it. This deliberately removes compatibility
+branches and data conversion from both bootstrap and the cycle hot path. The exact user-interface
+mechanism for the explicit cutover belongs to Layer 8; its outcome is always the same clean V3 state.
+
 ## 2. Scope
 
 Layer 2 is responsible for:
-- `Sensor` and `Interpretation` — which HA entities Heima reads, and how their raw state becomes a
-  typed `HouseFact.value`;
+- `Sensor`, `ReadBinding`, and `Interpretation` — which HA entity/state/attribute/calendar slot Heima
+  reads, and how that raw input becomes a typed `HouseFact.value`;
 - `FusionRule` and its five strategies — how multiple facts combine into one derived fact, which of
   Layer 1's confidence functions (§4.2 of the Layer 1 spec) each strategy uses, and the
   registration-time ordering that lets a `FusionRule` consume another `FusionRule`'s output (§5.6);
-- the separate formula registry `FormulaStrategy` (one of the five) points into;
+- the separate, core-owned formula registry `FormulaStrategy` (one of the five) points into;
 - `Actuator` — the commandable-entity inventory.
 
 Layer 2 is **not** responsible for:
@@ -57,19 +72,28 @@ Layer 2 is **not** responsible for:
   inventory only, never itself a command.
 - domain policy that reads `Sensor`/`FusionRule` output (Layer 4) or acts on it (Layer 5).
 
-### 2.1 Non-goals
+### 2.1 Extension boundary and non-goals
 
-- A generic plugin API for third-party `Interpretation`/`FusionStrategy` variants — Layer 7's
-  concern, if and when it's opened; this document assumes core-team-authored registrations only,
-  consistent with `PatternLearnerConfig` (Layer 3) being declared the same way.
+- Third-party registration of `Interpretation`, `FusionStrategy`, or `RegisteredFormula`. These are
+  closed, core-owned semantic registries in V3, not a deferred plugin API: a future general mechanism
+  enters the core only with a new specification version, validator, reload-impact semantics, and
+  acceptance coverage. This preserves the hot-path guarantees for value shape, availability,
+  confidence, DAG ordering, and failure handling rather than exposing an immature compatibility
+  contract to arbitrary callables.
+- A Layer-7 plugin may instead be a separately staged fact producer: it declares its `FactTypeClaim`
+  and produces ordinary `HouseFact`s under the Layer 0/1 contracts. Its facts may feed the existing
+  closed strategies, but it cannot alter their union, register a formula, or dynamically import code
+  into a Sensor/Fusion execution path. The future Layer-7 lifecycle defines how such a producer is
+  invoked; this Layer-2 boundary defines only what it cannot extend.
 - Redesigning the `Room`/device inventory model — `where: Location` and `device_id` reference it,
   Layer 2 does not own it (same boundary Layer 1 already states for `room_id`).
 
 ### 2.2 Performance contract — no blocking I/O on the hot path
 
 Every execution point this layer introduces runs on the engine's hot, same-cycle path: a `Sensor`'s
-`Interpretation` decoding a raw HA state (§4), a `FusionRule`'s strategy combining current facts
-(§5.1), and specifically `RegisteredFormula.compute` (§5.3) — the one place in this layer where
+`Interpretation` decoding raw input already extracted by its `ReadBinding` (§3.1/§4), a
+`FusionRule`'s strategy combining current facts (§5.1), and specifically `RegisteredFormula.compute`
+(§5.3) — the one place in this layer where
 control passes to an arbitrary core-team-authored `Callable`, not a closed strategy the engine
 evaluates itself. All three must be pure, synchronous, and bounded: no network calls, no disk reads,
 no blocking waits of any kind. Any input a decoder/strategy/formula needs must already be present in
@@ -77,10 +101,148 @@ the `HouseFact`s and registry data handed to it — never fetched fresh at evalu
 
 This restates architecture invariant #2 (no blocking I/O on the hot path) explicitly for this layer's
 own execution points, rather than leaving it assumed. It matters most for `RegisteredFormula.compute`
-specifically: its type signature (`Callable[[Sequence[HouseFact]], tuple[Any, float] | None]`) does
-not itself prevent a slow or blocking implementation — nothing in the type system enforces this, so
+specifically: its result type (`FormulaResult | None`, §5.3) makes confidence handling explicit but
+does not itself prevent a slow or blocking implementation — nothing in the type system enforces this, so
 it is a normative constraint on every registration, verified by code review at registration time, not
 something a runtime check can generally guarantee.
+
+### 2.3 Composition-time uniqueness: one state producer per `(fact_type, Location)`
+
+**Resolved 2026-09-05; widened 2026-09-09.** Every state `(fact_type, Location)` pair has exactly one
+producer across the composed system — a `Sensor` or a `FusionRule` here, never both, and never two of
+either. This is what makes
+`FactRef` addressing (§5) well-defined in the first place: "the current `HouseFact` for this
+`fact_type` at this `Location`" presupposes there is exactly one such producer to ask. §5.6's
+registration-time topological sort presupposes the same thing when it builds an edge from A to B
+"whenever A's `produces`/`where` matches one of B's `inputs`" — an ambiguous match (two producers
+both claiming the same pair) would make the dependency graph itself ill-defined, not merely an
+awkward configuration.
+
+A registration (`Sensor.fact_type`/`Sensor.where`, or `FusionRule.produces`/`FusionRule.where`) that
+collides with an already-registered state producer's `(fact_type, Location)` is rejected at
+composition time, loudly, never silently accepted — the same discipline §5.6 already applies to
+`FusionRule` dependency cycles. Layer 2 contributes its static state claims to Layer 0 §4's bootstrap
+`FactTypeClaim`/global producer pass; it also rejects a fact type owned by another layer's claim, such
+as Layer 0's reserved `manual_hold.*` claim family. This is a startup/configuration lookup only, never an
+evaluation-path lookup.
+
+That pass also resolves each producer `Location` before it is admitted: `scope="room"` must name a
+registered room; every id in `scope="rooms"` must name a registered room; and `scope="zone"` must name
+a registered Zone. Zone and Topology registration perform their own Room-registry reference resolution
+under Layer 1 §6/§7. Thus construction may remain free of registry ordering, but no unknown spatial
+reference can reach a running `Sensor` or `FusionRule`.
+
+`Sensor` and `FusionRule` produce only `state` facts. Event facts are emitted only by the owning
+subsystem declared in Layer 0 §4; they are not `FactRef` inputs and cannot be recreated through a
+generic Sensor or Fusion registration.
+
+### 2.4 Numeric and cardinality validation
+
+All static numeric and cardinality constraints are checked when a `Sensor`, `FusionRule`, or
+`RegisteredFormula` is registered. An invalid registration is rejected loudly before it can enter the
+hot evaluation path; it is never normalized, clamped, or allowed to fail unpredictably later. Every
+quantitative number below must be a non-boolean `int` or finite `float` (`NaN` and either infinity are
+invalid); a `bool` is accepted only where the field is explicitly boolean. This applies equally to
+numeric formula results and payload fields validated by a formula compiler, while preserving boolean
+fact values as valid `EvidenceValue`s.
+
+- `Sensor.reliability` is in `[0.0, 1.0]`.
+- Every static value that an interpretation can emit passes Layer 1's pure
+  `validate_house_fact_value` during staging: every `MappingInterpretation.mapping` value and its
+  `default` unless it is `NO_DEFAULT`, every `Bucket.label`, and every `KeywordClassifier` category
+  key. A generation with an oversized, over-nested, non-finite, or otherwise invalid would-be
+  `HouseFact.value` is rejected before reload. `NumericInterpretation` and formula result values are
+  necessarily dynamic and retain their explicit runtime validation; formula *configuration* remains
+  governed by its separate §5.3 configuration contract.
+- A `BucketInterpretation` has at least one `Bucket`; every numeric `upper_bound` is finite and
+  strictly greater than the preceding numeric bound; `upper_bound=None` occurs exactly once and only
+  on the final bucket. This makes the vocabulary ordered and total over the real line.
+- `CalendarWindowReadBinding` pairs only with `CalendarInterpretation`, and
+  `CalendarInterpretation` pairs only with `CalendarWindowReadBinding`. `StateReadBinding` and
+  `AttributeReadBinding` pair only with `MappingInterpretation`, `NumericInterpretation`, or
+  `BucketInterpretation`. These are staging-time type-shape checks, not runtime guesses (§4).
+- `Actuator.actuator_id` is unique and stable within the generation, and every HA `entity_id` belongs
+  to exactly one `Actuator`. The same entity may independently back any number of `Sensor`s: reading
+  and commanding are distinct roles. If `opening_id` is set, it resolves in the candidate `Topology`
+  and `where` is exactly `Location(scope="room", room_id=<Opening.room_id>)`; when it is absent, no
+  opening relation is implied or required. `device_id` is intentionally not unique.
+- Every `FusionRule.inputs` tuple is non-empty. `DirectStrategy`'s existing exact-one rule remains
+  stricter where it applies.
+- `UnanimityStrategy.min_available` is an integer (not `bool`) in `[1, len(inputs)]`.
+- For `WeightedQuorumStrategy`, every explicit weight is finite and strictly positive. Negative or
+  zero weights are invalid: a weight expresses the amount of evidence a `True` vote contributes, not
+  an inverse correlation or a counter-vote. The latter must be normalized into a semantically oriented
+  fact before fusion, or expressed by `FormulaStrategy`. `threshold` is finite and in
+  `(0, total_configured_weight]`; `min_available_weight` is finite and in
+  `[0, total_configured_weight]`, where an input omitted from `weights` contributes its default 1.0.
+- `RegisteredFormula.min_inputs` is an integer (not `bool`) in `[1, len(owning FusionRule.inputs)]`.
+  For `confidence_mode="continuous"`, `scale` is finite and `> 0` and `floor` is finite and in
+  `[0.0, 1.0]`; the other two modes prohibit both fields. The mode-specific result validation in §5.3
+  remains the runtime guard for formula-produced values.
+- `occupancy.weighted_evidence` requires a configuration payload that compiles to an
+  `OccupancyWeightedEvidenceConfig`; every other current formula requires `configuration=None`. Its
+  bindings contain every input index exactly once, in `[0, len(inputs))`; both weights are finite,
+  `true_weight > 0`, `false_weight >= 0`, and a `required_for_vacancy` binding has
+  `false_weight > 0`. `occupied_threshold` is in `(0, sum(true_weight)]` and `vacant_threshold` is in
+  `(0, sum(false_weight)]` across the bindings.
+- When `FusionRule.stability` is `Stability`, `unavailable_grace` is either `None` or a positive
+  `Window`; it is invalid on a plain symmetric `Window` because that shape has no availability policy.
+
+### 2.5 Atomic configuration reload
+
+**Resolved 2026-09-09.** A registry reload is one immutable `RegistryGeneration`, never a sequence of
+live unregister/register calls. Staging happens outside evaluation and constructs candidate Room, Zone,
+Topology, Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
+Before it can replace the active generation, one complete validation pass resolves every spatial
+reference and checks §2.3 producer uniqueness, fact ownership, numeric/cardinality constraints,
+formula availability and binding validation (§5.3), Fusion DAG order, and §5.7 source/destination
+coverage against the candidate Zone memberships. Any failure rejects the whole candidate and leaves
+the active generation untouched.
+
+On success, the candidate's canonical definitions, full definition fingerprints, and per-producer
+**execution semantic fingerprints** are durably recorded with an `effective_at` instant, then the
+evaluator swaps one active-generation pointer only between cycles. A semantic fingerprint is derived
+once, after all candidate references are resolved, from exactly the fields that can affect a producer's
+value, availability, confidence, provenance semantics, temporal behavior, or spatial coverage. It is
+not calculated in an evaluation cycle. The active generation already holds the equivalent fingerprints,
+so candidate-vs-active comparison is one staging-time traversal of registrations and dependency edges;
+pointer selection in the hot path remains O(1).
+
+A full definition fingerprint still records any configuration change for audit, including display-only
+metadata. A semantic fingerprint deliberately excludes such metadata: changing a display name is not a
+reason to reset dwell/grace state, invalidate prior-cycle memory, or force a fact write. The
+`FactSource.configuration_fingerprint` carried by a producer is its resolved execution semantic
+fingerprint, not an installation-wide generation hash; persisted generation metadata retains the full
+definition fingerprint when audit needs the complete administrative configuration.
+
+The reload computes a direct-and-transitive **impact set** from those staging-time comparisons. A
+producer is directly impacted when it is added, removed, relocated, or its execution semantic
+fingerprint differs; this includes a changed Sensor binding/interpretation/reliability, a changed
+FusionRule inputs/strategy/formula configuration/stability, a Zone membership change affecting its
+scope or coverage, and a changed resolved formula `(formula_id, implementation_version)`. Every
+FusionRule dependent of an impacted producer is then impacted transitively through current-cycle
+`FactRef`s. Validated prior-cycle self-memory has no cross-producer dependent edge; the impacted rule's
+own snapshot key is invalidated by the cutover action below. The following actions are mandatory only
+for that set:
+
+- reset each impacted `FusionRule`'s ephemeral `Stability` pending transition and availability grace;
+- invalidate the output `FactIdentityKey` of every impacted producer in Layer 0's
+  `PreviousCycleSnapshot`, so any first new-generation `previous_cycle` read of changed semantics is
+  `available=False` rather than memory computed under the old generation;
+- re-evaluate and force-write each retained impacted producer even when its value is unchanged, with
+  its new `FactSource.configuration_fingerprint` so write-on-change and audit see the semantic change;
+- emit one terminal `available=False` state fact for each removed or relocated producer claim, so no
+  old current value remains visible under an address no new producer owns.
+
+Rules outside the impact set retain their pending stability and prior-cycle memory. An Actuator with a
+changed **execution semantic** fingerprint is handled in the same transaction:
+`power_recovery_policy="never"` removes its recovery target; otherwise its target is usable only when
+the candidate Actuator semantic fingerprint matches the target's recorded fingerprint. A mismatch
+discards the target rather than reconciling an intent under changed capabilities or policy; display-only
+Actuator metadata does neither. Removal of an Actuator, or a changed `entity_id` for the same stable
+`actuator_id`, also deletes the old entity's target; it is never migrated to another HA endpoint merely
+because the logical id stayed the same. Layer 0 receives this resolved policy/fingerprint/entity delta
+at composition commit; it never queries Layer 2’s live registry during recovery.
 
 ---
 
@@ -88,11 +250,30 @@ something a runtime check can generally guarantee.
 
 ```python
 @dataclass(frozen=True)
-class Sensor:
-    sensor_id: str
+class StateReadBinding:
     entity_id: str
+    source: Literal["state"] = "state"
+
+@dataclass(frozen=True)
+class AttributeReadBinding:
+    entity_id: str
+    attribute: str
+    source: Literal["attribute"] = "attribute"
+
+@dataclass(frozen=True)
+class CalendarWindowReadBinding:
+    entity_id: str
+    source: Literal["calendar_windows"] = "calendar_windows"
+
+ReadBinding = StateReadBinding | AttributeReadBinding | CalendarWindowReadBinding
+
+@dataclass(frozen=True)
+class Sensor:
+    sensor_id: str             # stable Heima logical-reading id, not an HA entity_id; non-empty and
+                               # one dotted-name segment when used in a per-sensor fact namespace
+    binding: ReadBinding
     where: Location            # Layer 1 §5
-    fact_type: str             # Layer 1 §3 naming convention — e.g. "occupancy.raw",
+    fact_type: str             # Layer 1 §3 naming convention — e.g. "occupancy.evidence.motion.pir_a",
                                  # "room_signal.illuminance", "presence", "external.outdoor_temp"
     interpretation: Interpretation
     device_id: str | None = None   # HA device_registry id, reference only — never a live dependency,
@@ -105,56 +286,182 @@ class Sensor:
                                      # longer matches what a BucketInterpretation's thresholds were
                                      # defined against) — never to perform unit conversion; Home
                                      # Assistant already does that, Heima only needs to know and flag
-                                     # a mismatch as a diagnostic.
+                                     # a mismatch as a diagnostic. Mechanism: §3.3.
+    reliability: float = 1.0        # confidence reported when available=True (§3.2) — a fixed,
+                                     # declared property of this specific device, never recomputed
+                                     # per cycle. Default 1.0: without a concrete evidentiary reason,
+                                     # a raw reading is fully trusted (Layer 1 §4.2's "not a guess"
+                                     # principle) — a value other than 1.0 requires one (e.g. a
+                                     # WiFi-based presence sensor with a known false-negative rate).
+                                     # Irrelevant when available=False: confidence is always None
+                                     # there (§3.2) regardless of reliability, because confidence
+                                     # describes trust in an observation, and there is none to trust.
 ```
 
-Every Home Assistant entity Heima cares about is registered exactly once, here — one registry, not
-several independently-configured entity lists for different purposes (§1). `workday_entity` becomes
-a `Sensor` too; its calendar-override behavior is a `PrecedenceStrategy` `FusionRule` (§5), not a
-property of the sensor itself. `ExternalContext`'s slots become
-`Sensor(fact_type="external.<slot>", where=Location(scope="casa"))` — the adapters behind them (OWM,
-Protezione Civile) stay ordinary HA integrations exposing ordinary entities, not a Layer 7 concern.
+Every Home Assistant **readable signal path** Heima cares about is registered exactly once, here —
+one registry, not several independently-configured entity lists for different purposes (§1). A
+readable signal path is more precise than an entity id: one HA entity may legitimately produce
+several `Sensor`s when different parts of it mean different facts (for example a `climate.*` entity's
+state, `current_temperature`, and `hvac_action`; or a device whose sibling entities share the same
+`device_id`). The uniqueness invariant stays `(fact_type, Location)` (§2.3), not "one `Sensor` per
+entity id." What must never happen is two producers claiming the same `(fact_type, Location)`, or one
+producer hiding several facts inside one bundled output.
 
-### 3.1 `available` when the entity — or its interpretation — has nothing to report
+**Per-sensor room-occupancy evidence has a reserved namespace.** A physical reading that contributes
+to room occupancy produces exactly `occupancy.evidence.<kind>.<sensor_id>`, at that room's
+`Location`, where `<kind>` names its normalized evidence semantics (for example `motion`, `presence`,
+or `contact`) and `<sensor_id>` is this `Sensor`'s stable Heima id. The suffix is never a Home
+Assistant `entity_id`: an HA rename, re-pair, or replacement can change the `binding` while preserving
+the logical evidence identity and its history. Conversely, a semantically different evidence role
+gets a new `sensor_id`, even if it happens to read the same HA device. This makes several PIR/mmWave
+readings in one room separately addressable by `FactRef` while preserving the one-producer-per-
+`(fact_type, Location)` invariant. The derived canonical room fact remains simply `occupancy`; only
+the evidence layer carries a per-sensor suffix.
 
-A `Sensor` is what actually sets `Provenance.available` (Layer 1 §4.1) — this is where "there is no
-real observation here" is first decided, and it is a concrete, resolved rule with two distinct
-triggers, not left to each producer's discretion:
+`workday_entity` becomes a `Sensor` too; its calendar-override behavior is a `PrecedenceStrategy`
+`FusionRule` (§5), not a property of the sensor itself. `ExternalContext`'s slots become
+`Sensor(binding=StateReadBinding(entity_id="<adapter_entity>"), fact_type="external.<slot>",
+where=Location(scope="casa"))` — the adapters behind them (OWM, Protezione Civile) stay ordinary HA
+integrations exposing ordinary entities, not a Layer 7 concern.
 
-- **The entity itself is unreachable**: HA reports `unavailable`, `unknown`, or the entity does not
-  exist. `available=False`, `confidence=None` (Layer 1 §4.1). The `Interpretation` (§4) is not run at
-  all in this case; there is no raw state to interpret. (`value` carries no defined content here —
-  Layer 1 §3 — a producer may leave it at `None`, but nothing downstream may rely on that.)
-- **The entity is reachable, but its `Interpretation` cannot produce an interpretable value from what
-  it read**: `available=False`, `confidence=None`, same as above. This is **not** a property every
-  `Interpretation` has — `BooleanInterpretation`/`BucketInterpretation`/`MediaActivityInterpretation`/
-  `PresenceInterpretation` all decode from a vocabulary HA itself defines and closes (a fixed
-  `media_player`/`device_tracker` state enum, or bucket bounds that cover the entire real line by
-  construction, §4) — once the entity is reachable, they always produce a value, no "can't interpret"
-  case exists for them. `CalendarInterpretation` is the one exception: its vocabulary
-  (`keywords`) is admin-defined and open, so a real event can legitimately match no configured
-  category — and "no current event to classify" is the same case. This is *not* a value in the
-  category-space `keywords` produces (there is no implicit "none" category) — it is the absence of a
-  signal from this `Sensor`, which is exactly what `available=False` exists to mean, not a value to
-  invent. (This is what makes `PrecedenceStrategy`'s `workday_entity` fallback, §5.1, actually work:
-  it falls through to the raw entity specifically because the calendar `Sensor` reports
-  `available=False` here, never because it reports some "none" value `PrecedenceStrategy` would have
-  to special-case.)
-- **Otherwise**: the `Interpretation` produces `available=True` with a real `value` and `confidence=1.0`
-  (Layer 1 §4.2 — a raw reading is either fully trusted or absent, no in-between without a concrete
-  evidentiary reason).
+### 3.1 `ReadBinding` — how HA data enters a `Sensor`
+
+`ReadBinding` is the adapter between Home Assistant's entity model and Heima's cleaner `HouseFact`
+model. It answers one question only: **which raw input is handed to `Interpretation` this cycle?**
+It does not interpret, bucket, fuse, classify, or decide confidence. Those stay `Interpretation`,
+`FusionRule`, and `Provenance` concerns respectively.
+
+Three binding shapes are enough for the concrete HA surfaces Heima already uses:
+
+- **`StateReadBinding`** reads the entity's primary `state` string. This covers binary sensors,
+  switches, media players, device trackers, lock/alarm-style vocabularies, and helper entities.
+- **`AttributeReadBinding`** reads one named HA state attribute. This covers multi-signal entities
+  such as `climate.*` (`current_temperature`, `temperature`, `hvac_action`) without pretending the
+  entire entity is one fact or forcing bespoke code outside this registry.
+- **`CalendarWindowReadBinding`** reads only the raw windows active **now** for one `calendar.*`
+  entity through Layer 0's `active_now` view (§3.4.1 of the Layer 0 spec). It passes raw event
+  summary/start/end data to `CalendarInterpretation` (§4); category classification still happens here
+  in Layer 2, never in Layer 0. A predictive Layer 4/5 consumer does not route future events through a
+  `Sensor`: it asks Layer 0 directly for `upcoming_starts_within(entity_id, now, horizon)`, retaining
+  each event's start/end/summary for a decision such as notifying today about tomorrow's event.
+
+The binding output is a small raw value or small sequence of raw values already available in Home
+Assistant's in-memory state/context for the current cycle. It is never a network fetch, disk read, or
+fresh service call. If a binding would require an external fetch to answer, that fetch belongs in the
+upstream HA integration/adapter that exposes an entity, not in Layer 2's hot path.
+
+Binding failure maps to `available=False` before `Interpretation` runs (§3.2): missing entity,
+`unknown`/`unavailable` state for `StateReadBinding`, missing attribute for `AttributeReadBinding`,
+or a calendar binding that cannot obtain raw event windows from Layer 0's pre-DAG calendar
+extraction. An empty-but-successful calendar result is not a binding failure; it is handed to
+`CalendarInterpretation`, which may then produce no category and therefore `available=False` by its
+own rule (§3.2/§4).
+
+`Sensor.device_id` stays a grouping/reference field, not the thing being read. If HA reports a
+`device_id` for the bound entity, multiple `Sensor`s may share it so the admin panel can present one
+physical device with several facts and actuator roles. The same physical device may also have one or
+more `Actuator` records (§6); this is expected, not a modeling conflict.
+
+### 3.2 `available` when the producer cannot form a usable fact assertion
+
+A `Sensor` is what actually sets `Provenance.available` (Layer 1 §4.1) — this is where a usable fact
+assertion is first decided, by a concrete rule with two distinct triggers, not by each producer's
+discretion:
+
+- **The binding cannot produce raw input**: the entity does not exist; a state binding reads
+  `unavailable` or `unknown`; an attribute binding targets a missing attribute or an entity whose
+  state is unavailable; or a calendar-window binding cannot obtain raw event windows from Layer 0's
+  pre-DAG calendar extraction. `available=False`, `confidence=None` (Layer 1 §4.1). The
+  `Interpretation` (§4) is not run at all in this case; there is no raw input to interpret. (`value`
+  carries no defined content here — Layer 1 §3 — a producer may leave it at `None`, but nothing
+  downstream may rely on that.)
+- **The binding succeeds, but its `Interpretation` cannot produce an interpretable value from what
+  it read**: `available=False`, `confidence=None`, same as above. Whether this case can happen at all
+  is **not** a fixed fact about which `Interpretation` type is in use — it is a declared property of
+  the specific registration, resolved 2026-09-05 alongside collapsing three hardcoded-vocabulary
+  variants into `MappingInterpretation` (§4):
+  - `NumericInterpretation` and `BucketInterpretation` are total over a valid finite numeric input:
+    the former returns the normalized number and the latter's ordered chain of `upper_bound`s plus its
+    open-ended top bucket covers the entire real line. A raw input that fails §4's strict numeric
+    parser is instead an interpretation type failure: `available=False`/`confidence=None` with a
+    diagnostic, never a coerced number or a guessed bucket.
+  - `MappingInterpretation` is total, or not, depending on its own `default` field (§4):
+    `default=<value>` means a raw state absent from `mapping` still produces a defined value — no
+    "can't interpret" case for that registration, including `default=None` when `None` is deliberately
+    the produced value. `default=NO_DEFAULT` means a raw state absent from `mapping` is deliberately
+    treated the same way `CalendarInterpretation`'s open vocabulary is
+    (below) — an explicit, reviewable choice a `Sensor` producer makes ("I only know how to speak for
+    these specific states, nothing else"), not an assumption baked into a dataclass type the way the
+    three collapsed variants used to make it.
+  - `CalendarInterpretation`'s `KeywordClassifier` vocabulary is admin-defined and inherently open —
+    a real event can legitimately match no configured category. "No current event to classify" is the same
+    case as a `MappingInterpretation(default=NO_DEFAULT)` producer running out of vocabulary, just reached
+    by a different mechanism (fuzzy keyword scan vs. exact lookup, §4). Either way, this is *not* a
+    value in the interpretation's own output space (there is no implicit "none" category) — it is the
+    absence of a signal from this `Sensor`, which is exactly what `available=False` exists to mean,
+    not a value to invent. (This is what makes `PrecedenceStrategy`'s `workday_entity` fallback,
+    §5.1, actually work: it falls through to the raw entity specifically because the calendar
+    `Sensor` reports `available=False` here, never because it reports some "none" value
+    `PrecedenceStrategy` would have to special-case.)
+- **Otherwise**: the `Interpretation` produces `available=True` with a real `value` and
+  `confidence=Sensor.reliability` — resolved 2026-09-05, replacing an earlier, hardcoded
+  `confidence=1.0`. `reliability` defaults to `1.0`, so this is unchanged for the common case; it is
+  not computed dynamically from this cycle's data, it is the fixed, declared value from the
+  `Sensor`'s own registration (Layer 1 §4.2 — "a raw reading is either fully trusted or absent, no
+  in-between without a concrete evidentiary reason," now an actual mechanism instead of an
+  unexercised allowance).
+
+### 3.3 `unit` drift diagnostic — mechanism
+
+**Resolved 2026-09-05.** Checked at the same point an `Interpretation` already reads the entity's raw
+input (§3.1/§4) — the bound entity's live `unit_of_measurement` is already available there for
+state/attribute bindings, so this costs nothing beyond what binding extraction already needs anyway,
+and §2.2's no-blocking-I/O contract holds unchanged (no extra read, no extra call). If the live unit
+differs from `Sensor.unit` as registered, a
+diagnostic event is raised (Layer 0 §9-style, the same mechanism Layer 1 §4.3 uses for an `evidence`
+shape violation) — never an automated correction, and never a change to `available`/`confidence`/
+`value` for that cycle. A stale registered unit is a configuration problem worth a human's attention
+(someone changed a device's reported unit; a `BucketInterpretation`'s thresholds may now be defined
+against a unit no longer in effect) — not a reason to distrust or discard this cycle's otherwise-valid
+reading, which is why it is a side-channel diagnostic, not a change to the fact itself.
 
 ---
 
-## 4. `Interpretation` — how a raw HA state becomes a `HouseFact` value
+## 4. `Interpretation` — how raw binding input becomes a `HouseFact` value
 
 ```python
 @dataclass(frozen=True)
-class BooleanInterpretation:
-    extra_on_states: frozenset[str] = frozenset()
-    # additive to the default on/off vocabulary — e.g. {"charging", "full"} for a battery-backed
-    # switch whose "on" states go beyond the plain on/off HA already knows. Additive specifically so
-    # a new device's quirky state name doesn't require special-casing anywhere downstream.
+class NoDefault:
+    pass
+
+NO_DEFAULT = NoDefault()
+MappingDefault = EvidenceValue | NoDefault
+
+@dataclass(frozen=True)
+class MappingInterpretation:
+    mapping: dict[str, EvidenceValue]   # raw string input -> normalized HouseFact.value, exact match.
+                                          # Value type is EvidenceValue (Layer 1 §3/§4 — the same
+                                          # shape constraint HouseFact.value itself already carries),
+                                          # not Any.
+    default: MappingDefault = NO_DEFAULT
+    # default=<value>: a raw string absent from `mapping` produces this value instead — always
+    #   available=True once the binding succeeds (§3.2). This is how a boolean-style sensor
+    #   ({"on": True, "charging": True, "full": True}, default=False), a presence sensor
+    #   ({"home": True}, default=False), or a media-activity sensor ({"playing": "playing",
+    #   "paused": "paused", "buffering": "buffering"}, default="idle") are expressed — the same
+    #   exact-match-lookup mechanism, a configurable vocabulary instead of a hardcoded one per HA
+    #   domain (resolved 2026-09-05, see below).
+    #   `None` is a valid EvidenceValue, so default=None means the produced HouseFact.value is really
+    #   None with available=True.
+    # default=NO_DEFAULT: a raw string absent from `mapping` means "no interpretable value" —
+    #   available=False (§3.2), the same mechanism CalendarInterpretation's own "no match" uses,
+    #   generalized to any discrete vocabulary, not just calendar keywords.
+
+@dataclass(frozen=True)
+class NumericInterpretation:
+    pass
+    # A valid finite numeric input becomes its normalized float value. There is deliberately no unit
+    # conversion, range policy, rounding, or fallback here: those are explicit downstream concerns.
 
 @dataclass(frozen=True)
 class Bucket:
@@ -163,48 +470,86 @@ class Bucket:
 
 @dataclass(frozen=True)
 class BucketInterpretation:
-    buckets: tuple[Bucket, ...]         # ordered lowest to highest, e.g. dark/dim/ok/bright
-    burst: Window | None = None          # Layer 0 §3.2 — "sudden bucket jump within X seconds"
-    burst_direction: Literal["up", "down", "both"] | None = None
+    buckets: tuple[Bucket, ...]         # ordered lowest to highest, e.g. dark/dim/ok/bright — at
+                                          # least one entry; the ordered chain of upper_bounds plus
+                                          # the open-ended top bucket makes this total over the
+                                          # entire real line by construction, given a non-empty tuple
 
 @dataclass(frozen=True)
-class MediaActivityInterpretation:
-    pass   # fixed, already-correct media_player vocabulary (on/playing/paused/buffering) — carried
-           # forward unchanged, not reinvented
-
-@dataclass(frozen=True)
-class PresenceInterpretation:
-    pass   # same shape as BooleanInterpretation, different vocabulary (device_tracker/person
-           # states). Every presence entity (room-scoped or whole-house) is a Sensor with this
-           # interpretation; a person's weight in group presence becomes their weight inside a
-           # WeightedQuorumStrategy FusionRule (§5), not a field here.
+class KeywordClassifier:
+    keywords: dict[str, list[str]]      # category -> matching keywords
+    priority_order: list[str]           # tie-break order when multiple categories match
+    # Pure classifier: it accepts a finite sequence of strings and returns one configured category or
+    # None. It owns normalization, matching, and deterministic priority; it performs no I/O and has
+    # no calendar-time semantics.
 
 @dataclass(frozen=True)
 class CalendarInterpretation:
-    keywords: dict[str, list[str]]      # category -> matching keywords
-    priority_order: list[str]           # tie-break order when multiple categories match
-    # keyword-matching on event summaries against admin-defined keywords. Works against any
-    # calendar.* entity regardless of backing (Google Calendar, CalDAV, HA's native local_calendar)
-    # — internal vs. external is a source choice, not a modeling one.
+    classifier: KeywordClassifier
+    # Calendar-specific wrapper: aggregates the summaries of active_now windows, then delegates their
+    # classification to classifier. It works with any calendar.* backing; source choice is not model.
 
 Interpretation = (
-    BooleanInterpretation | BucketInterpretation | MediaActivityInterpretation
-    | PresenceInterpretation | CalendarInterpretation
+    MappingInterpretation | NumericInterpretation | BucketInterpretation | CalendarInterpretation
 )
 ```
 
-A closed union, five variants — consistent with how this model treats every other closed vocabulary
-(`FusionStrategy` below, `RecurrencePattern`, `FactSourceKind`). A sixth variant is added the same
-deliberate way `FusionStrategy` gained `FormulaStrategy` (§5.1): when a genuinely distinct decoding
-pattern is found, not for a single sensor's convenience.
+**Binding-input contract is exact and checked before cycles.** `StateReadBinding` supplies its valid
+raw HA state string; `AttributeReadBinding` supplies its valid raw attribute value; either may feed
+only `MappingInterpretation`, `NumericInterpretation`, or `BucketInterpretation`. Mapping is an exact
+string lookup: an attribute value must therefore already be a `str`, with no `str(...)` conversion.
+Numeric and bucket interpretations share one strict numeric parser: accept a non-boolean `int` or
+finite `float`, or an ASCII decimal string matching
+`[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?`; normalize it to a finite `float`.
+Whitespace, locale formatting, booleans, `NaN`, infinity, malformed strings, and every other value are
+type failures, producing `available=False`/`confidence=None` and a diagnostic. They never throw into
+the cycle, silently coerce, convert units, or select a bucket. `CalendarWindowReadBinding` supplies
+only `active_now` windows and pairs exclusively with `CalendarInterpretation`; the reverse pairing is
+also exclusive. All of these compatibility and configuration checks occur during candidate-generation
+staging, never as a runtime guess.
 
-**Room occupancy vs. whole-house presence — same `Interpretation`/`FusionRule` shape, independently
-tuned, never a shared timing policy.** Both are `Sensor(fact_type="occupancy"/"presence")` combined
-by a `FusionRule` with `WeightedQuorumStrategy` (§5), but each `FusionRule` instance carries its own
-`stability` (§5.2) — room occupancy keeps a fast-on/slow-off default (`Stability(to_true=None,
-to_false=Window(seconds=120))`), whole-house presence can use a more conservative pair independently. They run in
-separate consumers evaluated independently per cycle; reusing the same strategy *type* reuses pure
-logic, not a shared blocking path or a shared timing policy.
+**Keyword classification is defined once; calendar use is only one wrapper.** `KeywordClassifier`
+applies Unicode NFKC normalization, `casefold()`, and whitespace collapsing to temporary copies of
+each supplied text and configured keyword. A keyword matches when its normalized text is a substring
+of the normalized input. It gathers every matching category across the supplied texts, then returns the
+category occurring earliest in `priority_order`, or `None`. Registration rejects a `priority_order`
+that does not list every key in `keywords` exactly once and no other category, or a category with no
+non-empty normalized keyword. `CalendarInterpretation` passes only the raw summaries of its active
+windows to that classifier; stored `CalendarWindow.summary` remains unmodified. Thus overlap within one
+calendar is deterministic without Layer 0 assigning a category. `None` means this Sensor has no signal
+(`available=False`). Conflicts between separate `calendar.*` entities remain explicit consumer policy.
+
+This closed union has four genuinely distinct decoding **mechanisms**: exact finite-vocabulary lookup
+(`MappingInterpretation`), strict continuous numeric normalization (`NumericInterpretation`), numeric
+range membership (`BucketInterpretation`), and calendar-window aggregation plus keyword classification
+(`CalendarInterpretation`). **Resolved 2026-09-05** (`v3_backlog.md`): this union previously carried five members
+(`BooleanInterpretation`, `MediaActivityInterpretation`, `PresenceInterpretation` alongside these
+three); three of those were the exact same exact-match-lookup mechanism, each hardcoding its own
+vocabulary instead of taking one as configuration. Collapsed into `MappingInterpretation`'s
+`mapping`/`default`, with `NO_DEFAULT` as the explicit "no fallback value" sentinel, which also
+extends for free to any future closed-discrete-vocabulary HA domain
+(a lock, an alarm panel, a vacuum, `climate.hvac_action`...) without ever reopening this union for
+that pattern again. A future variant is added the same deliberate way `FusionStrategy` gained
+`FormulaStrategy` (§5.1) — only when a genuinely distinct decoding **mechanism** is found, never for
+one sensor's convenience, which is exactly the discipline this collapse restores after
+`MediaActivityInterpretation` had quietly drifted from it.
+
+**`NO_DEFAULT`, not `None`, means "no fallback" — resolved 2026-09-08.** Layer 1's `EvidenceValue`
+explicitly includes `None`, so `MappingInterpretation(default=None)` must remain available as a real,
+intentional output value (`HouseFact.value is None`, `available=True`) rather than being overloaded to
+mean "no interpretable value." The in-memory sentinel is the frozen dataclass singleton
+`NoDefault()`/`NO_DEFAULT` above; in configuration/storage, the preferred representation is that the
+`default` field is absent. If the field is present with JSON `null`, that is the real `None` value,
+not the sentinel. This makes total vs. partial mappings mechanically distinguishable in tests and in
+admin-authored config.
+
+**Room occupancy vs. whole-house presence — independently tuned, never a shared timing policy.**
+Room occupancy consumes the per-sensor evidence namespace above and produces the canonical
+`occupancy` fact through its own `FusionRule`; whole-house presence is a separate consumer producing
+`presence`. Each carries its own strategy and `stability` (§5.2) — room occupancy keeps a
+fast-on/slow-off default (`Stability(to_true=None, to_false=Window(seconds=120))`), while
+whole-house presence can use a more conservative pair. They run independently per cycle; sharing
+evidence vocabulary never shares a blocking path or timing policy.
 
 ---
 
@@ -219,11 +564,23 @@ has the same shape.
 class FactRef:
     fact_type: str   # Layer 1 §3 naming convention
     where: Location  # Layer 1 §5
-    # Identifies "the current HouseFact for this fact_type at this Location" — the same address
-    # every other consumer in this architecture already queries by (Layer 0: "every HouseFact true
-    # in Location X" is the generic query shape). A FusionRule's inputs are addressed this way, not
-    # by producer id, specifically so it never needs to know or care whether a given input came from
-    # a Sensor or from another FusionRule — see §5.6.
+    previous_cycle: bool = False
+    # Identifies "the HouseFact for this fact_type at this Location" — the same address every other
+    # consumer in this architecture already queries by (Layer 0: "every HouseFact true in Location X"
+    # is the generic query shape). A FusionRule's inputs are addressed this way, not by producer id,
+    # specifically so it never needs to know or care whether a given input came from a Sensor or from
+    # another FusionRule — see §5.6.
+    #
+    # This type addresses state facts only; a FactTypeClaim with emission_kind="event" is rejected at
+    # registration because an event has no current value to address.
+    #
+    # `previous_cycle` defaults to False: current-cycle value in §5.6's topological order. True means
+    # the value at the end of the previous completed cycle, read from Layer 0's sealed in-memory
+    # PreviousCycleSnapshot. Staging accepts True only on a FormulaStrategy input whose fact_type and
+    # where exactly equal its owning FusionRule's produces/where, and only when that core formula's
+    # validate_binding explicitly permits it (§5.8). It is therefore explicit self-memory, never a
+    # generic one-cycle edge to another producer. After restart, Layer 0 pre-hydrates only after a
+    # clean shutdown; an unclean first cycle yields available=False.
 
 @dataclass(frozen=True)
 class FusionRule:
@@ -231,10 +588,9 @@ class FusionRule:
     inputs: tuple[FactRef, ...]    # order matters for PrecedenceStrategy, irrelevant otherwise
     strategy: FusionStrategy
     produces: str                  # fact_type of the derived HouseFact
-    where: Location                 # location of the derived fact — may be coarser than its
-                                     # members (e.g. room occupancy derived from several
-                                     # room-placed sensors, or a casa-scoped fact from several
-                                     # room-scoped ones)
+    where: Location                 # the derived fact's own "destination location" — its
+                                     # relationship to inputs' own "source locations" is
+                                     # strategy-specific, not universal — §5.7
     stability: Window | Stability | None = None  # §5.2 — debounce/hysteresis on the *output*,
                                                    # applies regardless of which strategy produced
                                                    # it; not part of FusionStrategy itself
@@ -245,21 +601,39 @@ class FusionRule:
 ```python
 @dataclass(frozen=True)
 class DirectStrategy:
-    pass   # 1:1 passthrough — relabels one Sensor's fact under a new fact_type/Location, unchanged
+    pass   # 1:1 passthrough — relabels its one input's fact under a new fact_type; value and
+           # location unchanged. Exactly one FusionRule.inputs entry, always (§5.7).
 
 @dataclass(frozen=True)
-class BooleanSetStrategy:
-    mode: Literal["any", "all"]
-    min_available: int = 1
-    # a floor on how many configured inputs must be available before this strategy reports
-    # anything at all — see §5.5. Default 1 restates the general "empty population ->
-    # available=False" rule with no extra requirement; raise it deliberately for a strategy where a
-    # single surviving input shouldn't be trusted to speak for the rest (e.g. a 5-sensor security
-    # corroboration check where 1-out-of-5 responding is a degraded read, not a confident one).
+class UnanimityStrategy:
+    min_available: int
+    # True only if every currently-available boolean input is True — resolved 2026-09-08, renamed and narrowed
+    # from the earlier BooleanSetStrategy(mode: Literal["any", "all"]). "any" was found to be a pure
+    # redundancy: WeightedQuorumStrategy(weight=1 for every input, threshold=1.0) produces the exact
+    # same outcome in every availability scenario, since "at least one" never needs its bar to scale
+    # with population size (see WeightedQuorumStrategy's own comment below). "all" (unanimity) could
+    # *not* be expressed the same way: it requires the bar itself to track total_weight_considered,
+    # which changes every cycle as inputs become available/unavailable (§5.5) — a fixed
+    # WeightedQuorumStrategy.threshold cannot do this (one sensor going offline would make a fixed
+    # numeric threshold permanently unreachable, even though every remaining input still agrees). This
+    # is the one genuine case a linear weighted threshold cannot express, which is what still justifies
+    # a separate strategy for it, renamed here to say plainly what it does now that it does only one
+    # thing.
+    #
+    # min_available: mandatory floor on how many configured inputs must be available before this
+    # strategy reports anything at all — see §5.5. A strict all-configured-input policy is expressed
+    # explicitly as len(inputs); a smaller value is an explicit partial-availability policy. There is
+    # no default that lets one surviving input silently speak for the rest.
 
 @dataclass(frozen=True)
 class WeightedQuorumStrategy:
-    weights: dict[FactRef, float] = field(default_factory=dict)   # input -> weight, default 1.0
+    weights: dict[FactRef, float] = field(default_factory=dict)
+    # Resolved 2026-09-05: a sparse override, not a second membership list. `FusionRule.inputs` (§5)
+    # is the single source of truth for which inputs feed this strategy, for all five strategies
+    # without exception — `weights` only overrides the default weight (1.0) for entries that need a
+    # non-default one. A key in `weights` that is not also in the owning `FusionRule.inputs` is a
+    # registration-time error, same discipline as §2.3's producer-uniqueness check; most
+    # configurations need no entries here at all.
     threshold: float = 1.0
     min_available_weight: float = 0.0
     # a floor on total available weight (not configured weight) before this strategy reports
@@ -269,7 +643,21 @@ class WeightedQuorumStrategy:
     # exactly the min_support-style completeness gate, kept separate from confidence itself
     # (Layer 1 §4.2), not blended into it.
     # a plain count-threshold ("at least N active") is this strategy with every weight = 1 — not a
-    # separate strategy.
+    # separate strategy; "at least one active" ("any") is the same idiom at N=1 (weight=1 for every
+    # input, threshold=1.0) — resolved 2026-09-08, this is why `UnanimityStrategy` above dropped its
+    # own "any" mode instead of keeping two ways to say the same thing.
+    #
+    # Does *not* incorporate each input's own confidence/reliability into winning_weight/
+    # total_weight_considered, by design, not by omission (resolved 2026-09-07): `weight` is already
+    # the lever for "how much should this input count," declared once by whoever registers it — folding
+    # a second, independent signal (a Sensor's own `reliability`, §3.2) into the same computation would
+    # let it silently override the configured weight's own meaning (e.g. a low-reliability input could
+    # flip the reached/not-reached outcome even though its weight said it should count fully), and
+    # would duplicate a control the producer already has direct, explicit access to: register that
+    # input with a lower `weight` instead. `UnanimityStrategy` (above) is the opposite case: it has no
+    # `weight` field at all, so `combined_confidence` over each input's own confidence (§5.4) is its
+    # *only* available way to express "trust this input less" — `WeightedQuorumStrategy` already has
+    # that lever, so it doesn't need a second one.
 
 @dataclass(frozen=True)
 class PrecedenceStrategy:
@@ -278,18 +666,62 @@ class PrecedenceStrategy:
            # workday_entity, which needs care not to be misread as a flat 5-way chain)
 
 @dataclass(frozen=True)
+class OccupancyEvidenceBinding:
+    input_index: int
+    role: Literal["primary", "supporting"]
+    true_weight: float
+    false_weight: float
+    required_for_vacancy: bool
+
+@dataclass(frozen=True)
+class CompiledFormulaConfiguration:
+    pass  # immutable core-internal object; never serialized or accepted from admin configuration
+
+@dataclass(frozen=True)
+class NoFormulaConfiguration(CompiledFormulaConfiguration):
+    pass
+
+@dataclass(frozen=True)
+class OccupancyWeightedEvidenceConfig(CompiledFormulaConfiguration):
+    bindings: tuple[OccupancyEvidenceBinding, ...]
+    occupied_threshold: float
+    vacant_threshold: float
+
+JsonScalar = str | int | float | bool | None
+JsonValue = JsonScalar | tuple["JsonValue", ...] | Mapping[str, "JsonValue"]
+FormulaConfigurationPayload = Mapping[str, JsonValue] | None
+
+@dataclass(frozen=True)
 class FormulaStrategy:
     formula_id: str
+    configuration: FormulaConfigurationPayload = None  # canonical JSON object, compiled at staging (§5.3)
     # Closes the "genuine calculation" gap the other four don't cover (Heating's Season derived from
     # outdoor_temp with hysteresis; a future "effective outdoor temperature" from temp+wind+humidity)
     # — carries no calculation logic itself, only a reference into a separate, core-team-curated
-    # formula registry (§5.3), so a new formula never requires reopening this union or any code that
-    # pattern-matches on it. Resolved 2026-09-02, v3_backlog.md, closing AR-4.
+    # formula registry (§5.3), plus that formula's canonical JSON configuration payload where one is
+    # required. Its declared confidence mode determines the output/result contract, so a new formula
+    # never requires reopening a configuration union or any code that pattern-matches on it.
+    # Resolved 2026-09-02, v3_backlog.md, closing AR-4.
 
 FusionStrategy = (
-    DirectStrategy | BooleanSetStrategy | WeightedQuorumStrategy | PrecedenceStrategy | FormulaStrategy
+    DirectStrategy | UnanimityStrategy | WeightedQuorumStrategy | PrecedenceStrategy | FormulaStrategy
 )
 ```
+
+**Boolean vote contract — resolved 2026-09-08.** `UnanimityStrategy` and
+`WeightedQuorumStrategy` are boolean strategies: every `available=True` input they consider must have
+an exact `bool` value. `True` is the sole vote "for"; `False` is the sole vote "against". This is
+an exact-type rule, not language truthiness: `0`, `1`, `"on"`, `"off"`, `None`, and every structured
+`EvidenceValue` are invalid votes even where a host language would coerce one of them to boolean.
+Both strategies always produce a boolean value when they produce a value at all.
+
+An `available=True` input whose value is not an exact `bool` is a configuration/type mismatch at
+evaluation time. The fusion produces `available=False`/`confidence=None` for that cycle and raises a
+Layer 0 §9-style diagnostic identifying the fusion and offending `FactRef`. It is deliberately not
+coerced to `False` and not silently excluded: either would convert an invalid producer contract into
+a plausible but wrong vote. This check is necessarily at evaluation time because `FactRef` addresses
+the generic `HouseFact` contract, whose value shape can depend on the source's current interpretation
+or an upstream formula; registration still catches every structural invariant it can know statically.
 
 A closed union of five — not an open-ended plugin registry (an earlier draft of the architecture
 recap described it as one; corrected, `v3_backlog.md`, AR-4 follow-up). Exhaustive pattern-matching
@@ -298,17 +730,18 @@ on `FusionStrategy` is a real property every consumer can rely on; the one exten
 
 **`workday_entity`, worked through precisely — two mechanisms at two levels, not one flat chain.**
 The recurring shorthand for this case ("office > day_off > holiday > wfh > raw entity") reads like a
-single 5-way `PrecedenceStrategy` and is easy to misimplement as one. It isn't: `CalendarInterpretation`
-(§4) already takes a `keywords: dict[str, list[str]]` — multiple categories handled by **one**
-`Sensor`, with its own `priority_order` breaking ties when one event's text matches more than one
-category's keywords. `PrecedenceStrategy` solves a different problem — falling back to a different
+single 5-way `PrecedenceStrategy` and is easy to misimplement as one. It isn't:
+`CalendarInterpretation` (§4) composes one `KeywordClassifier` — multiple categories handled by **one**
+`Sensor`, with that classifier's `priority_order` breaking ties when one event's text matches more than
+one category's keywords. `PrecedenceStrategy` solves a different problem — falling back to a different
 *Sensor* when one has nothing to say — not classifying ambiguity within one. The correct shape is
-**one** `Sensor` with a `CalendarInterpretation` whose `keywords`/`priority_order` resolve
-office/day_off/holiday/wfh internally, and **one** `FusionRule(strategy=PrecedenceStrategy())` with
+**one** `Sensor` with a `CalendarInterpretation(classifier=KeywordClassifier(...))` whose classifier
+resolves office/day_off/holiday/wfh internally, and **one**
+`FusionRule(strategy=PrecedenceStrategy())` with
 exactly two `inputs`: that calendar-derived `Sensor`'s `FactRef`, then the raw `workday_entity`
 `Sensor`'s `FactRef` as the fallback when the calendar `Sensor` produces no match (`available=False`)
 at all. Four Sensors feeding a flat 5-item precedence chain would work mechanically too, but would leave
-`CalendarInterpretation.priority_order` doing nothing for this case — a sign the modeling is wrong,
+the calendar classifier's `priority_order` doing nothing for this case — a sign the modeling is wrong,
 not just a stylistic choice between two equally-valid shapes.
 
 ### 5.2 Stability is orthogonal to strategy
@@ -325,7 +758,7 @@ often *not* revert to vacant on the first gap in motion, to avoid flicker from a
 This asymmetry is already real and working in today's code (`on_dwell_s=0`, `off_dwell_s=120s` for
 room occupancy) — a single symmetric `stability: Window` would either delay the light turning on
 (reintroducing exactly the problem it must not have) or drop hysteresis on the off-transition
-entirely. For strategies with a natural true/false polarity (`BooleanSetStrategy`,
+entirely. For strategies with a natural true/false polarity (`UnanimityStrategy`,
 `WeightedQuorumStrategy` used with a boolean threshold):
 
 ```python
@@ -333,6 +766,10 @@ entirely. For strategies with a natural true/false polarity (`BooleanSetStrategy
 class Stability:
     to_true: Window | None = None    # e.g. None — a presence-triggered light turns on instantly
     to_false: Window | None = None   # e.g. Window(seconds=120) — debounce the off-transition
+    unavailable_grace: Window | None = None
+                                      # None: emit unavailable immediately. Otherwise, retain the last
+                                      # committed available output only for this bounded interval when
+                                      # the candidate becomes unavailable; never completes an old dwell.
 ```
 
 `FusionRule.stability: Window | Stability | None` — a plain `Window` (or `None`, no dwell at all)
@@ -344,62 +781,241 @@ an N-valued bucket label) — no concrete need for that exists today; the same d
 applied to `FusionStrategy`'s own five members, add complexity when a real case demands it, not ahead
 of one.
 
+`unavailable_grace` is intentionally available only on `Stability`, where the output has boolean
+polarity and a resident-visible continuity benefit has been established. Its default is `None`: no
+grace, immediate unavailable. A rule that needs it opts in with a positive `Window` (room occupancy
+may begin with `30s`); a security-critical rule leaves it unset. A plain symmetric `Window` has no
+availability grace.
+
 **The mechanism, concretely — not just "debounce happens," but how.** Every cycle, a `FusionRule`
 computes its raw candidate value from its current `inputs` per its strategy, exactly as if
 `stability` were absent. This candidate is compared against the value of the last derived `HouseFact`
 this `FusionRule` actually **committed** (wrote):
 
-- If the candidate matches the last committed value: nothing to do, no new fact (Layer 0's
-  write-on-change policy already covers this).
-- If the candidate differs and no transition is currently pending toward it: start tracking one — a
-  small, **ephemeral, in-memory** `(pending_value, pending_since)` pair, per `FusionRule` instance.
-  Not persisted, not restart-safe, and deliberately so — nothing here carries a safety consequence
-  that would justify surviving a restart (Layer 0 §0's general default: state starts clean unless a
-  concrete reason says otherwise), and a fresh restart correctly begins with a full dwell period
-  before committing anything, consistent with Recovery's own `startup_recovery` caution (Layer 0 §7).
-- If the candidate matches an already-pending transition: check the applicable window (`to_true`,
-  `to_false`, or the plain `stability` `Window`, whichever applies to this transition's direction) —
-  computed live against `pending_since`, the same monotonic-safe elapsed-time discipline as every
-  other `Window` comparison in this architecture (Layer 0 §3.2), never cached as a stored "is it
-  stable yet" flag. If the window has elapsed (or is `None`, meaning no dwell at all — instant),
-  commit: write the new `HouseFact` (`value`/`available`/`confidence` computed fresh at commit time,
-  not stale from when the candidate first appeared), clear the pending state.
-- If the candidate reverts to match the currently-committed value before its pending window elapses:
-  discard the pending transition entirely — this is what makes it real debounce, not just a delay: a
-  brief flicker never commits and never leaves a trace, exactly like today's working dwell logic.
+The associated control state is a Layer-2-owned, O(1)-indexed `FusionRuleRuntimeState` keyed by
+`fusion_id`: pending value/since/due, availability-grace since/due, and the generation/token of each
+armed deadline. It is ephemeral and never enters Layer 0's short-term history buffer, Persistence, or
+a checkpoint. Layer 0 owns only the corresponding `AtJob`; its callback returns to the Layer-2
+evaluator with the token so a superseded deadline cannot commit stale state. This preserves a strict
+boundary: the Layer-0 buffer answers historical `Window` queries over `HouseFact`s, while Layer 2
+owns its own per-fusion control state. Restart and impacted registry reload discard this state; the
+latter does so only for its §2.5 impact set.
+
+- If the raw candidate is `available=False`, first cancel any pending `to_true`/`to_false` transition:
+  that transition was supported by evidence no longer available and must never commit later. When
+  `unavailable_grace` is configured and the last committed output is available, start or continue one
+  ephemeral availability-grace record `(last_committed_output, unavailable_since, due)` and arm one
+  Layer-0 `AtJob` for `due`. During this interval the committed output remains the rule's deliberate
+  temporal result; no per-cycle fact write occurs. If a fresh available candidate arrives first,
+  cancel the job and grace record, then process that candidate under the ordinary rules below. If the
+  job reaches `due` while the candidate is still unavailable, commit exactly one
+  `available=False`/`confidence=None` fact and clear the grace record. With no grace, or no prior
+  available committed output, commit that unavailable fact immediately. Grace records are ephemeral:
+  reload impact invalidation and every restart cancel them rather than extending stale output.
+
+- If the candidate matches the last committed value: cancel any pending directional transition and
+  invalidate its deadline token, then emit no new fact. Returning to the committed value withdraws
+  the candidate that justified the dwell; a callback already queued with the old token is harmless
+  and cannot commit. With no pending transition, there is simply nothing to do (Layer 0's
+  write-on-change policy already covers the absence of a new fact).
+
+For an available candidate, determine its applicable directional window *before* creating pending
+state. The two cases are deliberately different:
+
+- **No dwell (`None`) is a same-cycle fast path.** If the candidate differs from the last committed
+  value and its applicable window is `None` (including `FusionRule.stability=None`), cancel any stale
+  pending deadline and commit it in this same evaluation. `None` means no required stability time, not
+  "wait until a later evaluation". This is what makes `Stability(to_true=None, ... )` genuinely
+  instant-on for occupancy/presence and avoids an artificial extra-cycle latency.
+- **A positive dwell is one verified deadline, not polling.** If the candidate differs and its window
+  is positive, replace any pending transition toward another value, record
+  `(pending_value, pending_since, due=pending_since+window, token, generation)`, and arm exactly one
+  Layer-0 `AtJob` for `due`. A subsequent input-driven evaluation that still sees that same candidate
+  retains the existing deadline; it never extends the dwell merely because another cycle occurred. If
+  it instead sees the committed value, a different candidate, or unavailability, it cancels the
+  deadline and discards or replaces the pending transition as applicable.
+
+At its deadline, a dwell `AtJob` triggers a generation- and token-checked, targeted evaluation of that
+fusion and its current-cycle dependents against the latest in-memory input facts. It performs no HA,
+network, or Persistence read and never commits the candidate captured at arm time blindly. Only if the
+freshly recomputed candidate is still available, equal to `pending_value`, and the token/generation
+still match may it commit the fresh value/confidence and clear pending state. Thus the transition
+occurs as soon as the configured dwell elapses even without an unrelated HA event or periodic fallback,
+while a stale callback cannot write a value that later evidence has withdrawn. Pending state is
+ephemeral and deliberately not restart-safe: a fresh restart begins a full dwell period before any
+positive-dwell transition can commit, consistent with Recovery's `startup_recovery` caution (Layer 0
+§7).
+
+The diagnostic surface exposes every pending dwell and active availability grace with fusion id, due
+instant, token/generation, retained or pending value, and unavailable `FactRef`s where applicable.
+Entering, replacing, cancelling, and expiring either state are diagnostic transitions, not per-cycle
+durable event facts; each uses at most one deadline `AtJob`, avoids polling, and keeps the hot path
+constant-time.
 
 ### 5.3 The formula registry
 
 ```python
-FormulaId = str   # e.g. "heating.season_hysteresis", "external.effective_outdoor_temperature"
+FormulaId = str   # e.g. "heating.season_hysteresis", "external.effective_outdoor_temperature",
+                   # "occupancy.weighted_evidence"
+FormulaImplementationVersion = str  # non-empty, core-maintained semantic implementation version
+FormulaConfidenceMode = Literal["continuous", "categorical", "inherit_input"]
+
+@dataclass(frozen=True)
+class ContinuousFormulaResult:
+    value: float
+    dispersion: float
+
+@dataclass(frozen=True)
+class CategoricalFormulaResult:
+    value: EvidenceValue
+    support: float
+    total: float
+
+@dataclass(frozen=True)
+class InheritedFormulaResult:
+    value: EvidenceValue
+    confidence_input_index: int  # zero-based index into the configured input sequence; selected fact
+                                 # must itself be available
+
+FormulaResult = ContinuousFormulaResult | CategoricalFormulaResult | InheritedFormulaResult
+FormulaConfigurationCompiler = Callable[[FormulaConfigurationPayload], CompiledFormulaConfiguration]
+FormulaBindingValidator = Callable[["FusionRule", FormulaStrategy, CompiledFormulaConfiguration], None]
 
 @dataclass(frozen=True)
 class RegisteredFormula:
     formula_id: FormulaId
+    implementation_version: FormulaImplementationVersion
     min_inputs: int                                                     # formula-specific — Season's
                                                                           # hysteresis needs 1, an
                                                                           # "effective temperature"
                                                                           # might need 2 of 3
-    compute: Callable[[Sequence[HouseFact]], tuple[Any, float] | None]  # inputs -> (value, dispersion),
-                                                                          # or None — see below
-    scale: float
-    floor: float
+    confidence_mode: FormulaConfidenceMode
+    compile_configuration: FormulaConfigurationCompiler  # pure staging-time JSON decoder/validator
+    validate_binding: FormulaBindingValidator  # pure staging-time check of inputs, order, output,
+                                               # previous_cycle use, and compiled configuration
+    compute: Callable[[Sequence[HouseFact], CompiledFormulaConfiguration], FormulaResult | None]
+                                                                    # receives every configured input in
+                                                                    # FusionRule.inputs order, including
+                                                                    # available=False facts, and only the
+                                                                    # registered formula's staging-compiled config
+    scale: float | None = None  # required only for confidence_mode="continuous"
+    floor: float | None = None  # required only for confidence_mode="continuous"
 ```
 
-`compute` returns `None`, not a degenerate tuple, when it cannot produce a value from what it was
-given — the caller passes only the currently-`available` inputs (§5.5's exclusion rule applies here
-too), and calls `compute` at all only if their count already meets `min_inputs`; below that floor,
-the derived `HouseFact` is `available=False` without ever calling `compute`. `None` from `compute`
-itself covers a rarer case: enough inputs were available by count, but the specific combination
-still can't yield a sound value (formula-specific — e.g. inputs technically present but mutually
-contradictory in a way the formula itself is positioned to detect, not something a bare input count
-can catch in advance). Either path — the count check or `compute` returning `None` — ends the same
-way: `available=False`, no call to `continuous_confidence`.
+The **Formula Registry** is a core-owned immutable catalog, constructed once during integration
+bootstrap before any `RegistryGeneration` is staged. Core modules call `register(RegisteredFormula)`
+only while this catalog is being built; duplicate `formula_id`, an empty version, or a registration
+after `freeze()` aborts startup. `freeze()` exposes an immutable `formula_id -> RegisteredFormula`
+map; `resolve(formula_id)` is O(1), has no I/O, lock acquisition, dynamic import, or plugin callback,
+and is the only lookup the evaluator performs. There is no admin, service, or third-party registration
+surface.
 
-Core-team-curated, not admin-authored and not (today) open to third parties — same governance as
+`implementation_version` is an explicit semantic version maintained with the core formula. Any change
+that can alter configuration compilation, `compute`, or binding-validation behavior must bump it;
+cosmetic/internal changes that cannot alter any of those need not. The compiler, callable, and validator
+are runtime code and are never serialized. The candidate `RegistryGeneration` stores only the resolved
+`formula_id`, `implementation_version`, and canonical configuration JSON alongside the `FusionRule`
+definition; its active in-memory plan additionally holds the formula's compiled configuration. On
+startup after a code upgrade, staging compares that resolved pair and payload with the active generation:
+a difference follows §2.5's selective impact path, never a live replacement of a formula during a cycle.
+
+`FormulaStrategy.configuration` is either `None` or a canonical JSON object: string keys are unique and
+Unicode-code-point sorted; arrays preserve order; numbers are finite; nesting is at most 8; and the
+UTF-8 serialization is at most 16 KiB. It is configuration data, not Layer 1 `EvidenceValue`: formula
+configuration may legitimately contain an ordered array of binding objects. During staging, after
+`resolve`, the registry first calls the formula's pure `compile_configuration(payload)`, then passes its
+immutable result to `validate_binding(fusion_rule, formula_strategy, compiled_configuration)`. Together
+they must reject every semantic mismatch knowable before evaluation: JSON shape/fields/values, input
+count/order and fact-type contract, output `produces`/`where`, and every `previous_cycle` input unless
+it exactly self-references that FusionRule and this formula explicitly permits its position/count, plus
+the formula's exact compiled configuration type. Neither may read HA, Persistence, or
+mutable runtime state. A failed compiler or validator rejects the whole candidate generation; parsing is
+never deferred to a diagnostic from `compute` on a resident-facing cycle, and `compute` never parses JSON.
+
+**Formula result and confidence contract — resolved 2026-09-08.** `confidence_mode` is declared by
+the core-team-owned registry entry, never inferred from a formula's name or its incidental Python
+return type:
+
+- `continuous` requires a `ContinuousFormulaResult`: `value` is a finite numeric measurement (a
+  `float`, never `bool`) and `dispersion` is its non-negative spread. The entry must supply
+  `scale`/`floor`, and its confidence is `continuous_confidence(dispersion, scale, floor)`.
+- `categorical` requires a `CategoricalFormulaResult`: `value` is any `EvidenceValue`; `support` and
+  `total` are the formula's explicitly defined evidence population for the reported category. Its
+  confidence is `categorical_confidence(support, total)`, so `total > 0` and
+  `0 <= support <= total` are mandatory.
+- `inherit_input` requires an `InheritedFormulaResult`: `confidence_input_index` is a zero-based
+  index into the configured `FusionRule.inputs` sequence passed to `compute`; the referenced fact
+  must be `available=True`, and the result inherits that fact's confidence unchanged. This is for
+  deterministic transforms/classifications with no honest
+  dispersion or support population to manufacture, such as `heating.season_hysteresis` derived from
+  a temperature input.
+
+`scale` and `floor` are required for `continuous` and prohibited for the other two modes. A result
+whose variant does not match `confidence_mode`, an out-of-range categorical population, a non-finite
+continuous value/dispersion, or an invalid inherited-input index is a formula-contract violation: the
+fusion returns `available=False`/`confidence=None` for that cycle and emits a Layer 0 §9-style
+diagnostic. Every result value remains subject to Layer 1's ordinary `EvidenceValue` validation; a
+formula never gets an `Any` escape hatch. These are constant-time in-memory validations, so they do
+not change §2.2's hot-path I/O contract.
+
+`compute` receives **every** input declared by the owning `FusionRule`, in exactly the declared order,
+including facts with `available=False`; it therefore sees the difference between a definitive `False`
+and a sensor that supplied no trustworthy observation. `min_inputs` counts only the available members
+of that same fixed sequence. Below the floor, the derived `HouseFact` is `available=False` without
+calling `compute`; at or above it, the formula itself decides whether the particular unavailable
+members permit a sound result. This is essential for asymmetric evidence such as room occupancy: a
+positive PIR may establish presence while another sensor is unavailable, but that unavailable sensor
+must remain visible before the formula declares the room vacant. The ordered sequence is supplied
+from already resolved facts only; it adds no I/O, lookup, or allocation proportional to history on
+the hot path.
+
+`compute` returns `None`, not a degenerate tuple, when it cannot produce a value from the complete
+input sequence it was given — for example, enough inputs are available by count but the particular
+combination remains contradictory or insufficient for the formula's own safety rule. Either path —
+the `min_inputs` gate or `compute` returning `None` — ends the same way: `available=False`, with no
+confidence function called.
+
+#### `occupancy.weighted_evidence`
+
+This registered core formula has `confidence_mode="categorical"`, `min_inputs=1`, and requires one
+configuration JSON object with exactly `bindings`, `occupied_threshold`, and `vacant_threshold`.
+Each `bindings` entry has exactly `input_index`, `role`, `true_weight`, `false_weight`, and
+`required_for_vacancy`. Its `compile_configuration` validates this JSON and builds the internal typed
+`OccupancyWeightedEvidenceConfig`; neither `validate_binding` nor `compute` consumes raw JSON. It is
+the reusable room-occupancy mechanism: it never switches on `fact_type` or sensor kind, so introducing
+a new normalized occupancy sensor requires a new binding, not a formula-code change. Each binding
+corresponds to the same-position `HouseFact` in the complete input sequence.
+
+Its `validate_binding` requires `produces="occupancy"`, a room `where`, no `previous_cycle=True`
+input, and every input to be at the same room `Location` with a four-segment fact type of the form
+`occupancy.evidence.<kind>.<sensor_id>`. It validates the one-to-one configuration binding/index
+contract from §2.4 during staging. `<kind>` remains opaque to the formula: a new normalized sensor
+kind needs no validator or compute change.
+
+Only an available input whose `value` is exact `bool` participates. An available non-boolean input is
+a formula-contract violation: this cycle returns `available=False` with a diagnostic, never Python
+truthiness. For each participating fact, let `c` be its non-`None` provenance confidence. A `True`
+contributes `true_weight * c` to `true_score`; a `False` contributes `false_weight * c` to
+`false_score`. The formula returns:
+
+1. `value=True` when at least one available `primary` input is `True`, or `true_score >=
+   occupied_threshold`.
+2. `value=False` only when step 1 did not apply, every `required_for_vacancy` input is available, and
+   `false_score >= vacant_threshold`.
+3. `None` in every other case, producing `available=False`.
+
+For a `True` result, categorical `support` is `true_score`; for `False`, it is `false_score`. In both
+cases categorical `total` is the sum, over available boolean inputs, of `true_weight` for an observed
+`True` and `false_weight` for an observed `False`. Thus the confidence reflects both each source's
+declared reliability and conflicting evidence; an unavailable input contributes neither fabricated
+evidence nor a fake `False`. A low-quality sole primary source can make presence immediate while still
+reporting low confidence. The formula has no dwell or retained state: `FusionRule.stability` remains
+the sole owner of delayed exit and of the separate cross-strategy unavailable-grace policy (§5.2).
+
+Core-team-curated, not admin-authored and not open to third parties — same governance as
 `PatternLearnerConfig` (Layer 3: "declared in code only... no learning family is admin-authored
 today"). A `FormulaStrategy(formula_id=...)` looks up its `RegisteredFormula` here; the registry can
-grow without ever touching `FusionStrategy` or the code that pattern-matches on it. Mirrors
+grow through a core specification change without ever touching `FusionStrategy` or the code that pattern-matches on it. Mirrors
 `NormalizationFusionRegistry`'s existing plugin pattern in the current codebase — not a new
 mechanism, the same one, given an explicit home in this model.
 
@@ -411,35 +1027,83 @@ Layer 1 (§4.2) owns three pure confidence functions and one non-computation opt
 | Strategy | Confidence treatment |
 |---|---|
 | `DirectStrategy` | Inherit — the single source's own `confidence`, unchanged. |
-| `WeightedQuorumStrategy` | `categorical_confidence(winning_weight, total_weight_considered)` — the same-cycle votes *are* the "observations" (Layer 1 §4.2's `total_observations` is deliberately general for exactly this). `winning_weight` is the weight backing whichever outcome is actually being reported — the weight *for* threshold if it was reached, the remaining weight *against* it if it wasn't (`total_weight_considered - winning_weight` in that case) — never always the "for" side regardless of which way the vote went. `total_weight_considered` excludes any `available=False` input entirely (§5.5). |
+| `WeightedQuorumStrategy` | `categorical_confidence(winning_weight, total_weight_considered)` — the same-cycle votes *are* the "observations" (Layer 1 §4.2's `total_observations` is deliberately general for exactly this). Let `weight_for` be the total weight of inputs voting "for" (the side compared against `threshold`). **Resolved 2026-09-07 (corrected a self-referential formula found in review)**: `winning_weight = weight_for` when `weight_for >= threshold` (the threshold was reached — this is the weight actually backing the reported `True`); `winning_weight = total_weight_considered - weight_for` when it wasn't (the weight actually backing the reported `False` — the weight that did *not* vote for, never `weight_for` itself, which would report higher confidence for a near-miss than for a unanimous rejection). `total_weight_considered` excludes any `available=False` input entirely (§5.5). **The `False` branch has three distinguishable sub-cases — see below.** |
 | `PrecedenceStrategy` | Inherit — the first definitive (available) source's own `confidence`; if every `inputs` entry is `available=False`, none wins and the derived fact is itself `available=False` (§5.5), following directly from the strategy's own definition. |
-| `FormulaStrategy` | `continuous_confidence(dispersion, scale, floor)` — always, by construction, since a formula combines multiple continuous inputs into one derived value; `scale`/`floor` come from the formula's own `RegisteredFormula` entry (§5.3). |
-| `BooleanSetStrategy` | `combined_confidence(...)` — see below, the one genuinely new case. |
+| `FormulaStrategy` | Determined mechanically by its `RegisteredFormula.confidence_mode` (§5.3): `continuous` calls `continuous_confidence`, `categorical` calls `categorical_confidence`, and `inherit_input` copies the declared available input's confidence unchanged. |
+| `UnanimityStrategy` | `combined_confidence(...)` — see below, the one genuinely new case. |
 
-**`BooleanSetStrategy`, worked out from Layer 1's `combined_confidence` (§4.2), by De Morgan
-symmetry across the outcome branch:**
+**`WeightedQuorumStrategy`'s `False` branch collapses three distinguishable situations into the same
+formula — worth naming explicitly, because one of them produces a confidence value that looks
+alarming out of context (resolved 2026-09-08, second-audit finding).** `winning_weight =
+total_weight_considered - weight_for` is correct arithmetic in all three; what differs is what the
+result *means*:
 
-- `mode="all"`, outcome `True` (a conjunction — every considered source agreed): `combined_confidence`
-  over **all** considered sources' `confidence`, `combinator="min"` — an AND is only as trustworthy
-  as its weakest agreeing premise.
-- `mode="all"`, outcome `False` (equivalent to "at least one disagreed" — a disjunction over the
-  dissenting sources): `combined_confidence` over the **dissenting** sources' `confidence`,
-  `combinator="max"`.
-- `mode="any"`, outcome `True` (a disjunction over the confirming sources): `combined_confidence` over
-  the **confirming** sources' `confidence`, `combinator="max"` — an OR is as trustworthy as its
-  strongest confirmation.
-- `mode="any"`, outcome `False` (equivalent to "none confirmed" — a conjunction over all considered
-  sources): `combined_confidence` over **all** considered sources' `confidence`, `combinator="min"`.
+- **Partial dissent** — some considered inputs voted "for," some didn't, `threshold` wasn't reached.
+  `winning_weight` is the real weight of the dissenters; `confidence` scales with how much of the
+  considered population actually disagrees. The ordinary case, already covered above.
+- **Unanimous rejection** — no considered input voted "for" (`weight_for = 0`). `winning_weight =
+  total_weight_considered`, `confidence = 1.0` — every available voice disagrees, maximal confidence
+  in `False`. Also ordinary.
+- **Unanimous non-dissent below a fixed threshold** — every considered input voted "for" (`weight_for
+  = total_weight_considered`), yet `threshold` (an absolute bar, calibrated for the strategy's full
+  configured population, not for whatever happens to be available this cycle) still isn't reached
+  because availability has shrunk — e.g. 5 sensors at `weight=1` with `threshold=5.0`, 2 go
+  `available=False`, the remaining 3 are unanimously "for," `weight_for = total_weight_considered =
+  3`, `3 < 5` so `False` is reported anyway. `winning_weight = 0`, `confidence = 0.0`. **This is
+  intentional, not a defect**: zero of the considered weight actually contradicts the opposite
+  outcome — the reported `False` is an artifact of comparing a fixed bar against a shrunken
+  population, not a judgment backed by any dissenting evidence. A `confidence` of `0.0` here is the
+  honest signal: this `False` is exactly as untrustworthy as the evidence backing it, which is none.
 
-### 5.5 `available=False` inputs never enter a fusion's confidence computation
+A fixed `threshold` was a deliberate choice (§5.1 — an admin-configured absolute bar, unlike
+`UnanimityStrategy`'s population-relative "all"), so this third sub-case is not a formula defect to
+fix by rescaling `threshold` to the shrunken population — that would just turn `WeightedQuorumStrategy`
+into a re-weighted `UnanimityStrategy` and erase the reason the two strategies coexist (§5.1's own
+comment on why `UnanimityStrategy` can't be expressed as a fixed `WeightedQuorumStrategy` threshold,
+and vice versa here). **Operational recommendation, not a structural requirement**: whoever sets
+`threshold` close to the strategy's full configured weight should set `min_available_weight` (§5.5)
+close to `threshold` too — that keeps the derived fact `available=False` once availability drops
+enough to produce this sub-case, instead of emitting a `False` at `confidence=0.0` that a careless
+consumer might mistake for an ordinary low-confidence reading rather than "don't trust this at all."
 
-For every strategy above, an input (whether `Sensor`- or `FusionRule`-produced, §5.6) with
-`available=False` (§3.1) is **excluded**
-from whichever population feeds the confidence computation — never treated as a "False" vote for
-`BooleanSetStrategy`, never contributing weight to `WeightedQuorumStrategy`'s total. If excluding
-unavailable inputs leaves nothing to combine (every relevant input is `available=False`), the derived
-`HouseFact` is itself `available=False`, and no confidence function is called at all (Layer 1 §4.2's
-"no meaningful confidence for nothing observed" rule, inherited here without exception).
+**`UnanimityStrategy`, worked out from Layer 1's `combined_confidence` (§4.2), by De Morgan symmetry
+across the outcome branch** (two branches, not four — resolved 2026-09-08 alongside dropping the
+"any" mode, §5.1: the "any" pair of branches this table used to carry is now
+`WeightedQuorumStrategy`'s ordinary confidence treatment above, at `weight=1`/`threshold=1.0`):
+
+- Outcome `True` (a conjunction — every considered source agreed): `combined_confidence` over **all**
+  considered sources' `confidence`, `combinator="min"` — an AND is only as trustworthy as its weakest
+  agreeing premise.
+- Outcome `False` (equivalent to "at least one disagreed" — a disjunction over the dissenting
+  sources): `combined_confidence` over the **dissenting** sources' `confidence`, `combinator="max"`.
+
+### 5.5 `available=False` inputs and fusion strategies
+
+For `DirectStrategy`, `UnanimityStrategy`, `WeightedQuorumStrategy`, and `PrecedenceStrategy`, an input
+(whether `Sensor`- or `FusionRule`-produced, §5.6) with `available=False` (§3.2) is **excluded** from
+whichever population feeds the strategy and its confidence computation — never treated as a `False`
+vote for `UnanimityStrategy`, never contributing weight to `WeightedQuorumStrategy`'s total. If this
+leaves nothing to combine, the derived `HouseFact` is itself `available=False`, and no confidence
+function is called at all (Layer 1 §4.2's "no meaningful confidence for nothing observed" rule).
+
+For `UnanimityStrategy`, absence is deliberately not a negative assertion: treating an offline input
+as `False` would manufacture dissent (for example, an unavailable door contact would claim that a
+door is open). `min_available` is mandatory precisely so a configuration must state how much partial
+availability it accepts; `min_available=len(inputs)` makes every configured input required, while a
+smaller value retains the same exclusion semantics but opts into degraded operation explicitly.
+
+`FormulaStrategy` is the deliberate exception: §5.3 passes the full ordered input sequence to the
+formula so it can make a domain-specific distinction between negative evidence and missing evidence.
+Its generic availability gate is `min_inputs`, counted only over available facts; it never receives
+fresh data or bypasses the formula-result confidence validation. A formula must not treat an
+unavailable input's `value` or `confidence` as meaningful, and an inherited-confidence result may
+select only an available input. This exception is narrow and does not change the exclusion semantics
+of the four closed generic strategies.
+
+For the two boolean vote strategies, this exclusion applies **only** to inputs already marked
+`available=False`. An input marked available but carrying a non-boolean value is not another form of
+unavailability; it follows the Boolean vote contract in §5.1 and invalidates that fusion result for
+the cycle with a diagnostic.
 
 **Excluding unavailable inputs can leave *something* to combine while still leaving too little to
 trust — a distinct problem from the empty-population case, with its own gate, not folded into
@@ -449,7 +1113,7 @@ simultaneously (a Zigbee segment losing power, say), the remaining one sensor's 
 almost nothing was actually observed. This is exactly the distinction Layer 1 §4.2 already draws for
 `min_support` — "enough data to trust this at all" is a separate boolean gate from "how much the data
 agrees" — applied here to input *completeness* rather than sample count: `min_available_weight`
-(`WeightedQuorumStrategy`) and `min_available` (`BooleanSetStrategy`), both declared alongside their
+(`WeightedQuorumStrategy`) and `min_available` (`UnanimityStrategy`), both declared alongside their
 strategy (§5.1). Below the floor, the derived `HouseFact` is `available=False` — same outcome as the
 fully-empty case, same reason, just a less extreme trigger — never a technically-correct but
 misleadingly confident number computed from a handful of survivors. This is deliberately a **local**
@@ -476,8 +1140,13 @@ something that changes at runtime. This means the two expensive-sounding operati
 cycle (a `FusionRule` must never depend on itself, directly or transitively) and computing an
 evaluation order — happen **once, at registration/startup**, via a standard topological sort over the
 `FusionRule` dependency graph (an edge from A to B when A's `produces`/`where` matches one of B's
-`inputs`). A registration that would introduce a cycle is rejected at startup, loudly, never silently
-accepted. Per-cycle, the engine simply evaluates `FusionRule`s in that precomputed order — one wave
+`inputs` — well-defined only because §2.3 guarantees exactly one producer per `(fact_type,
+Location)`, so this edge is never ambiguous). Only `FactRef`s with `previous_cycle=False` (§5, the
+default) contribute an edge to this graph. A validated FormulaStrategy self-memory reference is
+excluded because it reads an immutable prior value, not a current-cycle producer; every other
+`previous_cycle=True` reference is rejected during staging (§5.8). A registration that
+would introduce a cycle among the remaining, current-cycle edges is rejected at startup, loudly,
+never silently accepted. Per-cycle, the engine simply evaluates `FusionRule`s in that precomputed order — one wave
 per level of real chaining, not a fixed two. The actual latency cost is therefore proportional to how
 deep the *real* dependency graph gets, which stays small under core-team curation (nobody is
 registering 50 levels of derived aggregates) — the earlier "cap at two waves" position was protecting
@@ -494,7 +1163,8 @@ concrete numbers:
   `Stability(to_true=None, to_false=Window(seconds=120))`. Occupied is reported instantly; vacant is
   reported only after the room has read empty for 120s.
 - Tier 2 — `zone_occupancy` (`FusionRule`, `inputs` = several rooms' `room_occupancy` `FactRef`s,
-  `BooleanSetStrategy(mode="any")`): if configured with its *own*
+  `WeightedQuorumStrategy(weight=1` for each, `threshold=1.0)` — "any room occupied," §5.1's
+  redundancy-with-`UnanimityStrategy` note): if configured with its *own*
   `Stability(to_true=None, to_false=Window(seconds=60))`, the intent is "wait 60s before calling the
   zone vacant." But tier 2 is watching tier 1's **already-debounced** output, not the raw sensors — so
   the zone doesn't actually go vacant until `room_occupancy` itself commits vacant (120s after the
@@ -508,17 +1178,133 @@ concrete numbers:
   an unexpectedly slow "vacant"/"off" propagation is still a real, user-visible correctness problem
   (e.g. security arming logic waiting 3 minutes longer than anyone intended to treat a zone as clear).
 
-**Resolved as a documentation/review discipline for now, not a structural restriction** — matching how
-§2.2's I/O contract is handled, not enforced by a runtime check: whoever configures `stability` on a
-`FusionRule` whose `inputs` include another `FusionRule`'s output must account for that input's own
-`stability` when reasoning about end-to-end latency. Two stronger alternatives were considered and
-**not** adopted, left in §8 for later reconsideration rather than decided now: a diagnostic that warns
-when a chain's cumulative `to_false` delay exceeds some threshold (more tooling, no data yet on what
-threshold would be right); restricting non-`None` `stability` to the top-level `FusionRule` in a chain
-only (simpler to reason about, but forecloses debouncing at each semantic level for its own reason —
-e.g. room-level debounce against motion-sensor gaps and zone-level debounce against people moving
-between adjacent rooms are genuinely different timescales, and forcing only one debounce point loses
-that).
+**Resolved as staged visibility, not a structural restriction.** Stability remains legal at every
+semantic level. During `RegistryGeneration` staging, after the same-cycle Fusion DAG is topologically
+resolved, Layer 2 computes a `StabilityPathSummary` for every `FusionRule`: the maximum cumulative
+delay and one deterministic input path that realizes it, separately for the two transition directions.
+
+```python
+@dataclass(frozen=True)
+class StabilityPathSummary:
+    to_true_seconds: float
+    to_true_path: tuple[str, ...]    # upstream fusion_ids, then this fusion_id
+    to_false_seconds: float
+    to_false_path: tuple[str, ...]
+```
+
+For a plain symmetric `Window(seconds=s)`, both directions add `s`; for `Stability`, `to_true=None`
+or `to_false=None` adds zero in its respective direction. The summary adds the rule's own delay to the
+largest matching-direction summary of any current-cycle upstream Fusion input; a Sensor input starts
+at zero. A `previous_cycle=True` input is not a same-cycle propagation path and contributes no delay.
+Tied paths are selected by stable `fusion_id` order, making the diagnostic reproducible.
+
+The summary is immutable active-generation metadata, exposed to diagnostics and the future panel. It
+does not alter candidate evaluation, arm a job, enter a semantic fingerprint, or impose a warning
+threshold. Thus a room-level 120-second false dwell followed by a zone-level 60-second false dwell
+reports `to_false=180s` and the responsible chain, while both independent debounces remain valid.
+This makes end-to-end latency reviewable without inventing an arbitrary limit or forbidding a useful
+semantic separation.
+
+### 5.7 Source location vs. destination location
+
+**Resolved 2026-09-05.** Every `FactRef` in `inputs` carries its own **source location**
+(`FactRef.where` — where that specific input was observed); `FusionRule.where` is the derived fact's
+own **destination location** (what the derived fact is *about*). Nothing related these to each other
+until now. The right relationship turns out to differ by how a strategy actually uses its inputs, not
+to be one blanket rule — worked out per strategy:
+
+- **`DirectStrategy`**: exactly one input — a registration-time arity check (previously only implied
+  by the word "one" in prose, never actually verified). The destination always equals that one
+  input's source location; `DirectStrategy` relabels `fact_type` only, never `where` (§5.1's dataclass
+  comment previously said it could relabel "a new fact_type/Location" — corrected: no concrete use
+  case exists for changing location while passing a value through unchanged, and allowing it would
+  quietly defeat the point of stating an invariant here at all). `FusionRule.where` is still a
+  mandatory field regardless of strategy — for `DirectStrategy` specifically, a configured `where`
+  that doesn't match the single input's `Location` is rejected at registration time (clarified
+  2026-09-08), the same discipline as every other registration-time invariant in this document, not a
+  value silently overridden by the derived one.
+- **`UnanimityStrategy`/`WeightedQuorumStrategy`/`FormulaStrategy`**: these three combine *all* their
+  inputs simultaneously, in the same cycle, into one value — by construction, the result is about the
+  combined scope of every source, never something finer than any one of them. The destination must
+  equal, or be coarser than, the smallest `Location` containing every input's source location (the
+  "join") — a coverage check, not a simple membership check, since a source can itself be `zone`- or
+  `rooms`-scoped, not only `room`-scoped: every room covered by every source location must also be
+  covered by the destination location. Concretely: a `casa` destination is always valid, regardless of
+  input locations, since `casa` covers every room; a `zone` destination is valid only if every room
+  covered by every source (a source `room`'s single room; every room in a source `zone`'s `room_ids`,
+  Layer 1 §6; every room in a source `rooms` set) is a member of the destination `Zone`'s own
+  `room_ids`; a `room`/`rooms` destination is valid only if every room covered by every source is
+  already exactly that room or a member of that destination's room set. Checked at registration time,
+  in the same pass that already walks every `FusionRule`'s `inputs` for §2.3's producer-uniqueness
+  check and §5.6's cycle detection — no new traversal needed.
+- **`PrecedenceStrategy`**: deliberately exempt from any such rule. A fallback chain's whole point can
+  be "use a coarser or differently-scoped reading as an approximation when nothing more specific
+  exists" — e.g. a bedroom's own TRV temperature sensor, falling back to a whole-house outdoor
+  reading (`where=Location(scope="casa")`) when the room sensor is unavailable, with the `FusionRule`
+  itself declaring `where=Location(room="bedroom")` throughout, regardless of which input actually
+  won. A join-based rule here would reject exactly this legitimate, intentional case — this is not an
+  oversight, it is the one strategy where source and destination location are allowed to diverge
+  freely, by design.
+
+A `previous_cycle=True` self-reference (§5.8) trivially satisfies whichever rule above applies: its
+source location *is* the `FusionRule`'s own destination location, by construction (same `fact_type`,
+same `where`), so the join is always exactly met, never coarser or narrower.
+
+### 5.8 Temporal self-memory in `FormulaStrategy`
+
+**Resolved 2026-09-12: one explicit form of temporal recursion only.** A
+`FactRef.previous_cycle=True` is accepted only as a self-reference inside a `FormulaStrategy`: its
+`fact_type` and `where` must exactly equal the owning `FusionRule.produces`/`where`, and the resolved
+core formula's `validate_binding` must expressly permit the input's position and count. It resolves
+from Layer 0's sealed `PreviousCycleSnapshot` as of the **previous completed** cycle. The snapshot is
+pre-hydrated before the DAG only after a clean restart; no `FusionRule` reads disk while evaluating.
+
+This preserves the useful explicit-memory case while rejecting `A(t) <- B(t-1)` and mutual temporal
+networks such as `A(t) <- B(t-1)`, `B(t) <- A(t-1)`. Those networks have no same-cycle topological
+cycle, but create state machines with opaque initialization and evolution. A demonstrated future need
+for delayed reads of another producer requires a separately specified temporal contract; it is not an
+implicit capability of every FusionRule.
+
+**Why self-reference is safe here specifically, when §5.6 forbids it in general.** A `FusionRule`
+depending on its own *current*-cycle output has no well-defined evaluation order — that is a genuine
+cycle, correctly rejected by §5.6's topological sort. A `FusionRule` depending on its own *previous*
+cycle's output has no such problem: that value is already fixed, computed, and immutable by the time
+the current cycle begins evaluating anything. It is memory, not a dependency requiring an ordering
+decision — which is exactly why this validated self-memory input is excluded from §5.6's dependency
+graph entirely (it never needs to be topologically ordered relative to anything).
+
+**What this enables: stateful/recursive computation inside `RegisteredFormula.compute`, without
+breaking its pure, stateless signature (§2.2).** A `FusionRule(strategy=FormulaStrategy(...))` can list,
+among its `inputs`, a `FactRef(fact_type=<its own produces>, where=<its own where>,
+previous_cycle=True)`. `compute` receives this exactly like any other input — one fixed-position
+`HouseFact` in its complete `Sequence[HouseFact]`, possibly marked unavailable — so `compute` itself
+stays a pure function of its given inputs; the
+"memory" is made explicit as ordinary data sourced from Persistence (Layer 0 §4), never a hidden side
+channel or module-level mutable state. This is what makes a genuinely recursive/temporal computation
+expressible with the existing, closed, core-team-reviewed `FormulaStrategy` mechanism — no sixth
+strategy needed:
+
+- **A recursive Bayesian filter** (updating a posterior probability cycle over cycle, using last
+  cycle's posterior as this cycle's prior) — the motivating case for this section. `compute` reads
+  this cycle's raw sensor evidence plus its own previous posterior, returns the updated posterior as
+  `value` and a dispersion derived from how far that posterior sits from certainty (0 or 1). It is a
+  `confidence_mode="continuous"` formula, feeding `continuous_confidence` (§5.4) through the declared
+  contract rather than through a special case.
+- **An exponential moving average or a running accumulator** — the same shape: this cycle's raw input
+  plus the previous cycle's own accumulated value, combined by whatever formula `compute` implements.
+
+**Startup and failure.** On the very first cycle a `FusionRule` ever runs — no previous cycle exists
+yet — a `previous_cycle=True` `FactRef` resolves `available=False` (Layer 0's general "starts clean"
+default). It remains in its configured position as `available=False`: if the other available inputs
+meet `min_inputs`, the formula is called and can explicitly choose an initialization path; otherwise
+the derived fact is `available=False` without calling `compute`. The same conservative availability
+applies to the first cycle after an unclean restart, missing/mismatched clean-shutdown marker, or
+durable-batch failure not followed by a successful batch: an older durable record is never
+misrepresented as the immediately preceding cycle. After a clean restart, Layer 0 pre-hydrates the
+declared keys from the matching durable cycle
+before evaluation, so recursion continues without a formula-side I/O read. In a running process, even
+a durable-batch failure leaves the sealed in-memory snapshot available to the next cycle; after one
+new completed cycle, it again supplies the prior value normally.
 
 ---
 
@@ -536,19 +1322,103 @@ class Actuator:
                                           # applicable (a shutter) — a mechanical sub-detail of a
                                           # room-scoped actuator, not a WHERE tier of its own
     display_name: str | None = None
-    actuator_role: str | None = None    # coarse role: light, shutter, hvac_unit, water_valve...
+    actuator_role: str | None = None    # coarse role, e.g. "light", "shutter", "hvac_unit",
+                                          # "water_valve", "switch" (a generic on/off outlet whose
+                                          # controlled load Heima doesn't otherwise know). Resolved
+                                          # 2026-09-06: deliberately a plain str, not a closed enum —
+                                          # same reasoning, and the same words, as Layer 1 §3's
+                                          # fact_type: "a closed vocabulary here would fight" routine
+                                          # growth. Home Assistant itself has no closed vocabulary of
+                                          # device domains/classes — it adds new ones continuously —
+                                          # so closing this here would mean a new HA device class
+                                          # cannot be represented until a core-team code release,
+                                          # exactly the risk the naming convention exists to avoid.
+                                          # Role is a coarse, non-exhaustive hint used for two
+                                          # purposes only: a Reaction looking up "the light/hvac_unit
+                                          # in this room" by convention, and sibling-role discovery
+                                          # (below) — not a capability model. HA's own richer
+                                          # per-entity data (domain, device_class, supported
+                                          # features) is queried directly when a Reaction needs more
+                                          # than this coarse hint, never duplicated into this field.
     device_id: str | None = None        # same HA device_registry reference as Sensor.device_id
                                           # (§3), for panel grouping + sibling-role discovery
+    implicit_hold_restore_class: Literal["eligible", "never"] = "never"   # conservative default;
+                                          # only explicit per-Actuator opt-in exists: no role-level or
+                                          # global default/inheritance may change this value.
+                                          # Resolved 2026-09-06 — restores a decision already made in
+                                          # Layer 0 §6.3 (Manual Hold Manager, conditional implicit-
+                                          # hold restoration after a restart) that was dropped when
+                                          # this dataclass was first written: whichever logic detects
+                                          # an implicit hold's triggering divergence reads this field,
+                                          # once, at hold-creation time, and freezes the result into
+                                          # the hold's own evidence — Layer 0 itself never queries
+                                          # this registry directly (Layer 0 §6.3's own dependency
+                                          # rule). Lives on `Actuator` only, not `Sensor`: an implicit
+                                          # hold is by definition triggered by a commanded entity
+                                          # diverging from its expected state (Layer 0 §6) — the
+                                          # eligibility check always happens against the entity's
+                                          # `Actuator` record, so a duplicate `Sensor`-side copy would
+                                          # have no call site that ever reads it.
+    power_recovery_policy: Literal["reconcile", "never", "require_confirmation"] = "never"
+                                          # resolved 2026-09-09: per-actuator policy for Layer 0 §7.4's
+                                          # baseline-plus-current-evaluation recovery. "reconcile"
+                                          # permits automatic application of the final current target;
+                                          # "require_confirmation" proposes it; "never" records no
+                                          # recovery target and never applies one automatically. This
+                                          # policy is handed to the ApplyStep-owning layer during
+                                          # composition, which records a coalesced Layer-0 snapshot on
+                                          # accepted target changes; Layer 0 never queries this live
+                                          # registry at recovery time.
 ```
 
 Two concrete changes from today's model, both already decided, restated here for completeness:
-`light` is added to the set of valid roles (today lights bypass the registry entirely, duplicated as
-raw `entity_id`s inside every reaction's `entity_steps`); `room_id`/`opening_id` collapse into
-`where: Location` for the same reason `Sensor` uses it — one shared WHERE representation instead of
-each registry inventing its own room-reference shape.
+`light` is added as a role in active use (today lights bypass the registry entirely, duplicated as
+raw `entity_id`s inside every reaction's `entity_steps`); `room_id` collapses into `where: Location`
+for the same reason `Sensor` uses it — one shared WHERE representation instead of each registry
+inventing its own room-reference shape. **`opening_id` does not** — corrected 2026-09-08, found in
+review: this sentence previously claimed both collapsed, contradicting the field's own comment above
+("not a WHERE tier of its own") and the dataclass, which still carries `opening_id` as its own
+field — `Location` has no "opening" tier to fold it into (§5 of the Layer 1 spec: `casa`/`room`/
+`zone`/`rooms`, nothing finer-grained than a room), so `opening_id` correctly stays a mechanical
+sub-detail alongside `where`, not inside it. It is optional: a room light, HVAC unit, switch, valve,
+or any other actuator that is not mechanically attached to an opening leaves it unset. When set, the
+candidate topology's owning room must be exactly the actuator's room location (§2.4); this catches a
+miswired shutter without inventing a false opening relation for ordinary room equipment.
+
+One HA command endpoint has one `Actuator` record (§2.4). This is a command-ownership invariant, not
+a restriction on observation: the same `entity_id` can still back Sensor registrations, and one
+physical `device_id` can expose several separately commanded entities. It makes divergence detection,
+implicit-hold eligibility, accepted target ownership, and recovery checkpointing unambiguous.
 
 Commands live only in whichever Reaction (Layer 5) decides to send them — `Actuator` never issues
 one itself, and nothing in Layer 2 reads or writes actuator state beyond this inventory record.
+
+**One `ApplyStep`, one owned endpoint.** The future Layer-5 `ApplyStep` envelope references exactly
+one `actuator_id`, one HA service, and that service's non-target parameters. It contains no caller-
+selectable `entity_id`, `device_id`, area, label, or other HA target selector. At execution, the
+runtime resolves the current Actuator record, constructs the sole HA target from its `entity_id`, and
+rejects a request that tries to supply or override a target selector. A Reaction that needs four
+commands emits four ordered `ApplyStep`s; two commands for one thermostat and two for another are four
+separately traceable operations, not a multi-target command hidden in one payload.
+
+This is endpoint ownership, not a Heima capability catalog. The service name, parameter schema, and
+whether the current HA entity supports that operation remain Home Assistant's source of truth and are
+validated by HA when the step is applied. Heima neither persists a duplicate supported-feature model
+nor reimplements service validation. The initial Layer-5 execution contract preserves the Reaction's
+declared step order; any future concurrency must be an explicit Layer-5 scheduling policy and cannot
+weaken the one-endpoint-per-step or per-step provenance rule.
+
+`implicit_hold_restore_class` is the one field on this record that Layer 0 directly depends on being
+present — see Layer 0 §6.3 for the full restoration mechanism it feeds. This is not a violation of
+"nothing depends on Layer 2 from below": Layer 0 itself never reads this registry at runtime, only
+the domain/reaction logic that detects a divergence and creates the hold does, once, freezing the
+result into the hold's own `Provenance.evidence` before Layer 0 ever sees it (Layer 0 §6.3).
+
+`power_recovery_policy` similarly does not create a live Layer-0-to-Layer-2 dependency. At
+composition, the policy is supplied to the layer that owns accepted actuator targets; that owner
+uses Layer 0 §7.4's checkpoint service only for `"reconcile"`/`"require_confirmation"` targets.
+Layer 0 later exposes an opaque recovery baseline; it neither looks up an `Actuator` nor issues a
+command itself.
 
 ---
 
@@ -558,16 +1428,19 @@ one itself, and nothing in Layer 2 reads or writes actuator state beyond this in
   Layer 1's contract — Layer 2 adds no new envelope, no parallel representation.
 - **Confidence functions**: called, never reimplemented (§5.4) — Layer 2's only job is picking which
   Layer-1-owned function applies and supplying its inputs, per the split Layer 1 §4.2 establishes.
+  `Sensor.reliability` (§3.2) is the same split applied to raw readings: not a new function, Layer 1
+  §4.2 already permits a raw `Sensor` to report other than `1.0` "with a concrete evidentiary
+  reason" — Layer 2 is simply where that allowance becomes an actual, declared, reviewable value
+  instead of unexercised prose.
 - **Storage/timing**: every produced `HouseFact` goes through Layer 0's Persistence and Timing
   exactly as any other fact. `FusionRule.stability` (§5.2) is the one Layer-2-specific addition on
   top: `Window`/`Stability` themselves are comparison values (`Stability` composed of two
   `Window`s), reusing Layer 0's own elapsed-time discipline (§3.2) for the actual check — but the
   pending-transition *tracking* that debounce requires (which candidate is pending, since when) is
   new here, not something Layer 0's `Window` type provides on its own. Every `Window`-typed field in
-  this document (`BucketInterpretation.burst`, `FusionRule.stability`, `Stability.to_true`/`to_false`)
-  accepts a `LearnedWindow` in its place, per Layer 0 §3.2's general substitution rule — not
-  restated at each field individually.
-- **`FactSource`**: a `Sensor`-produced fact carries `kind="sensor"` — a direct single-entity read.
+  this document (`FusionRule.stability`, `Stability.to_true`/`to_false`) accepts a `LearnedWindow` in
+  its place, per Layer 0 §3.2's general substitution rule — not restated at each field individually.
+- **`FactSource`**: a `Sensor`-produced fact carries `kind="sensor"` — a direct single-binding read.
   A `FusionRule`-produced fact carries `kind="analyzer"`, per Layer 0 §5's now-precise definition
   ("derived from combining or analyzing existing data rather than one direct entity read" —
   `FusionRule` qualifies by that property regardless of being same-cycle and deterministic, not by
@@ -579,71 +1452,168 @@ one itself, and nothing in Layer 2 reads or writes actuator state beyond this in
   `FusionRule`'s output (§5.6) is Layer 2's own registration-time mechanism, not something Layer 0's
   Timing owns — Layer 0's `AtJob`/`CronEntry` schedule *when* a cycle runs, not the *order* in which
   Layer 2 evaluates its own registrations within one.
+- **Manual Hold Manager**: `Actuator.implicit_hold_restore_class` (§6) is a field Layer 0 §6.3's
+  restoration mechanism is defined in terms of — the one point of contact in the other direction.
+  This is not a violation of Layer 0's "depends on nothing above it" rule: Layer 0's own runtime code
+  never queries this registry: whichever domain/reaction logic detects the triggering divergence
+  reads the field once, at hold-creation time, and freezes the result into the hold's evidence: Layer
+  0 only ever reads that already-resolved, frozen copy afterward, never the live registry.
+- **`FactRef.previous_cycle` (§5.8)**: supplies only the validated FormulaStrategy self-memory case.
+  Resolution reads Layer 0's sealed `PreviousCycleSnapshot` (§4), never the live registry, history
+  buffer, formula-side durable query, or bespoke Layer-2 cache. Layer 0 pre-hydrates that snapshot
+  before the DAG only after a clean restart; first-ever and unclean-restart cycles resolve
+  `available=False`.
 
-Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anything defined here.
+Layer 2 depends on both Layer 0 and Layer 1; the reverse holds only in the one documented sense
+above — a Layer 0 *mechanism definition* referencing a Layer 2 field, never a live Layer 0 query
+against Layer 2 at runtime.
 
 ---
 
 ## 8. Not yet decided
 
-- **Exact `fact_type` migration mapping for the 9 collapsed entity-list mechanisms** (§1) — a
-  concrete per-list mapping table, not an architectural question, to be worked out when this moves
-  toward implementation.
-- **`BooleanSetStrategy`'s exclusion policy for `available=False` inputs (§5.5) is the only policy
-  considered here, not weighed against alternatives.** An alternative (treating an unavailable input
-  as an implicit "False" vote for `mode="all"`, since "we don't know, so we can't confirm all agree")
-  was not evaluated in depth — exclusion was chosen for consistency with `WeightedQuorumStrategy`'s
-  same treatment, not because the alternative was ruled out on its own merits. Worth a second look if
-  a concrete case surfaces where exclusion produces a surprising result.
-- **The formula registry's exact registration mechanism** (§5.3) — declared in code only, by analogy
-  with `PatternLearnerConfig`, but no concrete registration API is specified here.
-- **Whether `Interpretation`/`FusionStrategy` ever open to third-party registration** (§2.1) — tied to
-  the same still-open "no backward compatibility vs. a plugin API" tension already on record for
-  Layer 7; not decided here, deliberately out of scope for this document.
-- **Where a `FusionRule`'s pending-transition state (§5.2) actually lives** — a distinct
-  Layer-2-owned ephemeral structure, or grown out of Layer 0's existing short-term in-memory buffer
-  (Layer 0 §4.1)? Both are consistent with "ephemeral, not restart-safe"; which one is a mechanical
-  choice not made here.
-- **`stability` stacking across chained `FusionRule`s (§5.6) is resolved as a documentation/review
-  discipline for now, not tooled.** Two stronger alternatives were considered and explicitly not
-  adopted: a diagnostic warning when a chain's cumulative debounce delay crosses some threshold (no
-  data yet on what threshold would be meaningful); restricting non-`None` `stability` to only the
-  top-level `FusionRule` in a chain (simpler, but forecloses debouncing at each semantic level for
-  its own distinct reason). Revisit once real chained configurations exist to learn from.
+No unresolved Layer-2 registry parameter remains.
 
 ---
 
 ## 9. Acceptance criteria (for the eventual implementation phase)
 
+- A third-party producer may pass ordinary producer-claim/fact-contract staging when Layer 7 invokes
+  it, but an attempt to register an `Interpretation`, `FusionStrategy`, or `RegisteredFormula` outside
+  the core-owned frozen registries is rejected before an active generation exists. No dynamic import,
+  callable lookup, or plugin lock occurs during a Sensor/Fusion evaluation (§2.1/§5.3).
 - All 9 entity-list mechanisms named in §1 are removed from the codebase, replaced by `Sensor`
   registrations with no residual parallel list left standing.
-- Every `Sensor` sets `available=False`/`confidence=None` exactly per §3.1's rule, in a test that
-  forces each of an unreachable entity (`unavailable`, `unknown`, nonexistent entity_id) and, for a
-  `CalendarInterpretation` `Sensor` specifically, a reachable entity whose current event matches no
-  configured category.
+- Starting V3 in the presence of populated V2 options, history, checkpoints, or learned state reads
+  none of them and creates no registry record from them: V3 begins with only the explicitly supplied
+  new configuration and cold fact/learning stores. A retained V2 export is never an input to V3
+  runtime behavior (§1.1).
+- Two room sensors with the same normalized occupancy evidence kind but different stable `sensor_id`s
+  register distinct `occupancy.evidence.<kind>.<sensor_id>` facts at one `Location`, are both
+  addressable by one room-occupancy `FusionRule`, and remain so after one binding's HA `entity_id`
+  changes. Reusing the same namespace suffix or using an HA `entity_id` as the suffix is rejected
+  (§3/§2.3).
+- Every `Sensor` sets `available=False`/`confidence=None` exactly per §3.2's rule, in a test that
+  forces each binding-failure case (`StateReadBinding` reading `unavailable`/`unknown`, nonexistent
+  `entity_id`, `AttributeReadBinding` targeting a missing attribute, and
+  `CalendarWindowReadBinding` with failed Layer-0 extraction); a `MappingInterpretation(default=NO_DEFAULT)`
+  `Sensor` reading a raw state absent from `mapping`; and a `CalendarInterpretation` `Sensor` whose
+  current event matches no configured category — plus, to verify the two `MappingInterpretation`
+  configurations are actually distinguished and not accidentally conflated, a
+  `MappingInterpretation(default=<value>)` `Sensor` reading that same absent-from-`mapping` raw state
+  and instead producing `default`, `available=True`, including a separate case where
+  `default=None` produces `value=None` with `available=True`.
+- Registration rejects every incompatible binding/interpretation pair: calendar bindings are paired
+  only with `CalendarInterpretation`, and state/attribute bindings only with mapping, numeric, or
+  bucket interpretation. Numeric and bucket tests accept finite non-boolean numeric values and strict
+  ASCII decimal state strings, normalize valid values to `float`, and reject booleans, whitespace or
+  locale-formatted strings, malformed values, `NaN`, and infinities as an unavailable Sensor with a
+  diagnostic rather than a coercion, exception, or selected bucket (§4).
+- A `CalendarWindowReadBinding` passes only `active_now` windows to `CalendarInterpretation`: a future
+  event matching a higher-priority category cannot change the current Sensor value. Tests verify NFKC/
+  casefold/whitespace-normalized `KeywordClassifier` matching, deterministic selection across multiple
+  matching active events by its `priority_order`, no-match as `available=False`, and registration
+  rejection for an incomplete, duplicate, or extraneous `priority_order` or an empty normalized
+  keyword (§3.1/§4). The classifier is also tested as a pure text-sequence function independently of
+  calendar reads, proving the calendar wrapper does not duplicate matching logic.
+- A single HA entity can back multiple `Sensor`s through distinct `ReadBinding`s without violating
+  the registry model — verified with one `climate.*` fixture producing separate facts from its primary
+  state and at least one attribute, with uniqueness enforced on `(fact_type, Location)` rather than
+  on `entity_id`.
+- Registration rejects every static numeric/cardinality violation in §2.4: out-of-range or non-finite
+  `reliability`; empty, unordered, or prematurely open bucket definitions; an empty fusion input
+  tuple; invalid `min_available`/`min_inputs`; non-positive or non-finite weights; a threshold or
+  minimum available weight outside its configured-total bounds; and an invalid formula mode's
+  `scale`/`floor`; and every invalid `occupancy.weighted_evidence` binding/index/threshold pair. A
+  mapping output/default (other than `NO_DEFAULT`), bucket label, or keyword-classifier category that
+  cannot pass Layer 1's `validate_house_fact_value` is likewise rejected in staging rather than
+  failing on a later sensor cycle. A valid unit-weight quorum configuration and a valid occupancy
+  configuration are accepted, proving
+  validation does not reject ordinary registrations.
+- `UnanimityStrategy` configuration must provide `min_available`: staging rejects an omitted value as
+  well as values outside `[1, len(inputs)]`. With one unavailable input, a strict
+  `min_available=len(inputs)` result is unavailable, while a deliberately lower floor evaluates only
+  the remaining boolean votes; an unavailable vote is never fabricated as `False` (§5.1/§5.5).
 - Every `FusionRule` strategy's confidence is computed exactly per the §5.4 table — called through
   Layer 1's pure functions, never reimplemented — verified for all five strategies including both
-  outcome branches of `BooleanSetStrategy`.
+  outcome branches of `UnanimityStrategy` and both branches of `WeightedQuorumStrategy` (threshold
+  reached and not reached), the latter specifically with a near-miss case (`weight_for` just below
+  `threshold`) verified to produce *lower* confidence than a unanimous-rejection case (`weight_for`
+  near zero) — the exact distinction the 2026-09-07 formula correction exists to get right.
+- `UnanimityStrategy` and `WeightedQuorumStrategy` accept only exact `bool` vote values: tests verify
+  `True`/`False` produce their specified outcomes, while `0`, `1`, `"on"`, `None`, and a structured
+  `EvidenceValue` on an otherwise available input produce `available=False`/`confidence=None` and a
+  diagnostic, never a coerced or silently excluded vote (§5.1).
 - A `FusionRule` with every input `available=False` produces an `available=False` output without
   calling any confidence function, for at least one instance of each strategy.
-- A `WeightedQuorumStrategy`/`BooleanSetStrategy` `FusionRule` below its configured
+- A `WeightedQuorumStrategy`/`UnanimityStrategy` `FusionRule` below its configured
   `min_available_weight`/`min_available` — some inputs available, but not enough — produces
   `available=False`/`confidence=None` without calling `categorical_confidence`/`combined_confidence`,
   distinct from and in addition to the fully-empty case above.
 - `RegisteredFormula.compute` returning `None`, and a `FusionRule` below a `FormulaStrategy`'s
-  `min_inputs`, both produce `available=False` without calling `continuous_confidence`.
+  `min_inputs`, both produce `available=False` without calling any confidence function.
+- A formula receives its complete configured input sequence in stable `FusionRule.inputs` order,
+  including an `available=False` fact at its original position; `min_inputs` still counts only
+  available members. A formula may return a result using the other available inputs, but an
+  `InheritedFormulaResult` selecting the unavailable position is rejected for that cycle with a
+  diagnostic (§5.3/§5.5).
+- `occupancy.weighted_evidence` returns immediate `True` from an available primary source despite an
+  unavailable peer; returns `False` only after every required-for-vacancy source is available and its
+  weighted false score meets the configured threshold; and otherwise returns unavailable. A new
+  evidence sensor is added through a binding with no formula-code change. A low-confidence sole
+  primary source produces `True` with correspondingly low categorical confidence, and a conflicting
+  available source reduces that confidence (§5.3).
+- Each `FormulaConfidenceMode` is verified independently: a continuous result calls only
+  `continuous_confidence` and rejects missing `scale`/`floor` or a non-finite numeric value/dispersion;
+  a categorical result calls only `categorical_confidence` and rejects invalid `support`/`total`; and
+  an inherited result copies only the indexed available input's confidence and rejects an out-of-range
+  index. A result variant that disagrees with its registered mode produces
+  `available=False`/`confidence=None` plus a diagnostic, never a guessed confidence (§5.3).
 - A `Stability(to_true=None, to_false=Window(seconds=N))` `FusionRule` commits a transition to
   `True` the same cycle the candidate first appears, and a transition to `False` only after the
   candidate has held for `N` seconds — with a test that flips back to `True` mid-window and verifies
-  the pending transition is discarded, never partially applied.
+  the pending transition is discarded, never partially applied. A positive-dwell transition commits
+  from its own one `AtJob` deadline even when no unrelated HA event or periodic fallback occurs; the
+  deadline callback re-evaluates current in-memory inputs and cannot commit its arm-time candidate
+  after a newer input, token, or generation invalidated it (§5.2).
+- Staging computes `StabilityPathSummary` without adding runtime work: a 120-second room false dwell
+  feeding a 60-second zone false dwell reports a deterministic `to_false=180s` path, while the
+  all-`None` true path reports zero. A `previous_cycle=True` input does not add to either same-cycle
+  cumulative delay, and equal candidate paths use stable `fusion_id` tie-breaking (§5.6).
+- A candidate becoming unavailable cancels a pending true/false transition, so it can never commit
+  from interrupted evidence. With `unavailable_grace=Window(seconds=30)`, the last committed available
+  output is retained without per-cycle writes; a fresh candidate cancels the one armed deadline, while
+  an unchanged unavailable candidate emits exactly one unavailable fact at expiry. A restart or
+  impacted registry reload cancels the grace rather than extending it, and no-grace/security rule
+  emits unavailable immediately (§5.2).
+- A superseded dwell/grace `AtJob` callback carrying an old `FusionRuleRuntimeState` token cannot
+  commit a fact after a newer candidate has re-armed or cancelled it. Runtime state is absent after a
+  simulated restart and only direct/transitive impacted fusion ids lose it at a registry reload; no
+  test needs a Layer-0 history-buffer lookup to evaluate or clear it (§2.5/§5.2).
 - Every `RegisteredFormula` registration is reviewed against §2.2's no-blocking-I/O contract before
   being merged — a checklist item, not an automated test (this cannot generally be verified at
-  runtime).
+  runtime). The same checklist item applies, and is checked, for every new `Interpretation` decoder
+  (§4) and every `FusionStrategy` combination implementation (§5.1) — §2.2 names all three as hot-path
+  execution points, not `RegisteredFormula.compute` alone; corrected 2026-09-08, this criterion
+  previously only covered the third.
+- Formula bootstrap rejects a duplicate id, empty implementation version, or registration after the
+  registry is frozen. Candidate staging rejects an unknown formula, non-canonical/oversize/deep
+  configuration JSON, a compiler rejection, or a binding rejected by its pure validator before any
+  cycle runs; a malformed `occupancy.weighted_evidence` payload (wrong field shape/value, output,
+  location, input namespace/order, or `previous_cycle=True`) therefore never reaches `compute`.
+  A test adds a second formula with a different compiled configuration type without changing any
+  FormulaStrategy configuration union, and verifies its compiler runs once during staging rather than
+  during evaluation.
+  A simulated formula-version upgrade impacts and resets only its dependent/transitive FusionRules,
+  force-writes their retained facts under the new configuration fingerprint, and leaves an unrelated
+  FusionRule's stability and previous-cycle memory intact (§2.5/§5.3).
 - `FormulaStrategy` additions (a new `RegisteredFormula` entry) require no change to `FusionStrategy`
   or to any code that pattern-matches on it, verified by adding a second formula in a test without
   touching the union type.
-- `Actuator`'s `light` role is a valid `actuator_role`, and no reaction's `entity_steps` duplicates a
-  raw light `entity_id` outside the registry.
+- Every light entity a reaction commands is registered as an `Actuator` with `actuator_role="light"`,
+  with no reaction's `entity_steps` duplicating a raw light `entity_id` outside the registry —
+  `actuator_role` itself is never validated against a closed set (§6), so this checks usage, not
+  membership in an enum that doesn't exist.
 - Registering a set of `FusionRule`s whose `inputs` form a cycle (directly or transitively through
   another `FusionRule`'s `produces`) is rejected at registration time, loudly, never accepted and
   never discovered only at evaluation time.
@@ -653,6 +1623,73 @@ Layer 2 depends on both Layer 0 and Layer 1; nothing in either depends on anythi
 - A `FusionRule` chained onto another `FusionRule`'s output correctly excludes it from its confidence
   computation when that input reports `available=False` (§5.5), with no special-casing versus a
   `Sensor`-produced input.
+- Registering a `Sensor` or `FusionRule` whose `(fact_type, where)` collides with an already-registered
+  state producer's is rejected at composition time, loudly, never accepted (§2.3) — verified for a
+  `Sensor`-vs-`Sensor`, `Sensor`-vs-`FusionRule`, and `FusionRule`-vs-`FusionRule` collision.
+- A candidate registry generation that changes a Zone and thereby invalidates a Fusion coverage check
+  is rejected without changing the active generation. A valid semantic change to a Zone, Sensor
+  binding/interpretation/reliability, FusionRule inputs/strategy/stability, or formula version swaps
+  only between cycles, resets `Stability` and prior-cycle output memory only for its full
+  direct/transitive current-cycle impact set, force-emits retained
+  impacted facts with their new semantic configuration fingerprint, and emits `available=False` for a
+  removed producer claim; an unrelated FusionRule retains its pending stability and prior-cycle input.
+  A display-name-only change preserves that unrelated runtime state and produces no forced fact write
+  (§2.5).
+- A Layer-2 registration attempting to use a fact type claimed by another layer — specifically
+  `manual_hold.<domain>` or `manual_hold.<domain>.lifecycle` — is rejected before evaluation; a
+  `FactRef` to an event fact is rejected for both current-cycle and `previous_cycle` use (§2.3/§5).
+- A `WeightedQuorumStrategy` whose `weights` contains a `FactRef` absent from its own `FusionRule`'s
+  `inputs` is rejected at registration time (§5.1); an input present in `inputs` but absent from
+  `weights` is confirmed to default to weight 1.0.
+- A `Sensor` whose entity's live `unit_of_measurement` diverges from its registered `unit` raises a
+  diagnostic event on the next read (§3.3), without changing that cycle's `available`/`confidence`/
+  `value`.
+- A `DirectStrategy` `FusionRule` registered with anything other than exactly one `FactRef` in
+  `inputs` is rejected at registration time (§5.7); one registered validly produces output at the
+  same `Location` as its single input, verified by a test. A `DirectStrategy` `FusionRule` with
+  correct arity (exactly one input) but a configured `where` that doesn't match that input's
+  `Location` is also rejected at registration time — a distinct failure mode from wrong arity, tested
+  separately.
+- A `UnanimityStrategy`/`WeightedQuorumStrategy`/`FormulaStrategy` `FusionRule` whose `where` is not
+  equal to or coarser than the join of its `inputs`' source locations is rejected at registration time
+  (§5.7) — verified for a `zone` destination missing one input's room from that `Zone`'s `room_ids`,
+  and confirmed to succeed for a valid `casa` destination regardless of input locations.
+- A `PrecedenceStrategy` `FusionRule` with `inputs` at heterogeneous, unrelated locations — including
+  one coarser than its own declared `where` — registers successfully, confirming §5.7's exemption for
+  this strategy is not accidentally enforced by the same check as the three aggregating strategies.
+- A `Sensor` registered with `reliability=0.85` reports `confidence=0.85` while `available=True`, and
+  `confidence=None` while `available=False` regardless of `reliability` — verified across an
+  availability transition on the same `Sensor`, to confirm `reliability` never leaks into a fact that
+  has no observation to attach it to (§3.2).
+- An `Actuator`'s `implicit_hold_restore_class` defaults to `"never"` when not set; a divergence
+  detected on an entity registered `"eligible"` is confirmed to reach Layer 0 §6.3's restoration
+  algorithm with that classification frozen into the resulting hold's evidence, verified end-to-end
+  through a simulated restart (§6).
+- An `Actuator` whose `power_recovery_policy` is `"reconcile"` contributes a coalesced desired-target
+  checkpoint only after an accepted target change; `"never"` contributes none and
+  `"require_confirmation"` reaches Layer 0 recovery as a proposal, not an automatic `ApplyStep`
+  (Layer 0 §7.4).
+- Registration rejects duplicate `actuator_id`, two Actuators claiming one `entity_id`, and an unknown
+  or room-mismatched `opening_id`; accepts a room light with no `opening_id` and two endpoints sharing
+  one `device_id`. Reload removing an Actuator or rebinding its stable id to another `entity_id`
+  deletes the old recovery target rather than migrating it (§2.4/§2.5/§6).
+- An `ApplyStep` targeting an Actuator resolves exactly that record's `entity_id` at the execution
+  boundary and rejects a caller-supplied entity/device/area/label target selector. A four-command
+  Reaction yields four ordered, individually provenanced steps, including when two commands address
+  the same Actuator; HA, not Heima, accepts or rejects each actual service/parameter combination (§6).
+- A `WeightedQuorumStrategy` with every `weight=1` and `threshold=1.0` produces exactly the same
+  outcome as the removed `BooleanSetStrategy(mode="any")` across every tested availability scenario
+  (§5.1), confirming the redundancy that justified dropping it.
+- A `FactRef` with `previous_cycle=True` is accepted only for a FormulaStrategy's exact self-reference
+  and only when its core `validate_binding` permits it; staging rejects every non-formula, non-self,
+  or formula-disallowed prior-cycle input. The accepted self-memory reference contributes no edge to
+  §5.6's cycle-detection graph (§5.8).
+- On a `FusionRule`'s first evaluation, or the first evaluation after a simulated unclean restart,
+  a `previous_cycle=True` input resolves `available=False`; on the next in-process cycle it resolves
+  from the sealed in-memory `PreviousCycleSnapshot`. A simulated clean shutdown/restart pre-hydrates
+  the declared key before the first DAG and returns the last successfully committed value without a
+  formula-side disk read; a durable-batch failure while the process survives does not interrupt the
+  in-memory result (§5.8).
 
 ---
 

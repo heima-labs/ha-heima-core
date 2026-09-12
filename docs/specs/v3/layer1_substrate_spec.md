@@ -78,7 +78,9 @@ Layer 1 is **not** responsible for:
 @dataclass(frozen=True)
 class HouseFact:
     fact_type: str        # namespaced, dot-separated identifier — see naming convention below
-    value: Any             # interpreted payload: a bucket label, an enum value, a bool, a
+    value: Any             # interpreted payload: a bucket label, an enum member's own primitive
+                            # value (its `.value`, e.g. a str/int — never the Enum member object
+                            # itself, which isn't EvidenceValue-shaped, see below), a bool, a
                             # structured dict, or a small frozen dataclass (e.g. ManualHoldValue,
                             # Layer 0 §6.1) — semantically untyped (one universal shape must
                             # accommodate every kind of fact, and a closed *value* type would just
@@ -98,18 +100,40 @@ applies: a raw Home Assistant `State` object, a binary blob, an arbitrary custom
 serialization or dump a raw payload wholesale into durable storage. `value` must be either
 `EvidenceValue`-shaped (§4 — JSON primitives or shallow collections of them), **or** a frozen
 dataclass instance whose own fields are themselves, recursively, `EvidenceValue`-shaped — the second
-form is what lets a producer report a small, named structured value (`ManualHoldValue`: `active:
-bool` + `held_state: dict[str, Any] | None`) without collapsing it into a bare dict and losing its
-type identity. Python's type system cannot express "any frozen dataclass with JSON-primitive fields"
+form is what lets a producer report a small, named structured value (`ManualHoldValue`: `hold_id: str`
++ `active: bool` + `kind: str` + `held_state: dict[str, EvidenceValue] | None`) without collapsing it
+into a bare dict and losing its type identity. Python's type system cannot express "any frozen dataclass
+with JSON-primitive fields"
 as a static union, so this is a **normative construction rule, validated procedurally** — the same
 discipline already applied to `Location` (§5) — not something the `Any` annotation itself enforces.
 Same nesting-depth and size limits as `evidence` apply, for consistency, not because the two fields
 are interchangeable.
 
+`validate_house_fact_value(value) -> None` is Layer 1's pure, side-effect-free enforcement point for
+that complete contract: it accepts an `EvidenceValue` or qualifying frozen dataclass only, recursively
+checks finite floats and maximum depth 2, normalizes a permitted dataclass to its field payload for
+canonical UTF-8 size measurement, and rejects a result over 8 KiB. `HouseFact` construction calls it;
+Layer 2 also calls it during staging for every static value that one of its interpretations can emit.
+This is one value contract with two entry points, not a second interpretation-specific validator.
+
+**Home Assistant boundary.** A Home Assistant `State` object, its complete attributes mapping, event
+context, or any other HA runtime object is boundary input only: it may be inspected while a binding
+extracts its declared raw scalar, but is never retained by reference or serialized into `value`,
+`evidence`, `Provenance`, a `HouseFact`, or any Heima-owned payload. A producer that needs selected HA
+data creates a copied, normalized, schema-declared `EvidenceValue` projection instead. The resulting
+fact is therefore independent of HA's mutable in-memory object graph after construction.
+
+**Numeric scalar rule.** `bool` remains a valid semantic `EvidenceValue`, distinct from a number.
+Every `float` anywhere inside an `EvidenceValue` (including nested collections and frozen-dataclass
+fields) must be finite: `NaN` and either infinity are invalid because they are not canonical JSON
+values. A field declared by a contract as a quantitative number accepts only a non-boolean `int` or
+finite `float`; it must never accept Python `True`/`False` as `1`/`0`. This leaves explicitly boolean
+fact values and configuration flags valid.
+
 **`value` has no contractual relationship to `available` (§4.1) — considered and rejected.** An
 earlier draft required `value=None` whenever `available=False`, mirroring `confidence`'s own
 `None`-when-unavailable rule. Dropped: `available: bool` is already the sole, sufficient signal for
-"is there a real observation here" — requiring `value` to *also* encode that fact is pure redundancy,
+"does this fact carry a usable value" — requiring `value` to *also* encode that fact is pure redundancy,
 two fields that must be kept in sync for no benefit (unlike `confidence`, see §4.1, where making the
 field itself `Optional` buys real protection from a type-checker; `value: Any` cannot buy that
 protection under any convention, `Any` accepts everything regardless). `value`'s content is simply
@@ -119,18 +143,77 @@ without checking `available` first, full stop.
 
 **Naming convention for `fact_type`**: dot-separated, namespaced, stable identifiers — `house_state`,
 `occupancy`, `room_signal.bucket`, `activity.pattern`, `heating.temperature_rate`,
-`manual_hold.<domain>` (Layer 0 §6), `external.<slot>`. This reuses the same convention Heima's
-existing event catalog already establishes for its `type` field (`people.arrive`, `house_state.*`,
-`lighting.*` — a stable, hierarchical, human-readable taxonomy), rather than inventing a second one.
+`manual_hold.<domain>` (Layer 0 §6), `external.<slot>` (`slot` names one externally-sourced context
+value — e.g. outdoor temperature or a weather-safety flag from an adapter like OWM or Protezione
+Civile, Layer 2's own worked example for `Sensor`). This reuses the same convention Heima's
+existing event catalog already establishes for its `type` field (`people.arrive`,
+`house_state.<detail>`, `lighting.<detail>` — a stable, hierarchical, human-readable taxonomy),
+rather than inventing a second one.
 The convention is enforced by usage, not by the type itself — `fact_type` is a plain `str`, not a
 closed enum, because new fact types are added routinely (a new `Sensor` registration, a new learned
 pattern) and a closed vocabulary here would fight that.
 
-**A `HouseFact` is a value, not a command and not a state machine.** It describes one thing that was
-true, at one place, at one instant, with one epistemic status — it does not represent a transition,
-a duration by itself (durations are read by comparing two facts' `when`, or via a `Window`, Layer 0
-§3.2), or an intent to act. An `ApplyStep` (Layer 5) is the corresponding command shape; a
-`HouseFact` never is one.
+Each concrete identifier has one or more non-empty segments separated by `.`, and may not contain `*`:
+the asterisk is reserved exclusively for Layer 0's `FactTypeClaim` glob patterns, never persisted as
+part of a fact type. Segment characters otherwise retain their exact Unicode code-point identity;
+there is no trim, case-folding, or normalization at this boundary.
+
+A source-level observation may include a stable Heima registry id as its final namespace segment when
+several observations of the same semantic kind must coexist at one `Location`; Layer 2 reserves this
+shape for room-occupancy evidence as `occupancy.evidence.<kind>.<sensor_id>`. That suffix identifies
+the configured logical reading, never a mutable Home Assistant `entity_id`; the fused house meaning
+remains the unsuffixed canonical fact (`occupancy`).
+
+**A `HouseFact` is an atomic assertion, not a command and not a state machine.** Its producing
+contract (Layer 0 §4) declares whether that assertion is a state that holds now (for example,
+`occupancy=true`) or an occurrence that happened at `when` (for example, a manual hold was cleared).
+Both use this one immutable shape; neither encodes a multi-step transition protocol or an intent to
+act. A duration is still read by comparing facts' `when`, or via a `Window` (Layer 0 §3.2). An
+`ApplyStep` (Layer 5) is the corresponding command shape; a `HouseFact` never is one.
+
+### 3.1 Operational-event mapping
+
+`HeimaEvent` is the operational envelope consumed by the notification pipeline, not a second durable
+record model. Its durable audit representation is exactly one `HouseFact` whose producer has declared
+`FactEmissionKind="event"` (Layer 0 §4):
+
+```python
+EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
+
+@dataclass(frozen=True)
+class OperationalEventValue:
+    notification_key: str                 # non-empty stable delivery dedup/rate-limit key
+    severity: EventSeverity                # delivery/diagnostic priority, never fact identity
+    title: str                            # rendered event title retained for audit
+    message: str                          # rendered event message retained for audit
+    context: dict[str, EvidenceValue]      # event-specific, JSON-compatible payload
+```
+
+| `HeimaEvent` field | `HouseFact` representation |
+|---|---|
+| `type` | `fact_type` in V3's approved stable taxonomy; a V2/legacy type is not admitted to V3 |
+| `key` | `value.notification_key` |
+| `severity` | `value.severity` |
+| `title` / `message` | `value.title` / `value.message` |
+| `context` | `value.context` |
+| `ts` | `when`, UTC and timezone-aware |
+| `event_id` | transient delivery identifier only; neither fact identity nor a separate durable field |
+| event location | `where`; mandatory, supplied by the typed producer; `Location(scope="casa")` only when the event is intrinsically house-wide |
+| causal context | `how.source.correlation_id`, with ordinary Layer-0 propagation rules |
+
+The event adapter must construct this value at the production boundary and validate the non-empty key,
+allowed severity, non-empty title/message, `context` shape, and mandatory `Location`; it must never
+guess a room from unstructured context. A V3 `HeimaEvent`, where a delivery/rendering envelope is
+still useful, is derived from this event fact and cannot be an independently persisted or audited
+channel. Historical V2 events remain outside V3 as archive/rollback material: V3 has no legacy-event
+adapter, type map, or runtime fallback, and every V3 producer must emit an approved V3 fact type.
+
+Persistence appends every event fact: it never deduplicates two otherwise equal occurrences.
+`notification_key` is instead consumed exclusively by Layer 6's delivery policy for its configured
+deduplication and rate-limiting window. Thus a suppressed repeat delivery remains visible in the audit
+trail, while `severity` may affect rendering, route selection, escalation, and diagnostics but never
+the fact's identity, ownership, retention semantics, or causal correlation. Event consumers must not
+derive a live state from this value; a current claim needs a separate `state` fact by Layer 0 §4.
 
 ---
 
@@ -138,6 +221,8 @@ a duration by itself (durations are read by comparing two facts' `when`, or via 
 
 ```python
 EvidenceValue = str | int | float | bool | None | dict[str, "EvidenceValue"] | list["EvidenceValue"]
+EvidenceInstant = str  # canonical UTC ISO-8601 instant: YYYY-MM-DDTHH:MM:SS.ffffff+00:00
+PersistedProjection = dict[str, EvidenceValue]
 
 @dataclass(frozen=True)
 class Provenance:
@@ -147,11 +232,35 @@ class Provenance:
     evidence: dict[str, EvidenceValue] = field(default_factory=dict)
 ```
 
+`EvidenceInstant` is a semantic subtype of `str`, not a new runtime object admitted to
+`EvidenceValue`. Every evidence field declared as an instant is serialized in this one canonical form:
+a timezone-aware UTC ISO-8601 value with exactly six fractional-second digits and the literal
+`+00:00` offset (for example, `2026-09-08T14:30:00.000000+00:00`). Producers normalize before
+constructing the fact; consumers that make a decision from such a field parse and validate that exact
+form. A naive `datetime`, a non-UTC offset, or a merely arbitrary string is never a valid
+`EvidenceInstant`.
+
+`PersistedProjection` is the deliberately narrow contract for a named structured value retained by a
+Layer-0 durable facility without making it a `HouseFact` (for example, one recovery target or one
+manual-hold checkpoint record). Its keys and values are copied and normalized, not retained from an
+HA object. It admits no frozen dataclass or arbitrary object: it is a JSON mapping whose values obey
+the ordinary `EvidenceValue` rule, have maximum nesting depth 2, contain only finite floats, and have
+canonical UTF-8 serialization of at most **8 KiB**. It is a persistence boundary, not a general
+configuration type: registry configuration has its own contracts and limits.
+
 ### 4.1 `available`
 
-A plain boolean: does this `HouseFact` represent an actual observed value, or the absence of one
-(the source was unreachable/offline at the moment of observation). Nothing more elaborate is needed
-or wanted here — see the reasoning below for what was deliberately left out.
+A plain boolean: does this `HouseFact` carry a usable value for the claim it represents at `when`, or
+can its producer make no such assertion this cycle? A failed/unreachable source is one cause, but not
+the only one: a raw reading can be present yet fail its declared interpretation, and a derived producer
+can lack enough usable input to produce its output. `available` deliberately exposes the common result,
+not a global taxonomy of those producer-local causes.
+
+`available=True` means consumers may read `value` as the producer's assertion. `available=False` means
+consumers must treat `value` as undefined (§3) and `confidence` as `None`; the detailed cause belongs
+only in local diagnostics or non-load-bearing `evidence`, never in a new shared `Provenance` enum. This
+keeps every consumer on one stable binary contract while allowing each producing layer to state its own
+precise failure conditions.
 
 **Staleness (`when` too old to trust right now) is not a `Provenance` field at all — it was
 considered and rejected.** An earlier draft of this section had a tri-state `Freshness`
@@ -176,8 +285,8 @@ not a question of elapsed time at all, and it cannot be derived from absence of 
 Layer 0's write-on-change policy (§4.2 of the Layer 0 spec) means "no new fact this cycle" is the
 **normal, expected** state for anything unchanged, so absence can never be read as "unavailable"
 without creating a false positive for every ordinary stable value. Unavailability has to be a
-positive signal, recorded at the moment the observation fails, which is precisely the kind of thing
-that is correctly static and correctly stored once.
+positive signal, recorded at the moment the producer cannot form a usable assertion, which is precisely
+the kind of thing that is correctly static and correctly stored once.
 
 **`confidence` is `None` exactly when `available=False`, never a numeric placeholder.** An earlier
 draft of this section used `0.0` for this case — rejected: `0.0` is a legitimate, meaningful point
@@ -193,6 +302,11 @@ way and a type-checker can't narrow `Any` into meaning anything; `value` is deli
 `confidence=None` together, never `available=False` with a numeric `confidence`, and never
 `available=True` with `confidence=None`.
 
+**Construction validation is mandatory.** `Provenance` rejects a boolean or non-finite confidence, or
+one outside `[0.0, 1.0]`; it also rejects either inconsistent availability pair above. These are
+invalid facts, not degraded observations, so construction fails loudly rather than silently correcting
+a value.
+
 ### 4.2 `confidence`
 
 **A closed, deliberately small set of standardized forms — never an ad hoc, uncentralized formula
@@ -206,34 +320,89 @@ fifth member instead of staying artificially capped at four — when a genuinely
 computation pattern is found, not when a producer wants a shortcut.
 
 ```python
+from math import isfinite
+
 def categorical_confidence(count_best_outcome: float, total_observations: float) -> float:
     """A true match ratio, P(outcome | pattern). `total_observations` is deliberately general — the
     population being matched against, whether historical pattern occurrences (Layer 3) or same-cycle
     evidence being combined right now (a Layer 2 FusionRule's votes). The formula's meaning (how much
     of the evidence agrees with the reported outcome) is identical either way.
 
-    Precondition: total_observations > 0. Never called with zero — see below."""
+    Preconditions: both arguments are finite; total_observations > 0 (never called with zero — see
+    below); 0 <= count_best_outcome <= total_observations. The function validates these conditions and
+    raises ValueError on violation, even though its callers validate their own configuration earlier —
+    resolved 2026-09-07: found in review that nothing previously stopped a caller error (e.g. double-counting one vote) from
+    producing an out-of-range result (count_best_outcome=6, total_observations=5 -> 1.2), silently
+    violating Provenance.confidence's own 0.0-1.0 contract (§4) from inside the one function this
+    architecture centralizes confidence in specifically to prevent that class of mistake."""
+    if (
+        isinstance(count_best_outcome, bool)
+        or isinstance(total_observations, bool)
+        or not isfinite(count_best_outcome)
+        or not isfinite(total_observations)
+        or total_observations <= 0
+        or not 0 <= count_best_outcome <= total_observations
+    ):
+        raise ValueError("invalid categorical confidence population")
     return count_best_outcome / total_observations
 
 def continuous_confidence(dispersion: float, scale: float, floor: float) -> float:
     """Inverse dispersion. `floor`/`scale` are named parameters supplied by the caller, never ad hoc
     magic numbers at the call site.
 
-    Precondition: scale > 0. A zero or negative scale makes the normalization meaningless; the
-    caller chooses a scale appropriate to its own value's units and must never pass zero."""
+    Preconditions: every argument is finite; scale > 0 (a zero or negative scale makes the
+    normalization meaningless — the caller chooses a scale appropriate to its own value's units and
+    must never pass zero); dispersion >= 0 (a dispersion is a spread, never negative by construction);
+    0 <= floor <= 1. The function validates these conditions and raises ValueError on violation —
+    resolved 2026-09-07: without these, e.g. continuous_confidence(dispersion=-2.0, scale=1.0,
+    floor=0.0) returns 3.0, or a floor passed as 1.5 forces every result above 1.0 regardless of
+    dispersion, the same class of contract violation categorical_confidence was found exposed to."""
+    if (
+        isinstance(dispersion, bool)
+        or isinstance(scale, bool)
+        or isinstance(floor, bool)
+        or not isfinite(dispersion)
+        or not isfinite(scale)
+        or not isfinite(floor)
+        or dispersion < 0
+        or scale <= 0
+        or not 0 <= floor <= 1
+    ):
+        raise ValueError("invalid continuous confidence parameters")
     return max(floor, 1.0 - dispersion / scale)
 
 def combined_confidence(confidences: Sequence[float], combinator: Literal["min", "max"]) -> float:
     """For a deterministic logical combination (AND/OR) over several sources' own confidence values
-    — not a statistical match-ratio (no "population" here, just already-known inputs) and not a
-    passthrough (more than one source feeds it). `min` for a conjunction: a logical AND is only as
-    trustworthy as its weakest premise. `max` for a disjunction: a logical OR is as trustworthy as
-    its strongest confirming premise. Never a mean — averaging would let a weak AND premise get
-    diluted by strong ones, or a weak OR confirmation get dragged down by irrelevant weak ones,
-    neither of which matches how a boolean combination's own reliability actually behaves.
+    — not a statistical match-ratio (no "population" here, just already-known inputs). `min` for a
+    conjunction: a logical AND is only as trustworthy as its weakest premise. `max` for a disjunction:
+    a logical OR is as trustworthy as its strongest confirming premise. Never a mean — averaging would
+    let a weak AND premise get diluted by strong ones, or a weak OR confirmation get dragged down by
+    irrelevant weak ones, neither of which matches how a boolean combination's own reliability
+    actually behaves.
 
-    Precondition: `confidences` is non-empty (same "no meaningful confidence for nothing observed"
-    rule as the other two — an empty combination is `available=False`, not a call to this function)."""
+    Typically combines 2+ sources, but a length-1 call is a legitimate degenerate case, not an error —
+    e.g. a Layer 2 `UnanimityStrategy` with `min_available=1` (its own default) can validly have exactly
+    one available/confirming/dissenting source this cycle; `min`/`max` of a singleton is that source's
+    own confidence, unchanged, which is the mathematically correct answer, not a special case this
+    function needs to guard against (clarified 2026-09-07 — an earlier draft of this docstring
+    overclaimed "not a passthrough (more than one source feeds it)" as if that were an enforced
+    precondition rather than the typical case).
+
+    Preconditions: `confidences` is non-empty (same "no meaningful confidence for nothing observed"
+    rule as the other two — an empty combination is `available=False`, §4.1, not a call to this
+    function), and every confidence is finite and in [0.0, 1.0]. The function validates these
+    conditions and raises ValueError on violation."""
+    if (
+        combinator not in ("min", "max")
+        or not confidences
+        or any(
+            isinstance(confidence, bool)
+            or not isfinite(confidence)
+            or not 0 <= confidence <= 1
+            for confidence in confidences
+        )
+    ):
+        raise ValueError("invalid combined confidence inputs")
     return min(confidences) if combinator == "min" else max(confidences)
 ```
 
@@ -305,10 +474,12 @@ content-based rule cannot: a raw Home Assistant `State` object, a binary blob, a
 object — none of these fit `EvidenceValue`, so a producer cannot accidentally dump one into `evidence`
 the way it could dump one into an unconstrained `Any`-typed field.
 
-**A total serialized-size cap applies on top of the shape constraint** — a concrete number (a few KB)
-to be fixed at implementation time, listed in §9. This is what makes "not a dumping ground for large
-payloads" an enforced rule rather than an aspiration: even a shape-valid `evidence` dict can still be
-too large if a producer serializes something verbose into it.
+**A total serialized-size cap applies on top of the shape constraint**: canonical UTF-8 serialization
+of `evidence` is at most **8 KiB**. The same 8 KiB limit applies to `HouseFact.value` after a frozen
+dataclass, if present, is normalized to its field payload (§3). This makes "not a dumping ground for
+large payloads" an enforced rule rather than an aspiration: even a shape-valid dict cannot retain an
+unbounded HA-derived blob. The limit is checked while the payload is already normalized/serialized for
+fact construction; it adds no I/O or retained raw HA object to the evaluation path.
 
 **Violation policy: fail soft, not hard — this is a fixed, deliberate choice, not an unspecified
 detail left to whoever implements it.** `evidence` is explicitly supporting detail, not essential to
@@ -360,8 +531,38 @@ class Location:
 `casa` by definition — there is no "no location" case.
 
 **Normative construction rule**: exactly one of `room_id`/`zone_id`/`room_ids` is populated, matching
-`scope`; `casa` populates none of them. An implementation must validate this at construction, not
-leave it to convention — a `Location` with `scope="room"` and a populated `zone_id` is malformed.
+`scope`; `casa` populates none of them; when `scope="rooms"`, `room_ids` has at least 2 entries — a
+single-room set is malformed, it must use `scope="room"` instead (corrected 2026-09-08: this
+cardinality floor previously lived only in `room_ids`'s own field comment, not stated as part of the
+normative rule itself, unlike `Zone.room_ids`'s parallel "at least 1 entry" floor, §6, which the
+construction rule there does state explicitly). An implementation must validate all of this at
+construction, not leave it to convention — a `Location` with `scope="room"` and a populated `zone_id`
+is malformed, and so is `Location(scope="rooms", room_ids=frozenset({"kitchen"}))`.
+
+**Canonical identity and serialization.** Room, zone, and opening identifiers are opaque stable keys:
+they are compared as the exact Unicode code-point sequence supplied by their owning registry, with no
+trim, case-fold, Unicode normalization, or other implicit rewrite. A `Location` has exactly one
+canonical key:
+
+```python
+LocationKey = tuple[str, ...]
+
+# casa:  ("casa",)
+# room:  ("room", room_id)
+# zone:  ("zone", zone_id)
+# rooms: ("rooms", *sorted(room_ids, key=unicode_code_point))
+```
+
+The `rooms` form is semantically a set, so its input order never matters; its canonical serialized
+form is the `room_ids` array sorted by Unicode code point. `Location` equality, hashing, Layer 0's
+`FactIdentityKey`, and Layer 2 producer registration all use this key. Canonical JSON uses UTF-8,
+object keys sorted by Unicode code point, and this sorted array representation; deserializing then
+reserializing a valid Location must reproduce the identical key and JSON value.
+
+Construction validates only shape, cardinality, and non-empty opaque identifiers. Whether an id exists
+is resolved at the consuming registry boundary, not in `Location.__init__`: this permits configuration
+objects to be loaded before the Room/Zone registries are fully assembled without allowing an unknown
+reference to reach a running producer (§6/§7 and Layer 2 §2.3).
 
 Four forms, not three, because one genuine case doesn't fit "a real, standing place":
 
@@ -406,18 +607,102 @@ room side. Zones are **not nestable** — a `Zone` groups rooms directly, never 
 (via `Location.scope="casa"`) already serves as the implicit top-level grouping; recursive
 zone-of-zones nesting is complexity with no concrete driving use case today.
 
+**Zone identity is not its mutable definition.** `ZoneKey` is exactly `zone_id`; changing
+`display_name` or `room_ids` does not change the identity of any `Location(scope="zone")` that points
+to it. A Zone's canonical **definition** fingerprint is `(zone_id, display_name,
+tuple(sorted(room_ids, key=unicode_code_point)))`, retained by Layer 2 for complete configuration
+audit. Its **execution semantic** fingerprint is `(zone_id,
+tuple(sorted(room_ids, key=unicode_code_point)))`: display text does not change the meaning of a
+zone-scoped fact. Layer 2's reload impact comparison uses the latter, while retaining the former as
+historical configuration metadata. `room_ids` serializes as a
+Unicode-code-point-sorted array, while in memory it remains a `frozenset`. Zone construction rejects an
+empty `zone_id`, empty `display_name`, empty membership, or empty room id; Zone registration resolves
+every member against the Room registry and rejects a duplicate `zone_id`.
+
+A changed definition is a new **configuration generation**, even though `ZoneKey` remains the same.
+The generation snapshot and both fingerprints are durably retained by Layer 2's atomic reload
+protocol, and every re-evaluated fact whose semantics depend on this Zone carries the resolved
+execution semantic fingerprint in `FactSource.configuration_fingerprint` (Layer 0 §5). This preserves
+historical meaning without
+incorrectly changing a `Location(scope="zone")` identity: audit can determine which room membership
+was in force for a fact rather than interpreting all records using today’s Zone definition.
+
 ---
 
 ## 7. `Topology`
 
 ```python
 @dataclass(frozen=True)
+class Opening:
+    opening_id: str
+    room_id: str                     # the one room this opening belongs to (its "owner") — a plain
+                                       # string key, the same opaque `room_id` convention `HouseFact`
+                                       # itself uses (§2), not a `Location` — Topology is structural
+                                       # graph data, not fact attribution, and its own `exposure_by_room`/
+                                       # `floor_by_room` fields below are keyed by this same plain
+                                       # `room_id`, never by `Location`
+    type: str                        # e.g. "door", "window", "door_window"
+    orientation: str | None = None   # compass orientation, populated for window-bearing openings —
+                                       # this is exactly what `exposure_by_room` below is derived from
+    entity_id: str | None = None     # an optional HA entity tracking this opening's live state — a
+                                       # reference only; `Topology` itself never reads live entity
+                                       # state, same non-live-dependency discipline as `Sensor.device_id`
+                                       # (Layer 2 §3)
+
+@dataclass(frozen=True)
+class ResolvedConnection:
+    room_a: str
+    room_b: str                      # the two rooms this connection joins — `"outside"` is a
+                                       # reserved `room_b` value for an opening that exits the house,
+                                       # not a real room
+    opening_id: str                  # the `Opening` this connection is derived from
+    connection_type: str             # derived, never independently stored — "indoor", "outdoor", or
+                                       # "separate" (corrected 2026-09-08: an earlier version of this
+                                       # comment invented "door"/"open_plan" as examples, which aren't
+                                       # real values at all — "door" is actually a value of
+                                       # `Opening.type`, an unrelated field; verified against
+                                       # `custom_components/heima/room_topology.py`'s real
+                                       # `CONNECTION_TYPES`, not assumed)
+    access_type: str = "direct"      # "direct", "stairs", or "elevator" (corrected 2026-09-08, same
+                                       # error and same source of truth: was "normal"/"restricted",
+                                       # neither a real value; real default is "direct", not "normal")
+
+@dataclass(frozen=True)
 class Topology:
     openings: tuple[Opening, ...]
     connections: tuple[ResolvedConnection, ...]
-    exposure_by_room: dict[str, tuple[str, ...]]
-    floor_by_room: dict[str, int]
+    exposure_by_room: dict[str, tuple[str, ...]]   # room_id -> sorted orientations of its
+                                                     # window-bearing openings (derived from `openings`,
+                                                     # not independently authored)
+    floor_by_room: dict[str, int]                   # room_id -> floor, read from the Room registry's
+                                                     # own `floor` attribute (added 2026-09-08: this
+                                                     # is not derived from `openings`/`connections` the
+                                                     # way `exposure_by_room` is — it's a read-only
+                                                     # aggregate view over data §2 already says Layer 1
+                                                     # doesn't own or define, the same opaque-reference
+                                                     # treatment `room_id` itself gets throughout this
+                                                     # document; `Topology` here queries that external
+                                                     # source, it does not redefine what "floor" means
+                                                     # or where it's authoritatively stored
 ```
+
+**Canonical topology definition and reference validation.** `Topology` is one installation-wide
+structural record, not a collection addressed by an arbitrary topology id. Its canonical primary data
+is `openings` sorted by `opening_id` and `connections` sorted by `opening_id`, both by Unicode code
+point. `Opening.opening_id` values are unique; `ResolvedConnection.opening_id` values are unique; and
+every connection's `opening_id` identifies one existing opening whose `room_id` equals that
+connection's `room_a`. `room_b` is either a registered room id or the reserved literal `"outside"`.
+This ownership rule makes a connection's direction canonical instead of allowing the same physical
+relationship to be serialized with its endpoints swapped.
+
+`exposure_by_room` and `floor_by_room` are derived views, not independently authored input. On build or
+deserialization the registry recomputes them from canonical openings plus the Room registry, orders map
+keys and each exposure tuple by Unicode code point, and removes duplicate orientations. A
+serialized derived view that disagrees with this recomputation is rejected. Topology registration also
+resolves every `Opening.room_id`, non-`outside` `ResolvedConnection.room_b`, and derived-view room key
+against the Room registry; unknown ids, duplicate opening/connection ids, or a broken opening-owner
+link are errors. Its canonical fingerprint is the deterministic UTF-8 JSON serialization of those
+canonical primary data and derived views, with object keys sorted by Unicode code point.
 
 A third, complementary piece of WHERE — genuinely distinct from both `Location` and `Zone`, not a
 variant of either:
@@ -427,9 +712,21 @@ variant of either:
 - `Topology` says *how rooms physically relate to each other* — adjacency, openings between rooms,
   connection type, orientation, floor.
 
-`Opening`/`ResolvedConnection` carry forward unchanged in shape from Heima's existing room-topology
-model (adjacency graph, openings, connection type, orientation) — Layer 1 does not redefine them,
-only places `Topology` explicitly in the layer model as context other layers query.
+**`Opening`/`ResolvedConnection` are restated here in full — corrected 2026-09-08.** An earlier
+version of this section said they "carry forward unchanged in shape from Heima's existing
+room-topology model... Layer 1 does not redefine them," without ever stating that shape — found in
+review to be a real self-containment gap, more serious than the `Room`/`room_id` deferral it was
+modeled on: `room_id` is genuinely opaque everywhere it's used (Layer 1 never inspects its internal
+structure), but `Topology` uses `Opening`/`ResolvedConnection` as *structured* data with fields whose
+meaning (`orientation`, `connection_type`, `access_type`) a reader needs to actually understand what
+`Topology` answers. The shapes above carry every field a Layer 1 consumer actually reads, matching
+Heima's existing room-topology model (`custom_components/heima/room_topology.py`) — flattened only in
+packaging, presenting the query-time, already-resolved view a Layer 1 consumer reads (`Topology` is
+"queried, not consumed as a stream," below) rather than the admin-authored `Connection` shape that
+produces it. One field is deliberately dropped in the flattening, `connection_id` (the real
+`Connection`'s own stable identity, used for admin-side edit/delete) — not needed by anything that
+only *reads* topology, and explicitly Layer 8's concern, not Layer 1's, consistent with leaving the
+rest of `Connection`'s admin-authoring shape there too.
 
 **`Topology` deliberately has no `casa` node — resolved 2026-09-02, not an oversight.** An early
 planning note (predating `Topology`'s own separation from `Location`/`Zone`) said the whole-house
@@ -439,7 +736,13 @@ or the reserved `outside`) — "casa" isn't adjacent to anything, it **contains*
 different kind of relationship entirely, one this graph isn't built to represent as a peer node.
 Every whole-house topological question is answered as an **aggregate query over the existing
 room-keyed structures**, never a lookup on a dedicated entry: "does the house have an outdoor
-opening" is `any(exposure includes "outside" for exposure in exposure_by_room.values())`, not
+opening" is `any(c.room_b == "outside" for c in connections)` (corrected 2026-09-08 — this example
+previously queried `exposure_by_room` for the literal string `"outside"`, but `exposure_by_room`
+holds compass *orientations* of window-bearing openings, e.g. `"north"`; it can never contain the
+string `"outside"` at all, so the original query could never return `True` for any house, silently
+reporting "no outdoor opening" always. `"outside"` is `ResolvedConnection.room_b`'s reserved value,
+a different field entirely — found by re-deriving the example by hand against §7's own restated
+`ResolvedConnection` shape, not caught when that shape was first written), not
 `exposure_by_room["casa"]`; "how many floors" is `len(set(floor_by_room.values()))`, not a `casa`
 entry that would have to mean something incoherent (a whole house doesn't have *a* floor). Whole-house
 facts and actions already have a home entirely independent of `Topology` — `Location.scope="casa"`
@@ -483,23 +786,23 @@ Layer 1 is thin on purpose — most of the actual machinery it depends on is Lay
   same-cycle facts, one per Layer 3 analysis run for learned facts, and so on. Layer 1 does not
   define a separate correlation mechanism.
 
-Layer 1 depends on Layer 0 (this is expected — Layer 0 is the floor everything is built on); nothing
-in Layer 0 depends on anything defined here, preserving Layer 0's own invariant.
+Layers 0 and 1 form one **foundation slice** with distinct ownership, not a one-directional stack.
+Layer 1 consumes Layer-0 services and the `FactSource` contract; Layer 0 consumes Layer-1 immutable
+`HouseFact`/`Location` contracts at its storage and indexing boundary (Layer 0 §2.1). This reciprocal
+reference is intentionally limited to data contracts.
+
+It never permits a behavioral cycle: Layer 1 does not execute Timing, Persistence, Recovery, or
+Manual Hold behavior while constructing its value objects, and Layer 0 does not query or invoke Layer-1
+registries, topology, zone resolution, sensor/fusion logic, or domain policy. Bootstrap composes the
+two contracts before evaluation; the hot path has no Layer-0 -> Layer-1 -> Layer-0 call chain. An
+implementation may use a neutral contracts module or type-only references to avoid a language-level
+import cycle without creating a new architectural layer or moving ownership.
 
 ---
 
 ## 9. Not yet decided
 
-- **`HeimaEvent` → `HouseFact` field mapping is incomplete.** The stated intent is that `HeimaEvent`
-  (today: `type`/`key`/`severity`/`context`) becomes expressible as a `HouseFact` once `fact_type`
-  reuses the same taxonomy `type` already uses. But `type` → `fact_type` and (loosely) `context` →
-  `value`/`evidence` are the only two fields with an obvious home — `key` (the dedup/rate-limit key
-  the notification pipeline uses) and `severity` (`debug`/`info`/`warning`/`error`/`critical`) have
-  no field on `HouseFact` or `Provenance` to live in. This is a real gap, not a detail to gloss over:
-  it directly affects Layer 6 (Notification), which is the actual consumer of today's `HeimaEvent`
-  shape. Needs a decision — likely when Layer 6 is spec'd — not assumed resolved by this document.
-- `evidence`'s maximum serialized size (§4.3) — a concrete number in KB, not an architectural
-  question, to be set when this moves toward implementation.
+No unresolved Layer-1 substrate parameter remains.
 
 ---
 
@@ -509,31 +812,82 @@ in Layer 0 depends on anything defined here, preserving Layer 0's own invariant.
   codebase today (`NormalizedObservation`, `DerivedObservation`, room-signal buckets, per-room
   occupancy booleans, `Activity`, `HouseState`) is expressible as a `HouseFact` with no residual
   parallel representation left standing.
+- A `HouseFact` can record both a state assertion and an atomic occurrence without becoming a command
+  or a state machine; its producer's Layer-0 emission declaration, rather than a field on the fact,
+  selects the persistence semantics (§3).
 - No `confidence` value anywhere in the codebase is computed by a formula other than the pure
-  functions in §4.2 (called, not reimplemented) or the inherit-unchanged case, no `min_support`-style
-  gate is blended into a `confidence` float, and no field anywhere records which formula/path produced
-  a given `confidence` value.
+  functions in §4.2 (called, not reimplemented) or the inherit-unchanged case, and no `min_support`-
+  style gate is blended into a `confidence` float. **Re-corrected 2026-09-08** — this criterion had
+  previously been fixed (2026-09-07) to remove a direct contradiction with §4.2's explicit permission
+  to note a confidence method in `evidence` for diagnostics, but the fix did not survive a later edit
+  to this document and the original, contradictory wording ("no field anywhere records which
+  formula/path produced a given `confidence` value") was back in place — caught on a fresh full
+  re-read, not by continuity from the earlier fix. The actual rule, matching §4.2: no *dedicated
+  schema field* for this exists on `HouseFact`/`Provenance` outside `evidence`, and nothing downstream
+  ever treats such a note as load-bearing — a test that strips a fact's `evidence` entirely must not
+  change how any consumer reads its `confidence`.
 - None of `categorical_confidence`/`continuous_confidence`/`combined_confidence` is ever called with
   an empty population (`total_observations == 0`, `scale <= 0`, or an empty `confidences` sequence) in
   any test — the zero/empty-population case always produces `available=False`/`confidence=None`
   instead, verified for at least one `FusionRule` strategy with all inputs unavailable.
+- Each shared confidence helper rejects its own invalid input domain with `ValueError`, including
+  non-finite values and out-of-range counts/confidences, in addition to callers avoiding those inputs
+  in normal flow; `Provenance` construction similarly rejects a non-finite or out-of-range confidence
+  and either inconsistent `available`/`confidence` pairing.
 - `available` and `confidence` are never set inconsistently — `available=False` always pairs with
   `confidence=None` and vice versa, in a test that tries both wrong pairings and rejects them.
 - `HouseFact` construction rejects a `value` that isn't `EvidenceValue`-shaped or a qualifying frozen
   dataclass, exceeds the maximum nesting depth, or exceeds the size cap — a hard failure, in a test
   that tries each violation.
+- `HouseFact` construction rejects `NaN` and either infinity anywhere in `value` or `evidence`,
+  including nested collections and frozen-dataclass fields; explicit boolean values remain valid
+  `EvidenceValue`s but are rejected wherever a quantitative number is required. The three confidence
+  helpers and `Provenance` construction reject `bool` for every numeric argument/field rather than
+  treating it as `1` or `0`.
+- A raw HA `State`, complete attributes mapping, event context, or another HA runtime object cannot
+  enter a `HouseFact`, `Provenance`, or a nested payload by reference or serialization. A test extracts
+  selected fields into a copied normalized projection, mutates the original HA fixture afterward, and
+  confirms the fact is unchanged and remains within its 8 KiB payload cap.
+- A `PersistedProjection` accepts only copied JSON-compatible mappings within depth 2 and 8 KiB,
+  rejects raw HA objects, non-finite numbers, excessive depth, and excessive size. Layer 0 rejects an
+  invalid manual-hold checkpoint update before journaling it, omits an invalid recovery target without
+  cancelling its accepted command, and omits only an invalid critical-entity checkpoint projection;
+  each outcome emits a diagnostic and never retains the original HA object.
+- An operational `HeimaEvent` maps to exactly one append-only event fact with its approved V3
+  `fact_type`, a mandatory `Location`, and `OperationalEventValue` preserving its non-empty delivery
+  key, allowed severity, non-empty title/message, and JSON-compatible context. It rejects a V2/legacy
+  event at the V3 boundary rather than translating it. Two equal event facts are both retained,
+  while a Layer-6 delivery suppression based on their shared `notification_key` never removes either
+  audit record (§3.1).
 - A shape/size violation on `evidence` never prevents `HouseFact` construction — the fact is still
   created with `evidence={}` and a diagnostic event, verified by a test that triggers each violation
   and checks the fact still exists.
-- `available=False` is set only on an explicit observation failure, never inferred from the absence of
-  a recent fact for an unchanged value.
+- An evidence field declared as `EvidenceInstant` is serialized only as canonical UTC ISO-8601 text
+  with six fractional-second digits and `+00:00`; a raw `datetime`, a non-UTC timestamp, or a
+  malformed string is rejected by the producer-side validation, verified for the manual-hold `expiry`
+  field.
+- `available=False` is set only when the producer explicitly cannot form a usable assertion (including
+  read failure, interpretation failure, or insufficient derived evidence), never inferred from the
+  absence of a recent fact for an unchanged value.
 - `Location` construction rejects any instance where the populated optional field doesn't match
-  `scope`, in a test that tries each mismatched combination.
-- `Zone` construction rejects an empty `room_ids`.
+  `scope`, in a test that tries each mismatched combination; a `scope="rooms"` instance with fewer
+  than 2 entries in `room_ids` is rejected the same way.
+- Two `Location(scope="rooms")` objects built from the same room ids in different input orders have
+  identical equality, hash, `FactIdentityKey`, and canonical JSON; a `room` location and a `rooms`
+  location that includes that room remain distinct keys.
+- `Zone` construction rejects an empty `room_ids`; changing its display name or membership leaves its
+  `ZoneKey` unchanged but changes its definition fingerprint. Empty or unknown room/zone references
+  are rejected at their specified construction or registry boundary.
 - A room's zone membership is always computed by scanning `Zone.room_ids`, never stored redundantly
   on a room record, verified by a test that adds a room to a second zone without touching the first.
+- Permuting a valid Topology's openings/connections produces the same canonical fingerprint; duplicate
+  opening ids, duplicate connection opening ids, an unknown room, a connection whose `room_a` is not
+  its opening's owner, or a serialized derived view that disagrees with recomputation is rejected.
 - `Topology` has no `TopologyRequirement`-shaped type or template-matching logic defined anywhere in
   Layer 1's own implementation — that stays entirely Layer 5's, consuming `Topology` only by query.
+- A `Topology` instance, including its `openings`/`connections` (`Opening`/`ResolvedConnection`), is
+  fully constructible from this document alone — a test builds one directly from the dataclasses in
+  §7 with no reference to `custom_components/heima/room_topology.py`'s own internal `Connection` type.
 
 ---
 
