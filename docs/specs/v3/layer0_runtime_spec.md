@@ -22,7 +22,7 @@ explicitly — code is a reference implementation, not the source of truth.
 
 Layer 0 collects the runtime facilities that sit **outside the domain DAG** entirely: nothing in
 Layers 2-5 (Registries, Learning, Domain resolution, Reactions) may depend on a Layer 0 facility
-changing mid-cycle, and nothing in Layer 0 depends on any domain. Five facilities:
+changing mid-cycle, and nothing in Layer 0 depends on any domain. Six facilities:
 
 1. **Timing** — one execution primitive plus a recurrence policy layer, and non-executing
    comparison types for reasoning about elapsed or absolute time without scheduling anything.
@@ -33,6 +33,9 @@ changing mid-cycle, and nothing in Layer 0 depends on any domain. Five facilitie
    deliberately different restart guarantees depending on how confident Heima can be in it.
 5. **Recovery / Checkpoint** — pre-DAG classification of runtime health (just started, recovering
    from a power loss, degraded, normal), and the durable checkpoint that backs it.
+6. **Runtime health telemetry** — read-only, capability-explicit observations of the engine's own
+   latency and effective local resource limits for slow-path admission control; it never decides a
+   domain or action.
 
 ## 2. Scope
 
@@ -49,6 +52,8 @@ Layer 0 is responsible for:
   the rules for how a `correlation_id` is minted and propagated;
 - representing an active manual override, including when (and how safely) it may survive a restart;
 - computing pre-DAG recovery/degradation context and the checkpoint that backs it.
+- collecting a read-only runtime-health snapshot outside engine evaluation for slow-path consumers;
+  it owns neither learner scheduling nor a resource-allocation policy.
 
 Layer 0 is **not** responsible for:
 - domain policy logic, signal fusion, or actuator commands (Layers 2-5);
@@ -57,6 +62,8 @@ Layer 0 is **not** responsible for:
   safety net against missed events, not a return to timer-driven evaluation;
 - defining the `HouseFact` type, `Location`, `Zone`, or `Topology` (Layer 1) — Layer 0 consumes
   `HouseFact` and references `Location`, it does not own either.
+- deciding whether a learner is admissible, assigning worker capacity, or changing a learning profile
+  (Layer 3). Layer 0 measures; Layer 3 interprets those measurements under its own contract.
 
 ### 2.1 Foundation contract with Layer 1
 
@@ -451,6 +458,12 @@ exclusive `FactTypeClaim` instead. Layer 2 registrations contribute only `state`
 must make the same declaration before their producers are admitted. This is a startup/configuration
 validation table, not a second facts registry or a hot-path abstraction.
 
+The core reserves `FactTypeClaim(fact_type_pattern="automation.availability",
+owner_id="layer6.availability", emission_kind="event")` for the one Layer-6 availability-event
+adapter. Layer 3, Layer 4 and Layer 5 may emit only their typed transient suppression occurrence;
+none may claim or append this event fact directly. This makes the persistent owner, event semantics and
+delivery boundary unambiguous before any resident-visible availability path is enabled.
+
 State-history and event-history reads are deliberately different. For a state fact, the query is the
 at-or-before-window-start record plus changes inside the window, as specified below. For an event fact,
 the query returns exactly the appended records whose `when` lies in the requested interval; it never
@@ -533,7 +546,7 @@ fact falling back to the raw helper entity) is not silently erased from history.
 It excludes `when` because time changes every cycle, excludes `correlation_id` because it is a causal
 trace id minted per origin/cycle (§5.2), and excludes `evidence` because evidence can contain
 diagnostic detail whose shape or wording changes without changing the fact's current state. A
-producer that wants an evidence-only diagnostic change to be visible emits a diagnostic event (§9);
+producer that wants an evidence-only diagnostic change to be visible emits a diagnostic event (§10);
 it does not force Persistence to rewrite an otherwise unchanged fact.
 
 When `available=False`, Layer 1 says `HouseFact.value` is undefined and no consumer may read it.
@@ -726,36 +739,45 @@ purposes and are applied by background/batch maintenance, never by an evaluation
   space disproportionately. The default ceiling is **50,000 records per `fact_type`**. The ceiling is
   scoped **per `fact_type`**, not global, so one noisy
   `fact_type` evicting its own oldest records early cannot crowd out retention for every other
-  `fact_type` sharing a global budget. Hitting the ceiling raises a diagnostic warning (§9), since it
+  `fact_type` sharing a global budget. Hitting the ceiling raises a diagnostic warning (§10), since it
   usually indicates a misbehaving sensor worth investigating, not a config value to silently absorb.
 - **Why also a global pruning watermark**: several individually compliant noisy types can still add
   up. The durable fact store therefore has a **512 MiB global watermark**, measured over the store's
   retained record data and indexes. After ordinary time and per-type pruning, maintenance above that
   watermark evicts the globally oldest *evictable* records (superseded state records and event
-  records), recording the affected fact types' ceiling/pruning coverage metadata and diagnostics.
-  It is a watermark, not an admission quota: it never rejects an observation, blocks a cycle, or
-  removes a latest state record. If protected latest state records alone exceed 512 MiB, Persistence
+  records), recording the affected history streams' early-pruning coverage metadata and the
+  affected fact types' aggregate diagnostics. It is a watermark, not an admission quota: it never
+  rejects an observation, blocks a cycle, or removes a latest state record. If protected latest state records alone exceed 512 MiB, Persistence
   raises `storage_pressure` and continues to preserve them; an installer can then reduce registry
   cardinality or raise the operational watermark in a later release rather than Heima silently losing
   current house state.
 
-**Retention coverage is explicit.** Persistence durably records, per `fact_type`, the most recent
-instant at which count-ceiling or global-watermark pruning discarded history
-(`last_retention_pruning_at`). A history read for a declared interval returns its records together
-with `retention_coverage`:
-`"complete"` only when the requested interval lies wholly within the effective time-retention window
-and starts strictly after that `fact_type`'s last ceiling eviction; otherwise `"truncated"`. The
-result says whether retention policy may have removed records from that interval, not whether a device
-actually emitted observations or whether a learner has sufficient samples — those remain separate
-availability and warm-up concerns. The metadata is updated only by the pruning path and read in O(1),
-so it adds no scan or I/O to the evaluation cycle.
+**Retention coverage is explicit and stream-scoped.** Retention targets and the 50,000-record
+ceiling remain per `fact_type`, but an early count-ceiling or global-watermark eviction is attributed
+only to the history stream whose record was actually discarded: a state stream is its
+`FactIdentityKey`; an event stream is its `(fact_type, Location)` pair. Persistence durably records
+for each affected stream the most recent early-pruning instant (`last_early_pruning_at`). A history
+read for a declared interval returns its records together with `retention_coverage`: `"complete"`
+only when the requested interval lies wholly within the effective time-retention window and starts
+strictly after the requested stream's own early-pruning instant; otherwise `"truncated"`.
+
+The result says whether retention policy may have removed records from that requested stream and
+interval, not whether a device actually emitted observations or whether a learner has sufficient
+samples — those remain separate availability and warm-up concerns. A multi-stream consumer must
+require complete coverage for every stream it binds; one truncated input makes the joint historical
+input truncated. Aggregate pressure and count-ceiling diagnostics remain per `fact_type`, while
+coverage markers are bounded metadata: a marker may be discarded as soon as ordinary time retention
+already makes every interval it could affect truncated. The metadata is updated only by the pruning
+path and read in O(1), so it adds no scan or I/O to the evaluation cycle.
 
 A consumer that needs a complete declared historical window, including every `PatternLearner`, must
 refuse to compute from a `"truncated"` read: it remains warm-up/degraded and emits a diagnostic until
 its requested window is covered again. It must never substitute a shorter implicit window or treat
 the remaining records as representative. This makes a noisy source reduce only its own learning
 availability, while the hard ceiling continues to protect storage and maintenance latency for the
-whole installation.
+whole installation. In particular, a flapping temperature stream in one room cannot make a complete
+history read for the same `fact_type` in another room report `"truncated"` merely because they share
+the type-level ceiling.
 
 **Neither time-based nor count-based eviction may ever remove the single most recent record for a
 given `FactIdentityKey` — resolved 2026-09-08, found in review; sharpened 2026-09-08 by naming the
@@ -835,8 +857,9 @@ FactSourceKind = Literal[
     "admin_command",        # a direct consequence of an admin-panel action, assignable only after HA
                             # confirms the connection's user is an admin (§5.1)
     "resident_response",    # a direct consequence of a resident's explicit action (an explicit manual
-                            # hold, Layer 0 §6; a runtime confirmation response) — two different
-                            # boundary checks, one per case, neither reducible to the other; see §5.1
+                            # hold, Layer 0 §6; a runtime confirmation response; or a verified actuator
+                            # control edge) — three different boundary checks, neither reducible to
+                            # another; see §5.1
     "timeout",              # recorded because an expected response/confirmation window elapsed with
                             # nothing arriving — assignable only by the in-process timeout controller
     "recovery",             # produced by Recovery/Checkpoint itself (§7) — e.g. an implicit hold
@@ -880,7 +903,7 @@ is derived by the code at the boundary that assigns it, never read off the data 
 - an admin-panel action can produce `kind="admin_command"` only after Home Assistant confirms the
   connection's user is an admin;
 - a resident's response can produce `kind="resident_response"` only after it matches an active
-  runtime confirmation request — this is the boundary for one of the two `resident_response` cases;
+  runtime confirmation request — this is the boundary for one of the three `resident_response` cases;
 - the other case, an **explicit hold** (§6), has a different boundary, stated separately because
   "matches an active request" doesn't apply to it (added 2026-09-08, found in review — the boundary
   for this case was never stated, only the confirmation-response one was): `kind="resident_response"`
@@ -902,6 +925,53 @@ never silently trusted. This is what protects against, among other things, a Lay
 about its own declared capability tier. Both `FactSource` and `ApplyStepSource` are redacted before
 they reach diagnostics or storage (no secrets, tokens, or raw payloads retained).
 
+### 5.1.1 Trusted resident-control edge
+
+The third `resident_response` boundary is a manual control of a registered logical Actuator channel.
+At HA event ingress, before raw context is discarded, Layer 0 may emit the immutable event fact
+`actuator.resident_control` only when all of these are true:
+
+1. the edge addresses a Layer-2 registered `actuator_id` and its registered `controlled_channel`;
+2. it changes that channel's valid observable physical state, rather than only availability or an
+   unrelated entity attribute;
+3. HA's authenticated event context identifies a non-admin resident, not an automation, integration,
+   service, unknown context, or merely an entity whose state happened to change;
+4. the edge has a fresh non-forgeable ingress identity and passes the ordinary duplicate filter.
+
+The event is a Layer-1 event fact at the Actuator's registered `Location`, with
+`FactSource.kind="resident_response"`, `source_id=<actuator_id>`,
+`source_type="actuator_control"`, and `actor_type="resident"`. Its canonical value contains only
+the internal `actuator_id`, `controlled_channel`, and non-forgeable `control_edge_id`; the
+`HouseFact.when` is the observed edge instant. It retains no HA entity id, HA user identity, raw event
+context, state payload, or service data. The event is evidence of a resident operating a channel, not
+evidence that the operation corrected Heima. Layer 5 alone compares it to a successful compatible
+`ApplyStep` and may create the separately specified `actuator.correction` event (§6.1 of Layer 5).
+
+This reuses the Manual Hold Manager's existing trusted HA-context boundary; it introduces no
+per-cycle poll, HA I/O, lookup over unregistered entities, or new persistent live-state table. A
+physical/integration event without an authenticated resident identity, including a typical dumb wall
+switch that merely makes a smart bulb disappear, deliberately emits no resident-control event. A
+future core-approved hardware provenance adapter may add a separately verified local-control boundary;
+generic state divergence is never treated as that adapter.
+
+### 5.1.2 Unavailability is an observation break
+
+For every Actuator channel, `available=False` means the channel was not observable at that instant;
+it never means `off`, a control edge, a resident response, a manual override, or a failed Heima
+action. A loss of availability may be caused by a non-smart wall switch cutting power, a power outage,
+network loss, device fault, or integration restart, and Layer 0 cannot infer which from the unavailable
+state alone. A later available state likewise cannot reconstruct the channel's intervening state or
+actions.
+
+Layer 0 persists the normal availability change under the ordinary Sensor/source contract, but emits
+neither `actuator.resident_control` nor an implicit conclusion from that transition. Consumers that
+need complete observation windows must treat an interval containing an unavailable channel as
+interrupted rather than as a negative observation. In particular, a later count learner must mark a
+post-`ApplyStep` target window with such an interruption as `censored_by_unavailability`, not as zero
+resident corrections. Independent registered evidence, such as a power sensor upstream of the device
+or a verified physical-control event, may state its own fact; it must never be fabricated from the
+unavailable channel.
+
 ### 5.2 `correlation_id`: generation and propagation
 
 A `correlation_id` is what makes "why is the house in this state" answerable — following one id from
@@ -916,7 +986,7 @@ an intermediate step. Origin points:
 - **A Layer 3 learning analysis run**: `PatternLearner.analyze()` runs on its own slow cycle, mining
   potentially days of history spanning many prior `correlation_id`s — it is a new causal origin, not
   a continuation of any one of them, so it mints its own fresh `correlation_id` for whatever
-  `LearnedPattern`/`ReactionProposal` it produces. That output's evidence references the
+  `LearnedPattern`/`LearningProposalCandidate` it produces. That output's evidence references the
   `fact_type`/`Location`/time-window query used to mine it, so the chain is still walkable backward
   to the source data, even though the relationship is many-to-one rather than one-to-one.
 - **An admin or resident action** (accepting a proposal, clearing a hold, responding to a runtime
@@ -1471,7 +1541,7 @@ Layer 0 underlies every other layer, so a failure here has the largest blast rad
 Silent failure is not acceptable anywhere in this section.
 
 - **`AtJob`/`CronEntry` callback exceptions**: every job's callback runs inside a fault-isolation
-  boundary — an exception is caught, logged, surfaced as a diagnostic event (§9), and the job is
+  boundary — an exception is caught, logged, surfaced as a diagnostic event (§10), and the job is
   treated as having fired (for a `CronEntry`, the recurrence still re-arms for its next occurrence).
   A single failing job must never take down the engine or silently stop a recurring safety net. This
   mirrors the fault-isolation boundary already required around third-party plugin `compute()` calls
@@ -1501,7 +1571,41 @@ Silent failure is not acceptable anywhere in this section.
 
 ---
 
-## 9. Diagnostics
+## 9. Runtime health telemetry
+
+Layer 0 owns a read-only `RuntimeHealthSnapshot` for slow-path resource admission. It describes the
+runtime that must be protected, not the house: it is not a `HouseFact`, is never stored in the fact
+timeline, cannot be read by a domain/policy as a semantic input, and cannot cause an action. Layer 3
+is its only initial consumer and interprets it only at a learning scheduling boundary.
+
+`RuntimeHealthSnapshot` is immutable and capability-explicit. It contains `captured_monotonic`, the
+source/capability set and last successful probe time, effective CPU capacity when known, an effective
+enforceable memory limit when known, current Heima process RSS when available, cgroup memory-event and
+CPU/memory-pressure evidence when available, plus a bounded recent distribution of completed engine
+cycle latency. A latency sample starts when Layer 0 accepts a meaningful event into a cycle and ends
+when that cycle has completed its ordinary engine evaluation and result commit. The coordinator records
+one O(1) monotonic sample into a bounded ring; percentile aggregation and probe refresh are performed
+outside the engine evaluation path. Equal-`when` concurrent facts remain one cycle and therefore one
+latency sample.
+
+`RuntimeResourceProbe` has no required third-party dependency. On Linux cgroup v2 it reads the
+process's effective `cpu.max`/`cpuset.cpus.effective`, `memory.max`/`memory.current`/`memory.events`,
+and available PSI files; effective CPU is the lower of quota and affinity capacity. On other platforms
+it uses only portable standard-library/process limits that are actually available. An unavailable,
+non-finite, or non-enforceable value is represented as absent with its capability unset; it is never
+replaced by a guessed machine-wide allocation. This preserves a conservative behavior on an ordinary
+host, a container, a NUC, or a Raspberry without making `psutil` or another package part of the
+integration's required dependency surface.
+
+The probe is refreshed asynchronously/background outside a cycle and must be bounded, allocation-light,
+and failure-contained. Layer 0 exposes its last complete snapshot even if a refresh fails, marking the
+staleness/failure capability; it never blocks an event cycle, applies a threshold, schedules a learner,
+or changes a learning profile. Thus it supplies the measurement contract while Layer 3 owns every
+admission, capacity, and degradation decision.
+
+---
+
+## 10. Diagnostics
 
 Layer 0 state must be inspectable, consistent with the project's broader diagnostics culture (a
 runtime/plugins/event-store diagnostics surface already exists for other layers):
@@ -1520,10 +1624,14 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   diagnosed reactively; and, per `fact_type`, its effective retention window and which registered
   learner (if any) declared the floor driving it, so an unexpectedly long or short retention window
   is traceable to its source.
+- **Runtime health telemetry**: the latest `RuntimeHealthSnapshot`, probe source/capabilities and
+  freshness, unavailable/degraded fields and their reasons, effective limits where available, recent
+  cycle-latency sample count/distribution, and the last probe failure. These diagnostics expose
+  measurement only; they do not claim a Layer-3 admission decision.
 
 ---
 
-## 10. Relationship to the core DAG
+## 11. Relationship to the core DAG
 
 Domains (Layer 4) read only the *previous* cycle's resolved output from other domains — this is what
 keeps the DAG acyclic. Layer 0 is exempt from that rule by construction: wall-clock time and
@@ -1535,13 +1643,13 @@ the same pass.
 
 ---
 
-## 11. Not yet decided
+## 12. Not yet decided
 
 No unresolved Layer-0 runtime parameter remains.
 
 ---
 
-## 12. Acceptance criteria (for the eventual implementation phase)
+## 13. Acceptance criteria (for the eventual implementation phase)
 
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
@@ -1571,12 +1679,14 @@ concrete checklist rather than re-deriving one:
   were present, never that a forgery attempt is actually rejected), for every listed case in §5.1:
   a fabricated `kind="admin_command"` from a non-admin connection is rejected/reassigned
   non-authoritative; a fabricated `kind="third_party_plugin"` result is never upgraded to
-  `kind="sensor"`/`kind="recovery"`; and `kind="resident_response"` is verified against both of its
-  distinct boundary checks separately — an attempted assignment with no matching active confirmation
-  request, and, independently, an attempted assignment for an explicit hold with no corresponding
-  resident-attributed helper edge — an admin-attributed edge instead emits `admin_command`, while an
-  automation, service, or unknown-context edge is rejected with a diagnostic. Passing one check must
-  never be treated as satisfying the other.
+  `kind="sensor"`/`kind="recovery"`; and `kind="resident_response"` is verified against all three of
+  its distinct boundary checks separately — an attempted assignment with no matching active
+  confirmation request; an attempted assignment for an explicit hold with no corresponding
+  resident-attributed helper edge; and an attempted assignment for an Actuator channel with either an
+  unregistered endpoint/channel, unavailable-only transition, admin/automation/service/unknown HA
+  context, or duplicate ingress identity. An admin-attributed edge instead emits `admin_command` where
+  applicable; every other rejected case produces a diagnostic. Passing one check must never be treated
+  as satisfying another.
 - An explicit hold's live state is never anything but a fresh per-cycle helper read; across a restart,
   its checkpointed identity is retained only when that helper is still active, otherwise it is
   terminally reconciled or discarded as §6.2 requires. An implicit hold's live
@@ -1651,11 +1761,13 @@ concrete checklist rather than re-deriving one:
 - The 50,000-record count ceiling is a hard per-`fact_type` safety limit even when it conflicts with
   a declared retention target; the 512 MiB global watermark additionally prunes globally oldest
   evictable records when several compliant types accumulate. Neither removes a latest state record or
-  rejects an observation. A history interval predating the durable retention-pruning marker reports
-  `retention_coverage="truncated"`; a consumer requiring a complete window refuses that input and
-  remains degraded rather than learning from the shorter remainder. If protected latest states alone
-  exceed the watermark, diagnostics expose `storage_pressure` while current state remains intact
-  (§4.3).
+  rejects an observation. A history interval predating its requested stream's durable
+  early-pruning marker reports `retention_coverage="truncated"`; a consumer requiring a complete
+  window refuses that input and remains degraded rather than learning from the shorter remainder.
+  A test proves that pruning one `(fact_type, Location)` stream does not truncate another Location's
+  complete read of the same type, while a joint read is truncated when either required stream was
+  affected. If protected latest states alone exceed the watermark, diagnostics expose
+  `storage_pressure` while current state remains intact (§4.3).
 - With no declared retention requirement, a fact type keeps its superseded state records and event
   records for the 14-day system-wide baseline; a declared 30-day requirement raises only that fact
   type's target to 30 days, subject to the separate hard count ceiling (§4.3).
@@ -1702,6 +1814,18 @@ concrete checklist rather than re-deriving one:
   (§4.1).
 - Recovery/Checkpoint classification is available, read-only, before the first domain runs in every
   test cycle, including the first cycle after a simulated restart.
+- `RuntimeHealthSnapshot` is refreshed outside engine evaluation and one completed cycle contributes
+  exactly one bounded, O(1) monotonic latency sample. A cgroup-v2 fixture verifies effective
+  CPU/memory/pressure parsing; an unavailable or non-enforceable platform value remains absent with its
+  capability unset, never a guessed host allocation. Probe failure and percentile aggregation neither
+  block a cycle nor produce a `HouseFact`, domain input, policy decision, or action (§9).
+- A verified non-admin HA control edge on a registered Actuator channel emits one redacted
+  `actuator.resident_control` event with `resident_response` provenance and no raw HA identity/context.
+  The same edge from an unavailable channel, an unknown/automation/service/admin context, or a duplicate
+  ingress report emits none. A device that becomes unavailable after a dumb wall switch power-cut is
+  persisted only as `available=False`; it never becomes `off`, a resident-control event, an implicit
+  hold, or a zero-correction observation, and recovery of availability cannot synthesize the missing
+  intervening history (§5.1.1/§5.1.2).
 
 ---
 

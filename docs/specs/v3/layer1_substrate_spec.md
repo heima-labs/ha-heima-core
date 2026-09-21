@@ -23,13 +23,15 @@ reference implementation, not the source of truth.
 
 ## 1. Purpose
 
-Layer 1 defines the **one shape** everything else in Heima is built from: a sensor reading, a fused
-derived state, a learned statistical signal, a reviewable proposal, a manual hold, a notification
-trigger. Anything that looks like "a thing that's true, somewhere, at some time, with some
-confidence" is a `HouseFact` — there is no second, parallel representation competing with it for the
-same kind of information. Five concepts:
+Layer 1 defines the one durable assertion shape for Heima's house-state history: a sensor reading, a
+fused derived state, a manual hold, or an operational occurrence that must remain auditable. Anything
+that asserts something is or happened in the house, somewhere and at a time, is a `HouseFact`; there
+is no second, parallel representation for that same persistent assertion. This does **not** make
+`HouseFact` a universal envelope for artifacts, transient inter-layer hand-offs, commands, or
+configuration/review workflow records. Those objects answer different questions and have their own
+typed lifecycle. Five concepts:
 
-1. **`HouseFact`** — the universal WHAT/WHERE/WHEN/HOW record.
+1. **`HouseFact`** — the universal persisted WHAT/WHERE/WHEN/HOW assertion record.
 2. **`Provenance`** — the HOW envelope: confidence, availability, and the evidence behind them,
    wrapping Layer 0's `FactSource`.
 3. **`Location`** — WHERE a fact is about: the whole house, one room, a declared zone, or an ad hoc
@@ -57,6 +59,9 @@ Layer 1 is **not** responsible for:
   Layer 1 only defines the envelope `FactSource` sits inside.
 - deciding which entities become facts, or how a raw entity state is interpreted into a `HouseFact`
   value (`Sensor`/`Interpretation`/`FusionRule`) — that is Layer 2.
+- learning artifacts/results, typed transient signals, or proposal/review workflow records — Layer 3
+  and Layer 5 own their respective contracts. A later authorized Domain may resolve their evidence
+  into a declared `HouseFact`, but the hand-off object itself is not one.
 - the `Room` registry itself (a room's name, type, floor as an inventory record) — `room_id` here is
   a stable reference into that registry, carried forward from today's existing room-inventory model
   unchanged; Layer 1 consumes `room_id` as an opaque identifier, it does not define what a room is.
@@ -69,6 +74,27 @@ Layer 1 is **not** responsible for:
 - Resolving conflicts between simultaneously-true facts of different provenance (e.g. two `Sensor`s
   disagreeing) — that is a `FusionRule` concern (Layer 2), not something `HouseFact`/`Provenance`
   decide on their own.
+
+### 2.2 Persistent assertions versus application contracts
+
+The following boundary avoids using one generic record for different lifecycle and authority models:
+
+| Shape | Owner and lifetime | `HouseFact`? | Meaning |
+|---|---|---:|---|
+| Sensor/fused/domain state or durable operational occurrence | Layer 1 shape, persisted by Layer 0 | Yes | An assertion about house state or an auditable occurrence. |
+| `ResultEnvelope` / model artifact | Layer 3 result and artifact lifecycle | No | Versioned analytical output and the evidence that produced it. |
+| `InferenceSignal` | Layer 3 -> one authorized Layer 4 consumer, transient | No | Bounded current input for a Domain; it may be absent/expire without changing house history. |
+| `LearningProposalCandidate` | Layer 3 -> Layer 5, transient | No | Candidate evidence awaiting Layer-5 validation, not an approved configuration or house assertion. |
+| `ReactionProposal` | Layer 5 review workflow, persisted by its own contract | No | Review/configuration state with approval and lifecycle semantics. |
+| `HeimaEvent` | Operational delivery envelope | No | Delivery payload; its durable audit representation is the separate event `HouseFact` in §3.1. |
+
+This is not a competing state model. A Domain that accepts a valid `InferenceSignal` may produce its
+own declared `HouseFact`; Layer 5 may emit auditable operational events while processing a proposal.
+The transient input and workflow record are nevertheless not retroactively facts. This follows the
+usual separation between persisted domain events and in-process/application messages: their
+implementation and transaction lifecycle differ even when both carry domain-relevant information
+([Microsoft domain versus integration events](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/domain-events-design-implementation),
+[AWS event sourcing](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/event-sourcing-pattern.html)).
 
 ---
 
@@ -115,6 +141,17 @@ checks finite floats and maximum depth 2, normalizes a permitted dataclass to it
 canonical UTF-8 size measurement, and rejects a result over 8 KiB. `HouseFact` construction calls it;
 Layer 2 also calls it during staging for every static value that one of its interpretations can emit.
 This is one value contract with two entry points, not a second interpretation-specific validator.
+
+**Shared canonical JSON rule.** Every V3 reference to canonical JSON, canonical UTF-8 JSON,
+canonical serialization, or a fingerprint/digest derived from JSON means the JSON Canonicalization
+Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html)): recursive object-key sorting on raw
+property names as UTF-16 code-unit sequences, ECMAScript-compatible primitive serialization, and
+UTF-8 output. Duplicate property names and lone surrogate code units are invalid; Unicode strings are
+otherwise preserved without normalization. A contract may impose a stricter input rule (for example
+Layer 3 rejects negative zero), but may not substitute a different JSON ordering or formatter. An
+array whose order is semantically defined by this specification is sorted first by that stated rule;
+RFC 8785 then preserves that array order. This distinction keeps semantic sets deterministic without
+creating a second object-key canonicalizer.
 
 **Home Assistant boundary.** A Home Assistant `State` object, its complete attributes mapping, event
 context, or any other HA runtime object is boundary input only: it may be inspected while a binding
@@ -164,12 +201,13 @@ shape for room-occupancy evidence as `occupancy.evidence.<kind>.<sensor_id>`. Th
 the configured logical reading, never a mutable Home Assistant `entity_id`; the fused house meaning
 remains the unsuffixed canonical fact (`occupancy`).
 
-**A `HouseFact` is an atomic assertion, not a command and not a state machine.** Its producing
-contract (Layer 0 §4) declares whether that assertion is a state that holds now (for example,
-`occupancy=true`) or an occurrence that happened at `when` (for example, a manual hold was cleared).
-Both use this one immutable shape; neither encodes a multi-step transition protocol or an intent to
-act. A duration is still read by comparing facts' `when`, or via a `Window` (Layer 0 §3.2). An
-`ApplyStep` (Layer 5) is the corresponding command shape; a `HouseFact` never is one.
+**A `HouseFact` is an atomic persistent assertion, not a generic message, command, or state
+machine.** Its producing contract (Layer 0 §4) declares whether that assertion is a state that holds
+now (for example, `occupancy=true`) or an occurrence that happened at `when` (for example, a manual
+hold was cleared). Both use this one immutable shape; neither encodes a multi-step transition
+protocol, an intent to act, an ML artifact/result, a transient `InferenceSignal`, or a proposal/review
+workflow record. A duration is still read by comparing facts' `when`, or via a `Window` (Layer 0
+§3.2). An `ApplyStep` (Layer 5) is the corresponding command shape; a `HouseFact` never is one.
 
 ### 3.1 Operational-event mapping
 
@@ -214,6 +252,14 @@ deduplication and rate-limiting window. Thus a suppressed repeat delivery remain
 trail, while `severity` may affect rendering, route selection, escalation, and diagnostics but never
 the fact's identity, ownership, retention semantics, or causal correlation. Event consumers must not
 derive a live state from this value; a current claim needs a separate `state` fact by Layer 0 §4.
+
+`automation.availability` is one approved V3 event fact type. Its sole producer is Layer 6's
+core-owned availability-event adapter. Layer 6's transient `AvailabilityEpisodeTracker` receives the
+typed suppression occurrence from its owner, reconciles the current episode against the staged
+publication generation, and invokes this adapter only for a resident-visible delivery. The adapter
+renders the event's title/message and constructs the canonical notification key, severity and bounded
+context before appending the event fact; neither Layer 3 nor Layer 5 may pre-render or persist that
+event. Layer 0 reserves its exclusive event claim.
 
 ---
 
@@ -555,9 +601,10 @@ LocationKey = tuple[str, ...]
 
 The `rooms` form is semantically a set, so its input order never matters; its canonical serialized
 form is the `room_ids` array sorted by Unicode code point. `Location` equality, hashing, Layer 0's
-`FactIdentityKey`, and Layer 2 producer registration all use this key. Canonical JSON uses UTF-8,
-object keys sorted by Unicode code point, and this sorted array representation; deserializing then
-reserializing a valid Location must reproduce the identical key and JSON value.
+`FactIdentityKey`, and Layer 2 producer registration all use this key. Its surrounding JSON follows
+the shared RFC-8785 rule above; the code-point-sorted array is retained because it is the explicitly
+defined semantic ordering of this set. Deserializing then reserializing a valid Location must
+reproduce the identical key and JSON value.
 
 Construction validates only shape, cardinality, and non-empty opaque identifiers. Whether an id exists
 is resolved at the consuming registry boundary, not in `Location.__init__`: this permits configuration
@@ -696,13 +743,14 @@ This ownership rule makes a connection's direction canonical instead of allowing
 relationship to be serialized with its endpoints swapped.
 
 `exposure_by_room` and `floor_by_room` are derived views, not independently authored input. On build or
-deserialization the registry recomputes them from canonical openings plus the Room registry, orders map
-keys and each exposure tuple by Unicode code point, and removes duplicate orientations. A
+deserialization the registry recomputes them from canonical openings plus the Room registry, orders
+each exposure tuple by Unicode code point, serializes map keys under the shared RFC-8785 rule, and
+removes duplicate orientations. A
 serialized derived view that disagrees with this recomputation is rejected. Topology registration also
 resolves every `Opening.room_id`, non-`outside` `ResolvedConnection.room_b`, and derived-view room key
 against the Room registry; unknown ids, duplicate opening/connection ids, or a broken opening-owner
-link are errors. Its canonical fingerprint is the deterministic UTF-8 JSON serialization of those
-canonical primary data and derived views, with object keys sorted by Unicode code point.
+link are errors. Its canonical fingerprint is the shared RFC-8785 serialization of those canonical
+primary data and derived views.
 
 A third, complementary piece of WHERE — genuinely distinct from both `Location` and `Zone`, not a
 variant of either:
@@ -812,6 +860,10 @@ No unresolved Layer-1 substrate parameter remains.
   codebase today (`NormalizedObservation`, `DerivedObservation`, room-signal buckets, per-room
   occupancy booleans, `Activity`, `HouseState`) is expressible as a `HouseFact` with no residual
   parallel representation left standing.
+- `ResultEnvelope`, model artifacts, `InferenceSignal`, `LearningProposalCandidate`, and
+  `ReactionProposal` are rejected at the Layer-0 `HouseFact` persistence boundary. A test proves that
+  a valid `InferenceSignal` can lead only to a separate declared Domain-produced fact, and that a
+  `HeimaEvent` has one separate audit-event fact rather than becoming a generic workflow envelope.
 - A `HouseFact` can record both a state assertion and an atomic occurrence without becoming a command
   or a state machine; its producer's Layer-0 emission declaration, rather than a field on the fact,
   selects the persistence semantics (§3).
@@ -875,6 +927,11 @@ No unresolved Layer-1 substrate parameter remains.
 - Two `Location(scope="rooms")` objects built from the same room ids in different input orders have
   identical equality, hash, `FactIdentityKey`, and canonical JSON; a `room` location and a `rooms`
   location that includes that room remain distinct keys.
+- Canonical JSON fingerprints produced by Layer 1, Layer 2 configuration staging, and Layer 3 artifact
+  serialization agree for an object containing both a BMP key such as `"\uE000"` and the non-BMP
+  decoded JSON key `"\uD83D\uDE00"`: object keys follow RFC 8785 UTF-16 ordering, while a declared
+  semantic set such as `Location.room_ids` retains its separately specified Unicode-code-point array
+  ordering.
 - `Zone` construction rejects an empty `room_ids`; changing its display name or membership leaves its
   `ZoneKey` unchanged but changes its definition fingerprint. Empty or unknown room/zone references
   are rejected at their specified construction or registry boundary.
