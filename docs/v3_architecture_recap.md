@@ -13,10 +13,10 @@ runtime state, or learning; a V2 export can exist only outside V3 as rollback/re
 
 ```
 Layer 8  Admin / config surface        config_flow forms + admin panel (registries + actions)
-Layer 7  Extensibility                 third-party domain plugins, pull-only, 2 capability tiers
+Layer 7  Extensibility                 third-party semantic extensions, pull-only, 2 capability tiers
 Layer 6  Notification / communication  one pipeline, 3-tier quiet hours, digest
 Layer 5  Action / reaction generation  Reactions, template requirements -> auto-proposals
-Layer 4  Domain resolution (the DAG)   People -> Occupancy -> Activity -> HouseState, then plugins
+Layer 4  Semantic Resolution (the DAG) independent semantic claims and episodes
 Layer 3  Learning / pattern recognition PatternLearner, bounded live signals, proposal analyzers
 Layer 2  Registries                    Sensor + Interpretation + FusionRule, Actuator
 Layer 1  Substrate primitive           HouseFact: WHAT/WHERE/WHEN/HOW, Location/Zone/Topology
@@ -49,21 +49,21 @@ registering a plugin).
 
 Walking it top to bottom: a `Sensor` (Layer 2) turns a raw entity state into a `HouseFact`; a
 `FusionRule` (Layer 2) may combine several of those into one derived fact, same cycle; both feed
-Domain resolution (Layer 4) — People, Occupancy, Activity, HouseState, then plugins — which in turn
+Semantic Resolution (Layer 4) — independently resolved semantic claims and episodes — which in turn
 feeds Reactions (Layer 5) in the *same* cycle, producing `ApplyStep`s. `PatternLearner` (Layer 3)
-runs on its own slower cycle, mining history rather than the live cycle, and only reaches Domain
-resolution through the 3 bounded exceptions; its registry analyzers instead produce a
-`ReactionProposal` that always needs admin review before becoming a Reaction. Reactions and Domain
-resolution both emit events into the notification pipeline (Layer 6). Layer 0 underlies everything;
-Layer 7 registers third-party plugins into Domain resolution and, for their own entities, into the
+runs on its own slower cycle, mining history rather than the live cycle, and reaches Semantic
+Resolution only through the closed, individually authorized signal contracts; its registry analyzers
+instead produce a `ReactionProposal` that always needs admin review before becoming a Reaction.
+Reactions and Semantic Resolution both emit events into the notification pipeline (Layer 6). Layer 0 underlies everything;
+Layer 7 registers third-party extensions into Semantic Resolution and, for their own entities, into the
 registries; Layer 8 configures the registries, Reactions, and notification policy.
 
 ---
 
 ## Layer 0 — Cross-cutting runtime facilities
 
-Five facilities that sit outside the domain DAG entirely — nothing in Layers 2-5 can depend on them
-changing mid-cycle, and nothing here depends on any domain.
+Five facilities that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
+depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 
 - **Timing**: one execution primitive, an "at" job — a scheduled one-shot deadline. A "cron" policy
   layer sits on top of it: a `RecurrencePattern` computes the next due time and re-arms an "at" job
@@ -81,7 +81,7 @@ changing mid-cycle, and nothing here depends on any domain.
   a holiday, a work day) instead of a relative or recurring one. Layer 0 exposes both active windows
   for current facts and complete future windows within a consumer-declared horizon for predictive work
   such as notifying today about tomorrow's event; calendar awareness is Timing infrastructure,
-  evaluated before the core DAG runs each cycle, not a domain or a plugin.
+  evaluated before the core DAG runs each cycle, not a semantic resolver or a plugin.
   Duration and civil-time values are validated at configuration staging or dynamic job registration,
   never repaired or rechecked per cycle.
   → `v3_house_fact_draft.md` §WHEN.
@@ -114,7 +114,7 @@ changing mid-cycle, and nothing here depends on any domain.
   (`fact_type: "manual_hold.<domain>.lifecycle"`: activated, cleared, expired, replaced, restored,
   or restoration discarded). State facts alone answer live-state queries; lifecycle facts make every
   decision auditable. Their `FactSource` is deterministic and complete: a resident-attributed helper
-  entity edge, domain inference, admin command, timeout, or Recovery as appropriate. The same helper
+  entity edge, implicit-hold analyzer, admin command, timeout, or Recovery as appropriate. The same helper
   accepts an admin-attributed activation or clear as `admin_command`; automation, service, and
   unattributable edges are rejected rather than misreported as resident action.
 - **Operational events**: `HeimaEvent` is a transient notification envelope, never a second audit
@@ -169,7 +169,7 @@ changing mid-cycle, and nothing here depends on any domain.
   → `v3_backlog.md` §"Manual Hold Manager / Recovery-Checkpoint", §"Full architecture re-review"
   (AR-3), §"Layer 0 promoted to a real spec, first amendment found along the way".
 - **Recovery / Checkpoint**: a lightweight, pre-DAG context computed once per evaluation cycle,
-  before any domain runs — it classifies runtime state (normal / just started / recovering from a
+  before any semantic resolver runs — it classifies runtime state (normal / just started / recovering from a
   power loss / degraded because many entities are unavailable / settling back to normal) and makes
   that classification available, read-only, to everything downstream, so behavior can be
   conservative and explainable right after Home Assistant restarts or during a partial outage.
@@ -264,10 +264,13 @@ changing mid-cycle, and nothing here depends on any domain.
   whether confidence is continuous (value plus dispersion), categorical (value plus support/total),
   or inherited from one declared available input; it receives the complete ordered input sequence,
   including unavailable facts, so it can distinguish missing from negative evidence without I/O or
-  hidden state. `occupancy.weighted_evidence` additionally receives a typed per-input binding of
-  role, true/false weights, and vacancy requirement, so new sensor kinds alter configuration rather
-  than formula code. A formula configuration is persisted as bounded canonical JSON and compiled once
-  during generation staging into that formula's private immutable type; the evaluator never parses it.
+  hidden state. `physical_evidence.weighted_evidence` additionally receives a typed per-input binding
+  of role, true/false weights, false requirement, explicit admission, and correlation group. It
+  supports both room `occupancy.physical` and casa `presence.physical`: one correlated physical source
+  family contributes at most one vote, and only explicitly immediate evidence may take the fast
+  primary path. New sensor kinds alter configuration rather than formula code. A formula configuration
+  is persisted as bounded canonical JSON and compiled once during generation staging into that
+  formula's private immutable type; the evaluator never parses it.
   The formula catalog is core-built and frozen before cycles; its immutable id and semantic
   implementation version are persisted with each resolved binding, while callables are not.
   A changed version selectively invalidates only dependent fusion rules. No formula is assumed
@@ -324,19 +327,23 @@ cycle, needs zero history. A house's own learned thermal-response rate (how fast
 temperature actually rises or falls under given conditions) is a `PatternLearner` — it needs days of
 history to mean anything and would make no sense recomputed every cycle.
 
-- **Governing rule**: statistical signals never feed operational domains directly. The only
-  operational path is: a learning module's signal -> an analyzer -> a reviewable proposal -> admin
+- **Governing rule**: statistical signals never feed policy directly. The ordinary
+  operational path is: a learning module's finding -> an analyzer -> a
+  `LearningProposalCandidate` -> Layer-5 validation -> a reviewable `ReactionProposal` -> admin
   review -> a configured rule or reaction. Two output shapes, both downstream of this rule:
-  - **`InferenceSignal`** — feeds Layer 4 (a domain's `compute()`), but only through 3 bounded,
-    individually-scoped exceptions: Activity (only already-admin-approved patterns), Occupancy
-    (only for rooms with no direct sensor, above a fixed confidence floor), HouseState (only
-    already-admin-approved contexts). Every other statistical signal is diagnostic-only by design —
-    computed, observable, but never consumed by a domain's decision.
-  - **`ReactionProposal`** — feeds Layer 5 through the registry-analyzer stage (one analyzer per
-    learning family — heating, lighting, presence, room-assist composites, security presence
-    simulation), always gated by admin review, no exception.
-- **`PatternLearner`** — the one shared primitive every learning family builds on, instead of each
-  hand-rolling its own bucket/threshold/confidence logic: buckets history by an arbitrary key,
+  - **`InferenceSignal`** — feeds one named Layer-4 `SemanticResolver`, but only through a closed,
+    individually-scoped `IndirectAssistanceContract`. Initial V3 has one signal type,
+    `indirect.semantic_assist.v1`, used by the physically referenced positive occupancy contract and
+    resident-approved-routine positive sleep-, relax-, and domestic-working-context contracts; every
+    other statistical signal is diagnostic-only by design — computed and observable, but never
+    consumed by semantic resolution.
+  - **`LearningProposalCandidate`** — the registry-analyzer stage's typed hand-off to Layer 5 (one
+    analyzer per learning family — heating, lighting, presence, room-assist composites, security
+    presence simulation). Layer 5 alone validates it and creates the reviewable `ReactionProposal`,
+    always gated by admin review, no exception.
+- **`PatternLearner` and optional ML models** — `PatternLearner` is the shared, explainable baseline
+  every learning family builds on, instead of each hand-rolling its own bucket/threshold/confidence
+  logic: buckets history by an arbitrary key,
   `min_support` as a boolean pass/fail gate ("not enough data" means no output, never "low
   confidence"), a warm-up gate (a combined time-elapsed-and-sample-count floor, per learning
   subject, so a burst of setup/testing activity right after something is enabled or reconfigured
@@ -344,58 +351,53 @@ history to mean anything and would make no sense recomputed every cycle.
   depending on what's being predicted (a match ratio for a categorical outcome, an inverse-dispersion
   score for a continuous one — never reinvented per family), and a generalized tiered fallback (try
   the most specific model with enough support, fall back to a coarser one, down to the coarsest).
+  A bounded ML model may use the same historical bindings when the baseline cannot express a real,
+  measurable relationship. It trains off the hot path, publishes a versioned validated artifact, and
+  has no additional authority over semantic claims or actions. Local in-process training is bounded and may
+  be deferred under runtime pressure; a future opt-in backend may execute a bounded redacted job in a
+  subprocess or remote server, but local Heima retains validation, promotion, inference, and all
+  authority. The first candidate is a topology-constrained thermal model: it may estimate effective
+  thermal coupling and temperature trajectories from temperature/HVAC/opening facts, while claiming
+  airflow or air quality only when corresponding measurements exist.
 - **Governance**: whether a learning family runs at all is a single admin-facing toggle, covering
   both the slow-cycle analyzer stage and any bounded live-signal module in the same family — not two
   separate, inconsistently-gated mechanisms.
 - **Reads**: Layer 1's `HouseFact`s directly, queried by `fact_type`/`Location`/time window — never
   through a bundled intermediate snapshot shape.
-- **Layer 7 (Extensibility) connection**: a third-party plugin may register its own
-  `PatternLearner`-based analyzer, but its output always terminates in a reviewable proposal — it
-  never gets a seat at the live-`InferenceSignal` tier, which stays a short, individually-audited
-  list that only the core team extends.
+- **Layer 7 (Extensibility) connection**: a third-party plugin may register a separately staged
+  analyzer over immutable findings, but it emits only a `LearningProposalCandidate` for Layer-5
+  validation — never a learner/model type or a `ReactionProposal` directly. It never gets a seat at
+  the live-`InferenceSignal` tier, which stays a short, individually-audited list that only the core
+  team extends.
   → `v3_pattern_learner_draft.md` for the concrete shape; `v3_backlog.md` §"Learning pipeline"
   sections and §"Full architecture re-review" (AR-1 through AR-6) for the full reasoning trail.
 
 ---
 
-## Layer 4 — Domain resolution (the DAG)
+## Layer 4 — Semantic Resolution (the DAG)
 
-A fixed core (People -> Occupancy -> Activity -> HouseState, always in this order, never
-reconfigurable) followed by dependency-ordered plugins (Lighting, Heating, Security, and any future
-built-in or third-party domain). Every domain in the DAG reads the *previous* cycle's resolved state
-from other domains — never another domain's output computed earlier in the same cycle — which is
-what keeps the DAG acyclic and deterministic in one pass. A domain freely reads Layer 2 facts
-(`Sensor`/`FusionRule` output) fresh, every cycle, since those aren't another domain's output.
+Layer 4 materializes independently owned `SemanticState` claims and event-only
+`SemanticEpisode` occurrences from Layer-2 facts and bounded Layer-3 signals. Each
+`SemanticResolver` is registered, validated and dependency-ordered in a staged DAG. A resolver reads
+fresh Layer-2 facts and only the prior-cycle outputs of other resolvers, so the evaluation is
+acyclic and deterministic in one pass.
 
-- **`HouseState`**: a **closed** vocabulary of 7 canonical values. It stays closed deliberately —
-  enough safety-relevant configuration elsewhere depends on an exact match against a known,
-  finite set (which states suppress security arming, which states trigger night-mode profiles,
-  which states select a heating branch) that opening it would leave every one of those consumers
-  with undefined behavior for a state they don't recognize. Learning's role here is to **calibrate
-  the definitions** of the 7 states for this specific household — per-household thresholds, timing,
-  and signal-weighting — not to propose new state names.
-- **`Activity`**: the layer that actually *is* open-vocabulary — a free name plus a context
-  dictionary, by design, meant as the forward-compatibility hook for new recurring behavior. What it
-  lacks today is a discovery mechanism (it has a handful of hand-written detectors and nothing that
-  learns new ones). New recurring-behavior discovery belongs here, not on `HouseState` — reusing the
-  same proposal/`HouseFact`/`Provenance` machinery as everything else, not a bespoke pipeline. Once
-  an admin approves a newly-discovered Activity, it can feed `HouseState` resolution as one more
-  piece of evidence, without ever becoming a `HouseState` value itself.
-  → `v3_backlog.md` §House State vs. Activity.
+The initial semantic claims are `room_occupancy`, `presence`, and independently scoped
+`activity.<activity_id>`. They intentionally do not form one global enum: presence, activity,
+quiet/sleep context, planned absence and guest context can coexist and require their own vocabulary,
+evidence, availability and safety contracts. The monolithic V2 `house_state` is retired rather than
+being recreated as a V3 claim. See the authoritative Layer-4 specification for exact contracts.
 
 ---
 
 ## Layer 5 — Action / reaction generation
 
-**Freshness rule** — the opposite of the Domains rule in Layer 4, deliberately: Reactions read the
-*current* cycle's resolved state (`HouseState`, other domain output, Layer 2 facts), not the
-previous cycle. Domains restrict each other to previous-cycle output specifically to keep the DAG
-acyclic; Reactions run strictly *after* the full DAG has already resolved for that cycle, so no
-domain can ever depend on a Reaction's output within the same pass, and there is no circularity risk
-in letting Reactions see the fresh result. The same reasoning covers Layer 2 facts: recomputed fresh
-every cycle before Domains even consume them, so anyone reading them afterward — a Domain building
-its own output, or a Reaction reading a fine-grained detail like a room's current lux bucket — sees
-the current cycle's value.
+**Freshness rule** — the opposite of the prior-cycle rule inside Layer 4: Reactions read the
+*current* cycle's semantic claims and Layer-2 facts. Semantic resolvers restrict dependencies on
+other semantic resolvers to prior-cycle outputs specifically to keep the DAG acyclic; Reactions run
+strictly *after* the full DAG has resolved for that cycle, so no resolver can depend on a Reaction's
+output within the same pass. Layer-2 facts are likewise recomputed before semantic resolution, so a
+Reaction can read the current fine-grained detail such as a room's lux bucket.
 
 - **Reactions** produce ordered `ApplyStep`s, each carrying an `ApplyStepSource` (Layer 0's provenance
   vocabulary) and addressing exactly one Layer-2 `Actuator` by id. The runtime alone resolves the HA
@@ -418,7 +420,7 @@ the current cycle's value.
 ## Layer 6 — Notification / communication
 
 One pipeline handles every outbound notification — operational events (a reaction fired, a security
-condition, a house-state transition) and review items (a new learned proposal, N new automation
+condition, a semantic-claim transition) and review items (a new learned proposal, N new automation
 suggestions) alike — instead of one sophisticated, configurable path for the former and a separate,
 unconfigurable direct-call path for the latter.
 
@@ -439,8 +441,8 @@ unconfigurable direct-call path for the latter.
 
 - **Pull only**: the core always controls when a third-party plugin runs and what it can see —
   plugins never push data or trigger evaluation on their own, matching the same trust envelope
-  built-in domains already operate under.
-- **Registration seam**: a generic `register_plugin(IDomainPlugin)` call, validated only for
+  built-in semantic resolvers already operate under.
+- **Registration seam**: a generic `register_plugin(...)` call, validated only for
   duplicate identity and registration timing. The only structural gap is *discovery* — something to
   call it for externally-sourced plugins without hand-editing a hardcoded built-in list; two
   candidate mechanisms (Python entry points vs. a Home Assistant `hass.data` handshake), not yet
@@ -490,7 +492,7 @@ admin needs to author one by hand.
 ## Cutting across every layer — observability
 
 Not its own subsystem. It's the `correlation_id` chain in `FactSource`/`ApplyStepSource` (Layer 0)
-threading through every layer above: a resolved `HouseState` traces back through the `HouseFact`s
+threading through every layer above: a resolved `SemanticState` or `SemanticEpisode` traces back through the `HouseFact`s
 that fed it (Layers 1-4, including Layer 3's bounded `InferenceSignal`s), back through any
 `ReactionProposal`/reaction that produced them (Layer 5), forward to any `ApplyStep` that resulted
 (Layer 5, same vocabulary), surfaced through the admin panel (Layer 8). One thread, not a parallel
@@ -511,6 +513,6 @@ explainability system built on top.
 7. A namespacing convention for third-party-registered identifiers
    (`"plugin.<plugin_id>.<name>"`) — not yet enforced anywhere, needed before Layer 7 ships to avoid
    cross-plugin collisions. Covers `fact_type`, `proposal_type`, and `reaction_type` alike.
-8. ~~Domain-specific redesign work...~~ Resolved 2026-09-02 — promoted to `v3_domains_draft.md`
+8. ~~Functional-policy redesign work...~~ Resolved 2026-09-02 — promoted to `v3_domains_draft.md`
    (Lighting's `PrecedenceRelation`, Heating's reconciled `HeatingBranch` and thermal model,
    Security's `SequentialConfirmationPolicy`).

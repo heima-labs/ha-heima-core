@@ -45,10 +45,17 @@ plugin) concern.
 
 ```python
 @dataclass(frozen=True)
-class BooleanInterpretation:
-    extra_on_states: frozenset[str] = frozenset()
-    # today's InputNormalizer.boolean_signal(extra_on_states=...) — e.g. {"charging", "full"}
-    # additive to the default vocabulary, per the sleep-normalizer fix precedent
+class MappingInterpretation:
+    # replaces the earlier BooleanInterpretation/MediaActivityInterpretation/PresenceInterpretation
+    # (resolved 2026-09-05, superseded in docs/specs/v3/layer2_registries_spec.md §4) — all three were
+    # the same exact-match-lookup mechanism with a hardcoded vocabulary each; today's
+    # InputNormalizer.boolean_signal(extra_on_states=...), InputNormalizer.presence(), and
+    # media_activity.py's logic all become instances of this one configurable mapping instead.
+    mapping: dict[str, EvidenceValue]   # raw HA state -> normalized HouseFact.value, exact match
+    default: EvidenceValue | None = None
+    # default=<value>: e.g. {"on": True, "charging": True, "full": True}, default=False — the
+    #   sleep-normalizer fix precedent (additive "on" states), expressed as an explicit vocabulary
+    #   instead of assumed always-total. default=None: absent-from-mapping -> available=False.
 
 @dataclass(frozen=True)
 class Bucket:
@@ -62,19 +69,6 @@ class BucketInterpretation:
     burst_direction: Literal["up", "down", "both"] | None = None
 
 @dataclass(frozen=True)
-class MediaActivityInterpretation:
-    pass   # fixed, already-correct media_player vocabulary (on/playing/paused/buffering) —
-           # media_activity.py's existing logic, not reinvented
-
-@dataclass(frozen=True)
-class PresenceInterpretation:
-    pass   # added 2026-08-31 — today's InputNormalizer.presence() vocabulary (device_tracker/
-           # person states), same shape as BooleanInterpretation, different vocabulary. Every
-           # presence entity (room or whole-house) is a Sensor with this interpretation; a
-           # person's `presence_rule` (observer/resident/recurrent) becomes their weight in a
-           # WeightedQuorumStrategy FusionRule, not a new field here.
-
-@dataclass(frozen=True)
 class CalendarInterpretation:
     # added 2026-08-31 — today's CalendarDomain._classify() vocabulary: keyword-matching on event
     # summaries against admin-defined keywords, with a priority order for conflicts. Works against
@@ -83,10 +77,7 @@ class CalendarInterpretation:
     keywords: dict[str, list[str]]      # category -> matching keywords
     priority_order: list[str]           # tie-break order when multiple categories match
 
-Interpretation = (
-    BooleanInterpretation | BucketInterpretation | MediaActivityInterpretation
-    | PresenceInterpretation | CalendarInterpretation
-)
+Interpretation = MappingInterpretation | BucketInterpretation | CalendarInterpretation
 ```
 
 **Room occupancy vs. whole-house presence — same `Interpretation`/`FusionRule` shape, independently

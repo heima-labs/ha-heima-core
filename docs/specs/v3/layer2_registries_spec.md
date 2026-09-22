@@ -70,7 +70,7 @@ Layer 2 is **not** responsible for:
 - storage, timing, or provenance mechanics — Layer 0's, unchanged, consumed as-is.
 - issuing commands to an `Actuator` — that is a Reaction's job (Layer 5); an `Actuator` record here is
   inventory only, never itself a command.
-- domain policy that reads `Sensor`/`FusionRule` output (Layer 4) or acts on it (Layer 5).
+- semantic resolution that reads `Sensor`/`FusionRule` output (Layer 4) or policy that acts on it (Layer 5).
 
 ### 2.1 Extension boundary and non-goals
 
@@ -147,6 +147,14 @@ numeric formula results and payload fields validated by a formula compiler, whil
 fact values as valid `EvidenceValue`s.
 
 - `Sensor.reliability` is in `[0.0, 1.0]`.
+- A `Sensor` whose fact type is exactly `occupancy.evidence.<kind>.<sensor_id>` at a room, or
+  `presence.evidence.<kind>.<sensor_id>` at `casa`, declares a non-empty
+  `physical_evidence_admission` and `correlation_group`; the suffix equals that Sensor's stable
+  `sensor_id`. Every other Sensor leaves both fields `None`. These are explicit per-reading choices:
+  no HA device class, entity category, or `reliability` value supplies an implicit default. A
+  person-evidence `<kind>` is valid only when the registered interpretation maps an explicit person
+  classification; generic movement, unknown-object, and another object classification are not
+  person evidence.
 - Every static value that an interpretation can emit passes Layer 1's pure
   `validate_house_fact_value` during staging: every `MappingInterpretation.mapping` value and its
   `default` unless it is `NO_DEFAULT`, every `Bucket.label`, and every `KeywordClassifier` category
@@ -179,12 +187,17 @@ fact values as valid `EvidenceValue`s.
   For `confidence_mode="continuous"`, `scale` is finite and `> 0` and `floor` is finite and in
   `[0.0, 1.0]`; the other two modes prohibit both fields. The mode-specific result validation in §5.3
   remains the runtime guard for formula-produced values.
-- `occupancy.weighted_evidence` requires a configuration payload that compiles to an
-  `OccupancyWeightedEvidenceConfig`; every other current formula requires `configuration=None`. Its
+- `physical_evidence.weighted_evidence` requires a configuration payload that compiles to a
+  `PhysicalEvidenceWeightedConfig`; every other current formula requires `configuration=None`. Its
   bindings contain every input index exactly once, in `[0, len(inputs))`; both weights are finite,
-  `true_weight > 0`, `false_weight >= 0`, and a `required_for_vacancy` binding has
-  `false_weight > 0`. `occupied_threshold` is in `(0, sum(true_weight)]` and `vacant_threshold` is in
-  `(0, sum(false_weight)]` across the bindings.
+  `true_weight > 0`, `false_weight >= 0`, and a `required_for_false` binding has
+  `false_weight > 0`. `true_threshold` is in `(0, sum(true_weight)]` and `false_threshold` is in
+  `(0, sum(false_weight)]` across the bindings. Bindings resolved to the same `correlation_group`
+  have the same role, admission, weights, and `required_for_false` setting, so one group has one
+  unambiguous effective vote profile. When the owning rule's effective true dwell is zero, every solely
+  `corroborating` group's maximum possible true contribution is strictly below `true_threshold`; it
+  therefore needs another independent group. A corroborating group may reach the threshold alone
+  only through an owning, explicitly positive true confirmation dwell (`Window` or `Stability`).
 - When `FusionRule.stability` is `Stability`, `unavailable_grace` is either `None` or a positive
   `Window`; it is invalid on a plain symmetric `Window` because that shape has no availability policy.
 
@@ -266,6 +279,7 @@ class CalendarWindowReadBinding:
     source: Literal["calendar_windows"] = "calendar_windows"
 
 ReadBinding = StateReadBinding | AttributeReadBinding | CalendarWindowReadBinding
+PhysicalEvidenceAdmission = Literal["immediate", "corroborating"]
 
 @dataclass(frozen=True)
 class Sensor:
@@ -281,12 +295,19 @@ class Sensor:
                                      # entities in the admin panel and powers "register one role,
                                      # suggest the others" discovery (e.g. a thermostat's Sensor role
                                      # suggests its hvac_unit Actuator role, same physical device).
-    unit: str | None = None         # HA's unit_of_measurement at registration time, for numeric
-                                     # fact_types. Used to detect drift (the entity's live unit no
-                                     # longer matches what a BucketInterpretation's thresholds were
-                                     # defined against) — never to perform unit conversion; Home
-                                     # Assistant already does that, Heima only needs to know and flag
-                                     # a mismatch as a diagnostic. Mechanism: §3.3.
+    related_opening_id: str | None = None  # optional physical Topology reference for a reading made
+                                            # at/through one opening (contact, cover position, local
+                                            # illuminance, etc.). It is not a Location tier and never
+                                            # an HA entity id; staging requires a room-scoped Sensor
+                                            # whose room is the owning room of this Opening (§2.4).
+    unit: str | None = None         # HA's unit_of_measurement expected at registration time. Together
+                                     # with expected_device_class/state_class, this is a source-shape
+                                     # expectation, never a conversion or a semantic inference (§3.3).
+    expected_device_class: str | None = None  # expected HA device_class for this read path when the
+                                              # entity metadata actually describes that path (§3.3).
+    expected_state_class: str | None = None
+                                              # expected HA state_class for the read path; None is
+                                              # deliberate when no state class is applicable (§3.3).
     reliability: float = 1.0        # confidence reported when available=True (§3.2) — a fixed,
                                      # declared property of this specific device, never recomputed
                                      # per cycle. Default 1.0: without a concrete evidentiary reason,
@@ -296,6 +317,18 @@ class Sensor:
                                      # Irrelevant when available=False: confidence is always None
                                      # there (§3.2) regardless of reliability, because confidence
                                      # describes trust in an observation, and there is none to trust.
+    physical_evidence_admission: PhysicalEvidenceAdmission | None = None
+                                     # Required only for occupancy.evidence.*.* and
+                                     # presence.evidence.*.* paths. "immediate" is an explicit
+                                     # assertion that this normalized semantic evidence may be a
+                                     # primary positive input; "corroborating" may contribute only
+                                     # through a configured quorum or confirmation path. There is no
+                                     # implicit upgrade based on HA device class or reliability.
+    correlation_group: str | None = None
+                                     # Required with physical_evidence_admission. Same non-empty
+                                     # stable id means readings share a physical/device/model
+                                     # failure mode and cannot be counted independently by the
+                                     # physical-evidence formula. It is never an HA entity id.
 ```
 
 Every Home Assistant **readable signal path** Heima cares about is registered exactly once, here —
@@ -315,14 +348,52 @@ Assistant `entity_id`: an HA rename, re-pair, or replacement can change the `bin
 the logical evidence identity and its history. Conversely, a semantically different evidence role
 gets a new `sensor_id`, even if it happens to read the same HA device. This makes several PIR/mmWave
 readings in one room separately addressable by `FactRef` while preserving the one-producer-per-
-`(fact_type, Location)` invariant. The derived canonical room fact remains simply `occupancy`; only
-the evidence layer carries a per-sensor suffix.
+`(fact_type, Location)` invariant. The derived physical room fact is `occupancy.physical`; Layer 4
+alone resolves the canonical semantic `occupancy`. `occupancy.physical` is the sole standardized
+physical room-occupancy ground truth a core learner may bind; individual evidence facts are never
+training labels. Only the evidence layer carries a per-sensor suffix.
+
+**Casa-presence evidence follows the same boundary.** A physical or externally normalized reading
+that contributes to casa presence produces `presence.evidence.<kind>.<sensor_id>` at
+`Location(scope="casa")`; a Layer-2 `FusionRule` may aggregate only those declared inputs into the
+boolean `presence.physical`. Layer 2 never claims the semantic `presence` fact itself.
+
+**Physical-evidence quality is explicit and generic.** Every sensor in either reserved evidence
+namespace declares both `physical_evidence_admission` and `correlation_group`; every other Sensor
+must leave both unset. An integration that distinguishes a person from generic motion maps only its
+declared `person` classification to a person-evidence fact (for example
+`presence.evidence.vision_person.front_camera`). Generic motion, unknown-object, or object-class
+observations are distinct normalized facts and cannot silently become person evidence. A camera/model
+whose person classification can be confused with moving equipment is registered `corroborating`, not
+`immediate`, unless an administrator deliberately accepts that risk for the specific logical reading.
+
+`reliability` reports confidence in one observation; admission controls whether that observation may
+be sufficient to establish a positive physical conclusion; correlation controls whether two readings
+may accumulate as independent evidence. These are deliberately separate axes. Two sibling entities
+or pipelines from one camera, bridge, or physical detector use the same `correlation_group`, even when
+their `sensor_id`s and fact types differ. A single independent sensor may use its own stable group id.
 
 `workday_entity` becomes a `Sensor` too; its calendar-override behavior is a `PrecedenceStrategy`
 `FusionRule` (§5), not a property of the sensor itself. `ExternalContext`'s slots become
 `Sensor(binding=StateReadBinding(entity_id="<adapter_entity>"), fact_type="external.<slot>",
 where=Location(scope="casa"))` — the adapters behind them (OWM, Protezione Civile) stay ordinary HA
 integrations exposing ordinary entities, not a Layer 7 concern.
+
+`related_opening_id` gives an observation the same optional physical precision that `Actuator.opening_id`
+gives a command endpoint (§2.4), without changing `Location`: a window contact, shutter-position
+sensor, or illuminance sensor can identify the opening it concerns, while an ordinary room temperature
+or light sensor leaves it unset. If set, the referenced opening must exist and the Sensor's `where`
+must be exactly its owner room (not `casa`, `zone`, or `rooms`). A derived fact may preserve that
+identity only when staging can trace every contributing physical Sensor to the same
+`related_opening_id`; otherwise it is not admissible as an opening- or cover-specific binding. This
+prevents a multi-window room from being silently treated as one physical aperture.
+
+**Source-shape expectation.** `unit`, `expected_device_class`, and `expected_state_class` are the
+frozen metadata expectation of the specific HA read path. They make staging validation and later
+configuration-drift diagnostics possible; they do not turn Home Assistant metadata into a Heima fact
+semantic, do not convert values, and do not select an `Interpretation`. A path whose enclosing entity
+does not describe the value it exposes (for example `weather.*` or an attribute of `climate.*`) leaves
+the inapplicable expectation unset. The explicit binding and `Interpretation` remain authoritative.
 
 ### 3.1 `ReadBinding` — how HA data enters a `Sensor`
 
@@ -411,19 +482,102 @@ discretion:
   in-between without a concrete evidentiary reason," now an actual mechanism instead of an
   unexercised allowance).
 
-### 3.3 `unit` drift diagnostic — mechanism
+### 3.3 Source-shape drift diagnostic — mechanism
 
 **Resolved 2026-09-05.** Checked at the same point an `Interpretation` already reads the entity's raw
-input (§3.1/§4) — the bound entity's live `unit_of_measurement` is already available there for
-state/attribute bindings, so this costs nothing beyond what binding extraction already needs anyway,
-and §2.2's no-blocking-I/O contract holds unchanged (no extra read, no extra call). If the live unit
-differs from `Sensor.unit` as registered, a
-diagnostic event is raised (Layer 0 §9-style, the same mechanism Layer 1 §4.3 uses for an `evidence`
-shape violation) — never an automated correction, and never a change to `available`/`confidence`/
-`value` for that cycle. A stale registered unit is a configuration problem worth a human's attention
-(someone changed a device's reported unit; a `BucketInterpretation`'s thresholds may now be defined
-against a unit no longer in effect) — not a reason to distrust or discard this cycle's otherwise-valid
-reading, which is why it is a side-channel diagnostic, not a change to the fact itself.
+input (§3.1/§4) — the bound entity's live `unit_of_measurement`, `device_class`, and `state_class`
+are already available there for state/attribute bindings, so this costs nothing beyond binding
+extraction and §2.2's no-blocking-I/O contract holds unchanged. If a live, applicable metadata value
+differs from its registered expectation, a diagnostic event is raised (Layer 0 §9-style, the same
+mechanism Layer 1 §4.3 uses for an `evidence` shape violation) — never an automated correction, and
+never a change to `available`/`confidence`/`value` for that cycle. A stale registered source shape is
+a configuration problem worth human attention (for example, a `BucketInterpretation` threshold may no
+longer have the intended unit), not a reason to discard an otherwise-valid reading. The explicit
+`Interpretation` still rejects an invalid raw shape under §3.2/§4; metadata drift is only its
+side-channel diagnostic, never hidden replacement semantics.
+
+### 3.4 HA-assisted environmental discovery — staging only
+
+Home Assistant metadata can make registration faster, but cannot establish house semantics. During
+configuration staging, the adapter may inspect the already-present HA state object and emit an
+ephemeral `EnvironmentalDiscoveryCandidate`:
+
+```python
+@dataclass(frozen=True)
+class EnvironmentalDiscoveryCandidate:
+    entity_id: str
+    read_path: ReadBinding
+    domain: str
+    device_class: str | None
+    state_class: str | None
+    unit: str | None
+    device_id: str | None
+    suggested_location: Location | None
+    suggested_slot: str | None
+    confidence: Literal["auto_compatible", "review_required"]
+    required_admin_decisions: tuple[str, ...]
+```
+
+The candidate is an admin-facing staging aid, not a `Sensor`, a persisted raw HA payload, or a
+runtime data path. Accepting it creates an ordinary explicit `Sensor` with a concrete binding,
+`fact_type`, `Interpretation`, source-shape expectation, and any required topology relationship;
+declining it leaves the generation unchanged. Discovery performs no network call, service call, or
+continuous scan in Layer 2's cycle path.
+
+`auto_compatible` means only that HA exposes a physically shaped reading whose device class, state
+class, and unit are compatible with an unambiguous *candidate slot*: temperature, relative or absolute
+humidity, pressure, carbon dioxide, illuminance, irradiance, PM2.5, wind, or precipitation. It may
+prefill the binding and source-shape expectation, but the admin still assigns the indoor/outdoor and
+room/exterior meaning and accepts the registration. `review_required` covers readings for which HA's
+metadata does not determine Heima semantics: window/contact and cover state, weather and climate
+attributes, AQI, and existing HA binary/threshold helpers. A weather entity yields one candidate per
+usable attribute through `AttributeReadBinding`, never one opaque "weather sensor". For a helper,
+Heima preserves HA's established threshold logic and offers its output only as a guard source; it does
+not recreate the threshold from raw measurements.
+
+Discovery must never infer indoor versus outdoor placement, an opening relationship, comfort or
+safety thresholds, security/privacy meaning, occupancy meaning, an acceptable outdoor-air condition,
+or an automation policy. In particular an AQI/device-class label is not equivalent to the normalized
+`outdoor_air_quality` guard required by Layer 3: the explicit Sensor/Interpretation or a dedicated
+Layer 2 normalizer must state its scale and acceptable condition. Area and device-registry information
+may suggest a location, but remain `required_admin_decisions`; only the accepted generation records
+the resulting meaning.
+
+This deliberately follows HA's entity metadata model rather than recreating a parallel taxonomy:
+`device_class`, unit, and `state_class` identify the physical shape and statistics of a sensor value,
+while weather integrations expose several values as entity attributes. See Home Assistant's
+[sensor entity contract](https://developers.home-assistant.io/docs/core/entity/sensor/) and
+[weather entity contract](https://developers.home-assistant.io/docs/core/entity/weather/). Those
+contracts justify a candidate and validation aid, not an inference of a home's physical or policy
+semantics.
+
+### 3.5 Desktop-workstation normalization and privacy
+
+A desktop client is an ordinary `Sensor` source, never a parallel computer-telemetry subsystem. The
+official macOS Companion App can expose active use, frontmost application, microphone/camera use, and
+device location capability; third-party desktop agents may expose comparable platform-specific paths.
+Layer 2 accepts only explicit, per-Sensor opt-in registrations and normalizes them into bounded facts
+such as `computer.interaction_active`, `computer.work_application_active`,
+`computer.communication_application_active`, `computer.audio_video_input_active`, and
+`computer.session_locked`. A static workstation's `where` is an administrator-declared room; a mobile
+laptop's geographic/device location does not imply a room location without a separately declared local
+binding.
+
+No raw window title, document name, URL, meeting subject, participant, audio/video content, screen
+image, keystroke, or unclassified application name becomes a `HouseFact`, formula input, learning
+feature, or persisted Heima payload. Where an integration exposes the foreground application, its
+binding maps it locally through an explicit reviewed category to one boolean normalized fact; the raw
+value remains only in Home Assistant's source state. `computer.communication_application_active` plus
+microphone/camera use may support a later deterministic `communication_session_active` fusion, but is
+not itself proof of a call and never proof of work. A computer being active, unlocked, or in one room
+does not itself prove that a resident is working.
+
+This is deliberately capability- and privacy-based rather than integration-name-based: the source may
+be replaced without changing a logical Sensor id or its normalized fact semantics. The administrator
+must opt in separately to interaction, application-category, microphone/camera, and location paths;
+there is no desktop telemetry default. These normalized facts can be current Layer-2 inputs to a
+working-context contract, while a direct Layer-5 interruption policy may independently consume a
+declared communication-session fact without waiting for learning.
 
 ---
 
@@ -543,10 +697,12 @@ mean "no interpretable value." The in-memory sentinel is the frozen dataclass si
 not the sentinel. This makes total vs. partial mappings mechanically distinguishable in tests and in
 admin-authored config.
 
-**Room occupancy vs. whole-house presence — independently tuned, never a shared timing policy.**
-Room occupancy consumes the per-sensor evidence namespace above and produces the canonical
-`occupancy` fact through its own `FusionRule`; whole-house presence is a separate consumer producing
-`presence`. Each carries its own strategy and `stability` (§5.2) — room occupancy keeps a
+**Physical room occupancy vs. whole-house presence — independently tuned, never a shared timing policy.**
+Layer 2 consumes the per-sensor evidence namespace above and produces `occupancy.physical` through
+its own `FusionRule`; Layer 4 resolves the canonical semantic `occupancy` from that conclusion and
+an optional authorized indirect hint. Layer 2 similarly produces `presence.physical` from only declared
+casa-presence evidence; Layer 4 resolves the semantic `presence` claim. Physical occupancy and physical
+presence each carry their own strategy and `stability` (§5.2) — physical room occupancy keeps a
 fast-on/slow-off default (`Stability(to_true=None, to_false=Window(seconds=120))`), while
 whole-house presence can use a more conservative pair. They run independently per cycle; sharing
 evidence vocabulary never shares a blocking path or timing policy.
@@ -662,16 +818,16 @@ class WeightedQuorumStrategy:
 @dataclass(frozen=True)
 class PrecedenceStrategy:
     pass   # tries inputs in order, first Fact with a definitive (available) value wins — e.g.
-           # HouseState's own top-level resolution order, one layer up (§5.1 continued below for
+           # a semantic resolver's own top-level resolution order, one layer up (§5.1 continued below for
            # workday_entity, which needs care not to be misread as a flat 5-way chain)
 
 @dataclass(frozen=True)
-class OccupancyEvidenceBinding:
+class PhysicalEvidenceBinding:
     input_index: int
     role: Literal["primary", "supporting"]
     true_weight: float
     false_weight: float
-    required_for_vacancy: bool
+    required_for_false: bool
 
 @dataclass(frozen=True)
 class CompiledFormulaConfiguration:
@@ -682,10 +838,22 @@ class NoFormulaConfiguration(CompiledFormulaConfiguration):
     pass
 
 @dataclass(frozen=True)
-class OccupancyWeightedEvidenceConfig(CompiledFormulaConfiguration):
-    bindings: tuple[OccupancyEvidenceBinding, ...]
-    occupied_threshold: float
-    vacant_threshold: float
+class PhysicalEvidenceWeightedConfig(CompiledFormulaConfiguration):
+    bindings: tuple[PhysicalEvidenceBinding, ...]
+    true_threshold: float
+    false_threshold: float
+
+@dataclass(frozen=True)
+class ResolvedPhysicalEvidenceBinding:
+    binding: PhysicalEvidenceBinding
+    admission: PhysicalEvidenceAdmission  # resolved from the staged Sensor, never repeated in JSON
+    correlation_group: str                # resolved from the staged Sensor, never an HA entity id
+
+@dataclass(frozen=True)
+class ResolvedPhysicalEvidencePlan(CompiledFormulaConfiguration):
+    bindings: tuple[ResolvedPhysicalEvidenceBinding, ...]
+    true_threshold: float
+    false_threshold: float
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | tuple["JsonValue", ...] | Mapping[str, "JsonValue"]
@@ -856,7 +1024,7 @@ constant-time.
 
 ```python
 FormulaId = str   # e.g. "heating.season_hysteresis", "external.effective_outdoor_temperature",
-                   # "occupancy.weighted_evidence"
+                   # "physical_evidence.weighted_evidence"
 FormulaImplementationVersion = str  # non-empty, core-maintained semantic implementation version
 FormulaConfidenceMode = Literal["continuous", "categorical", "inherit_input"]
 
@@ -879,7 +1047,7 @@ class InheritedFormulaResult:
 
 FormulaResult = ContinuousFormulaResult | CategoricalFormulaResult | InheritedFormulaResult
 FormulaConfigurationCompiler = Callable[[FormulaConfigurationPayload], CompiledFormulaConfiguration]
-FormulaBindingValidator = Callable[["FusionRule", FormulaStrategy, CompiledFormulaConfiguration], None]
+FormulaBindingValidator = Callable[["FusionRule", FormulaStrategy, CompiledFormulaConfiguration], CompiledFormulaConfiguration]
 
 @dataclass(frozen=True)
 class RegisteredFormula:
@@ -892,7 +1060,7 @@ class RegisteredFormula:
     confidence_mode: FormulaConfidenceMode
     compile_configuration: FormulaConfigurationCompiler  # pure staging-time JSON decoder/validator
     validate_binding: FormulaBindingValidator  # pure staging-time check of inputs, order, output,
-                                               # previous_cycle use, and compiled configuration
+                                               # previous_cycle use; returns immutable resolved plan
     compute: Callable[[Sequence[HouseFact], CompiledFormulaConfiguration], FormulaResult | None]
                                                                     # receives every configured input in
                                                                     # FusionRule.inputs order, including
@@ -915,22 +1083,27 @@ that can alter configuration compilation, `compute`, or binding-validation behav
 cosmetic/internal changes that cannot alter any of those need not. The compiler, callable, and validator
 are runtime code and are never serialized. The candidate `RegistryGeneration` stores only the resolved
 `formula_id`, `implementation_version`, and canonical configuration JSON alongside the `FusionRule`
-definition; its active in-memory plan additionally holds the formula's compiled configuration. On
+definition; its active in-memory plan additionally holds the formula's validated, resolved compiled
+configuration. On
 startup after a code upgrade, staging compares that resolved pair and payload with the active generation:
 a difference follows §2.5's selective impact path, never a live replacement of a formula during a cycle.
 
-`FormulaStrategy.configuration` is either `None` or a canonical JSON object: string keys are unique and
-Unicode-code-point sorted; arrays preserve order; numbers are finite; nesting is at most 8; and the
-UTF-8 serialization is at most 16 KiB. It is configuration data, not Layer 1 `EvidenceValue`: formula
+`FormulaStrategy.configuration` is either `None` or a canonical JSON object under Layer 1's shared
+RFC-8785 rule: string keys are unique and sorted as raw UTF-16 code-unit sequences; arrays preserve
+their declared order; numbers are finite; nesting is at most 8; and the UTF-8 serialization is at most
+16 KiB. It is configuration data, not Layer 1 `EvidenceValue`: formula
 configuration may legitimately contain an ordered array of binding objects. During staging, after
 `resolve`, the registry first calls the formula's pure `compile_configuration(payload)`, then passes its
-immutable result to `validate_binding(fusion_rule, formula_strategy, compiled_configuration)`. Together
-they must reject every semantic mismatch knowable before evaluation: JSON shape/fields/values, input
-count/order and fact-type contract, output `produces`/`where`, and every `previous_cycle` input unless
-it exactly self-references that FusionRule and this formula explicitly permits its position/count, plus
-the formula's exact compiled configuration type. Neither may read HA, Persistence, or
-mutable runtime state. A failed compiler or validator rejects the whole candidate generation; parsing is
-never deferred to a diagnostic from `compute` on a resident-facing cycle, and `compute` never parses JSON.
+immutable result to `validate_binding(fusion_rule, formula_strategy, compiled_configuration)`. The
+validator returns the final immutable plan held by the active generation; an ordinary formula returns
+its input unchanged, while a formula that must resolve staged input metadata may enrich it there.
+Together they must reject every semantic mismatch knowable before evaluation: JSON shape/fields/values,
+input count/order and fact-type contract, output `produces`/`where`, and every `previous_cycle` input
+unless it exactly self-references that FusionRule and this formula explicitly permits its
+position/count, plus the formula's exact compiled configuration type. Neither may read HA,
+Persistence, or mutable runtime state. A failed compiler or validator rejects the whole candidate
+generation; parsing is never deferred to a diagnostic from `compute` on a resident-facing cycle, and
+`compute` never parses JSON.
 
 **Formula result and confidence contract — resolved 2026-09-08.** `confidence_mode` is declared by
 the core-team-owned registry entry, never inferred from a formula's name or its incidental Python
@@ -975,42 +1148,63 @@ combination remains contradictory or insufficient for the formula's own safety r
 the `min_inputs` gate or `compute` returning `None` — ends the same way: `available=False`, with no
 confidence function called.
 
-#### `occupancy.weighted_evidence`
+#### `physical_evidence.weighted_evidence`
 
 This registered core formula has `confidence_mode="categorical"`, `min_inputs=1`, and requires one
-configuration JSON object with exactly `bindings`, `occupied_threshold`, and `vacant_threshold`.
-Each `bindings` entry has exactly `input_index`, `role`, `true_weight`, `false_weight`, and
-`required_for_vacancy`. Its `compile_configuration` validates this JSON and builds the internal typed
-`OccupancyWeightedEvidenceConfig`; neither `validate_binding` nor `compute` consumes raw JSON. It is
-the reusable room-occupancy mechanism: it never switches on `fact_type` or sensor kind, so introducing
-a new normalized occupancy sensor requires a new binding, not a formula-code change. Each binding
-corresponds to the same-position `HouseFact` in the complete input sequence.
+configuration JSON object with exactly `bindings`, `true_threshold`, and `false_threshold`. Each
+`bindings` entry has exactly `input_index`, `role`, `true_weight`, `false_weight`, and
+`required_for_false`. Its `compile_configuration` validates this JSON and builds the internal typed
+`PhysicalEvidenceWeightedConfig`. `validate_binding` then resolves `admission` and
+`correlation_group` from the corresponding staged `Sensor` into a `ResolvedPhysicalEvidencePlan`.
+Neither step nor `compute` consumes raw JSON. The admin therefore assigns a source's quality profile
+once, in its Sensor registration, instead of copying it into every fusion that uses the source.
 
-Its `validate_binding` requires `produces="occupancy"`, a room `where`, no `previous_cycle=True`
-input, and every input to be at the same room `Location` with a four-segment fact type of the form
-`occupancy.evidence.<kind>.<sensor_id>`. It validates the one-to-one configuration binding/index
-contract from §2.4 during staging. `<kind>` remains opaque to the formula: a new normalized sensor
-kind needs no validator or compute change.
+Its `validate_binding` permits exactly one of two homogeneous shapes: it either produces
+`occupancy.physical` at a room from same-room `occupancy.evidence.<kind>.<sensor_id>` inputs, or it
+produces `presence.physical` at `casa` from `presence.evidence.<kind>.<sensor_id>` inputs. It permits
+no `previous_cycle=True` input. Every referenced Sensor has the required evidence profile from §2.4,
+and the one-to-one configuration binding/index contract is verified during staging. `<kind>` remains
+opaque: a new normalized evidence kind needs a Sensor binding, not a formula-code change.
 
 Only an available input whose `value` is exact `bool` participates. An available non-boolean input is
 a formula-contract violation: this cycle returns `available=False` with a diagnostic, never Python
-truthiness. For each participating fact, let `c` be its non-`None` provenance confidence. A `True`
-contributes `true_weight * c` to `true_score`; a `False` contributes `false_weight * c` to
-`false_score`. The formula returns:
+truthiness. Inputs are first reduced by `correlation_group`, before any role or weight is considered.
+A group with both available `True` and `False` observations is conflicted and contributes no vote; a
+non-conflicted group contributes at most one directional vote, using the largest weighted confidence
+among members reporting that direction. Thus sibling entities, multiple outputs from one vision
+pipeline, or readings known to share a failure mode can never manufacture an independent quorum.
 
-1. `value=True` when at least one available `primary` input is `True`, or `true_score >=
-   occupied_threshold`.
-2. `value=False` only when step 1 did not apply, every `required_for_vacancy` input is available, and
-   `false_score >= vacant_threshold`.
+For each retained directional group vote, let `c` be the selected fact's non-`None` provenance
+confidence. Its group-wide staged profile supplies the corresponding `true_weight`, `false_weight`,
+role, admission, and required-for-false setting. A `True` contributes `true_weight * c` to
+`true_score`; a `False` contributes `false_weight * c` to `false_score`. The formula returns:
+
+1. `value=True` when at least one available, non-conflicted `primary` input with
+   `admission="immediate"` is `True`, or `true_score >= true_threshold`.
+2. `value=False` only when step 1 did not apply, every `required_for_false` group is represented by an
+   available non-conflicted `False` vote, and `false_score >= false_threshold`.
 3. `None` in every other case, producing `available=False`.
 
-For a `True` result, categorical `support` is `true_score`; for `False`, it is `false_score`. In both
-cases categorical `total` is the sum, over available boolean inputs, of `true_weight` for an observed
-`True` and `false_weight` for an observed `False`. Thus the confidence reflects both each source's
-declared reliability and conflicting evidence; an unavailable input contributes neither fabricated
-evidence nor a fake `False`. A low-quality sole primary source can make presence immediate while still
-reporting low confidence. The formula has no dwell or retained state: `FusionRule.stability` remains
-the sole owner of delayed exit and of the separate cross-strategy unavailable-grace policy (§5.2).
+`primary` describes the configured fusion role, while `admission` constrains what the Sensor is ever
+allowed to do: a `corroborating` source may be a weighted supporting vote but can never take the
+immediate-primary shortcut. Staging additionally prevents a single corroborating group from meeting
+an instant true threshold; it must have either an independent quorum or the rule's positive true
+confirmation dwell. For a `True` result, categorical `support` is `true_score`; for `False`, it is
+`false_score`. In both cases categorical `total` is the sum of the selected group votes, never the
+number of raw inputs. An unavailable input contributes neither fabricated evidence nor a fake
+`False`. The formula has no dwell or retained state: `FusionRule.stability` remains the sole owner of
+delayed exit and of the separate cross-strategy unavailable-grace policy (§5.2).
+
+**Fast/confirmed composition is a declared use of existing primitives, not a camera-specific
+subsystem.** When a physical conclusion has both high-specificity and potentially noisy evidence,
+staging may compose: (1) a fast intermediate fusion over explicitly `immediate` sources with
+`Stability(to_true=None, ...)`; (2) a confirmed intermediate fusion over `corroborating` sources,
+with its explicitly chosen short positive dwell or independent quorum; and (3) a final physical fact
+that accepts either intermediate conclusion and has its own declared false stability. The fast path is
+same-cycle; the confirmation path arms only one verified Layer-0 `AtJob` deadline and never polls.
+All intermediate facts, inputs, weights, correlation groups, and timing remain ordinary declared
+registry entries, visible to staging and diagnostics. This composition applies equally to occupancy,
+presence, or a future physical boolean family.
 
 Core-team-curated, not admin-authored and not open to third parties — same governance as
 `PatternLearnerConfig` (Layer 3: "declared in code only... no learning family is admin-authored
@@ -1093,7 +1287,7 @@ availability it accepts; `min_available=len(inputs)` makes every configured inpu
 smaller value retains the same exclusion semantics but opts into degraded operation explicitly.
 
 `FormulaStrategy` is the deliberate exception: §5.3 passes the full ordered input sequence to the
-formula so it can make a domain-specific distinction between negative evidence and missing evidence.
+formula so it can make a formula-specific distinction between negative evidence and missing evidence.
 Its generic availability gate is `min_inputs`, counted only over available facts; it never receives
 fresh data or bypasses the formula-result confidence validation. A formula must not treat an
 unavailable input's `value` or `confidence` as meaningful, and an inherited-confidence result may
@@ -1159,15 +1353,17 @@ own. The actual risk is that **debounce windows accumulate across levels, silent
 configures a higher tier without knowing what a lower tier already waited.** Worked through with
 concrete numbers:
 
-- Tier 1 — `room_occupancy` (`FusionRule`, `WeightedQuorumStrategy` over room sensors):
+- Tier 1 — `physical_room_occupancy` (`FusionRule`, `WeightedQuorumStrategy` over room sensors,
+  producing `occupancy.physical`):
   `Stability(to_true=None, to_false=Window(seconds=120))`. Occupied is reported instantly; vacant is
   reported only after the room has read empty for 120s.
-- Tier 2 — `zone_occupancy` (`FusionRule`, `inputs` = several rooms' `room_occupancy` `FactRef`s,
+- Tier 2 — `physical_zone_occupancy` (`FusionRule`, `inputs` = several rooms'
+  `physical_room_occupancy` `FactRef`s,
   `WeightedQuorumStrategy(weight=1` for each, `threshold=1.0)` — "any room occupied," §5.1's
   redundancy-with-`UnanimityStrategy` note): if configured with its *own*
   `Stability(to_true=None, to_false=Window(seconds=60))`, the intent is "wait 60s before calling the
   zone vacant." But tier 2 is watching tier 1's **already-debounced** output, not the raw sensors — so
-  the zone doesn't actually go vacant until `room_occupancy` itself commits vacant (120s after the
+  the zone doesn't actually go vacant until `physical_room_occupancy` itself commits vacant (120s after the
   room emptied) *plus* tier 2's own 60s dwell on top of that. **Total: 180s, not 60s** — a number
   nobody configuring either tier in isolation would arrive at by reading either one's own definition.
 - The instant-on side does **not** compound the same way: if every tier uses `to_true=None`, an
@@ -1411,7 +1607,7 @@ weaken the one-endpoint-per-step or per-step provenance rule.
 `implicit_hold_restore_class` is the one field on this record that Layer 0 directly depends on being
 present — see Layer 0 §6.3 for the full restoration mechanism it feeds. This is not a violation of
 "nothing depends on Layer 2 from below": Layer 0 itself never reads this registry at runtime, only
-the domain/reaction logic that detects a divergence and creates the hold does, once, freezing the
+the semantic-resolver/policy logic that detects a divergence and creates the hold does, once, freezing the
 result into the hold's own `Provenance.evidence` before Layer 0 ever sees it (Layer 0 §6.3).
 
 `power_recovery_policy` similarly does not create a live Layer-0-to-Layer-2 dependency. At
@@ -1455,7 +1651,7 @@ command itself.
 - **Manual Hold Manager**: `Actuator.implicit_hold_restore_class` (§6) is a field Layer 0 §6.3's
   restoration mechanism is defined in terms of — the one point of contact in the other direction.
   This is not a violation of Layer 0's "depends on nothing above it" rule: Layer 0's own runtime code
-  never queries this registry: whichever domain/reaction logic detects the triggering divergence
+  never queries this registry: whichever semantic-resolver/policy logic detects the triggering divergence
   reads the field once, at hold-creation time, and freezes the result into the hold's evidence: Layer
   0 only ever reads that already-resolved, frozen copy afterward, never the live registry.
 - **`FactRef.previous_cycle` (§5.8)**: supplies only the validated FormulaStrategy self-memory case.
@@ -1524,7 +1720,8 @@ No unresolved Layer-2 registry parameter remains.
   `reliability`; empty, unordered, or prematurely open bucket definitions; an empty fusion input
   tuple; invalid `min_available`/`min_inputs`; non-positive or non-finite weights; a threshold or
   minimum available weight outside its configured-total bounds; and an invalid formula mode's
-  `scale`/`floor`; and every invalid `occupancy.weighted_evidence` binding/index/threshold pair. A
+  `scale`/`floor`; and every invalid `physical_evidence.weighted_evidence` binding/index/threshold
+  pair. A
   mapping output/default (other than `NO_DEFAULT`), bucket label, or keyword-classifier category that
   cannot pass Layer 1's `validate_house_fact_value` is likewise rejected in staging rather than
   failing on a later sensor cycle. A valid unit-weight quorum configuration and a valid occupancy
@@ -1557,12 +1754,16 @@ No unresolved Layer-2 registry parameter remains.
   available members. A formula may return a result using the other available inputs, but an
   `InheritedFormulaResult` selecting the unavailable position is rejected for that cycle with a
   diagnostic (§5.3/§5.5).
-- `occupancy.weighted_evidence` returns immediate `True` from an available primary source despite an
-  unavailable peer; returns `False` only after every required-for-vacancy source is available and its
-  weighted false score meets the configured threshold; and otherwise returns unavailable. A new
-  evidence sensor is added through a binding with no formula-code change. A low-confidence sole
-  primary source produces `True` with correspondingly low categorical confidence, and a conflicting
-  available source reduces that confidence (§5.3).
+- `physical_evidence.weighted_evidence` accepts both validated shapes (`occupancy.physical` in one
+  room and `presence.physical` at casa), returns immediate `True` from an available non-conflicted
+  `primary` source only when its Sensor admission is `immediate`, and returns `False` only after every
+  required-for-false group contributes an available `False` vote and the false score reaches the
+  configured threshold. A corroborating source cannot take the primary shortcut. Two inputs from the
+  same correlation group never add two votes; a group with contrary observations contributes neither.
+  With no true dwell, a corroborating group alone cannot reach the true threshold; with a positive
+  true dwell, that same explicit confirmation path is legal.
+  A new evidence sensor is added through a binding with no formula-code change. A low-confidence sole
+  immediate primary source produces `True` with correspondingly low categorical confidence (§5.3).
 - Each `FormulaConfidenceMode` is verified independently: a continuous result calls only
   `continuous_confidence` and rejects missing `scale`/`floor` or a non-finite numeric value/dispersion;
   a categorical result calls only `categorical_confidence` and rejects invalid `support`/`total`; and
@@ -1599,8 +1800,9 @@ No unresolved Layer-2 registry parameter remains.
 - Formula bootstrap rejects a duplicate id, empty implementation version, or registration after the
   registry is frozen. Candidate staging rejects an unknown formula, non-canonical/oversize/deep
   configuration JSON, a compiler rejection, or a binding rejected by its pure validator before any
-  cycle runs; a malformed `occupancy.weighted_evidence` payload (wrong field shape/value, output,
-  location, input namespace/order, or `previous_cycle=True`) therefore never reaches `compute`.
+  cycle runs; a malformed `physical_evidence.weighted_evidence` payload (wrong field shape/value,
+  output, location, input namespace/order, source evidence profile/correlation compatibility, or
+  `previous_cycle=True`) therefore never reaches `compute`.
   A test adds a second formula with a different compiled configuration type without changing any
   FormulaStrategy configuration union, and verifies its compiler runs once during staging rather than
   during evaluation.
@@ -1661,6 +1863,20 @@ No unresolved Layer-2 registry parameter remains.
   `confidence=None` while `available=False` regardless of `reliability` — verified across an
   availability transition on the same `Sensor`, to confirm `reliability` never leaks into a fact that
   has no observation to attach it to (§3.2).
+- A `Sensor.related_opening_id` is accepted only for a room-scoped Sensor whose room is the owning room
+  of an existing Topology opening; unknown openings, a different owner room, or a `casa`/`zone`/`rooms`
+  Sensor are rejected during staging. A derived opening-specific fact with sources related to different
+  openings is likewise rejected for environmental binding (§3/Layer 3 §4.8.2).
+- A live mismatch of a Sensor's applicable registered `unit`, `expected_device_class`, or
+  `expected_state_class` emits the corresponding source-shape diagnostic without changing that
+  cycle's fact. A malformed raw value still follows the independently tested interpretation-failure
+  path, confirming that a metadata diagnostic never silently changes fact semantics (§3.2/§3.3).
+- HA-assisted discovery produces no Sensor until the admin accepts a candidate. A temperature-shaped
+  state reading may prefill a candidate's binding, unit, and source-shape expectation, but cannot
+  register an indoor/outdoor location without the explicit admin decision. A `weather.*` entity
+  produces independent attribute-binding candidates, and an AQI or helper candidate is rejected for
+  an `outdoor_air_quality` guard until an explicit scale/normalizer or accepted helper output defines
+  the required meaning (§3.4).
 - An `Actuator`'s `implicit_hold_restore_class` defaults to `"never"` when not set; a divergence
   detected on an entity registered `"eligible"` is confirmed to reach Layer 0 §6.3's restoration
   algorithm with that classification frozen into the resulting hold's evidence, verified end-to-end

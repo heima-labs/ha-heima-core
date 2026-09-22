@@ -20,14 +20,14 @@ architecture. Its job is to answer bounded statistical questions such as:
 - whether an observed behavioral pattern is sufficiently supported to be presented for review.
 - how a bounded, validated learned model predicts a measurable physical or behavioral outcome.
 
-It does not decide domain policy, issue an `ApplyStep`, create an active Reaction, or directly
+It does not resolve semantic claims, decide policy, issue an `ApplyStep`, create an active Reaction, or directly
 communicate with a resident. It produces evidence and candidates for consumers that own those
 decisions.
 
 ## 2. Architectural principles
 
 - **Historical, not hot-path computation.** Analysis is scheduled independently of engine
-  evaluations. It may read durable history, but never blocks a Sensor, FusionRule, Domain, or
+  evaluations. It may read durable history, but never blocks a Sensor, FusionRule, `SemanticResolver`, or
   Reaction cycle.
 - **Atomic facts only.** Every input is read through Layer 0's ordinary history API, scoped by
   `fact_type`, `Location`, and time interval. Layer 3 neither consumes nor reintroduces a bundled
@@ -39,13 +39,13 @@ decisions.
   warm-up, confidence, tier fallback, diagnostics, and failure semantics. A model-learning component
   may use the same historical bindings and governance when the statistical baseline cannot express a
   real, measurable relationship. ML never bypasses those evidence or governance rules.
-- **Domain semantics remain explicit.** The primitive standardizes mechanics, not meaning. A
+- **Semantic-claim meaning remains explicit.** The primitive standardizes mechanics, not meaning. A
   learning family declares its target, historical inputs, sample semantics, and allowed consumers.
 - **Learning is not authority.** A statistical result is diagnostic by default. Operational use is
   permitted only through an explicitly governed consumption path.
 - **Results are not house facts by default.** Artifacts, `ResultEnvelope`, `InferenceSignal`, and
   `LearningProposalCandidate` retain their typed Layer-3 lifecycle; they are never inserted into
-  Layer 0 fact history merely because they carry evidence about the house. A later authorized Domain
+  Layer 0 fact history merely because they carry evidence about the house. A later authorized `SemanticResolver`
   may resolve a signal into its own declared `HouseFact`, while Layer 5 may create its own workflow
   record and audit events under its separate contract.
 - **No V2 model migration.** V3 learners start without V2 snapshot history, models, approvals, or
@@ -68,7 +68,7 @@ Layer 3 does not own:
 
 - fact persistence, retention, or history reconstruction (Layer 0);
 - fact interpretation, current-cycle fusion, HA bindings, or Actuator inventory (Layer 2);
-- domain decisions (Layer 4);
+- semantic-claim resolution (Layer 4);
 - proposal review, conversion into a Reaction, or command generation (Layer 5);
 - notification delivery (Layer 6);
 - admin-panel presentation and review UI (Layer 8).
@@ -77,8 +77,8 @@ Layer 3 does not own:
 
 ### 4.1 `LearningDefinition` and family governance
 
-A learning family is a named, coherent capability such as house-state context, activity,
-sensorless-room occupancy, heating calibration, lighting routines, or presence simulation. Its
+A learning family is a named, coherent capability such as approved activity, indirect-room
+occupancy, heating calibration, lighting routines, or presence simulation. Its
 definition declares the learners and analyzers belonging to that family, their historical inputs,
 and their permitted egress paths.
 
@@ -466,7 +466,7 @@ ordinary local sparsity after the learner is warmed up.
 
 At an anchor, the sample builder resolves the tier's declared dimensions under §4.2 and produces its
 concrete `ContextBucketKey`: the tier identity plus the ordered canonical dimension values. For
-example, a `rich` house-state tier can use `(day_kind=weekday, local_time_bucket=19:15,
+example, a `rich` semantic-context tier can use `(day_kind=weekday, local_time_bucket=19:15,
 occupancy=present, darkness=dark)`, while a `coarse` tier can use only
 `(day_kind=weekday, local_time_bucket=19:15)`. These are distinct valid buckets, not a partial key
 or failed reconstruction of the rich tier.
@@ -747,8 +747,8 @@ The active vocabulary and policy are part of the `definition_fingerprint`. Addin
 renaming an active value therefore invalidates the preceding artifact for inference and requires a
 rebuild under the new generation. A canonical but inactive observed target value remains a
 diagnosable observation or proposal input; it is not silently learned as an untyped operational
-result. This lets `Activity` evolve through review while keeping the safety-relevant `HouseState`
-vocabulary closed and exhaustive. Scene or actuator choices similarly use a registered Heima
+result. This lets each independent `activity.<activity_id>` claim evolve through review while keeping
+its own vocabulary closed and exhaustive. Scene or actuator choices similarly use a registered Heima
 semantic ID owned by their future action/reaction contract, never a raw HA endpoint identifier.
 
 A scalar continuous target declares its physical dimension/unit, valid range, precision, and any
@@ -910,7 +910,7 @@ path.
 
 Features are named, typed, complete `SampleBinding`s resolved no later than the anchor: semantic policy
 and action identity, registered Actuator/channel, declared time context, and only those environmental,
-presence, or house-state facts that the learner definition explicitly declares relevant. A policy
+presence, or semantic-claim facts that the learner definition explicitly declares relevant. A policy
 configuration fingerprint may appear only as the staged semantic behavior identity, never as a raw
 configuration object. Post-anchor fact, correction, hold, notification outcome, raw HA state, HA user
 identity, entity id, payload, and availability recovery are forbidden features. Missing required input
@@ -1090,199 +1090,140 @@ consistent with building fault-detection practice: rule-based and process-histor
 ([NIST ZandrEA](https://www.nist.gov/publications/using-zandrea-project-research-toward-better-hvac-system-reliability-large-commercial),
 [DOE AFDD](https://www.energy.gov/cmei/femp/energy-management-information-system-capabilities)).
 
-#### 4.4.5 `SensorlessPresenceAssistModel-v1`
+#### 4.4.5 `IndirectSemanticAssistModel-v1`
 
-`SensorlessPresenceAssistModel-v1` is the first concrete `PatternLearner` permitted to publish a live
-signal. For one explicit room subject it estimates only the categorical target
-`physically_confirmed_presence = present | absent` from a closed set of non-occupancy proxy bindings,
-such as declared device activity, semantic house context, calendar context, or approved environmental
-facts. It must not read a current occupancy/presence fact, resident identity, raw HA state/entity
-identifier, or unbounded event sequence as a feature. The name *sensorless* means that its serving
-inputs contain no direct occupancy-evidence binding; it does not mean that its historical labels need
-not be physically grounded.
+`IndirectSemanticAssistModel-v1` is the single initial core `PatternLearner` family for a learned
+assist to one exact Layer-4 semantic claim. It replaces separate occupancy- and activity-assist model
+types without weakening their different evidence rules: every learner instance selects one frozen,
+core-owned `IndirectAssistanceContract` and one explicit subject. A contract is a typed profile, not an
+administrator-authored model, formula, feature expression, or policy.
 
-The target binding is a special core-validated `PhysicalOccupancyReference`: it may use only a
-registered direct physical occupancy assertion or a Layer-2 fusion whose complete provenance chain is
-restricted to declared physical occupancy evidence. A target produced by a Domain that consumed an
-`InferenceSignal`, a previously learned label, a manually authored assumption, or an unknown/mixed
-provenance is rejected. Both direct `present` and direct `absent` references train and validate the
-categorical model, but they do not give the learner authority to publish `absent`. This prevents the
-self-confirming loop in which a learned presence suggestion later becomes its own ground truth. It is
-consistent with residential occupancy research that combines sensor evidence only after validating the
-trustworthiness and meaning of each source ([NIST, *Integrated Sensor Data Processing for Occupancy
-Detection in Residential Buildings*](https://www.nist.gov/publications/integrated-sensor-data-processing-occupancy-detection-residential-buildings),
-[NIST, *Residential House Occupancy Detection*](https://www.nist.gov/publications/residential-house-occupancy-detection-trust-based-scheme-using-economic-and-privacy)).
+```python
+IndirectReferenceMode = Literal[
+    "physical_reference",
+    "deterministic_reference",
+    "resident_approved_routine",
+]
+IndirectConfidenceKind = Literal["calibrated_probability", "routine_affinity"]
+IndirectValidationMetric = str | int | float | bool
+IndirectValidationSummary = Mapping[str, IndirectValidationMetric]
 
-The model uses the common tiered `PatternLearner`, with a room-scoped `WarmupGate`, explicit support
-and confidence floors, and chronological validation. In addition it requires calibrated positive-class
-probability, a core-owned minimum positive predictive value on every declared operational slice, and
-bounded false-positive/false-negative rates measured only against `PhysicalOccupancyReference` labels.
-The artifact is unavailable for live use when any of those gates fails, when its current proxy input is
-missing/stale/outside its envelope. Its frozen `shadow_requirement` is
-`required_before_live_signal`: successful offline validation reaches only `eligible_for_shadow`, and
-the core-owned shadow gate must pass through an explicit administrative transition before this version
-can become `live_signal_eligible`. The model never substitutes a low-confidence `absent` result for an
-unavailable positive result.
+@dataclass(frozen=True)
+class IndirectAssistanceContract:
+    contract_id: str
+    contract_version: int
+    target_resolver_kind_id: str
+    target_claim_parameter_ids: tuple[tuple[str, SemanticValueId], ...]  # canonical sorted pairs
+    legal_scopes: frozenset[ScopeKind]
+    positive_assertion: SemanticValueId
+    reference_mode: IndirectReferenceMode
+    confidence_kind: IndirectConfidenceKind
+    feature_schema_id: str
+    serving_precondition_ids: tuple[str, ...]  # finite core-declared checks
+    validation_gate_id: str
+    shadow_requirement: Literal["required_before_live_signal"]
+    max_ttl: Window
+    policy_posture: Literal["conservative_only", "advisory_only"]
+```
 
-Its sole live egress is `occupancy.sensorless_present.v1`, a `SensorlessPresenceSignal` with the
-literal assertion `present`. It is emitted only when the active artifact selects `present`, passes the
-learner's confidence and positive-predictive-value gates, and all current typed bindings are fresh and
-complete. Its expiry is no later than the earliest of the signal type's core-owned maximum TTL, the
-artifact's staleness boundary, and any required input's freshness deadline. On expiry or any failed
-gate Layer 3 emits no negative signal and no `HouseFact`; it merely stops providing this additional
-evidence. This asymmetric contract is intentional: false negatives in occupancy-controlled lighting
-can create unsafe or unacceptable false-off conditions, while false positives primarily retain a load
-longer than necessary ([DOE occupancy-sensor review](https://www.energy.gov/sites/prod/files/2020/08/f77/ssl-cls-review-test-method-occupancy-sensor-aug2020.pdf),
-[DOE occupancy-sensor guide](https://betterbuildingssolutioncenter.energy.gov/sites/default/files/attachments/wireless_occupancy_sensor_guide.pdf)).
+The registry is built and frozen with the normal Layer-3 core registry. An instance cannot invent a
+contract, target resolver, claim parameter, label, assertion, feature, reference mode, TTL, or policy
+posture. It trains only from the contract's complete typed records and serves only its positive
+assertion; failed freshness, envelope, drift, validation, shadow, routing, or precondition gates emit
+no signal and never a negative assertion.
 
-The signal is transient Layer-3 evidence only. It cannot decide room occupancy, override a direct
-physical fact, produce an `absent` assertion, alter a policy or hold, issue an `ApplyStep`, or cause
-resident notification by itself. A later Layer-4 occupancy Domain may decide how to combine or ignore
-it under its own contract; it must not make Layer 3's model result retroactively a fact or training
-label. A future vacancy-assistance type would need a distinct core contract with explicit observed exit
-coverage and stricter physical guarantees; it cannot be introduced by reversing this signal's value.
+`physical_reference` is a core-validated direct physical label. The initial
+`occupancy.room_present.indirect.v1` contract uses exactly the same-room Layer-2
+`occupancy.physical` `PhysicalOccupancyReference`: individual per-sensor evidence, semantic
+occupancy, a learned output, a manually authored assumption, or mixed/unknown provenance are rejected.
+Both physical outcomes train and validate the categorical learner, but the contract may emit only
+`present`. It uses `calibrated_probability`, with positive predictive value and false-positive/negative
+gates on every declared operational slice. Its features contain no direct occupancy/presence reading.
+This preserves the former occupancy assist's asymmetry: no learned vacancy can turn lights off.
 
-#### 4.4.6 `ApprovedActivityContextModel-v1`
+`deterministic_reference` is a complete non-learned typed fact/semantic reference specified by a later
+core contract. `resident_approved_routine` is intentionally different: Layer 3 first discovers only a
+diagnostic recurring pattern; it becomes a serving reference only after a resident approves its exact
+activity id, scope, canonical feature schema, representative time windows, and pattern version. The
+approval is immutable reference metadata, not raw identity data, a live command, or a self-produced
+semantic fact. A routine reference may use `routine_affinity`, never claim calibrated probability,
+PPV, diagnostic accuracy, or medical validity. Its validation gate instead requires stable recurrence
+across chronological holdout blocks, minimum coverage, bounded contradictory observations, stable
+feature availability, shadow agreement, and withdrawal on material drift. This allows useful learned
+home context without calling an unlabeled cluster ground truth.
 
-`ApprovedActivityContextModel-v1` recognizes one already approved activity context for one explicit
-room or house subject. It is a binary `PatternLearner` declaration per
-`(activity_id, subject)`, with target `active | inactive`, rather than one exclusive multiclass
-classifier over every activity. Independent approved contexts such as `work_session` and
-`media_session` may therefore coexist when their reference facts do; the model must not force a false
-choice merely because ordinary household behavior overlaps. It emits only the positive `active`
-evidence described below. Deterministic physical activity observations such as appliance power or a
-humidity-rate rule are not this learner: they remain typed lower-layer/domain evidence and may provide
-its reference labels.
+All contracts use the common tiered `PatternLearner`, one `WarmupGate` per contract/subject,
+chronological validation, final holdout where the reference mode permits it, artifact freshness,
+applicability envelope, required shadow, and the common absence-on-failure semantics. Feature bindings
+are closed and versioned typed facts at or before the anchor; they cannot contain raw HA payloads,
+resident identity, arbitrary event streams, a Layer-3 signal, a prior assisted semantic output, or a
+target reference. This prevents feedback and keeps the shared learner rather than multiplying
+near-identical model classes.
 
-Every `activity_id` is an active `curated_extensible` `SemanticValueId`. Discovery may identify an
-unlabeled recurring context or propose a candidate label for inspection, but cannot publish that label
-as activity evidence. To become eligible for a live learner, an administrator must approve the label
-into a new generation **and** bind it to a `DeterministicActivityReference`. The reference's complete
-provenance must lead only to declared typed physical observations or deterministic lower/Domain logic
-that did not consume any `InferenceSignal`, learned artifact, prior activity-context output, or raw HA
-object. Without that independent reference the label remains diagnostic, however frequent or visually
-plausible its pattern. This reflects a practical limitation of smart-home activity recognition:
-supervised activity models need reliable ground-truth labels, whose collection and temporal alignment
-are intrinsically difficult ([smart-home HAR survey](https://pmc.ncbi.nlm.nih.gov/articles/PMC8469092/),
-[activity-labeling study](https://pmc.ncbi.nlm.nih.gov/articles/PMC6069125/)).
+The initial `activity.sleeping.indirect.v1` contract is room-scoped and uses
+`resident_approved_routine`, `routine_affinity`, positive assertion `active`, and
+`policy_posture="conservative_only"`. Its serving preconditions require current same-room physical
+occupancy support plus the contract's independent routine-evidence families. Heima-authored light or
+actuator changes are excluded from those families, so an automation cannot make its own sleep signal
+more likely. It may use darkness, device-charging, sustained low activity, and other declared physical
+context only as independently correlated groups; no single light state, clock time, charger, or absence
+of movement is sufficient. The signal is scoped home-context assistance, never a medical sleep claim
+or person identity.
 
-The learner's feature bindings are a closed, versioned set of typed facts available at or before the
-anchor. They may use approved physical activity, direct occupancy, calendar, environmental, device-use
-or semantic house-context evidence only where their complete provenance contains no Layer-3
-`InferenceSignal`; they may not use the target reference, resident identity, raw HA entity/payload,
-free text, arbitrary event sequence, or a result from this or another activity-context learner. This
-keeps training and serving free of self-confirmation and recursive context inference. Missing, stale,
-unavailable or out-of-envelope required input produces no result, never an inferred inactive state.
+The initial `activity.relax.indirect.v1` contract is likewise room-scoped and uses
+`resident_approved_routine`, `routine_affinity`, positive assertion `active`, and
+`policy_posture="conservative_only"`. Its serving preconditions require same-room physical occupancy
+support and at least two independent declared routine-evidence families. Media playback, seating/sofa
+occupancy where available, local activity level, ambient state, and learned time context may contribute
+only as those bounded families; no one device state, clock bucket, light level, or lack of movement is
+sufficient. An action attributed to Heima, including a previously applied cinema/relax bundle, is
+excluded from positive evidence, labels, and serving preconditions. The contract recognizes a
+resident-approved leisure context, not a media-session fact or a command to create one.
 
-The initial implementation uses the shared tiered `PatternLearner` with a per-subject `WarmupGate`,
-support/confidence floors, chronological walk-forward validation and a final holdout. It additionally
-requires active-class probability calibration, minimum positive predictive value, and bounded
-false-positive/false-negative rates for each declared operational slice, all measured only against
-`DeterministicActivityReference` samples. A label/reference binding change invalidates the artifact and
-withdraws the live signal until a new artifact passes validation and the required shadow gate. Its
-frozen `shadow_requirement` is `required_before_live_signal`. This is deliberately more restrictive
-than V2's independent detector modules: a high aggregate score cannot conceal an unsupported activity,
-a drifted lifestyle, or a weak reference source.
+The initial `activity.working.indirect.v1` contract is room-scoped and uses
+`resident_approved_routine`, `routine_affinity`, positive assertion `active`, and
+`policy_posture="conservative_only"`. It requires same-room physical occupancy support, at least one
+declared workstation-operational evidence family (`computer.interaction_active`, a classified work
+application, a bounded communication-session fusion, or an equivalent core-approved workstation
+fact), and one further independent context family. The latter may be an explicit normalized work
+calendar location, workstation presence, communication context, or the learned day/time routine. A
+calendar `work_location=home` supports the contract; `work_location=office` prohibits this **domestic**
+working signal; `unknown` is neutral. No weekday, clock bucket, calendar entry, active computer, or
+communication session establishes working alone. Heima-authored actions and raw desktop content are
+excluded from every feature/reference path. This allows a hybrid schedule to be learned and to drift
+without treating an office day as a claim that the resident is not working.
 
-The sole live egress is `activity.approved_context.v1`. It is emitted only for `active`, with the
-approved `activity_id`, current confidence, artifact identity and a bounded expiry. It is neither a
-fact nor a claim that a resident performed a particular physical action; it is a transient, calibrated
-context hint for the one future Activity Domain authorized by the core signal registry. It cannot
-rename/add a label, emit `inactive`, affect a policy or hold, command an Actuator, or notify a resident.
-On every failed evidence, freshness, envelope, calibration or expiry gate, Layer 3 omits the signal.
+The one egress is the generic `indirect.semantic_assist.v1` signal in §6.3. It cannot decide the
+semantic claim, override direct Layer-2 evidence, alter a policy or hold, issue an `ApplyStep`, or
+notify a resident by itself. Layer 4 accepts it only through the matching exact contract and resolver
+definition. A future vacancy or high-risk assistance contract needs its own core review; it cannot be
+introduced by changing an assertion in configuration.
 
-#### 4.4.7 `ApprovedHouseStateContextModel-v1`
+#### 4.4.6 Composite house-state learning is retired
 
-`ApprovedHouseStateContextModel-v1` recognizes one of the three already-approved **soft** house
-contexts `sleeping`, `working`, or `relax` for the explicit `casa` subject. It is one categorical
-`PatternLearner` per casa with this closed three-value target vocabulary. These values express a
-longer-lived, installation-wide mode that may affect several future reactions. They are intentionally
-different from activity contexts: `cooking`, `eating`, `hygiene`, `watching_tv`, and similar activities
-remain independent `ApprovedActivityContextModel` labels, because they can overlap with each other and
-with a house context. They must not be promoted into mutually exclusive HouseState values merely to
-reuse this learner.
+V2's composite `house_state` learner is not a V3 learner. Its values mixed mutually independent
+claims: presence (`home`/`away`), activities (`working`/`relax`), quiet or sleep context, planned
+absence (`vacation`), and guest context. A categorical model over that mixed vocabulary would create
+an arbitrary priority order and cannot represent simultaneous activities in different scopes.
 
-The learner may emit only a unique positive selected value. An ambiguous top result, an unavailable
-input, a stale artifact, or insufficient confidence emits no signal; it never infers an implicit
-`home`, `away`, or inactive context. This preserves the closed house-state priority model: `home` is the
-deterministic fallback after the relevant Domain has resolved stronger states, while `away`, `guest`,
-and `vacation` remain outside learned live authority. In particular, absence of recent activity is not
-evidence that the house is empty or that residents are on vacation.
+A future learner may assist only one reviewed `SemanticState` or `SemanticEpisode` with one explicit
+scope and independent reference contract. It must name that exact Layer-4 `SemanticResolver` as its
+sole consumer and may not recreate `house_state.approved_context.v1` under another name. No initial
+V3 live signal replaces the retired composite signal.
 
-Every learner has one staged `DeterministicHouseStateReference` for the same casa and three closed
-target values. Its complete provenance may use only registered typed physical observations and
-deterministic lower/Domain logic that consumed no `InferenceSignal`, learned artifact, prior
-HouseState-context output, or raw HA object. The reference cannot use the HouseState Domain result if
-that result itself consumed an earlier Layer-3 signal. Feature bindings follow the activity-model rules:
-they are closed, versioned, available at or before the anchor, and may use direct occupancy, approved
-physical activity, calendar, environment, device-use, and semantic context only when their provenance
-contains no Layer-3 signal. The target reference, resident identity, raw HA entity/payload, free text,
-and arbitrary event sequences are forbidden.
-
-The initial estimator is the shared categorical `PatternLearner`, not a raw-event sequence model or a
-separate ML classifier. It samples and serves every five minutes. This is the Layer-3 interval hard
-floor, not an assertion that a house state has changed at that cadence. Its staged tiers are ordered:
-
-1. `rich`: local `day_kind`, a 15-minute local-time bucket, approved typed calendar classification,
-   bounded causal aggregates of direct physical room occupancy, registered semantic device-use facts,
-   and approved light/environment context;
-2. `standard`: `day_kind`, a 30-minute local-time bucket, direct physical occupancy aggregates, and
-   the staged room/device-use aggregates that remain available;
-3. `temporal`: `day_kind` and a 30-minute local-time bucket only.
-
-All tier members additionally require the same core-validated `ConfirmedCasaPresence` binding at the
-anchor. It must derive solely from current typed physical/deterministic presence evidence and cannot
-be a Layer-3 sensorless-occupancy signal, activity signal, prior HouseState output, identity inference,
-or "no recent event" heuristic. If that binding is false, unavailable, stale, or provenance-invalid,
-the learner emits no signal even if a temporal tier is otherwise well-supported. This prevents a
-regular bedtime or workday pattern from being interpreted as evidence about an empty house.
-
-The context bindings above are finite typed facts or bounded causal aggregates, never raw HA objects,
-sensor identifiers, payloads, or an arbitrary event window. A generation selects the legal bindings
-for each named role; an unavailable optional capability is omitted only through the staged tier
-definition, never silently at serving time. Time is represented in the casa's local civil timezone and
-uses the existing canonical bucket transform, including its DST rules. Temporal and location/use
-context are established useful inputs in streaming smart-home HAR, but their usefulness does not
-justify importing raw sensor sequences into Heima's serving path ([CASAS real-time feature design](https://pmc.ncbi.nlm.nih.gov/articles/PMC11784983/),
-[temporal-context study](https://link.springer.com/article/10.1007/s40860-022-00194-1)).
-
-The model uses the common warm-up, support, calibration, chronological walk-forward, final-holdout,
-operating-envelope, and staleness controls. `min_confidence` is one explicit learner-wide threshold,
-shared by all values and tiers; a coarser tier cannot lower it. Separately, each selected value must
-meet its staged minimum reference support, positive predictive value, calibration, and false-positive
-and false-negative limits on every declared operational slice. This avoids accepting a good aggregate
-score when the semantically overlapping `relax` and `working` classes remain unsafe to use. The
-literature reports exactly this kind of overlap, while sleep often has a more distinct signature
-([functional-activity study](https://pmc.ncbi.nlm.nih.gov/articles/PMC12509225/)). A changed reference,
-vocabulary, tier, feature, or subject invalidates the artifact and withdraws the signal until
-retraining succeeds and the required shadow gate passes. Its frozen `shadow_requirement` is
-`required_before_live_signal`.
-
-Layer 3 does not add a grace period, debounce, hysteresis, or local transition state machine for this
-model. It emits at most the current positive evidence with the type's bounded TTL; a missing result is
-an abstention, not an exit event. The future HouseState Domain alone resolves priority, persistence,
-and any transition stability from its complete current inputs. Serving therefore remains a preloaded
-artifact lookup and finite feature evaluation every five minutes, with no history scan, I/O, lock, or
-remote inference on the engine path.
-
-Its sole live egress is `house_state.approved_context.v1`, a bounded positive context hint for the one
-future HouseState Domain authorized by the core registry. The signal is neither a HouseFact nor an
-authority to transition the house state, and it has no `inactive`, `home`, `away`, `guest`, or
-`vacation` value. The future Domain owns priority, combination with stronger deterministic evidence,
-and any HouseFact it may publish; it cannot feed that output back into this model's reference or
-features. Layer 3 never uses this learner to alter a policy, hold, Actuator, or notification.
-
-#### 4.4.8 Context hypotheses outside learned live authority
+#### 4.4.7 Context hypotheses outside learned live authority
 
 Some recurring patterns can be useful to bring to an administrator's attention without being safe
-enough to become a live HouseState. The core-owned `ContextHypothesisCandidate` is the diagnostic
+enough to become a live semantic claim. The core-owned `ContextHypothesisCandidate` is the diagnostic
 egress for such cases. **No `hypothesis_kind` is active in V3 and no V3 learner may emit this
 candidate.** A future reviewed core version must introduce a kind together with its producer, evidence,
 evaluation, and false-prompt contract. `possible_guest`, for example, additionally requires declared
 direct multi-occupant-count evidence; Heima must not derive it from ordinary PIR/motion, binary
 presence, room-occupancy overlap, device activity, or an unusual routine. `probable_departure` and
-`extended_absence` are not learner hypotheses: they belong to the deterministic Presence Domain, which
-can resolve observed departure and elapsed absence from its own typed facts, calendar, and overrides.
+`extended_absence` are not learner hypotheses: any future deterministic use must remain a Layer-5
+policy predicate over observed `departure`/`return` episodes and, where explicitly configured, a
+frozen calendar-plan binding. It must not become a Layer-4 semantic claim merely because a calendar
+contains an event.
 The future candidate shape carries one casa subject, artifact/finding identity, evidence span,
 confidence and uncertainty, operating envelope, and expiry. It contains no raw HA payload, resident
 identity, command, policy, or state-transition instruction.
@@ -1292,7 +1233,7 @@ notification command. It cannot set `guest`, `away`, or `vacation`, nor can it c
 future administrative-review/notification contract may display an eligible hypothesis and record an
 explicit confirmation, rejection, or dismissal under that contract. Until that contract exists, it is
 an inspectable diagnostic only. A human decision is a separate, auditable input to the owning future
-Domain; it never becomes a retroactive training label unless a later reference contract explicitly
+semantic resolver; it never becomes a retroactive training label unless a later reference contract explicitly
 permits it.
 
 This section defines the reusable egress, not an unvalidated guest/absence classifier. No initial
@@ -1379,7 +1320,7 @@ sample used to score a later partition. A model may not report a validation resu
 would have leaked future information into a feature or effectively duplicated an overlapping sample.
 
 Acceptance is relative to an explicitly declared baseline, normally the applicable
-`PatternLearner` or a deterministic domain baseline. A model definition declares its target-specific
+`PatternLearner` or a deterministic semantic-resolver baseline. A model definition declares its target-specific
 quality metrics, minimum calibration requirements where it emits uncertainty, minimum coverage of
 the intended operating conditions, and the decision thresholds for unavailable, degraded, and
 eligible-for-shadow states. The artifact records the complete evaluation protocol, chronological
@@ -1387,7 +1328,7 @@ intervals, baseline version and scores, model scores, and the observed data-cove
 single aggregate accuracy score is not sufficient evidence for operational use.
 
 The thermal family additionally evaluates prediction error and uncertainty calibration by forecast
-horizon, together with diagnostic domain KPIs: thermal discomfort relative to declared comfort
+horizon, together with diagnostic operational KPIs: thermal discomfort relative to declared comfort
 bands, energy use or a declared proxy where measurements exist, peak demand where available, and
 analysis/inference runtime. These KPIs compare a candidate with its baseline during the same
 reconstructed conditions. They assess a recommendation or future control strategy only in a separate
@@ -1760,11 +1701,11 @@ exclusion window rejects the episode rather than being averaged into it.
 One future operational use is a reviewed bounded `setback`/`setup` calibration parameter of a Layer-5
 HVAC descriptor: in `heating` it can cap the maximum reduction from that descriptor's occupied comfort
 target, and in `cooling` it can cap the maximum increase. It cannot select a target, choose an
-endpoint, schedule recovery, issue an `InferenceSignal`, or command an Actuator. A future resolved
-Layer-4 absence interval is required before that descriptor can use the parameter. The same validated
-artifact may later be an input to `thermal_preconditioning`, but only under that family's separate
-arrival-window, weather, comfort/energy, guard and shadow-validation contract; this profile never
-creates a recovery schedule itself. Without an explicitly bound energy measurement, its validation and
+endpoint, schedule recovery, issue an `InferenceSignal`, or command an Actuator. The same validated
+artifact may later be consumed only by Layer 5's `environment.planned_comfort_trajectory`, under its
+separate frozen `CalendarPlanBinding`, observed departure/return, comfort/energy, guard and
+shadow-validation contract; this profile never creates a recovery schedule itself. Without an
+explicitly bound energy measurement, its validation and
 proposal may claim only bounded thermal
 comfort/safety applicability, never energy savings. This follows the system-specific limits of
 residential setback operation documented by the [U.S. Department of Energy](https://www.energy.gov/sites/prod/files/2014/07/f17/ba_case_study_hydronic_setback.pdf) and the need to evaluate comfort and
@@ -1807,7 +1748,7 @@ enough now.
 Layer 5 may create an automatically applicable environmental `ReactionProposal` only when a
 core-defined `EnvironmentalGuardProfile` supplies every required capability. Its numeric limits and
 the enabled weather/security/presence checks are explicit administrator configuration, with no hidden
-global defaults; Layer 5 evaluates its current facts and resolved Domain outputs on every proposed
+global defaults; Layer 5 evaluates its current facts and resolved semantic claims on every proposed
 execution. An unavailable,
 stale, or invalid required guard fact blocks automatic actuation. An active manual hold or a
 higher-precedence safety/security policy always blocks it and is not overridable by a learner or guard
@@ -2022,16 +1963,16 @@ authorized consumer, expiry/freshness authority, and source scope; only declared
 parameters, confidence, coverage, and fallback thresholds may refine. For an action-bearing policy,
 compatibility additionally preserves semantic action kind, Location/opening/Actuator scope, execution
 mode, guard profile, and administrator-approved parameter bounds. Any other change is incompatible
-and produces a normal reviewable proposal. Thus continuous learning can refine house-state and other
+and produces a normal reviewable proposal. Thus continuous learning can refine semantic-context and other
 signals without silently redefining a state or expanding an action's authority.
 
 ### 4.10 Analyzer adapters
 
-An analyzer is family-specific logic that interprets a `PatternLearner` finding in domain terms. For
+An analyzer is family-specific logic that interprets a `PatternLearner` finding in subject-specific terms. For
 example, it can compare a current heating rate with a learned thermal baseline, group recurring
 lighting observations into a candidate routine, or identify a recurring activity context.
 
-Analyzers may add domain semantics, but must not reimplement generic historical bucketing, support,
+Analyzers may add subject-specific semantics, but must not reimplement generic historical bucketing, support,
 warm-up, retention handling, or confidence arithmetic. They consume immutable findings and emit
 either diagnostics or a candidate for the proposal path.
 
@@ -2292,8 +2233,8 @@ validation. This is suitable for costly thermal/topology analysis or optimizatio
 unavailability merely means that no new diagnostic/proposal is produced.
 
 Remote live inference is explicitly out of scope for the initial V3 runtime. The initial bounded
-`InferenceSignal` types (approved Activity, sensorless Occupancy, and approved HouseState) remain
-local, preloaded, and I/O-free. A future core-approved remote **advisory** inference capability would
+`InferenceSignal` type (`indirect.semantic_assist.v1`, under its frozen contracts) remains local,
+preloaded, and I/O-free. A future core-approved remote **advisory** inference capability would
 still be prohibited from the engine evaluation path: the local coordinator would construct a bounded
 canonical feature vector with request/schema/artifact identity, input fingerprint, expiry, and
 correlation ID; it would validate the matching response locally; and a late, unavailable, expired,
@@ -2306,19 +2247,18 @@ live-signal exception list.
 
 ### 6.1 Bounded live signal
 
-Live use of a learned result is an exception, not a default. The only sanctioned categories are the
-ones stated in the architecture recap: approved Activity patterns, sensorless-room Occupancy above
-its configured confidence floor, and approved HouseState contexts. The initial occupancy exception is
-strictly `occupancy.sensorless_present.v1`: positive room-presence evidence only, never a vacancy
-assertion. The initial activity exception is strictly `activity.approved_context.v1`: positive evidence
-for an independently referenced, approved label only. The initial HouseState exception is strictly
-`house_state.approved_context.v1`: positive evidence only for `sleeping`, `working`, or `relax` from
-an independent deterministic reference. Their exact Layer-4 input contracts are specified with those
-domains; a learning family cannot self-authorize a new consumer.
+Live use of a learned result is an exception, not a default. The only sanctioned family is
+`IndirectSemanticAssistModel-v1` under one frozen `IndirectAssistanceContract`. The initial contracts
+are `occupancy.room_present.indirect.v1` (positive room-presence evidence only, never vacancy) and
+`activity.sleeping.indirect.v1` and `activity.relax.indirect.v1` (positive,
+resident-approved room-context assistance only), and `activity.working.indirect.v1` (positive,
+resident-approved domestic-working assistance only). Their exact Layer-4 input contracts are specified
+with those semantic resolvers; a learner instance cannot self-authorize a new consumer, assertion, or
+policy posture.
 
 Every other finding is diagnostic-only until a proposal is reviewed. In particular, heating and
 lighting learning, including environmental-exchange and solar-shading models, do not directly alter
-current domain resolution.
+  current semantic resolution.
 
 #### 6.1.1 `DiagnosticFinding`
 
@@ -2463,7 +2403,7 @@ automatic action is enabled.
 
 Policy templates are not the only representation of a relationship between events. A manually
 configured deterministic Reaction may express a typed event-condition-action (ECA) rule directly;
-a Layer-4 domain may publish a derived state or occurrence that an ordinary Reaction consumes; and a
+a Layer-4 `SemanticResolver` may publish a derived state or occurrence that an ordinary Reaction consumes; and a
 calendar or timing entry may be the trigger for either. Policy templates are instead the only generic
 action-bearing representation that a Layer-3 learner may propose. This boundary lets a human-authored
 rule remain concise when its intended behavior is already known, while preventing a learned artifact
@@ -2475,7 +2415,7 @@ unbounded scripting surface into Heima.
 ### 6.3 Typed egress contracts
 
 `InferenceSignal` is a transient, typed Layer-3-to-Layer-4 input, never a persistence format or a
-generic event bus. Its core-owned type identifies exactly one allowed consumer domain and declares
+generic event bus. Its core-owned type identifies exactly one allowed semantic resolver and declares
 the value shape. Every instance carries its subject `Location`, learner/model and artifact identity,
 definition fingerprint, selected tier or model context where applicable, confidence/uncertainty,
 `evidence_through`, and an explicit expiry. It carries neither raw history/HA payload nor command
@@ -2483,19 +2423,21 @@ intent. It is emitted only when its artifact is active, compatible, within its s
 its current bounded inputs pass the type's freshness rules; otherwise it is absent rather than
 fabricated as a low-quality signal.
 
-#### `occupancy.sensorless_present.v1`
+#### `indirect.semantic_assist.v1`
 
-`SensorlessPresenceAssistModel-v1` may be the sole producer of this initial core signal type. Its
-closed payload is:
+`IndirectSemanticAssistModel-v1` is the sole producer of this one initial core signal type. Its closed
+payload is:
 
 ```python
 @dataclass(frozen=True)
-class SensorlessPresenceSignal:
-    signal_type: Literal["occupancy.sensorless_present.v1"]
-    subject: Location                 # exactly one room
-    assertion: Literal["present"]
-    confidence: float                 # finite [0, 1], Layer-1 categorical confidence
-    positive_predictive_value: float  # validated artifact metric for selected operational slice
+class IndirectSemanticAssistSignal:
+    signal_type: Literal["indirect.semantic_assist.v1"]
+    contract_id: str                  # one frozen IndirectAssistanceContract id/version
+    subject: Location                 # exact contract-compatible scope
+    assertion: SemanticValueId        # exactly the contract's positive_assertion
+    confidence: float                 # finite [0, 1], interpreted only with confidence_kind
+    confidence_kind: IndirectConfidenceKind
+    validation_summary: IndirectValidationSummary
     emitted_at: datetime
     expires_at: datetime
     artifact: ArtifactRef
@@ -2504,79 +2446,26 @@ class SensorlessPresenceSignal:
     context_key: ContextBucketKey
 ```
 
-The signal has no `absent` value, no raw proxy/label input, no resident identity, no HA target, and no
-command/policy field. `emitted_at < expires_at`; `expires_at` must satisfy the bound in §4.4.5. The
-core registry fixes its sole authorized future consumer to the room-occupancy Domain and rejects any
-other signal producer, consumer, subject scope, payload field, vocabulary extension, or longer TTL.
-The later Domain may inspect the declared confidence and artifact identity but cannot extend expiry or
-feed its own resulting occupancy output back into the model's target binding.
+`validation_summary` has the exact core schema for the contract's reference mode. A
+`calibrated_probability` contract includes its slice-appropriate PPV/calibration evidence; a
+`routine_affinity` contract includes recurrence, coverage, contradiction, shadow, and drift evidence,
+not a fabricated accuracy metric. The signal has no negative assertion, raw proxy/reference input,
+resident identity, HA target, command, or policy field. `emitted_at < expires_at`; `expires_at` is no
+later than the contract maximum TTL, artifact staleness boundary, or a required input's freshness
+deadline.
 
-#### `activity.approved_context.v1`
-
-`ApprovedActivityContextModel-v1` may be the sole producer of this initial core signal type. Its
-closed payload is:
-
-```python
-@dataclass(frozen=True)
-class ApprovedActivityContextSignal:
-    signal_type: Literal["activity.approved_context.v1"]
-    subject: Location                 # exactly the learner's staged room or casa scope
-    activity_id: SemanticValueId      # active curated-and-approved vocabulary member
-    assertion: Literal["active"]
-    confidence: float                 # finite [0, 1], Layer-1 categorical confidence
-    positive_predictive_value: float  # validated artifact metric for selected operational slice
-    emitted_at: datetime
-    expires_at: datetime
-    artifact: ArtifactRef
-    definition_fingerprint: str
-    tier_id: str
-    context_key: ContextBucketKey
-```
-
-The signal has no `inactive` value, no raw/reference input, no resident identity, no HA target, and no
-command/policy field. `emitted_at < expires_at`; `expires_at` is no later than the type's core maximum
-TTL, the artifact staleness boundary, or a required input's freshness deadline. The core registry fixes
-its sole authorized future consumer to the Activity Domain and rejects another producer, consumer,
-subject scope, payload field, vocabulary extension, or longer TTL. That Domain may use or ignore the
-hint under its own contract, but cannot feed its resulting output back into a
-`DeterministicActivityReference`.
-
-#### `house_state.approved_context.v1`
-
-`ApprovedHouseStateContextModel-v1` may be the sole producer of this initial core signal type. Its
-closed payload is:
-
-```python
-@dataclass(frozen=True)
-class ApprovedHouseStateContextSignal:
-    signal_type: Literal["house_state.approved_context.v1"]
-    subject: Location                 # exactly the staged casa scope
-    state_id: Literal["sleeping", "working", "relax"]
-    assertion: Literal["active"]
-    confidence: float                 # finite [0, 1], Layer-1 categorical confidence
-    positive_predictive_value: float  # validated artifact metric for selected operational slice
-    emitted_at: datetime
-    expires_at: datetime
-    artifact: ArtifactRef
-    definition_fingerprint: str
-    tier_id: str
-    context_key: ContextBucketKey
-```
-
-The signal has no inactive, `home`, `away`, `guest`, or `vacation` value, no raw/reference input, no
-resident identity, HA target, command, or policy field. `emitted_at < expires_at`; expiry is bounded by
-the type's core maximum TTL, artifact staleness, and required-input freshness. The core registry fixes
-its sole authorized future consumer to the HouseState Domain and rejects another producer, consumer,
-subject scope, payload field, vocabulary extension, or longer TTL. That Domain may use or ignore the
-hint under its own priority contract, but cannot feed a resulting HouseState output into a
-`DeterministicHouseStateReference` or this learner's features.
+Layer 4 routes it only when `(contract_id, subject, assertion, confidence_kind)` resolves through the
+frozen contract to exactly one staged resolver kind, claim-parameter tuple, and scope. It rejects an
+unknown/inactive contract, another producer or consumer, mismatched assertion, payload extension, or
+longer TTL. The resolver may inspect the declared confidence, kind, validation summary, and artifact
+identity but cannot extend expiry or feed its assisted output back into the contract's reference.
 
 ### 6.3.1 Observable automation abstention
 
 An absent `InferenceSignal` or an action suppressed by an approved environmental envelope must not
 silently look like a broken resident-visible automation. The component that actually evaluates the
 failed gate is the **suppression owner**: Layer 3 for a signal it declines to emit, or the later
-Domain/Reaction owner for a configured action it declines to run. It emits one transient typed
+semantic-resolver/Reaction owner for a configured action it declines to run. It emits one transient typed
 `AvailabilitySuppressionOccurrence`; this is not a `HeimaEvent`, `HouseFact`, notification command,
 or persistence request. Layer 6 alone owns rendering, delivery and the durable
 `automation.availability` audit-event mapping defined by Layer 1 §3.1.
@@ -2601,7 +2490,7 @@ AutomationAvailabilityTransition = Literal["abstaining", "reason_changed", "rest
 @dataclass(frozen=True)
 class AvailabilitySuppressionOccurrence:
     suppression_scope_id: str      # staged core semantic output/policy identity; never an HA id
-    suppression_owner_id: str      # registered Layer-3 signal or later Domain/Reaction owner
+    suppression_owner_id: str      # registered Layer-3 signal or later SemanticResolver/Reaction owner
     subject: Location
     transition: AutomationAvailabilityTransition
     reasons: tuple[AutomationSuppressionReason, ...]
@@ -2641,8 +2530,15 @@ transition from usable to abstaining, on a material reason-set change during the
 return to usable. Repeated evaluations with the same canonical reason set increment metrics but do not create
 further occurrences.
 
-At staging, the future Layer-4/Layer-5 composition path builds one immutable
-`AvailabilityPublicationIndex`. An exact key
+At staging, Layer 6 owns the composition and atomic publication of one immutable
+`AvailabilityPublicationGeneration`, including its `AvailabilityPublicationIndex`. Layer 3, Layer 4,
+and Layer 5 contribute only their own immutable staged declarations: a suppression owner declares its
+exact semantic owner/scope/subject key, while Layer 5 declares each configured automation's explicit
+binding, enabled state, and resident visibility. Layer 4 declares no policy or automation binding and
+never queries configured-policy state. Layer 6 validates the cross-generation references during this
+slow composition phase; no Layer-3/Layer-4/Layer-5 runtime callback or policy query is created.
+
+An exact key
 `(suppression_owner_id, suppression_scope_id, exact subject)` resolves to a non-empty, canonical tuple
 of explicit `AvailabilityPublicationBinding`s, ordered by `automation_scope_id`. Each binding names
 one `automation_scope_id` and declares whether that configured automation is enabled and
@@ -2694,12 +2590,11 @@ This separates actionable user impact from internal telemetry, consistent with [
 queryable occurrence conventions in [OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/general/events/).
 
 Only the core registry can define an `InferenceSignal` type and authorize its consumer. The closed
-initial set remains: an already approved Activity pattern; sensorless-room Occupancy above its
-configured confidence floor; and an already approved HouseState context. The sensorless member is
-only `occupancy.sensorless_present.v1` and the activity member only
-`activity.approved_context.v1`; the HouseState member is only
-`house_state.approved_context.v1`, as specified above. A learner/model or plugin cannot self-authorize
-another signal type, a second consumer domain, or a longer validity period.
+initial set contains only `indirect.semantic_assist.v1`, routed through one frozen assistance contract:
+`occupancy.room_present.indirect.v1`, `activity.sleeping.indirect.v1`, or
+`activity.relax.indirect.v1`, or `activity.working.indirect.v1`. A learner/model or plugin cannot
+self-authorize another signal type, contract, consumer semantic resolver, assertion, or longer validity
+period.
 
 `LearningProposalCandidate` is the ordinary Layer-3 egress. It is an immutable, typed hand-off to
 Layer 5 containing its core `candidate_kind` and `candidate_kind_version`, semantic scope,
@@ -2712,7 +2607,7 @@ creates and persists the `ReactionProposal`; if it rejects it, the candidate rem
 diagnostic reason.
 
 `ContextHypothesisCandidate` is the separate non-action-bearing diagnostic hand-off described in
-§4.4.8. It has no V3 instance; its future closed payload is:
+§4.4.7. It has no V3 instance; its future closed payload is:
 
 ```python
 @dataclass(frozen=True)
@@ -2740,7 +2635,7 @@ Layer 3 therefore never constructs a `ReactionProposal`, sends a notification, d
 applies a resulting configuration. Except for the operational availability occurrences in §6.3.1,
 Layer 6 may notify an administrator and Layer 8 may present a review surface only after Layer 5 has
 created the reviewable proposal. The future administrative-review surface may additionally render a
-`ContextHypothesisCandidate`, but its decision reaches a future Domain only through that separate
+`ContextHypothesisCandidate`, but its decision reaches a future semantic resolver only through that separate
 audited contract; neither path bypasses Layer-5 action review.
 
 ### 6.4 PolicyTemplateCandidate
@@ -2844,11 +2739,13 @@ class CanonicalEnvelope:
     supported_cells: frozenset[CoverageCell]
 ```
 
-At execution, Layer 4 discretizes the small declared set of current facts and checks the exact joint
-cell: O(d) to construct its key for d bounded axes, then O(1) membership. It never searches for a
-nearest value or substitutes a partial cell. A missing, stale, invalid, unpartitionable, or unsupported
-input makes the policy abstain with its diagnostic reason. The template and resource envelope bound
-both axes and cell count, preventing a combinatorial coverage table.
+At policy evaluation, Layer 5 discretizes the small declared set of current facts and resolved semantic
+outputs from its immutable `DecisionSnapshot`, then checks the exact joint cell: O(d) to construct its
+key for d bounded axes, then O(1) membership. It never searches for a nearest value or substitutes a
+partial cell. A missing, stale, invalid, unpartitionable, or unsupported input makes the policy abstain
+with its diagnostic reason. The template and resource envelope bound both axes and cell count,
+preventing a combinatorial coverage table. Layer 4 may provide a typed current semantic claim as one
+declared axis input, but it neither reads a policy template nor evaluates its envelope.
 
 `environment.solar_shading` permits incident-solar-exposure band, indoor/outdoor-temperature bands,
 and observed-cover-state, with radiation, illuminance, HVAC, and presence only where declared by the
@@ -2892,9 +2789,8 @@ reinterpreted by Layer 3.
 The V2 implementation establishes the following candidate families, all to be re-specified against
 the contracts above rather than ported mechanically:
 
-- house-state context inference with rich/coarse/minimal fallback tiers;
 - approved activity-context inference;
-- sensorless-room occupancy assistance;
+- indirect-room occupancy assistance;
 - thermal-response calibration and a future bounded comfort-setpoint preference candidate;
 - environmental exchange (ventilation/air-quality) and solar-shading assistance when their required
   measurements exist;
@@ -2912,13 +2808,13 @@ V2 `presence_preheat` is explicitly not ported. It learned a typical whole-house
 rare `away -> present` transitions and coupled that estimate to arbitrary HA scene/script execution.
 This is structurally inapplicable to homes that are often occupied and cannot determine the correct
 conditioning lead time from arrival timing alone. Its V3 successor, if later justified, is the unified
-`thermal_preconditioning` family described in §8: it covers both heating and cooling and reuses
-resolved presence episodes and validated thermal response rather than preserving a heating-only
-arrival heuristic.
+Layer-5 `environment.planned_comfort_trajectory` descriptor described in §8: it covers both heating
+and cooling and consumes observed departure/return episodes, an explicit calendar-plan binding, and a
+validated thermal response rather than preserving a heating-only arrival heuristic.
 
 V2 `heating_preference` is explicitly not ported as an initial V3 learner. It grouped observed
 manual setpoints by house state and emitted a second actuator-commanding reaction, so it both treated
-an observed adjustment as a durable comfort preference and competed with the heating domain for the
+an observed adjustment as a durable comfort preference and competed with the heating policy for the
 same endpoint. Physical thermal response remains the separate environmental-response concern above.
 If later justified, `ComfortSetpointPreferenceModel` is a proposal-only estimator of a bounded
 preference parameter for one explicit `conditioning_scope` and one declared conditioning `mode`
@@ -2945,8 +2841,8 @@ occupancy/lux lighting, and vacancy lighting off. V3 decomposes these without a 
 - `ActuationRoutinePatternModel-v1` may propose that same registered template only when it observes a
   repeated typed trigger/context followed by a bounded resident-control `ActuationBundle`;
 - lighting uses the existing routine and room-occupancy survival contracts; reactive cooling uses the
-  environmental response/policy path; anticipatory cooling belongs only to future
-  `thermal_preconditioning`.
+  environmental response/policy path; planned anticipatory heating/cooling belongs only to future
+  `environment.planned_comfort_trajectory`.
 
 Historical recurrence never substitutes for current guards. A ventilation/cooling candidate that lacks
 required outdoor-air-quality, weather, opening-security, manual-hold, confirmed-physical-state or
@@ -2959,8 +2855,10 @@ administrator-authored `security.presence_simulation` policy template as an opti
 vacation-mode deterrence aid: it may make an empty home appear less obviously vacant, but is never
 represented as a security guarantee or substitute for locks, alarm, or other physical protections.
 Its initial plan is core-generated from staged windows and bounded variation, not learned behavior.
-It requires a future trusted vacation/long-vacation Domain input, confirmed current absence, explicit
-administrative opt-in, and a descriptor-declared safe allowlist. The initial allowlist is limited to
+It requires a future staged Layer-5 `CalendarPlanBinding` for a planned absence, confirmed current
+absence, explicit administrative enablement and resident consent, and a descriptor-declared safe
+allowlist. A calendar plan is policy context, never a trusted Layer-4 semantic claim or proof that the
+home is empty. The initial allowlist is limited to
 interior lighting endpoints; it excludes locks, alarms, openings/covers, HVAC, appliances, arbitrary
 HA scripts/scenes, and every endpoint not explicitly registered as simulation-safe. A current physical
 presence, resident manual control, or applicable hold suppresses the affected plan member immediately.
@@ -2988,8 +2886,7 @@ otherwise and every cited cross-layer dependency is complete.
    `PatternLearner`, `EnvironmentalEpisodeLearner` estimators (`StratifiedResponseModel` and
    `EnvironmentalQuantileResponseModel`), `RoomOccupancySurvivalModel`, and
    `CorrectionCountHurdleModel-v1`, `ActuationRoutinePatternModel-v1`, and
-   `ContextRegimeNoveltyModel`, `SensorlessPresenceAssistModel-v1`, and
-   `ApprovedActivityContextModel-v1`, and `ApprovedHouseStateContextModel-v1`: model/codec algorithm,
+   `ContextRegimeNoveltyModel`: model/codec algorithm,
    feature-target schema, family metrics and numeric thresholds, explainability, and any explicit
    incremental-fit contract. The common artifact, validation, shadow, drift, invalidation, promotion,
    and resource-governance framework is fixed by §§4-5.
@@ -2999,22 +2896,22 @@ otherwise and every cited cross-layer dependency is complete.
    producer and the corresponding schema, staging rejects every instance. That future producer must
    declare the bounded feature/episode contract, independent reference or unsupervised evaluation
    method, calibration where applicable, false-prompt/coverage gates, `shadow_requirement`, expiry,
-   administrator presentation/audit rules, and the exact owning future Domain input contract. It cannot
+   administrator presentation/audit rules, and the exact owning future semantic-resolver input contract. It cannot
    create an `InferenceSignal`, `LearningProposalCandidate`, HouseFact, notification, policy, review
    record, or direct transition. `possible_guest` remains an illustrative future kind only; it cannot
    be introduced without direct declared multi-occupant-count evidence and must not be inferred from
    ordinary binary-presence or routine observations.
 
-3. `thermal_preconditioning`, a future proposal-only family for making the casa comfortable before
-   the first expected return after a resolved absence. It is deliberately not an initial V3 learner and
-   cannot be enabled until all of the following are specified: a future Layer-4 resolved absence/return
-   episode contract; a calibrated arrival forecast with a bounded probability window rather than a
-   typical clock time; a compatible validated thermal-response artifact for the current indoor/outdoor,
-   solar and HVAC context; a future Layer-5 bounded HVAC/comfort policy descriptor; and explicit
-   comfort, energy/cost, manual-hold, observed-state and weather/forecast guards. The family must
-   evaluate heating and cooling symmetrically under one semantic contract, while allowing the physical
-   response and objective to differ by HVAC mode. It may propose a policy only after shadow validation
-   against comfort and energy/cost KPIs; it can never directly issue a preheat or precool command.
+3. `environment.planned_comfort_trajectory` activation contract. This is a future Layer-5 descriptor,
+   not a Layer-3 learner family. It remains unavailable until the existing `hvac_thermal_response`
+   relation profile has a compatible validated artifact for the current indoor/outdoor, solar and HVAC
+   context; its explicit `CalendarPlanBinding` has category `planned_absence`; and its Layer-5
+   comfort/safety envelope, observed `departure`/`return` guards, compatible mode/endpoint mapping,
+   energy/cost metrics where measured, and shadow/review gates are complete. The descriptor evaluates
+   heating and cooling symmetrically under one policy contract while allowing their physical response,
+   targets and endpoints to differ. The calendar end supplies an expected return boundary, not an
+   inferred arrival forecast or a label for training data. Layer 3 supplies only the reviewed bounded
+   response parameter; it never proposes a second preconditioning policy or issues a command.
 
 4. `TemporalActuationProfileModel`, a future generic core proposal-only learner for a bounded ordered
    distribution of future profile members and their relative timing/duration under a declared
@@ -3034,8 +2931,9 @@ otherwise and every cited cross-layer dependency is complete.
    initial administrator-authored template uses only a core-generated bounded temporal plan over
    explicitly simulation-safe interior-light Actuators and cannot require any learned profile. Its
    later personalized artifact and generated plans remain security-sensitive local administrator data,
-   require future vacation/long-vacation and absence contracts, and never claim measured burglary
-   prevention. A future non-security consumer, such as a reviewed lighting temporal-plan descriptor,
+   require the existing `CalendarPlanBinding(category="planned_absence")`, observed current absence,
+   consent gates and safe-endpoint contract, and never claim measured burglary prevention. A future
+   non-security consumer, such as a reviewed lighting temporal-plan descriptor,
    must satisfy the same common temporal model contract but declares its own scope, guards and privacy
    class; it is not implicitly enabled by the security use case.
 
@@ -3057,8 +2955,10 @@ otherwise and every cited cross-layer dependency is complete.
    define the allowed action-state taxonomy, compatible HVAC modes, bounded horizons and passive-drift
    reference windows, confounder/exclusion windows, uncertainty and comfort/safety validation metrics,
    and its required observed fact bindings. It may produce only a reviewed maximum heating-setback or
-   cooling-setup parameter for a future HVAC descriptor; it requires a future resolved Layer-4 absence
-   interval before use. No fixed default target is permitted. A candidate without an explicit energy
+   cooling-setup parameter for a future HVAC descriptor. Its historical calibration uses complete
+   observed Layer-4 `departure`/`return` episodes; a future live descriptor may additionally use a
+   frozen Layer-0 calendar-plan binding to schedule a predicted return, but that plan never labels the
+   calibration data as absence. No fixed default target is permitted. A candidate without an explicit energy
    measurement binding must omit energy-savings claims and energy-benefit promotion metrics.
 
 7. `ResidentPresentationPreferenceModel`, a future generic proposal-only model for non-safety
@@ -3088,7 +2988,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   one parameter of each `ParameterImpact` class and proves the declared invalidation, serving,
   scheduling or no-semantic-effect behavior.
 - `ResultEnvelope`, artifact manifests, `InferenceSignal`, and `LearningProposalCandidate` cannot be
-  submitted to Layer-0 fact persistence. A test proves that only a later authorized Domain can emit a
+  submitted to Layer-0 fact persistence. A test proves that only a later authorized `SemanticResolver` can emit a
   distinct declared `HouseFact` from a valid signal, and only Layer 5 can persist a review workflow
   record from a candidate.
 - Every learner declares its historical fact types and positive `training_window` before it can run;
@@ -3265,32 +3165,23 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   accepted candidate contains only the registered `routine.actuation_bundle` descriptor and canonical
   member targets. A learner artifact cannot activate, evaluate or execute the resulting policy; before
   its explicit `proposal_eligible` transition it may emit only the registered shadow preview.
-- `SensorlessPresenceAssistModel-v1` trains and validates only against a complete
-  `PhysicalOccupancyReference` provenance chain. Tests reject a learned/Domain-derived target, current
-  occupancy/presence feature, raw HA identity/payload, an `absent` signal, stale/expired signal,
-  a non-`live_signal_eligible` artifact, non-room subject, uncalibrated/insufficient-PPV artifact, or
-  any attempt to persist the signal as a `HouseFact`. A missing, stale, unavailable or out-of-envelope
-  input produces no signal rather than a negative assertion; Layer 3 cannot use a later Domain
-  occupancy result as a future training label.
-- `ApprovedActivityContextModel-v1` has one staged active `activity_id` and one matching complete
-  `DeterministicActivityReference` per subject. Tests reject an unapproved/discovery-only label, a
-  learned/Domain-derived reference, target-reference or Layer-3 signal feature, raw HA identity/payload,
-  exclusive multiclass interpretation, `inactive` signal, stale/expired signal, a non-
-  `live_signal_eligible` artifact, invalid PPV/calibration, and an attempt to persist a signal as a
-  `HouseFact`. Independent approved activity signals may coexist; an omitted signal is never
-  interpreted as an inactive activity.
-- `ApprovedHouseStateContextModel-v1` stages exactly one casa subject, the closed
-  `sleeping|working|relax` vocabulary, and a complete independent
-  `DeterministicHouseStateReference`. It evaluates on the five-minute interval floor with ordered
-  `rich`, `standard`, and `temporal` tiers, all gated by a current provenance-valid
-  `ConfirmedCasaPresence`. Tests reject `home`, `away`, `guest`, `vacation`, raw HA or resident input,
-  a reference/output/feature with Layer-3 provenance, an absent/stale/invalid presence gate, a raw or
-  unbounded event sequence, an ambiguous categorical top, a coarser-tier confidence reduction, invalid
-  per-class support/calibration/PPV, an inactive signal, an expired signal, a non-
-  `live_signal_eligible` artifact, or an attempt to persist the signal as a `HouseFact`. The model
-  emits at most one positive context signal and an omitted signal is never interpreted as a transition
-  or deterministic fallback; Layer 3 cannot add a grace period, hysteresis, or transition state
-  machine.
+- `IndirectSemanticAssistModel-v1` accepts only a frozen `IndirectAssistanceContract`. The
+  `occupancy.room_present.indirect.v1` contract trains/validates only against same-room
+  `occupancy.physical` `PhysicalOccupancyReference`; tests reject individual occupancy evidence, a
+  learned/semantic-resolver-derived target, current occupancy/presence feature, raw HA identity/payload,
+  `absent` assertion, stale/expired signal, a non-live artifact, non-room subject, or insufficient
+  calibrated probability/PPV. The `activity.sleeping.indirect.v1` contract accepts only an immutable
+  resident-approved routine reference, its staged independent evidence families, a current physical
+  occupancy precondition, and routine-affinity validation; tests reject an unlabeled cluster presented
+  as ground truth, an Heima-authored light/actuator output as evidence, a fabricated PPV/accuracy,
+  `inactive` assertion, invalid shadow/drift gate, or high-risk policy posture. The
+  `activity.relax.indirect.v1` contract additionally requires two independent routine-evidence
+  families; tests reject media/light/clock/low-motion as a sole route and a Heima-attributed action as
+  positive evidence. The `activity.working.indirect.v1` contract requires one workstation-operational
+  family plus one independent context family; tests reject a weekday/time, calendar, computer activity,
+  or communication state alone, an `office` calendar plan, raw desktop content, and a Heima-attributed
+  action as a positive route. All contracts omit the signal on failure and reject any attempt to persist
+  it as a `HouseFact` or use the assisted semantic output as a later reference/feature.
 - `ContextHypothesisCandidate` has no active V3 kind or producer: staging rejects every attempted
   instance. A future casa-scoped diagnostic kind must be closed to a staged core vocabulary and tests
   must reject raw HA/resident payload, a command, policy, HouseFact, `InferenceSignal`, action-review
@@ -3357,6 +3248,8 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   cooling-setup parameter for a future HVAC descriptor; it cannot contain an endpoint, target
   temperature, recovery schedule, signal or action. A test proves an absent energy binding removes
   energy-savings claims and energy-benefit promotion metrics rather than substituting a default.
+  Complete observed Layer-4 `departure`/`return` episodes may delimit historical absence cohorts, but
+  a calendar plan cannot label a cohort, become a feature, or substitute for either observed boundary.
 - `ResidentPresentationPreferenceModel` accepts only a closed explicit-feedback event for one staged
   non-safety `presentation_scope`; a missing response is censored. Tests reject a raw HA entity or
   payload, manual environmental behavior as a presentation label, an implicit negative label, an
@@ -3388,7 +3281,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   measured inputs, and reports unidentifiable parameters rather than fabricating coefficients.
 - A third-party learner has no live-signal output path; it can reach operations only through a
   reviewed proposal.
-- A learning result can affect an operational domain only through an explicitly listed bounded live
+- A learning result can affect an operational semantic claim only through an explicitly listed bounded live
   exception or after Layer-5 admin review.
 
 ## Related documents (background only, not required reading)

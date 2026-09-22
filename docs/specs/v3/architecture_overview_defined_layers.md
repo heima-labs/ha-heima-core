@@ -3,9 +3,9 @@
 **Status:** Explanatory reconciliation document. It does not replace the authoritative layer
 specifications and introduces no new implementation requirement.
 
-**Scope:** Layers 0, 1, 2, 3, and 5 are defined in detail today. Layer 4 and Layer 6 appear only
-where an already-defined layer has a deliberately narrow future interface to them. Layers 7 and 8 are
-outside this document.
+**Scope:** Layers 0, 1, 2, 3, 4, and 5 are defined in detail today. Layer 6 appears only where an
+already-defined layer has a deliberately narrow future interface to it. Layers 7 and 8 are outside this
+document.
 
 ## 1. Purpose and Reading Order
 
@@ -15,7 +15,7 @@ questions:
 1. Which layer owns each kind of data, decision, and side effect?
 2. Which paths are synchronous engine work, and which are slow/background work?
 3. Which cross-layer communications are allowed, and which are deliberately forbidden?
-4. Which decisions are already fixed before Layer 4, Layer 6, and the remaining layers are specified?
+4. Which decisions are already fixed before Layer 6 and the remaining layers are specified?
 
 The authoritative sources remain:
 
@@ -23,6 +23,7 @@ The authoritative sources remain:
 - [Layer 1 - Substrate Primitive](layer1_substrate_spec.md)
 - [Layer 2 - Registries](layer2_registries_spec.md)
 - [Layer 3 - Learning / Pattern Recognition](layer3_learning_spec.md)
+- [Layer 4 - Semantic Resolution](layer4_domain_spec.md)
 - [Layer 5 - Action and Reaction Generation](layer5_action_reactions_spec.md)
 
 Where this overview and an authoritative specification differ, the authoritative specification wins.
@@ -47,10 +48,11 @@ an immutable contract or staging dependency, never runtime message delivery.
 
 | Layer | Owns | Main outputs | Does not own |
 |---|---|---|---|
-| 0 | Runtime facilities: time, persistence, provenance source vocabulary, manual holds, recovery, runtime-health measurement | Durable/short-term history, timers, checkpoints, runtime-health snapshot | Fact meaning, registry semantics, learning policy, domain decisions, actuator commands |
+| 0 | Runtime facilities: time, persistence, provenance source vocabulary, manual holds, recovery, runtime-health measurement | Durable/short-term history, timers, checkpoints, runtime-health snapshot | Fact meaning, registry semantics, learning policy, semantic resolution, actuator commands |
 | 1 | Immutable semantic contracts: `HouseFact`, `Provenance`, `Location`, `Zone`, `Topology` | Typed values used by all other layers | Storage mechanics, HA reads, fusion, learning, commands, workflow records |
-| 2 | Composition-time registry generation; HA read bindings; interpretations; fact fusion; formula registry; actuator inventory | Typed sensor/fused `HouseFact`s and logical Actuator descriptions | Durable storage, historical learning, domain policy, action execution |
-| 3 | Historical analysis; shared statistical lifecycle; optional ML governance; artifacts; findings; typed signals and learned candidates | `DiagnosticFinding`, `InferenceSignal`, `LearningProposalCandidate`, typed availability suppression occurrences | Fact persistence, HA access, Domain decisions, policy approval, commands, notification rendering |
+| 2 | Composition-time registry generation; HA read bindings; interpretations; fact fusion; formula registry; actuator inventory | Typed sensor/fused `HouseFact`s and logical Actuator descriptions | Durable storage, historical learning, semantic resolution, policy evaluation, action execution |
+| 3 | Historical analysis; shared statistical lifecycle; optional ML governance; artifacts; findings; typed signals and learned candidates | `DiagnosticFinding`, `InferenceSignal`, `LearningProposalCandidate`, typed availability suppression occurrences | Fact persistence, HA access, semantic-claim resolution, policy approval, commands, notification rendering |
+| 4 | Core semantic-resolver registry; staged semantic DAG; authorized signal gateway; current semantic-claim resolution | Resolved semantic `HouseFact`s, completed immutable `DecisionSnapshot`, typed availability suppression occurrences | HA reads, historical learning/model lifecycle, policy/guard/envelope evaluation, Actuator commands, notification delivery |
 | 5 | Candidate validation/review; configured policy staging; policy evaluation; action admissibility; `ApplyStep` generation | `ReactionProposal`, configured policy, ordered one-endpoint `ApplyStep`s, typed suppression occurrences | HA read bindings, raw state interpretation, historical learning, notification delivery |
 
 ## 4. Foundation: Layers 0 and 1
@@ -153,7 +155,7 @@ it never reads HA runtime objects or a mutable HA payload.
 |---|---|---|
 | `DiagnosticFinding` | Administrator-facing diagnostics/review | Never a fact, command, or direct notification |
 | `ShadowProposalPreview` | Diagnostic finding registry | Preview only; promotion creates a new candidate and never reuses the preview as approval |
-| `InferenceSignal` | Exactly one authorized future Layer-4 Domain | Transient, typed, expiring input; not a policy or `HouseFact` |
+| `InferenceSignal` | Exactly one authorized Layer-4 semantic resolver | Transient, typed, expiring input; not a policy or `HouseFact` |
 | `LearningProposalCandidate` | Layer 5 | Evidence for review; Layer 5 independently validates candidate kind/version and policy payload |
 | `AvailabilitySuppressionOccurrence` | Future Layer-6 `AvailabilityEpisodeTracker` | Typed availability transition, not a notification, event fact, command, or persistence request |
 
@@ -177,9 +179,11 @@ resident delivery correct without polling or callback dependencies between Layer
 
 ## 7. Layer 5: Review, Policy, and Action
 
-Layer 5 is downstream of the future Layer-4 Domain DAG. It is outside that DAG and sees one immutable
-`DecisionSnapshot` after equal-`when` facts have been consolidated. It never rereads HA or evaluates
-against a later mutable state while deciding an action.
+Layer 5 is downstream of the Layer-4 semantic DAG. It is outside that DAG and sees one immutable
+`DecisionSnapshot` after Layer-2 equal-`when` intake facts have been consolidated behind a cycle
+barrier. Its declared short-term windows are served only through the paired Layer-0
+`FrozenHistoryView`; it never rereads HA, durable history, or a later mutable state while deciding an
+action.
 
 ### One policy mechanism
 
@@ -214,10 +218,10 @@ against a later mutable state while deciding an action.
 | 2 -> 0 | Persistence | Accepted `HouseFact` values, global fact claims, declared retention/buffer needs | Raw HA payload persistence or dynamic fact ownership |
 | 2 -> 1 | Immutable contracts | Constructs/consumes Layer-1 `HouseFact`, `Location`, and `Provenance` values | Runtime message delivery or behavioral call into Layer 1 |
 | 3 -> 0 | Persistence | Declared history/retention requirements; bounded history reads | Hot-path disk read, training from truncated required history |
-| 3 -> 4 | Future Domain | One authorized typed `InferenceSignal` | Signal as a fact, generic event bus, or direct action |
+| 3 -> 4 | Semantic resolution | One authorized typed `InferenceSignal` | Signal as a fact, generic event bus, or direct action |
 | 3 -> 5 | Review path | Typed `LearningProposalCandidate` | Approval, configuration mutation, or command generation by Layer 3 |
 | 5 -> HA | Execution | Ordered one-endpoint `ApplyStep`s | Raw multi-entity command graph or arbitrary service payload |
-| 3/4/5 -> 6 | Availability | Typed suppression occurrences | Rendering, direct notification, or `automation.availability` persistence |
+| 3/4/5 -> 6 | Availability | Typed runtime suppression occurrences; own immutable staged publication declarations | Rendering, direct notification, policy lookup, or `automation.availability` persistence |
 | 6 -> 0/1 | Delivery audit | Sole Layer-6 `automation.availability` event producer | Any lower-layer claim of the reserved event fact type |
 
 ## 9. Performance and Technology Choices Already Fixed
@@ -231,7 +235,7 @@ These are architectural technology choices, not incidental implementation prefer
   publication bindings validate before atomic activation. The active engine reads frozen O(1) indexes.
 - **No blocking I/O in the hot path:** HA data are read at Layer 2's binding boundary; learning,
   persistence maintenance, resource probing, and notification delivery do not block Sensor/Fusion/
-  Domain/Reaction evaluation.
+  semantic-resolution/policy evaluation.
 - **Two time scales:** current facts and fusion are synchronous per cycle; historical learning,
   model rebuilds, publication reconciliation, retention pruning, and notification delivery are slow
   or background operations.
@@ -250,10 +254,14 @@ they must not weaken ownership, typed boundaries, staged validation, or hot-path
 
 The following are not gaps in the defined layers; they are ownership reserved for later work:
 
-- **Layer 4:** Domain vocabulary, DAG nodes, domain-state resolution, the authorized consumers of
-  `InferenceSignal`, and composition ownership for the publication-generation input.
-- **Layer 6:** Full `AvailabilityEpisodeTracker` implementation, notification routing, rendering,
-  deduplication/rate limiting, delivery/audit storage, and resident channel behavior.
+- **Layer 4 initial semantics:** the architecture, registry, staging contract, DAG execution model,
+  signal gateway, and boundaries are defined. The individual initial semantic resolvers
+  (`room_occupancy`, `presence`, and independent `activity.<activity_id>` claims) still need their
+  separately approved definitions: inputs, vocabulary, priority, transition stability, availability
+  and provenance. The monolithic V2 `house_state` is retired.
+- **Layer 6:** Full `AvailabilityEpisodeTracker` implementation, composition/publication of the
+  `AvailabilityPublicationGeneration`, notification routing, rendering, deduplication/rate limiting,
+  delivery/audit storage, and resident channel behavior.
 - **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers but
   deliberately do not permit plugins to extend core hot-path semantic registries.
 - **Layer 8:** Administrative configuration, review, diagnostics and cutover user experience.
@@ -269,7 +277,7 @@ Before implementing a component, answer these questions in order:
 2. Is it a current HA observation or a fusion of observations? It belongs to Layer 2.
 3. Does it need retained history, validation, support and bounded statistical evidence? It belongs to
    Layer 3 and must run off the hot path.
-4. Is it a current semantic decision? It belongs to future Layer 4, not to a learner or a policy.
+4. Is it a current semantic decision? It belongs to Layer 4, not to a learner or a policy.
 5. Does it create, approve, evaluate, or execute an action? It belongs to Layer 5.
 6. Does it render or deliver a resident-facing message? It belongs to Layer 6.
 7. Would it add a second representation, registry, scheduler, action engine, or callback path? Reuse

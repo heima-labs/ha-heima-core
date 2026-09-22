@@ -23,7 +23,7 @@ reference implementation, not the source of truth.
 
 ## 1. Purpose
 
-Layer 1 defines the one durable assertion shape for Heima's house-state history: a sensor reading, a
+Layer 1 defines the one durable assertion shape for Heima's house history: a sensor reading, a
 fused derived state, a manual hold, or an operational occurrence that must remain auditable. Anything
 that asserts something is or happened in the house, somewhere and at a time, is a `HouseFact`; there
 is no second, parallel representation for that same persistent assertion. This does **not** make
@@ -60,7 +60,7 @@ Layer 1 is **not** responsible for:
 - deciding which entities become facts, or how a raw entity state is interpreted into a `HouseFact`
   value (`Sensor`/`Interpretation`/`FusionRule`) — that is Layer 2.
 - learning artifacts/results, typed transient signals, or proposal/review workflow records — Layer 3
-  and Layer 5 own their respective contracts. A later authorized Domain may resolve their evidence
+  and Layer 5 own their respective contracts. A later authorized `SemanticResolver` may resolve their evidence
   into a declared `HouseFact`, but the hand-off object itself is not one.
 - the `Room` registry itself (a room's name, type, floor as an inventory record) — `room_id` here is
   a stable reference into that registry, carried forward from today's existing room-inventory model
@@ -81,14 +81,14 @@ The following boundary avoids using one generic record for different lifecycle a
 
 | Shape | Owner and lifetime | `HouseFact`? | Meaning |
 |---|---|---:|---|
-| Sensor/fused/domain state or durable operational occurrence | Layer 1 shape, persisted by Layer 0 | Yes | An assertion about house state or an auditable occurrence. |
+| Sensor/fused/semantic state or durable operational occurrence | Layer 1 shape, persisted by Layer 0 | Yes | An assertion about the house or an auditable occurrence. |
 | `ResultEnvelope` / model artifact | Layer 3 result and artifact lifecycle | No | Versioned analytical output and the evidence that produced it. |
-| `InferenceSignal` | Layer 3 -> one authorized Layer 4 consumer, transient | No | Bounded current input for a Domain; it may be absent/expire without changing house history. |
+| `InferenceSignal` | Layer 3 -> one authorized Layer 4 consumer, transient | No | Bounded current input for a `SemanticResolver`; it may be absent/expire without changing house history. |
 | `LearningProposalCandidate` | Layer 3 -> Layer 5, transient | No | Candidate evidence awaiting Layer-5 validation, not an approved configuration or house assertion. |
 | `ReactionProposal` | Layer 5 review workflow, persisted by its own contract | No | Review/configuration state with approval and lifecycle semantics. |
 | `HeimaEvent` | Operational delivery envelope | No | Delivery payload; its durable audit representation is the separate event `HouseFact` in §3.1. |
 
-This is not a competing state model. A Domain that accepts a valid `InferenceSignal` may produce its
+This is not a competing state model. A `SemanticResolver` that accepts a valid `InferenceSignal` may produce its
 own declared `HouseFact`; Layer 5 may emit auditable operational events while processing a proposal.
 The transient input and workflow record are nevertheless not retroactively facts. This follows the
 usual separation between persisted domain events and in-process/application messages: their
@@ -178,13 +178,14 @@ protection under any convention, `Any` accepts everything regardless). `value`'s
 prior value, or anything else; it carries no meaning either way, and no consumer may read `value`
 without checking `available` first, full stop.
 
-**Naming convention for `fact_type`**: dot-separated, namespaced, stable identifiers — `house_state`,
-`occupancy`, `room_signal.bucket`, `activity.pattern`, `heating.temperature_rate`,
+**Naming convention for `fact_type`**: dot-separated, namespaced, stable identifiers — `presence`,
+`occupancy`, `activity.<activity_id>`, `presence.planned_absence`, `room_signal.bucket`,
+`heating.temperature_rate`,
 `manual_hold.<domain>` (Layer 0 §6), `external.<slot>` (`slot` names one externally-sourced context
 value — e.g. outdoor temperature or a weather-safety flag from an adapter like OWM or Protezione
 Civile, Layer 2's own worked example for `Sensor`). This reuses the same convention Heima's
 existing event catalog already establishes for its `type` field (`people.arrive`,
-`house_state.<detail>`, `lighting.<detail>` — a stable, hierarchical, human-readable taxonomy),
+`presence.planned_absence`, `lighting.<detail>` — a stable, hierarchical, human-readable taxonomy),
 rather than inventing a second one.
 The convention is enforced by usage, not by the type itself — `fact_type` is a plain `str`, not a
 closed enum, because new fact types are added routinely (a new `Sensor` registration, a new learned
@@ -198,8 +199,8 @@ there is no trim, case-folding, or normalization at this boundary.
 A source-level observation may include a stable Heima registry id as its final namespace segment when
 several observations of the same semantic kind must coexist at one `Location`; Layer 2 reserves this
 shape for room-occupancy evidence as `occupancy.evidence.<kind>.<sensor_id>`. That suffix identifies
-the configured logical reading, never a mutable Home Assistant `entity_id`; the fused house meaning
-remains the unsuffixed canonical fact (`occupancy`).
+the configured logical reading, never a mutable Home Assistant `entity_id`; Layer 2's fused physical
+meaning is `occupancy.physical`, while Layer 4 alone resolves the unsuffixed semantic `occupancy`.
 
 **A `HouseFact` is an atomic persistent assertion, not a generic message, command, or state
 machine.** Its producing contract (Layer 0 §4) declares whether that assertion is a state that holds
@@ -533,7 +534,7 @@ what a `HouseFact` means (§4 intro) — a shape or size violation drops `eviden
 that specific fact and raises a diagnostic event (Layer 0 §9-style), but the `HouseFact` itself is
 still created with its `fact_type`/`value`/`where`/`when`/`confidence`/`source`/`available` intact.
 Aborting the entire fact over a malformed `evidence` payload would be disproportionate — it would
-mean a bug in optional diagnostic detail can silently blind a domain to a real observation. This is
+mean a bug in optional diagnostic detail can silently blind a semantic resolver to a real observation. This is
 the opposite policy from `value` (§3): a `value` violation is a hard construction failure, because a
 `HouseFact` with no valid payload isn't a degraded fact, it's not a fact at all.
 
@@ -841,7 +842,7 @@ reference is intentionally limited to data contracts.
 
 It never permits a behavioral cycle: Layer 1 does not execute Timing, Persistence, Recovery, or
 Manual Hold behavior while constructing its value objects, and Layer 0 does not query or invoke Layer-1
-registries, topology, zone resolution, sensor/fusion logic, or domain policy. Bootstrap composes the
+registries, topology, zone resolution, sensor/fusion logic, semantic resolution, or policy logic. Bootstrap composes the
 two contracts before evaluation; the hot path has no Layer-0 -> Layer-1 -> Layer-0 call chain. An
 implementation may use a neutral contracts module or type-only references to avoid a language-level
 import cycle without creating a new architectural layer or moving ownership.
@@ -858,11 +859,11 @@ No unresolved Layer-1 substrate parameter remains.
 
 - Every existing "a thing that's true, somewhere, at some time, with some confidence" shape in the
   codebase today (`NormalizedObservation`, `DerivedObservation`, room-signal buckets, per-room
-  occupancy booleans, `Activity`, `HouseState`) is expressible as a `HouseFact` with no residual
+  occupancy booleans, independent activity claims and semantic context states) is expressible as a `HouseFact` with no residual
   parallel representation left standing.
 - `ResultEnvelope`, model artifacts, `InferenceSignal`, `LearningProposalCandidate`, and
   `ReactionProposal` are rejected at the Layer-0 `HouseFact` persistence boundary. A test proves that
-  a valid `InferenceSignal` can lead only to a separate declared Domain-produced fact, and that a
+  a valid `InferenceSignal` can lead only to a separate declared semantic-resolver-produced fact, and that a
   `HeimaEvent` has one separate audit-event fact rather than becoming a generic workflow envelope.
 - A `HouseFact` can record both a state assertion and an atomic occurrence without becoming a command
   or a state machine; its producer's Layer-0 emission declaration, rather than a field on the fact,

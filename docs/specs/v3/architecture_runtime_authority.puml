@@ -18,7 +18,7 @@ package "Foundation slice" {
 }
 
 component "Layer 2\nSensor and Interpretation, FusionRule,\nformula registry, Actuator inventory" as L2 #E6F4EA
-component "Layer 4 - future\nDomain DAG and current-state resolution" as L4 #FCE8E6
+component "Layer 4\nSemantic DAG and claim resolution" as L4 #E6F4EA
 component "Layer 5\nPolicy evaluation, admissibility,\nordered ApplyStep generation" as L5 #E6F4EA
 
 HA --> L2 : raw values through ReadBinding
@@ -38,7 +38,7 @@ note bottom of L1
 end note
 
 note bottom of L5
-  Layer 5 is downstream of the Layer-4 DAG.
+  Layer 5 is downstream of the Layer-4 semantic DAG.
   It never rereads HA or a mutable later cycle.
 end note
 

@@ -2,20 +2,22 @@
 
 **Status:** Draft - policy-template foundation approved; reaction workflow details pending.
 **Layer:** 5 of 8. Consumes Layer-2 facts and Actuators plus the current-cycle outputs of the completed
-Layer-4 Domain DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
+Layer-4 semantic DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
 input. It never feeds configuration, policy state, or action results back into Layer 4.
 
 ## 1. Purpose
 
-Layer 5 owns the conversion of a resolved current house state into a permitted action. It validates
+Layer 5 owns the conversion of resolved current semantic claims into a permitted action. It validates
 and persists reviewable `ReactionProposal`s, stages configured Reactions, evaluates approved policy
 templates, applies action admissibility, and emits one-endpoint `ApplyStep`s. It is the only layer that
 may turn a learned proposal into a configured action path.
 
 Layer 5 is downstream of Layer 4, not part of its DAG. The engine runs Layer 5 only after Layer 4 has
-resolved the current cycle. It receives an immutable `DecisionSnapshot` containing the completed
-equal-`when` fact group, the current Layer-2 facts, and the resolved Domain outputs. Layer 5 never
-rereads HA, a mutable buffer, or a later cycle while processing that snapshot.
+resolved the current cycle. It receives the immutable `DecisionSnapshot`: its Layer-2 intake group,
+current facts, resolved semantic claims and semantic episodes, generation fingerprints, and Layer-0
+`FrozenHistoryView`/`FrozenCalendarView` are all fenced by the same `CycleInputBarrier`. Layer 5
+never rereads HA, a mutable buffer, durable history, a live calendar cache, or a later cycle while
+processing that snapshot.
 
 ## 2. Scope and boundaries
 
@@ -29,7 +31,7 @@ Layer 5 owns:
 Layer 5 does not own:
 
 - HA bindings, state interpretation, fact persistence, retention or Topology ownership (Layers 0-2);
-- domain-state resolution (Layer 4);
+- semantic-claim resolution (Layer 4);
 - historical learning, model promotion or candidate construction (Layer 3);
 - resident-notification rendering/delivery (Layer 6).
 
@@ -151,20 +153,60 @@ temporal primitives are:
 The relation and guards name only typed slots declared by the selected `relation_profile`; they cannot
 name arbitrary facts, inspect HA payloads, execute expressions, recursively invoke policies, or create
 cross-policy flow. The profile fixes input type/unit, allowed comparison, freshness, window shape and
-parameter bounds. Derived physical quantities must be a typed lower-layer fact or resolved Domain
+parameter bounds. Derived physical quantities must be a typed lower-layer fact or resolved semantic
 output, never an inline policy formula.
 
 This keeps the ECA trigger-condition-action separation familiar from
 [openHAB](https://www.openhab.org/docs/concepts/rules), while deliberately excluding its scripting
 surface. The exact guard-operator set and structural bounds are an open Layer-5 decision in §9.
 
+Each compiled plan also declares its finite `HistoryViewRequirement` ids. Layer-5 staging contributes
+their union to Layer 0 before activation; a plan whose required short-term history cannot be retained
+is rejected at staging. Evaluation reads those exact slices only through the snapshot's
+`FrozenHistoryView`, never by issuing an ad hoc historical query.
+
+#### Calendar-plan binding
+
+A policy that needs a future resident plan declares one finite `CalendarPlanBinding`; this is the same
+policy-template mechanism, not a Layer-4 state, a fact, or a second calendar interpreter. It names a
+staged Layer-0 `CalendarViewRequirement`, an explicit staged Layer-2 `KeywordClassifier`, and one
+descriptor-declared intent category. The initial category is `planned_absence`. Evaluation classifies
+only the binding's frozen active/upcoming windows and retains only the selected interval and category
+for that evaluation; it never stores or exposes an event summary in a proposal, outcome, audit record,
+or learner feature.
+
+```python
+@dataclass(frozen=True)
+class CalendarPlanBinding:
+    calendar_requirement_id: str
+    classifier_id: str
+    expected_category: str            # closed by the selected descriptor version
+```
+
+The binding is opt-in per configured policy and has no source-entity or category default. A matching
+calendar event says only that an explicit plan exists; it does not imply `presence=away`, authorize an
+action, or supersede a manual hold. Removed, edited, expired, or failed calendar input produces no
+usable plan in the next frozen snapshot. A descriptor may require a present active plan, an upcoming
+plan, or both, but must declare that role at staging and its plan horizon is bounded by the matching
+`CalendarViewRequirement`.
+
+Selection is deterministic and conservative. For `planned_absence`, an active matching interval takes
+precedence over upcoming intervals; otherwise the earliest matching upcoming start is considered. Exact
+duplicate normalized intervals are one candidate. Two selected-rank candidates with different end
+instants are `calendar_plan_ambiguous`, so the policy abstains rather than guessing a return time.
+The descriptor may provide a core-defined explicit merge rule only where its semantics make that safe;
+neither an administrator nor a learner may install one ad hoc.
+
 ### 5.2 Snapshot semantics and outcomes
 
-Layer 0 consolidates facts with identical `when` before the engine builds the `DecisionSnapshot`.
-Layer 5 evaluates the trigger against that completed group/window anchor and evaluates every semantic
-guard and envelope against the same immutable snapshot. A fact appended later cannot affect that
-evaluation. This prevents the trigger/condition race documented for automations that inspect a changed
-current state after their triggering event in [Home Assistant](https://www.home-assistant.io/docs/automation/condition/).
+Layer 5 evaluates the trigger against the `DecisionSnapshot.input_fact_group`, its declared
+`FrozenHistoryView` slices, and (where declared) `FrozenCalendarView` results; it evaluates every
+semantic guard and envelope against that same immutable snapshot. Facts produced by Layer 4 after the input barrier are visible only through
+`semantic_claims` or `semantic_episodes`, not as additional Layer-2 trigger members. A plan using
+the `occurrence` primitive may name only a declared semantic-episode slot from that collection. A fact
+appended later cannot affect that evaluation. This prevents the trigger/condition race documented for
+automations that inspect a changed current state after their triggering event in
+[Home Assistant](https://www.home-assistant.io/docs/automation/condition/).
 
 ```python
 PolicyEvaluationOutcome = Literal[
@@ -197,6 +239,7 @@ raw HA target.
 For an eligible policy, Layer 5 checks against the same policy/snapshot identity:
 
 - administrative enablement and authorization;
+- any descriptor-required resident consent, including its immediate opt-out state;
 - manual hold and command ownership;
 - compatible logical Actuator capability and confirmed physical state;
 - dwell/cooldown and one-bundle-per-policy/snapshot idempotency;
@@ -279,6 +322,14 @@ window over the already attributed records, but cannot extend Layer 5's associat
 an origin, or attach a correction to another `ApplyStep`. This prevents later learning configuration
 from rewriting what occurred operationally.
 
+Administrative enablement and resident consent are separate, conjunctive gates for an automatic
+descriptor that declares a resident-consent gate. Both start disabled for a newly configured such
+policy; there is no global opt-in. An administrator may enable or disable a policy; an authorized
+resident may enable their consent only for an administratively enabled policy and may revoke it at any
+time. A revocation prevents admission immediately, cancels the policy's future `AtJob`s, and makes any
+already-started execution stop before its next `ApplyStep`; it never compensates a step already sent to
+HA. Re-enablement starts a new ordinary evaluation and never replays missed calendar boundaries.
+
 ## 7. Initial descriptors
 
 All initial descriptors use the common mechanism above and currently declare a singleton bundle; this
@@ -306,6 +357,30 @@ bundle only through the same registry, validation, review, evaluation and `Apply
   member remains subject to its own current hold, capability, physical-state, dwell and applicable
   safety/privacy/security guard before the complete bundle is admitted. This descriptor is generic:
   lighting is an expected first use, not a namespace-specific execution mechanism.
+- `environment.planned_comfort_trajectory`: one explicit conditioned scope and independently
+  registered heating and/or cooling endpoints. It requires a `CalendarPlanBinding` with category
+  `planned_absence`, a current resolved `presence=away` claim, an observed `departure` episode that
+  began the effective absence, and descriptor-declared comfort/safety bounds. While the plan remains
+  valid, it may use only an approved `hvac_thermal_response` parameter to schedule a bounded sequence
+  of setpoint changes: in heating season, a controlled decline toward an explicitly configured minimum
+  acceptable temperature followed by recovery to the configured return comfort target; in cooling
+  season, the symmetric rise toward an explicitly configured maximum followed by pre-cooling to its
+  return target. Heating and cooling targets, capabilities and endpoints are independent. It is not a
+  fixed setback, a universal comfort default, or a direct thermostat-control implementation.
+
+  A plan change/removal, a `return` episode, loss of `presence=away`, unavailable model/required
+  environmental input, manual hold, resident opt-out, or any descriptor safety guard suppresses future
+  trajectory steps. Layer 0 arms only the bounded next inflection/boundary `AtJob`; a meaningful
+  environmental update may produce a new decision, but the policy never polls. The descriptor is
+  unavailable until its model, comfort/safety envelope, heating/cooling capability mapping, and
+  acceptance tests are activated. It has no fallback target or automatic behavior when these contracts
+  are absent.
+- `security.presence_simulation`: a future optional `planned_absence` consumer using the same
+  `CalendarPlanBinding`, current `presence=away`, administrative enablement, resident consent, and
+  ordinary bundle/hold guards. It may operate only descriptor-allowlisted interior lighting endpoints;
+  it is a bounded deterrence aid, never a security guarantee. Its staged temporal profile and bounded
+  variation may be core-generated initially and later supplied by the generic approved temporal model;
+  it never receives a separate execution path.
 
 These are descriptors, not specialized engines. A deterministic configured Reaction may use any one
 of them without a learner; a learner may only propose values permitted by the same descriptor.
@@ -327,7 +402,8 @@ of them without a learner; a learner may only propose values permitted by the sa
   template/version, topology, Actuator and guard contracts remain valid; no lookup performs I/O,
   dynamic import, HA access or plugin dispatch.
 - A fact appended after a `DecisionSnapshot` cannot change the trigger, guard or envelope result;
-  facts sharing its trigger `when` are all visible before evaluation.
+  every accepted Layer-2 intake fact sharing its trigger `when` is visible before evaluation, while
+  Layer-4 output is visible only through the resolved semantic-claim map.
 - Each evaluation has exactly one closed outcome. Only `eligible` reaches bundle admissibility; an
   admitted bundle yields its canonical ordered one-endpoint `ApplyStep`s for `(policy_id, snapshot_id)`.
   A known-invalid member blocks every step; a later HA execution failure stops the remaining steps,
@@ -345,6 +421,20 @@ of them without a learner; a learner may only propose values permitted by the sa
   origins cannot become a `resident_manual_override` by a Layer-3 inference or configuration choice.
 - Every descriptor uses the same evaluator, persistence path and action protocol. A namespace cannot
   select a custom runtime.
+- `CalendarPlanBinding` accepts only its staged calendar requirement, classifier and descriptor-closed
+  category. Tests prove a matching future window never implies `presence=away`; a failed, edited or
+  cancelled window makes the policy abstain or suppress future steps in the next snapshot; raw
+  summaries never reach a proposal, evaluation result, audit record or learner feature. A consent-gated
+  policy starts with both administrative enablement and resident consent disabled; either disablement
+  prevents admission, resident revocation cancels future `AtJob`s, and re-enablement does not replay a
+  missed boundary. Exact duplicate calendar intervals resolve once, while same-rank matching intervals
+  with different end instants produce `calendar_plan_ambiguous` and cannot schedule a trajectory.
+- `environment.planned_comfort_trajectory` accepts only a matching planned-absence binding, current
+  `presence=away`, a qualifying observed `departure`, compatible mode/endpoint and an approved thermal
+  response parameter. Tests reject a calendar-only absence, fixed fallback target, missing comfort or
+  safety bounds, unapproved/unavailable model, and heating/cooling endpoint conflation; they prove a
+  return, plan change, hold, consent revocation or safety block prevents every future step while an
+  already sent command is never automatically compensated.
 - Staging rejects unknown/incompatible template or relation-profile versions, invalid scope, illegal
   action/guard, unsatisfied endpoint/topology requirements, malformed canonical parameters/envelope, or
   an effect shape outside the descriptor contract.
@@ -352,7 +442,8 @@ of them without a learner; a learner may only propose values permitted by the sa
 ## 9. Decisions to refine
 
 1. Exact `relation_profile` schema: slot declaration, permitted guard operators, global/profile guard
-   limits, canonical units and detailed reason-code vocabulary.
+   limits, canonical units, and the descriptor-to-existing-reason applicability table. New reason
+   codes are not a Layer-5 extension point; Layer 3 owns the closed vocabulary.
 2. Full `ReactionProposal` persistence/review schema and the general non-policy Reaction contract.
 3. Exact `ApplyStep` capability/action mapping for each Layer-2 Actuator role, including the
    per-member execution/audit result shape for a partially completed `ActuationBundle`.

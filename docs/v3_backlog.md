@@ -3812,3 +3812,47 @@ hidden mutable state. Non-formula use and every cross-producer delayed reference
 staging. This avoids opaque temporal state machines such as mutual one-cycle dependencies while
 retaining the only demonstrated use case; a future cross-producer delay requires its own explicit
 temporal contract.
+
+---
+
+## Layer 3 ML extension and thermal-topology model, resolved architecturally (2026-09-13)
+
+**Decision applied to Layer 3 and the recap**: `PatternLearner` remains Heima's permanent,
+explainable statistical baseline. Layer 3 also explicitly permits bounded ML models when a declared
+historical feature/target relationship cannot be represented adequately by bucketed categorical or
+continuous statistics. ML training, validation, and artifact persistence are slow-path work only;
+published artifacts are immutable and versioned with feature/target schema, source-generation
+fingerprints, training coverage, validation metrics, and uncertainty. An invalid, stale,
+incompatible, or incompletely covered model is unavailable rather than silently used. ML gains no
+direct authority: it remains diagnostic or follows the ordinary analyzer -> proposal -> admin-review
+path, and third-party models never gain a live-signal path.
+
+The first concrete V3 ML candidate is a graph-constrained thermal-topology model. Layer 1 Topology
+constrains which room/opening thermal-exchange terms are physically possible; Layer 2 provides the
+temperature, outdoor-condition, HVAC-action, opening, and optional fan/air-quality facts; Layer 3
+learns an effective thermal coupling and temperature trajectory; future Heating/Reaction layers may
+evaluate the prediction against comfort, safety, and energy constraints. A minimum useful deployment
+has indoor temperature per modeled zone, outdoor temperature, actual HVAC state, topology, and
+exterior-opening state. Per-room temperatures and internal-opening states improve inter-room coupling;
+CO2, humidity, fan/VMC state, occupancy, solar/illuminance, and energy measurements enable richer
+ventilation and efficiency use cases. Without corresponding measurements Heima must not claim physical
+airflow or indoor-air-quality prediction, and without adequate observed variation it must report a
+parameter as unidentifiable rather than inventing a coefficient.
+
+---
+
+## Layer 3 historical sample binding, resolved architecturally (2026-09-13)
+
+**Decision applied to Layer 3**: every learning sample has an explicit prediction-time anchor `T`.
+Anchors are either historical intervals or declared transitions/events. Features are strictly causal:
+an as-of state, a bounded aggregate over `[T - Window, T]`, or a finite ordered sequence from that
+same past-only interval. Each feature declares fact type, Location, freshness, and whether it is
+required; required unavailable/stale/incompletely retained data discards the sample, while optional
+missing data needs an explicit model-defined representation. Cross-location input is always named,
+never inferred.
+
+Outcomes are explicitly one of point value at a horizon (including zero), event count/occurrence in a
+future window, right-censored time-to-event, or absent for unsupervised anomaly/clustering/drift work.
+Training may observe a later outcome, but never a feature newer than `T`; this prevents leakage into a
+model intended to make a live prediction. Observational correlation is not permission to claim causal
+action effect: counterfactual or reinforcement-learning use needs a separate contract.

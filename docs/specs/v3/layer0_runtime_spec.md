@@ -1,7 +1,7 @@
 # Heima v3 — Layer 0: Cross-Cutting Runtime Facilities
 
 **Status:** Draft — pending developer approval. Not implemented.
-**Layer:** 0 of 8 (of the v3 architecture: Substrate, Registries, Learning, Domain resolution,
+**Layer:** 0 of 8 (of the v3 architecture: Substrate, Registries, Learning, Semantic Resolution,
 Reactions, Notification, Extensibility, Admin surface build on top of this one).
 
 This document is self-contained: it defines what Layer 0 is and does without assuming the reader
@@ -20,9 +20,9 @@ explicitly — code is a reference implementation, not the source of truth.
 
 ## 1. Purpose
 
-Layer 0 collects the runtime facilities that sit **outside the domain DAG** entirely: nothing in
-Layers 2-5 (Registries, Learning, Domain resolution, Reactions) may depend on a Layer 0 facility
-changing mid-cycle, and nothing in Layer 0 depends on any domain. Six facilities:
+Layer 0 collects the runtime facilities that sit **outside the semantic-resolution DAG** entirely: nothing in
+Layers 2-5 (Registries, Learning, Semantic Resolution, Reactions) may depend on a Layer 0 facility
+changing mid-cycle, and nothing in Layer 0 depends on a semantic resolver. Six facilities:
 
 1. **Timing** — one execution primitive plus a recurrence policy layer, and non-executing
    comparison types for reasoning about elapsed or absolute time without scheduling anything.
@@ -35,7 +35,7 @@ changing mid-cycle, and nothing in Layer 0 depends on any domain. Six facilities
    from a power loss, degraded, normal), and the durable checkpoint that backs it.
 6. **Runtime health telemetry** — read-only, capability-explicit observations of the engine's own
    latency and effective local resource limits for slow-path admission control; it never decides a
-   domain or action.
+   semantic resolver or action policy.
 
 ## 2. Scope
 
@@ -56,7 +56,7 @@ Layer 0 is responsible for:
   it owns neither learner scheduling nor a resource-allocation policy.
 
 Layer 0 is **not** responsible for:
-- domain policy logic, signal fusion, or actuator commands (Layers 2-5);
+- semantic resolution, policy logic, signal fusion, or actuator commands (Layers 2-5);
 - deciding *what* triggers a re-evaluation cycle. Heima is event-driven: evaluation is triggered by
   meaningful state changes, not by a fixed timer. Timing's periodic fallback (§3.1) is a bounded
   safety net against missed events, not a return to timer-driven evaluation;
@@ -75,7 +75,7 @@ other Layer-0 mechanisms may accept Layer-1 `HouseFact`/`Location` values, while
 contracts only.
 
 It never permits a behavioral cycle: Layer 0 does not query or invoke Layer-1 registries, topology,
-zone resolution, sensor/fusion logic, or domain policy; Layer 1 does not execute Timing, Persistence,
+zone resolution, sensor/fusion logic, semantic resolution, or policy logic; Layer 1 does not execute Timing, Persistence,
 Recovery, or Manual Hold behavior while constructing its value objects. Bootstrap composes these
 contracts before cycles begin, and the hot path contains no Layer-0 -> Layer-1 -> Layer-0 call chain.
 Concrete module layout may use a neutral contracts module or type-only references to avoid a language-
@@ -85,7 +85,7 @@ normative responsibility.
 ### 2.2 Non-goals
 
 - Prescribing internal class layout beyond the shapes below.
-- Domain policies that happen to use a `Window` or a `CronEntry` (e.g. a specific reaction's dwell
+- Configured policies that happen to use a `Window` or a `CronEntry` (e.g. a specific reaction's dwell
   time) — those are Layer 4/5 concerns configuring a Layer 0 primitive.
 
 ---
@@ -109,7 +109,7 @@ internal logic.
 class AtJob:
     job_id: str        # unique within the owning subsystem; re-registering the same job_id
                         # replaces the pending job, it does not error or duplicate it
-    owner: str          # subsystem name, e.g. "house_state", "manual_hold", "engine"
+    owner: str          # subsystem name, e.g. "semantic_resolver", "manual_hold", "engine"
     due: datetime        # the wall-clock instant this job is meant to fire at, UTC, timezone-aware
     label: str
 ```
@@ -291,7 +291,7 @@ window while retaining one uniform representation. Invalid ranges and values fai
 calibration clamps only a valid computed candidate within an already valid range.
 
 No calibration formula (e.g. percentile-of-past-durations) is specified here — that is an
-implementation detail for whichever domain/`FusionRule` uses a given `LearnedWindow`, not a
+implementation detail for whichever `SemanticResolver`/`FusionRule` uses a given `LearnedWindow`, not a
 Layer 0 policy choice.
 
 ### 3.3 `WarmupGate`
@@ -389,7 +389,7 @@ the next boundaries, and does not replay past start/end callbacks. An event alre
 that first successful snapshot; a failed initial refresh makes calendar reads `failed` until a later
 refresh succeeds. Nothing from a checkpoint is treated as live calendar truth.
 
-Calendar sits in Layer 0, same rank as "at"/"cron" — **not** a domain (Layer 4), not a third-party
+Calendar sits in Layer 0, same rank as "at"/"cron" — **not** a semantic resolver (Layer 4), not a third-party
 plugin (Layer 7). The ready timeline snapshot is read before the core DAG each cycle, same as
 Recovery/Checkpoint (§7), and never through a plugin registration mechanism; provider refresh remains
 asynchronous as §3.4.1 requires. This pre-DAG placement is exactly why classification cannot happen
@@ -602,6 +602,67 @@ result). The next evaluation reads this immutable snapshot in O(1); it never sca
 history buffer and never waits for the durable store. A durable-batch failure does not invalidate this
 snapshot while the process remains alive.
 
+**`FrozenHistoryView` is the bounded current-cycle history view for policy evaluation, not a second
+store.** During Layer-5 staging, every enabled `PolicyEvaluationPlan` declares its finite set of
+short-term `HistoryViewRequirement`s (typed fact/event reference, `Window`, and aggregation/trigger
+shape). Layer 0 validates their union against the active in-memory retention and, at the cycle input
+barrier, creates one immutable view over exactly those retained records at or before that barrier.
+The view has no general query API: Layer 5 may read only a declared requirement id and receives its
+canonical `HouseFact` slice. It never opens the durable store, scans a mutable live buffer, reaches
+Home Assistant, or observes an append accepted after the barrier. Retention is pinned for the short
+duration of that cycle's policy evaluation, then released.
+
+**`FrozenCalendarView` is the corresponding bounded future-calendar view, not a semantic plan or a
+second calendar cache.** A Layer-5 plan that needs calendar context declares a finite
+`CalendarViewRequirement` during staging: one permitted `calendar.*` entity and one positive bounded
+upcoming horizon. Layer 0 contributes the largest declared horizon to the existing per-entity cache
+prefetch (§3.4.1). At the same `CycleInputBarrier`, it freezes that requirement's `active_now` and
+`upcoming_starts_within` results using `barrier.when`. A policy may subsequently read only its staged
+requirement id; it cannot issue an ad hoc calendar query, widen a horizon, inspect another calendar,
+or observe a refresh that arrived after the barrier. The view exposes raw `CalendarWindow` text only
+to the staged pure Layer-2 `KeywordClassifier`; neither the classifier result nor a policy outcome may
+persist a calendar summary.
+
+```python
+@dataclass(frozen=True)
+class CycleInputBarrier:
+    cycle_id: int
+    when: EvidenceInstant
+    max_append_ordinal: int
+
+@dataclass(frozen=True)
+class FrozenHistoryView:
+    barrier: CycleInputBarrier
+    requirement_ids: frozenset[str]
+    # read(requirement_id) is in-memory and accepts only one staged requirement id.
+
+@dataclass(frozen=True)
+class CalendarViewRequirement:
+    requirement_id: str
+    entity_id: str                  # one staged calendar.* entity
+    upcoming_horizon: Window        # finite, positive, bounded by Layer-0 registration limits
+
+@dataclass(frozen=True)
+class FrozenCalendarView:
+    barrier: CycleInputBarrier
+    requirement_ids: frozenset[str]
+    fingerprint: str                # SHA-256 of the canonical staged read results
+    # active(requirement_id) and upcoming(requirement_id) return the frozen CalendarWindowRead.
+```
+
+`CycleInputBarrier` is an immutable intake boundary, not a claim that no later Layer-4 or Layer-5
+fact may share the same `when`. Such later facts belong to their declared execution phase and cannot
+retroactively enter the view. A later engine cycle with the same UTC `when` receives a different
+`cycle_id` and barrier, preserving the equal-time concurrency rule without allowing a retry to read
+newly arrived data.
+
+`FrozenCalendarView` is created only from a `ready` cache snapshot obtained after process startup as
+required by §3.4.1. A failed read remains `failed` in the frozen view and makes a calendar-dependent
+policy abstain; it is never treated as an empty calendar. Its fingerprint covers, for every declared
+requirement, the status, refresh instant, active and upcoming normalized windows. This lets a later
+calendar refresh, cancellation, or edit create a new cycle and a distinct policy input without placing
+provider I/O or mutable cache reads on the decision path.
+
 ```python
 @dataclass(frozen=True)
 class CycleCommitMarker:
@@ -673,7 +734,7 @@ now-unneeded older in-memory entries but never reads disk to refill a stream.
 ### 4.2 Write policy
 
 Writes to the durable tier are **batched at the end of each evaluation cycle** — buffered during the
-cycle, flushed once after the domain/reaction pass completes, rather than one disk write per fact.
+cycle, flushed once after the semantic-resolution/policy pass completes, rather than one disk write per fact.
 This keeps the per-fact hot path free of I/O. This batching, not write-on-change below, is what
 protects reaction latency: even a policy that wrote every fact every cycle would still be off the
 hot path, because every write is already deferred to this one end-of-cycle flush. Write-on-change is
@@ -825,8 +886,9 @@ class FactSource:
 
 @dataclass(frozen=True)
 class ApplyStepSource:
-    kind: FactSourceKind                    # minus the 3 fact-only kinds below — an action is never
-                                              # kind="sensor"/"analyzer"/"third_party_plugin"
+    kind: ApplyStepSourceKind               # a distinct closed action vocabulary; an action is never
+                                              # kind="sensor"/"analyzer"/"third_party_plugin"/
+                                              # "semantic_resolver"
     source_id: str
     source_type: str | None = None
     configuration_fingerprint: str | None = None
@@ -837,7 +899,7 @@ class ApplyStepSource:
     correlation_id: str = field(default_factory=lambda: str(uuid4()))
 
 FactSourceKind = Literal[
-    # fact-only — an action (ApplyStepSource) is never one of these three:
+    # fact-only — an action (ApplyStepSource) is never one of these four:
     "sensor",             # a direct read of one raw HA entity, interpreted (Layer 2 Sensor) — one
                             # entity in, one fact out, no combination
     "analyzer",            # derived from combining or analyzing existing data rather than one direct
@@ -848,12 +910,12 @@ FactSourceKind = Literal[
                             # "statistical" specifically — FusionRule belongs here, not under "sensor"
     "third_party_plugin",  # produced by a Layer 7 plugin's own compute(), reading its own registered
                             # entities or combining them
+    "semantic_resolver",   # produced by a Layer-4 SemanticResolver's own resolution logic, not
+                            # sourced from a Layer-2 Sensor/FusionRule directly
     # shared with ApplyStepSource — both a fact and an action can carry these:
     "reaction",            # a fact recorded as a byproduct of a Reaction firing (Layer 5) — distinct
                             # from the ApplyStep(s) the same Reaction issues, which carry
                             # ApplyStepSource with this same kind on the action side
-    "domain",               # produced by a Layer 4 domain's own resolution logic (e.g. HouseState's
-                            # resolved value), not sourced from Sensor/FusionRule directly
     "admin_command",        # a direct consequence of an admin-panel action, assignable only after HA
                             # confirms the connection's user is an admin (§5.1)
     "resident_response",    # a direct consequence of a resident's explicit action (an explicit manual
@@ -871,15 +933,25 @@ FactSourceKind = Literal[
                             # admitted to V3 runtime data or produced by new code
 ]
 
+ApplyStepSourceKind = Literal[
+    "reaction",            # ordinary automatic policy action, authorized by Layer 5
+    "admin_command",       # direct authenticated administrator action
+    "resident_response",   # verified resident response/control action
+    "timeout",             # in-process timeout controller action
+    "recovery",            # explicit recovery/reconciliation action
+    "system",              # system-owned infrastructure action not covered above
+    "test",                # test-only action; never production data
+]
+
 FactSourceActorType = Literal[
     "ha_admin",    # a Home Assistant user confirmed as admin by HA's own permission check
     "resident",    # a non-admin resident (a mobile-app response, an explicit-hold helper toggle)
     "heima",       # Heima itself, autonomously — no human in the loop for this specific fact/action;
                     # the default
-    "scheduler",   # Timing's own execution (an AtJob/CronEntry firing), not a domain decision
+    "scheduler",   # Timing's own execution (an AtJob/CronEntry firing), not a semantic conclusion
     "service",     # an external HA service call not attributable to a specific admin/resident (e.g.
                     # an automation outside Heima calling into a Heima service)
-    "system",      # Heima's own startup/runtime infrastructure (Recovery, Persistence), not a domain
+    "system",      # Heima's own startup/runtime infrastructure (Recovery, Persistence), not a semantic resolver
                     # or a human
     "test",        # test code
     "unknown",     # could not be determined — never treated as authoritative for anything requiring
@@ -887,9 +959,9 @@ FactSourceActorType = Literal[
 ]
 ```
 
-One vocabulary, two shapes with one deliberate difference — never two independently evolving
+One provenance taxonomy, two shapes with one deliberate action-boundary difference — never two independently evolving
 designs. `ApplyStepSource` (the action-side sibling, produced whenever a `Reaction` emits an
-`ApplyStep`) shares `kind`'s closed vocabulary (minus the 3 fact-only kinds), `actor_type`, and the
+`ApplyStep`) has its own closed action vocabulary, excluding the four fact-only kinds, `actor_type`, and the
 `correlation_id` mechanism; it carries `actor_id` because an action can be traced to a specific human
 or service that authorized it, while a fact — even one produced as a side effect of a resident's
 action — is not itself "authorized by" anyone the way a command is.
@@ -981,7 +1053,7 @@ everything causally downstream of that origin within the same causal chain — n
 an intermediate step. Origin points:
 
 - **A per-cycle evaluation**: one `correlation_id` is minted at the start of each engine evaluation
-  cycle and propagated to every `HouseFact` (Layer 2 sensor/fusion output, Layer 4 domain output)
+  cycle and propagated to every `HouseFact` (Layer-2 sensor/fusion output, Layer-4 semantic claim)
   and every `ApplyStep` (Layer 5) produced synchronously within that cycle.
 - **A Layer 3 learning analysis run**: `PatternLearner.analyze()` runs on its own slow cycle, mining
   potentially days of history spanning many prior `correlation_id`s — it is a new causal origin, not
@@ -1076,8 +1148,9 @@ restoration produces its audit event alone:
   transition, including a discarded restoration that has no current-state fact. Lifecycle events are
   never read as state; their purpose is a complete audit/notification trail.
 
-`domain` is the functional behavior being suppressed (lighting, heating, security...), a field
-orthogonal to `where`, not folded into it. `hold_id` is opaque, non-empty, and minted at activation;
+`domain` is the functional policy scope being suppressed (lighting, heating, security...), not a
+Layer-4 semantic claim. It is orthogonal to `where`, not folded into it. `hold_id` is opaque,
+non-empty, and minted at activation;
 the paired state fact and lifecycle event use the same id and correlation id. A terminal state fact
 and its lifecycle event likewise share a correlation id. `held_state` is carried on an active state
 fact only; it is `None` on every inactive one.
@@ -1087,7 +1160,7 @@ The required transition table is:
 | Transition | State fact | Lifecycle event | `FactSource` |
 | --- | --- | --- | --- |
 | explicit activation / clear | `active=True` / `False`, `kind="explicit"` | `activated` / `cleared` | `resident_response`, `source_id=<helper_entity_id>`, `source_type="manual_hold_control"`, `actor_type="resident"`; only the verified resident helper edge in §5.1 |
-| implicit activation | `active=True`, `kind="implicit"` | `activated` | `domain`, `source_id=<domain>`, `source_type="implicit_hold_detector"`, `actor_type="heima"`; never `resident_response` |
+| implicit activation | `active=True`, `kind="implicit"` | `activated` | `analyzer`, `source_id=<domain>`, `source_type="implicit_hold_detector"`, `actor_type="heima"`; never `resident_response` |
 | explicit admin activation / clear | `active=True` / `False`, `kind="explicit"` | `activated` / `cleared` | `admin_command`, `source_id="manual_hold.activate"` / `"manual_hold.clear"`, `source_type="manual_hold_manager"`, `actor_type="ha_admin"`; the verified admin helper edge in §5.1 |
 | implicit admin clear | `active=False` | `cleared` | `admin_command`, `source_id="manual_hold.clear"`, `source_type="manual_hold_manager"`, `actor_type="ha_admin"` |
 | implicit expiry | `active=False` | `expired` | `timeout`, `source_id="manual_hold.expiry"`, `source_type="manual_hold_manager"`, `actor_type="scheduler"` |
@@ -1157,7 +1230,7 @@ compaction (§6.4) writes it after an explicit activation, replacement, or mater
 it after an ordinary clear. It is metadata for identity and audit continuity, not an alternative state
 store.
 
-At bootstrap, before the first domain evaluates, the Manual Hold Manager reconciles each configured
+At bootstrap, before the first semantic resolver evaluates, the Manual Hold Manager reconciles each configured
 explicit helper against its matching checkpoint record exactly once:
 
 1. Helper active and matching record present: recreate the ephemeral runtime association with the
@@ -1267,7 +1340,7 @@ Recovery reads the last-written checkpoint — the same file it already reads to
 change while Heima was offline" — and that snapshot, not the vanished in-memory table, is what the
 restoration algorithm below runs against.
 
-**Restoration algorithm**, run once at startup, before the first domain evaluates, for each implicit
+**Restoration algorithm**, run once at startup, before the first semantic resolver evaluates, for each implicit
 hold found in the last checkpoint:
 
 Every discard in steps 1-5 emits exactly one `manual_hold.<domain>.lifecycle` fact with
@@ -1305,7 +1378,7 @@ diagnostic surface, but the lifecycle fact is the durable, authoritative audit r
    correlation id (§5.2). Layer 0 never calls into Layer 6 directly; it only produces facts, exactly
    as it already does for everything else it records, preserving the rule that Layer 0 depends on
    nothing above it. Layer 6's notification pipeline — already designed to consume this kind of
-   event from Reactions and Domain resolution — is what turns the lifecycle event into "an implicit
+   event from Reactions and Semantic Resolution — is what turns the lifecycle event into "an implicit
    hold on `<domain>` at `<Location>` was restored after restart" for the resident. Restoration is
    never silent, regardless of which entity class made it eligible; this is what actually closes the
    "resident unaware" risk that motivated the default in the first place, on top of getting the
@@ -1380,7 +1453,7 @@ committed through the same idempotent protocol above.
 
 ## 7. Recovery / Checkpoint
 
-A lightweight, pre-DAG context computed once per evaluation cycle, before any domain runs. It
+A lightweight, pre-DAG context computed once per evaluation cycle, before any semantic resolver runs. It
 classifies runtime state and makes that classification available, **read-only**, to everything
 downstream — including the Manual Hold Manager (§6.3) — so behavior can be conservative and
 explainable right after a restart or during a partial outage.
@@ -1575,7 +1648,7 @@ Silent failure is not acceptable anywhere in this section.
 
 Layer 0 owns a read-only `RuntimeHealthSnapshot` for slow-path resource admission. It describes the
 runtime that must be protected, not the house: it is not a `HouseFact`, is never stored in the fact
-timeline, cannot be read by a domain/policy as a semantic input, and cannot cause an action. Layer 3
+timeline, cannot be read by a semantic resolver/policy as a semantic input, and cannot cause an action. Layer 3
 is its only initial consumer and interprets it only at a learning scheduling boundary.
 
 `RuntimeHealthSnapshot` is immutable and capability-explicit. It contains `captured_monotonic`, the
@@ -1633,13 +1706,13 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
 
 ## 11. Relationship to the core DAG
 
-Domains (Layer 4) read only the *previous* cycle's resolved output from other domains — this is what
-keeps the DAG acyclic. Layer 0 is exempt from that rule by construction: wall-clock time and
-Recovery's classification are **engine-computed context**, read-only input available to every domain
-and plugin within the *current* cycle, not another domain's output. A domain freely reads Layer 0
-context fresh every cycle, the same way it freely reads Layer 2 facts fresh every cycle — neither is
-subject to the previous-cycle restriction, because neither is produced by another domain earlier in
-the same pass.
+Semantic resolvers (Layer 4) read only the *previous* cycle's resolved output from other semantic
+resolvers — this is what keeps the DAG acyclic. Layer 0 is exempt from that rule by construction:
+wall-clock time and Recovery's classification are **engine-computed context**, read-only input
+available to every semantic resolver and plugin within the *current* cycle, not another resolver's
+output. A semantic resolver freely reads Layer-0 context fresh every cycle, the same way it freely
+reads Layer-2 facts fresh every cycle — neither is subject to the previous-cycle restriction, because
+neither is produced by another semantic resolver earlier in the same pass.
 
 ---
 
@@ -1657,7 +1730,7 @@ concrete checklist rather than re-deriving one:
 - One `AtJob`/`CronEntry` execution path, monotonic-safe by construction; no remaining independent
   timer call site anywhere in the codebase.
 - `Window`/`LearnedWindow`/`WarmupGate`/`WeeklyRecurrence`/`IntervalRecurrence`/`CalendarWindow` used
-  everywhere a bespoke duration/threshold/schedule field exists today — none left on a domain or
+  everywhere a bespoke duration/threshold/schedule field exists today — none left on a semantic resolver or
   reaction config directly.
 - `LearnedWindow` construction rejects a `seed` outside `[min_seconds, max_seconds]`, in a test that
   tries both an under-range and an over-range seed — verified separately from calibration's own
@@ -1788,6 +1861,13 @@ concrete checklist rather than re-deriving one:
   and never performs classification. After a simulated restart, Layer 0 obtains a fresh snapshot before
   the first calendar-dependent evaluation, exposes an already-active event without replaying old
   boundaries, and reports failure rather than using a pre-restart cache when that refresh fails.
+- A staged `CalendarViewRequirement` can read only its one declared entity and finite horizon through
+  `FrozenCalendarView`. Tests prove its active/upcoming results and fingerprint are fixed at the same
+  `CycleInputBarrier` as `FrozenHistoryView`; a later provider refresh, cancellation or edit cannot
+  affect that cycle but changes the next snapshot. A failed source is preserved as `failed`, never
+  converted to an empty result; an undeclared requirement, wider horizon or direct provider/cache read
+  is rejected. No Layer-0 code classifies a summary or persists it outside the normalized calendar
+  cache.
 - A `WeeklyRecurrence` at `02:30` in `Europe/Rome` fires once at `03:00` on the spring-forward date,
   and once at the first `02:30` (`fold=0`) on the fall-back date, never again at the repeated
   `02:30`; both physical fall-back instants still match the same civil-time pattern for bucketing.
@@ -1812,13 +1892,13 @@ concrete checklist rather than re-deriving one:
   after an unclean restart, missing/mismatched clean marker, or unhealed durable-batch failure it
   instead resolves `available=False` for that first cycle and performs no evaluation-path disk read
   (§4.1).
-- Recovery/Checkpoint classification is available, read-only, before the first domain runs in every
+- Recovery/Checkpoint classification is available, read-only, before the first semantic resolver runs in every
   test cycle, including the first cycle after a simulated restart.
 - `RuntimeHealthSnapshot` is refreshed outside engine evaluation and one completed cycle contributes
   exactly one bounded, O(1) monotonic latency sample. A cgroup-v2 fixture verifies effective
   CPU/memory/pressure parsing; an unavailable or non-enforceable platform value remains absent with its
   capability unset, never a guessed host allocation. Probe failure and percentile aggregation neither
-  block a cycle nor produce a `HouseFact`, domain input, policy decision, or action (§9).
+  block a cycle nor produce a `HouseFact`, semantic-resolver input, policy decision, or action (§9).
 - A verified non-admin HA control edge on a registered Actuator channel emits one redacted
   `actuator.resident_control` event with `resident_response` provenance and no raw HA identity/context.
   The same edge from an unavailable channel, an unknown/automation/service/admin context, or a duplicate
