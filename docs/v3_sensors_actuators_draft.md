@@ -1,6 +1,9 @@
 # Heima v3 — Sensor Registry, Fusion, and Actuator (draft shapes)
 
-Status: **draft for discussion, not approved, not implemented.** Builds on `v3_house_fact_draft.md`
+> **Historical draft.** The current V3 registry contract is
+> [Layer 2](specs/v3/layer2_registries_spec.md); this file preserves earlier reasoning only.
+
+Status: **historical draft, superseded by Layer 2, not implemented as written.** Builds on `v3_house_fact_draft.md`
 (`HouseFact`, `Location`, `Window`). Grounded in the analysis in `v3_backlog.md` — two layers, not
 one flat list; 3 existing fusion strategies confirmed properly generalized, 1 missing
 (Precedence), 2 apparent "special cases" found to be integration gaps, not missing capabilities.

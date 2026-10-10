@@ -1,6 +1,10 @@
 # Heima v3 — declarative template requirements → generic proposal matching (draft shapes)
 
-Status: **draft for discussion, not approved, not implemented.** This is the idea that opened the
+> **Historical draft.** The current V3 candidate and Reaction contracts are
+> [Layer 3](specs/v3/layer3_learning_spec.md) and
+> [Layer 5](specs/v3/layer5_action_reactions_spec.md); this file preserves earlier reasoning only.
+
+Status: **historical draft, superseded by Layers 3/5, not implemented as written.** This is the idea that opened the
 whole v3 conversation (the kitchen presence+lux+bulbs walkthrough): Heima should propose an
 automation on its own once it has what a template needs, instead of requiring the admin to find
 "Crea automazione" and fill the form by hand. Back then (see `v3_backlog.md`'s open questions) this

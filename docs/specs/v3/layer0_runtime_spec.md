@@ -1,6 +1,6 @@
 # Heima v3 — Layer 0: Cross-Cutting Runtime Facilities
 
-**Status:** Draft — pending developer approval. Not implemented.
+**Status:** Defined V3 contract. Not implemented.
 **Layer:** 0 of 8 (of the v3 architecture: Substrate, Registries, Learning, Semantic Resolution,
 Reactions, Notification, Extensibility, Admin surface build on top of this one).
 
@@ -11,10 +11,9 @@ background only.
 
 ## Normative precedence
 
-This document defines the intended contract for Layer 0 once approved. Until the developer
-confirms it explicitly ("ok, proceed"), it is discussion material, not an implementation target.
-Once approved and implemented: if code and spec diverge, the divergence must be resolved
-explicitly — code is a reference implementation, not the source of truth.
+This document defines the current V3 Layer-0 design contract. Open corrections are tracked in
+the CA4 backlog; runtime implementation is a separate phase. When implemented, any code/spec
+divergence must be resolved explicitly — code is a reference implementation, not the source of truth.
 
 ---
 
@@ -26,11 +25,11 @@ changing mid-cycle, and nothing in Layer 0 depends on a semantic resolver. Six f
 
 1. **Timing** — one execution primitive plus a recurrence policy layer, and non-executing
    comparison types for reasoning about elapsed or absolute time without scheduling anything.
-2. **Persistence** — the two-tier storage `HouseFact` (Layer 1) is built on top of.
+2. **Persistence** — the two-tier `HouseFact` storage (Layer 1), durable observation-continuity metadata, and the Reaction follow-up intent outbox that support their respective contracts.
 3. **`FactSource` / `ApplyStepSource`** — one structured-provenance vocabulary spanning facts and
    actions, and the `correlation_id` rules that make "why did the house do this" answerable.
-4. **Manual Hold Manager** — represents a resident's explicit or inferred override, with
-   deliberately different restart guarantees depending on how confident Heima can be in it.
+4. **Divergence Hold Manager** — process-local, per-channel suppression after a new
+   observation differs from a physically confirmed Heima expectation; its origin is evidence-based.
 5. **Recovery / Checkpoint** — pre-DAG classification of runtime health (just started, recovering
    from a power loss, degraded, normal), and the durable checkpoint that backs it.
 6. **Runtime health telemetry** — read-only, capability-explicit observations of the engine's own
@@ -46,11 +45,10 @@ Layer 0 is responsible for:
   absolute time; for `CalendarWindow` specifically, the pre-DAG mechanical extraction of raw
   `start`/`end`/summary event data from a `calendar.*` entity (§3.4) — never the classification of
   that raw text into a named category, which is Layer 2's `CalendarInterpretation`;
-- `HouseFact` storage mechanics (durable + short-term tiers) — not the `HouseFact` type itself,
-  which is Layer 1;
+- `HouseFact` storage mechanics (durable + short-term tiers), durable observation-continuity metadata (§4.4), and the Reaction follow-up intent outbox (§4.5) — not the `HouseFact` type itself, which is Layer 1;
 - the non-forgeable provenance vocabulary attached to every `HouseFact` and every `ApplyStep`, and
   the rules for how a `correlation_id` is minted and propagated;
-- representing an active manual override, including when (and how safely) it may survive a restart;
+- representing an internal channel divergence hold and clearing it on restart or an observation break;
 - computing pre-DAG recovery/degradation context and the checkpoint that backs it.
 - collecting a read-only runtime-health snapshot outside engine evaluation for slow-path consumers;
   it owns neither learner scheduling nor a resource-allocation policy.
@@ -86,17 +84,20 @@ normative responsibility.
 
 - Prescribing internal class layout beyond the shapes below.
 - Configured policies that happen to use a `Window` or a `CronEntry` (e.g. a specific reaction's dwell
-  time) — those are Layer 4/5 concerns configuring a Layer 0 primitive.
+  time) — those are Layer 5 concerns configuring a Layer 0 primitive.
 
 ---
 
 ## 3. Timing
 
-**Time representation**: every `datetime` in this layer — and, by extension, every instant on a
-`HouseFact` (Layer 1), a checkpoint entry (§7), or anything else built on top of Timing — is
-timezone-aware and stored/compared in **UTC**. A naive `datetime` (no `tzinfo`) is never valid
-anywhere in this model — it is ambiguous by construction (local or UTC?) and a classic source of
-comparison bugs across sources. The one deliberate exception is `WeeklyRecurrence.hour`/`minute`
+**Time representation**: every declared instant in every V3 contract is
+Layer 1's `EvidenceInstant`, including `HouseFact.when`, an `AtJob.due`,
+calendar windows, checkpoint entries, learning artifacts and Reaction
+records. It is normalized to UTC and validated before entering the contract;
+there is no second `datetime` or `Z` wire form. An implementation may parse
+the canonical value into a timezone-aware UTC datetime while doing arithmetic,
+but must not store, publish, fingerprint or transfer that temporary object.
+The one deliberate exception is `WeeklyRecurrence.hour`/`minute`
 (§3.1 below), which are defined in the installation's configured local civil time on purpose,
 converted to UTC only at computation time. Conversion to a human-readable local time happens
 exclusively at the presentation boundary (admin panel, notifications, diagnostics) — never inside
@@ -109,24 +110,31 @@ internal logic.
 class AtJob:
     job_id: str        # unique within the owning subsystem; re-registering the same job_id
                         # replaces the pending job, it does not error or duplicate it
-    owner: str          # subsystem name, e.g. "semantic_resolver", "manual_hold", "engine"
-    due: datetime        # the wall-clock instant this job is meant to fire at, UTC, timezone-aware
+    owner: str          # subsystem name, e.g. "semantic_resolver", "divergence_hold", "engine"
+    due: EvidenceInstant  # canonical UTC instant at which this job is due
     label: str
 ```
 
 `AtJob` is the **one** execution primitive: a scheduled one-shot deadline.
 
 **Scheduling semantics**: `due` is a wall-clock instant, but *dispatch itself must be
-monotonic-safe* — at arm (or re-arm) time, Timing computes `due - now()` **once** and schedules
+monotonic-safe* — at arm (or re-arm) time, Timing parses the canonical `due` and current
+`EvidenceInstant`, computes their difference **once**, and schedules
 that duration on a monotonic timer. The pending countdown is never re-evaluated against wall-clock
 time while armed. This means a system clock adjustment (NTP correction, or a Daylight Saving Time
 transition) that happens *while a job is pending* cannot cause it to fire early, late, or twice —
-the same robustness property Heima's current manual-hold expiry (a hand-rolled monotonic float)
-already has, carried forward into the shared primitive instead of reimplemented per subsystem.
+the same robustness property the historical pre-V3 manual-hold expiry (a hand-rolled
+monotonic float) had, carried forward into the shared primitive instead of
+reimplemented per subsystem.
 
 **Re-registration**: `job_id` is a replace key, not a uniqueness constraint to reject on conflict —
 registering an `AtJob` with an already-pending `job_id` cancels the old timer and arms the new one.
 This lets an owner simply "set the deadline to X" without first checking whether one already exists.
+An owner may cancel its pending `(owner, job_id)` idempotently; cancellation leaves no scheduled
+callback for that key. A callback already handed to the owner may still race with replacement or
+cancellation, so the owner validates its current activation and arm revision before doing work
+(Layer 5 §6.0 for programmed Reactions). Timing itself does not decide whether a Reaction step
+remains eligible.
 
 ```python
 @dataclass(frozen=True)
@@ -137,7 +145,7 @@ class WeeklyRecurrence:
 
 @dataclass(frozen=True)
 class IntervalRecurrence:
-    interval_s: float
+    interval: "Window"  # positive elapsed duration; no separate seconds field
 
 RecurrencePattern = WeeklyRecurrence | IntervalRecurrence
 
@@ -152,9 +160,9 @@ class CronEntry:
 **Temporal construction validation is mandatory and shared.** One pure validator accepts a duration
 only when it is an `int` or `float` but not `bool`, is finite, and is strictly greater than zero; it
 normalizes the accepted value to `float`. It is applied to `Window.seconds` and
-`IntervalRecurrence.interval_s`. `WeeklyRecurrence.weekdays` is non-empty and contains only non-boolean
+`IntervalRecurrence.interval.seconds`. `WeeklyRecurrence.weekdays` is non-empty and contains only non-boolean
 integers in `0..6`; `hour` and `minute` are non-boolean integers in `0..23` and `0..59` respectively.
-`AtJob.due` must be a timezone-aware UTC instant. No constructor or scheduler silently clamps, rounds,
+`AtJob.due` must be a canonical `EvidenceInstant`. No constructor or scheduler silently clamps, rounds,
 or corrects an invalid temporal value.
 
 Static configuration shapes are constructed and validated while staging the startup or candidate reload
@@ -214,11 +222,10 @@ and a new `AtJob` is armed — nothing about the interrupted countdown is recove
 next matching civil-time occurrence. Missed occurrences are never replayed implicitly after restart.
 An owner that requires an initialization action performs it explicitly during its own bootstrap,
 rather than obtaining it indirectly from scheduler catch-up) while a
-one-shot `AtJob` that belongs to transient runtime state (see §6, Manual Hold) generally does not:
+one-shot `AtJob` that belongs to transient runtime state (see §6, Divergence Hold) does not:
 if nothing persists the reason an `AtJob` should exist, there is nothing to re-arm it from after a
-restart. This is a design choice about what counts as durable configuration, not a limitation of
-`AtJob` itself — §6 describes a case where a one-shot deadline is deliberately made restart-eligible
-by giving the owning subsystem its own durable record to re-arm from.
+restart. This is a design choice about durable configuration, not a limitation of `AtJob` itself.
+A divergence-hold deadline is never re-armed from history or a checkpoint (§6.3).
 
 Every **Heima-owned** recurring or periodic thing is a `CronEntry` owned by whichever subsystem needs
 it — a periodic safety-net re-evaluation or Recovery's own checkpoint-write cadence (§7), for
@@ -241,6 +248,16 @@ class Window:
     seconds: float
 ```
 
+`Window` is the one V3 elapsed-duration contract. Its canonical JSON form is
+`{"seconds": <finite positive RFC-8785 number>}`; the number is seconds,
+including fractional seconds when needed. The validated constructor
+normalizes a non-boolean `int`/`float` to finite `float` and rejects zero,
+negative values, `NaN`, infinity and negative zero. No artifact, Reaction,
+job, fact value or other contract stores a parallel integer-millisecond,
+`timedelta` or bare-seconds duration form. Algorithms may calculate with
+temporary numeric or native duration values, but declared fields and
+fingerprint inputs return to `Window` before crossing a contract boundary.
+
 `Window` is a bounded time span, **not an execution concept** — a comparison/relation over
 `HouseFact` timestamps. One shape serves two uses: dwell ("has fact X been true for at least
 `seconds`") and correlation/follow-up ("did fact Y occur within `seconds` after fact X"). They
@@ -258,8 +275,8 @@ class LearnedWindow:
     where: Location          # scope of the history mined for calibration — a LearnedWindow used by
                               # a specific room's reaction calibrates from that room's history, not
                               # an ambiguous global pool
-    min_seconds: float       # calibration is clamped to this range; never allowed to drift below it
-    max_seconds: float       # or above it
+    minimum: Window          # lower clamp for the selected duration
+    maximum: Window          # upper clamp for the selected duration
 
 Window | LearnedWindow    # anywhere a Window is expected, a LearnedWindow may be substituted
 ```
@@ -270,22 +287,22 @@ using a fixed seed forever. Two properties are load-bearing, not optional refine
 - **`where` is mandatory**, matching Layer 1's rule that a `Location` is always present, never
   absent — without it, "calibrated from occupancy sessions" is ambiguous between the whole house and
   one specific room, and two `LearnedWindow` instances could silently blend unrelated data.
-- **`min_seconds`/`max_seconds` are mandatory clamps.** A `LearnedWindow` feeds dwell timers that
+- **`minimum`/`maximum` are mandatory `Window` clamps.** A `LearnedWindow` feeds dwell timers that
   gate physical actuation — an uncalibrated or degenerate value is a real risk, not a theoretical
   one: a calibrated value drifting toward zero causes flicker (rapid on/off), drifting unbounded
   causes a stuck actuator (a light that never turns off). This is a Layer 0 guarantee precisely so
   every call site doesn't have to remember to add its own floor and ceiling. **The clamp is a
   construction-time invariant on `seed` too, not only on values produced later by calibration**
   (corrected 2026-09-08, found in review — previously stated only as a property of the calibrated
-  value): `min_seconds <= seed.seconds <= max_seconds` must hold when a `LearnedWindow` is
+  value): `minimum.seconds <= seed.seconds <= maximum.seconds` must hold when a `LearnedWindow` is
   constructed, validated procedurally like `Location`'s own construction rule (§5 of the Layer 1
   spec). Before the first calibration ever completes — precisely the warm-up window where this
   guarantee matters most, since no real data has smoothed anything out yet — every dwell check runs
   against `seed` directly; an out-of-range seed would defeat the guarantee exactly when it's needed,
   not in some later edge case.
 
-The same temporal validator applies to every duration field here: `min_seconds` and `max_seconds` are
-strictly positive finite durations (never `bool`), `min_seconds <= max_seconds`, and `seed.seconds`
+The same temporal validator applies to every duration field here: `minimum` and `maximum` are
+strictly positive finite `Window`s (never `bool`), `minimum.seconds <= maximum.seconds`, and `seed.seconds`
 lies inclusively within that range. Equality is intentionally valid: it configures a fixed bounded
 window while retaining one uniform representation. Invalid ranges and values fail construction/staging;
 calibration clamps only a valid computed candidate within an already valid range.
@@ -317,8 +334,8 @@ further here.
 ```python
 @dataclass(frozen=True)
 class CalendarWindow:
-    start: datetime
-    end: datetime
+    start: EvidenceInstant
+    end: EvidenceInstant
     summary: str        # the event's raw text, exactly as HA reports it — unclassified, see below
     source_entity: str
 ```
@@ -364,10 +381,10 @@ than returning only a tuple, so a caller can distinguish an empty successful res
 class CalendarWindowRead:
     status: Literal["ready", "failed"]
     windows: tuple[CalendarWindow, ...]  # always empty when status="failed"
-    refreshed_at: datetime | None         # UTC; None when no successful snapshot exists
+    refreshed_at: EvidenceInstant | None  # None when no successful snapshot exists
 
-active_now(entity_id, now) -> CalendarWindowRead
-upcoming_starts_within(entity_id, now, horizon: Window) -> CalendarWindowRead
+active_now(entity_id, now: EvidenceInstant) -> CalendarWindowRead
+upcoming_starts_within(entity_id, now: EvidenceInstant, horizon: Window) -> CalendarWindowRead
 ```
 
 When `status="ready"`, `active_now` returns every window containing `now`.
@@ -396,10 +413,10 @@ asynchronous as §3.4.1 requires. This pre-DAG placement is exactly why classifi
 here: a `Sensor`/`Interpretation` lookup (Layer 2) runs on the ordinary hot-cycle path (Layer 2 §2.2),
 not before it.
 
-Resolving a conflict between two simultaneously-active `CalendarWindow`s whose classified categories
-disagree (e.g. two calendar sources disagreeing, once a consumer has classified each) is a Layer 4
-concern — Layer 0 only provides the raw interval and the containment primitive, never a precedence or
-classification rule between sources.
+Layer 0 never resolves a conflict or precedence between calendar sources. It provides only raw
+per-entity intervals and containment; the consumer that declares one or more staged requirements owns
+any permitted classification and composition under its own contract. Layer 4 transports the opaque
+frozen view only and never reads, classifies, resolves, or otherwise interprets it.
 
 ---
 
@@ -439,26 +456,55 @@ is a non-empty sequence of literal Unicode code points and zero or more `*` char
 matches only a complete fact type with the same number of segments. Within one segment, `*` matches
 zero or more Unicode code points other than `.`, while every other character matches itself exactly;
 there are no regex operators, escapes, flags, or recursive cross-segment wildcard. Thus
-`manual_hold.*door*` matches `manual_hold.pippodoor` and `manual_hold.doorpippo`, but not
-`manual_hold.lighting.lifecycle`; `manual_hold.*.lifecycle` matches the latter.
+`lighting.*door*` matches `lighting.pippodoor` and `lighting.doorpippo`, but not
+`lighting.room.lifecycle`; `lighting.*.lifecycle` matches the latter.
 
 During staging, the engine determines whether two dotted glob patterns have a common valid concrete
 fact type. Their overlap is valid when and only when both `owner_id` and `emission_kind` are equal;
 otherwise the candidate generation is rejected. This is not about constraining a legitimate partial
 match: it guarantees that every concrete fact type has one persistence semantic and one owner. For
-example, `manual_hold.*` as `state` and `manual_hold.*.lifecycle` as `event` do not overlap because
-their segment counts differ; `manual_hold.*.*` as `state` would conflict with the lifecycle claim.
+example, `lighting.*` as `state` and `lighting.*.lifecycle` as `event` do not overlap because
+their segment counts differ; `lighting.*.*` as `state` would conflict with the lifecycle claim.
 The glob compilation and overlap check are staging-only; no pattern match or conflict lookup occurs in
 the evaluation path.
 
 Every statically-addressable state producer also contributes a global `(fact_type, Location, owner_id)`
 claim during the same composition pass. The engine rejects duplicate `(fact_type, Location)` claims,
-regardless of layer; a namespace-owning dynamic producer such as Manual Hold is protected by its
+regardless of layer; a namespace-owning dynamic producer is protected by its
 exclusive `FactTypeClaim` instead. Layer 2 registrations contribute only `state` claims. Future layers
 must make the same declaration before their producers are admitted. This is a startup/configuration
 validation table, not a second facts registry or a hot-path abstraction.
 
-The core reserves `FactTypeClaim(fact_type_pattern="automation.availability",
+The core reserves `FactTypeClaim(fact_type_pattern="manual_hold.lifecycle",
+owner_id="layer0.divergence_hold", emission_kind="event")` for hold lifecycle audit (§6).
+It also reserves `FactTypeClaim(fact_type_pattern="actuator.resident_control",
+owner_id="layer0.resident_control_ingress", emission_kind="event")` for the verified direct-control
+edge in §5.1.1. That owner alone constructs its closed three-field canonical value; no Layer-2
+Actuator registration or plugin may claim the same event type.
+The core reserves `FactTypeClaim(fact_type_pattern="actuator.channel_state.*",
+owner_id="layer0.channel_observation", emission_kind="state")` for the
+per-channel normalized physical-state projection of §5.1.1.1. Each staged
+channel also contributes its exact `(fact_type, Location, owner_id)` state
+claim. The value is produced from the already frozen Layer-2 observable-state
+binding, not from a second HA read or a Layer-5 decision.
+The core reserves `FactTypeClaim(fact_type_pattern="actuator.correction",
+owner_id="layer5.correction_attribution", emission_kind="event")` for the Layer-5 attribution
+event of Layer 5 §6.1. Layer 5 owns its closed `CorrectionAttributionEvent` value contract;
+Layer 0 persists the resulting event fact under this exclusive claim.
+The core reserves `FactTypeClaim(fact_type_pattern="actuator.target_lifecycle",
+owner_id="layer5.target_evidence", emission_kind="event")` for the
+admitted-target historical phases of Layer 5 §6.1. It is audit/learning
+evidence, not a second command or live target authority.
+The core reserves `FactTypeClaim(fact_type_pattern="reaction.managed_episode.*",
+owner_id="layer5.managed_episode", emission_kind="state")` for the
+per-channel confirmed-episode projection of §5.1.1.2. Only a staged
+descriptor that declares managed-episode resumption may emit it; Layer 0
+persists and reads it without inferring ownership from target history.
+The core reserves `FactTypeClaim(fact_type_pattern="reaction.follow_up",
+owner_id="layer6.reaction_follow_up", emission_kind="event")` for the sole Layer-6
+follow-up event adapter (Layer 5 §6.0). Layer 5 supplies only the typed occurrence and
+prepares its durable intent through §4.5; it never appends this fact or renders resident text.
+The core also reserves `FactTypeClaim(fact_type_pattern="automation.availability",
 owner_id="layer6.availability", emission_kind="event")` for the one Layer-6 availability-event
 adapter. Layer 3, Layer 4 and Layer 5 may emit only their typed transient suppression occurrence;
 none may claim or append this event fact directly. This makes the persistent owner, event semantics and
@@ -525,6 +571,7 @@ class FactSourceFingerprint:
     source_type: str | None
     actor_type: FactSourceActorType
     configuration_fingerprint: str | None
+    route_fingerprint: str | None
     # deliberately excludes correlation_id and evidence
 
 @dataclass(frozen=True)
@@ -542,6 +589,11 @@ now unavailable" and "same value, lower confidence" are real current-state chang
 durably visible to audit, recovery, and later learning. It includes the stable part of
 `FactSource` so a fallback/source handoff with the same value (for example a calendar-derived workday
 fact falling back to the raw helper entity) is not silently erased from history.
+For a Layer-2 fusion, `route_fingerprint` is the stable, canonical digest of
+the contributing input route defined in Layer 2 §5.2. It excludes volatile
+correlation ids and free-form evidence, so an unchanged route does not cause
+a write on every cycle. A direct producer leaves it `None` unless its own
+registered contract declares a stable route identity.
 
 It excludes `when` because time changes every cycle, excludes `correlation_id` because it is a causal
 trace id minted per origin/cycle (§5.2), and excludes `evidence` because evidence can contain
@@ -569,6 +621,10 @@ every consumer (a Layer 3 learner, a Layer 7 plugin, an admin diagnostic) gets i
 same query instead of each re-deriving — or mis-deriving — it independently. When records have the
 same `when`, the at-or-before record and the changes are ordered by `AppendOrder` above; the final one
 at that instant is the reconstructed current value.
+If no at-or-before record survives, the state at `t1` is unknown: a later record cannot
+seed the earlier portion of the interval. The read reports truncated retention rather
+than treating that portion as an unchanged value. A pruned transition may also make a
+retained predecessor unreliable (§4.3).
 
 ### 4.1 Two storage tiers
 
@@ -579,15 +635,21 @@ at that instant is the reconstructed current value.
 
 Two tiers because they have genuinely different cost profiles: correlation matching happens on the
 hot per-cycle path and can never wait on a disk read; long-term learning needs history that cannot
-fit, or be affordably kept, entirely in memory. Every accepted transition touches the in-memory buffer
-immediately (no I/O cost) and enters the ordered durable queue through the batching policy below; an
-unchanged state candidate only consults the O(1) current index and creates no buffer record.
+fit, or be affordably kept, entirely in memory. Every immediately constructible
+accepted fact touches the in-memory buffer without disk I/O and enters the
+ordered durable queue through the batching policy below; an unchanged state
+candidate only consults the O(1) current index and creates no buffer record.
+Every accepted `manual_hold.lifecycle` transition is a complete, validated
+inline event fact. It enters the short-term buffer and ordinary ordered
+durable queue immediately, independent of background disk latency (§6.4).
 
 **Stored-data boundary.** These tiers, the current index, `PreviousCycleSnapshot`, durable retry queue,
-Manual Hold journal, recovery-target snapshot, and checkpoint retain only complete `HouseFact`s or
+recovery-target snapshot, and checkpoint retain only complete `HouseFact`s or
 their explicitly declared normalized projections. Every such non-fact projection is a Layer-1
 `PersistedProjection`: copied JSON-compatible data, maximum nesting depth 2, finite numbers, and at
-most 8 KiB after canonical UTF-8 serialization. They never retain a Home Assistant `State` object,
+most 8 KiB after canonical UTF-8 serialization. The audit queue retains
+only complete validated inline event facts, never an oversized non-fact
+projection. These facilities never retain a Home Assistant `State` object,
 its full attributes mapping, HA event context, or another mutable HA runtime object. Layer 2 extracts
 the small declared input it needs at the HA boundary; Layer 1 validates and copies the resulting
 payload before any Layer-0 facility can buffer or persist it. Calendar is the narrow explicit case:
@@ -601,14 +663,39 @@ declared keys and their final `HouseFact`s (including an unavailable value where
 result). The next evaluation reads this immutable snapshot in O(1); it never scans the short-term
 history buffer and never waits for the durable store. A durable-batch failure does not invalidate this
 snapshot while the process remains alive.
+The snapshot starts empty after every process restart. A newly declared or impacted
+producer key also has no usable predecessor until one complete evaluation under
+current execution semantics has sealed it; durable history never seeds this view.
 
 **`FrozenHistoryView` is the bounded current-cycle history view for policy evaluation, not a second
-store.** During Layer-5 staging, every enabled `PolicyEvaluationPlan` declares its finite set of
-short-term `HistoryViewRequirement`s (typed fact/event reference, `Window`, and aggregation/trigger
-shape). Layer 0 validates their union against the active in-memory retention and, at the cycle input
+store.** During Layer-5 staging, every enabled `ReactionEvaluationPlan` declares its finite set of
+short-term `HistoryViewRequirement`s (typed state/event stream, `Window`, and slice
+shape). A requirement has the following closed form; Layer 5 computes its own bounded
+aggregate from the returned slice, rather than asking Layer 0 to run a policy expression:
+
+```python
+@dataclass(frozen=True)
+class HistoryViewRequirement:
+    requirement_id: str
+    stream: BufferStream  # StateBufferStream or EventBufferStream, §4.1 below
+    horizon: Window
+    slice_kind: Literal["state_timeline", "event_occurrences"]
+```
+
+Staging requires a nonempty unique requirement id within the active union,
+one registered stream of the matching state/event persistence kind, a
+positive bounded horizon retained for that stream, and the matching
+`slice_kind`. An event request cannot be read as a state timeline or vice
+versa. The resolved requirement and producer generation enter the plan
+fingerprint; Layer 0 validates their union against the active in-memory retention and, at the cycle input
 barrier, creates one immutable view over exactly those retained records at or before that barrier.
 The view has no general query API: Layer 5 may read only a declared requirement id and receives its
-canonical `HouseFact` slice. It never opens the durable store, scans a mutable live buffer, reaches
+canonical `HouseFact` slice or `None` for an incomplete interval. An empty tuple means a
+complete interval with no matching event, never incomplete history. A state requirement
+without an at-or-before-start record is incomplete; either kind of requirement is
+incomplete when its requested start precedes known in-process observation coverage or
+required records were evicted, or the declared stream intersects a known
+Layer-2 source-age gap (§4.4). This result is frozen for the cycle. It never opens the durable store, scans a mutable live buffer, reaches
 Home Assistant, or observes an append accepted after the barrier. Retention is pinned for the short
 duration of that cycle's policy evaluation, then released.
 
@@ -634,7 +721,7 @@ class CycleInputBarrier:
 class FrozenHistoryView:
     barrier: CycleInputBarrier
     requirement_ids: frozenset[str]
-    # read(requirement_id) is in-memory and accepts only one staged requirement id.
+    # read(requirement_id) -> tuple[HouseFact, ...] | None; None means incomplete history.
 
 @dataclass(frozen=True)
 class CalendarViewRequirement:
@@ -691,13 +778,13 @@ in-memory snapshot resumes.
 retention-floor pattern rather than inventing a second mechanism.** A dwell check ("has this fact
 been true for at least `seconds`, continuously") or a correlation check ("did fact Y occur within
 `seconds` after fact X") needs the buffer to actually hold every change within that `Window`'s
-`seconds` (or a `LearnedWindow`'s `max_seconds`) — not just the latest value, the full recent history
+`seconds` (or a `LearnedWindow`'s `maximum.seconds`) — not just the latest value, the full recent history
 of changes, to confirm nothing flipped false in between. Nothing previously tied the buffer's own
-bounded horizon to how large a `seconds`/`max_seconds` a consumer might configure; a dwell/correlation
+bounded horizon to how large a `seconds`/`maximum.seconds` a consumer might configure; a dwell/correlation
 check requiring more history than the buffer actually retains can never be satisfied, correctly or
 not — a silent, permanent false negative, not a degraded read. Resolved the same way §4.3 resolves
 the identical shape of problem for durable retention: whichever subsystem registers a `Window`- or
-`LearnedWindow`-based dwell/correlation check **declares** its own `seconds`/`max_seconds` requirement
+`LearnedWindow`-based dwell/correlation check **declares** its own `seconds`/`maximum.seconds` requirement
 against Persistence at registration time — a one-directional push, never a live query upward. The
 requirement names the input stream it reads: a state stream is its `FactIdentityKey`; an event stream,
 which deliberately has no identity key, is its `(fact_type, Location)` pair. Each stream's effective
@@ -722,7 +809,7 @@ BufferStream = StateBufferStream | EventBufferStream
 @dataclass(frozen=True)
 class BufferRequirement:
     stream: BufferStream
-    horizon: Window                 # `LearnedWindow` declares its validated max_seconds as this Window
+    horizon: Window                 # `LearnedWindow` declares its validated maximum as this Window
 ```
 
 `register_buffer_requirement(requirement)` is a composition/staging operation, never a hot-path call.
@@ -735,8 +822,10 @@ now-unneeded older in-memory entries but never reads disk to refill a stream.
 
 Writes to the durable tier are **batched at the end of each evaluation cycle** — buffered during the
 cycle, flushed once after the semantic-resolution/policy pass completes, rather than one disk write per fact.
-This keeps the per-fact hot path free of I/O. This batching, not write-on-change below, is what
-protects reaction latency: even a policy that wrote every fact every cycle would still be off the
+This keeps the ordinary per-fact hot path free of I/O. The explicitly
+qualified `reaction.follow_up` intent preparation in §4.5 is the sole synchronous
+write before a Reaction boundary advances under healthy storage. This batching,
+not write-on-change below, protects ordinary reaction latency: even a policy that wrote every fact every cycle would still be off the
 hot path, because every write is already deferred to this one end-of-cycle flush. Write-on-change is
 a separate, additional optimization, aimed at write *volume* and disk growth, not per-cycle latency —
 worth stating explicitly, since the two are easy to conflate.
@@ -750,6 +839,10 @@ cycle, while retaining meaningful changes where `value` stayed the same but
 `available`/`confidence`/stable source changed. It also remains correct after a failed durable batch:
 the live process still compares against its actual current state, and its ordered queue retries every
 uncommitted accepted transition at a later end-of-cycle batch rather than silently collapsing it.
+The first valid per-channel `actuator.channel_state.*` observation after
+process restart is the narrow §5.1.1.1 exception: it force-writes one
+new-epoch boundary record even if the old durable state fingerprint
+matches, never one record per identical read.
 
 Multiple changed candidates for one `FactIdentityKey` in one cycle are each accepted and appended in
 their coordinator order; only the last becomes the index's current value. Persistence must not coalesce
@@ -771,9 +864,24 @@ neither a marker nor a partial successful cycle. It does not make the current pr
 subsequent clean shutdown follows a successful batch.
 
 **Event facts** bypass `FactIdentityKey`, `FactChangeFingerprint`, and the latest-value index. Each
-event emission is appended to the in-memory buffer and ordered durable queue, even if its payload
+immediately constructible event fact is appended to the in-memory buffer and ordered durable queue, even if its payload
 resembles a prior event; this preserves repeated occurrences for audit and Layer 6. The batch remains
-the only durable I/O boundary, so append-only event history adds no blocking write to the reaction path.
+the ordinary event-fact durable I/O boundary. The narrow prepared follow-up-intent
+exception at a qualifying Reaction boundary is defined in §4.5; ordinary append-only
+event history and hold lifecycle audit add no blocking write to the reaction path.
+The Layer-5 `actuator.target_lifecycle` producer supplies its stable
+`event_id` as a narrow append-once operation key: queue retry or recovery
+with the same id and identical canonical fact reuses the first append;
+the same id with a different payload is a producer-contract error and
+blocks historical completeness for that stream. Distinct admitted
+decisions/phases keep distinct ids. The existing
+`actuator.correction.deduplication_key` and Layer-0 resident ingress
+`control_edge_id` likewise deduplicate only their own event family,
+never arbitrary event facts. This does not make event payload equality a
+general persistence identity or drop repeated real occurrences.
+The validated `manual_hold.lifecycle` fact follows this ordinary immediate
+buffer and queue rule. A live hold is authorized only by its frozen admission
+view, never by the presence or absence of an audit fact (§6.4).
 
 ### 4.3 Retention
 
@@ -787,8 +895,8 @@ purposes and are applied by background/batch maintenance, never by an evaluation
   record counts. A pure count cap would be exhausted in hours by the finer granularity, silently
   breaking exactly the learning use cases this model exists to serve. Persistence keeps a small
   `fact_type -> retention_floor` table, but — consistent with Layer 0 depending on nothing above it,
-  the same rule §6.3 applies to Manual Hold's eligibility check — it never populates that table by
-  reaching upward to query Layer 3's registrations. Instead, whichever subsystem registers a learner
+  Persistence never populates that table by reaching upward to query Layer 3's
+  registrations. Instead, whichever subsystem registers a learner
   **declares** its retention need against Persistence at registration time (e.g. "retain at least 30
   days of `heating.temperature_rate`") — a one-directional push, not a live query. A `fact_type`'s
   target retention window is the larger of the **14-day** system-wide default and every declared requirement,
@@ -807,7 +915,8 @@ purposes and are applied by background/batch maintenance, never by an evaluation
   retained record data and indexes. After ordinary time and per-type pruning, maintenance above that
   watermark evicts the globally oldest *evictable* records (superseded state records and event
   records), recording the affected history streams' early-pruning coverage metadata and the
-  affected fact types' aggregate diagnostics. It is a watermark, not an admission quota: it never
+  affected fact types' aggregate diagnostics. Complete inline hold-audit facts
+  count as ordinary event records under this same watermark (§6.4). It is a watermark, not an admission quota: it never
   rejects an observation, blocks a cycle, or removes a latest state record. If protected latest state records alone exceed 512 MiB, Persistence
   raises `storage_pressure` and continues to preserve them; an installer can then reduce registry
   cardinality or raise the operational watermark in a later release rather than Heima silently losing
@@ -817,16 +926,24 @@ purposes and are applied by background/batch maintenance, never by an evaluation
 ceiling remain per `fact_type`, but an early count-ceiling or global-watermark eviction is attributed
 only to the history stream whose record was actually discarded: a state stream is its
 `FactIdentityKey`; an event stream is its `(fact_type, Location)` pair. Persistence durably records
-for each affected stream the most recent early-pruning instant (`last_early_pruning_at`). A history
-read for a declared interval returns its records together with `retention_coverage`: `"complete"`
-only when the requested interval lies wholly within the effective time-retention window and starts
-strictly after the requested stream's own early-pruning instant; otherwise `"truncated"`.
+for each affected stream the most recent evicted record's `when` as
+`last_early_pruning_at`, never the maintenance time. A history read returns its records
+with `retention_coverage`. An event stream is `"complete"` only when the interval lies
+wholly within effective time retention and starts strictly after that stream's
+early-pruning instant. A state stream additionally needs a retained record at or before
+the start, even if that record predates ordinary retention. If an early-pruning instant
+is at or after the selected predecessor's `when`, an evicted transition may have
+superseded it and the result is `"truncated"`. The single marker may conservatively
+truncate an unaffected window, but never certify an unknown initial state as complete.
+Missing predecessor, failed time bound or relevant early pruning also returns
+`"truncated"`.
 
 The result says whether retention policy may have removed records from that requested stream and
 interval, not whether a device actually emitted observations or whether a learner has sufficient
 samples — those remain separate availability and warm-up concerns. A multi-stream consumer must
 require complete coverage for every stream it binds; one truncated input makes the joint historical
-input truncated. Aggregate pressure and count-ceiling diagnostics remain per `fact_type`, while
+input truncated. Observation continuity is a separate condition (§4.4): complete retention cannot
+turn an unobserved period into a complete history window. Aggregate pressure and count-ceiling diagnostics remain per `fact_type`, while
 coverage markers are bounded metadata: a marker may be discarded as soon as ordinary time retention
 already makes every interval it could affect truncated. The metadata is updated only by the pruning
 path and read in O(1), so it adds no scan or I/O to the evaluation cycle.
@@ -857,6 +974,222 @@ purpose (bounding one noisy `fact_type`'s disk footprint): a flapping sensor sti
 superseded, evictable records for its own key — only its single current record per key is protected,
 never its full history.
 
+### 4.4 Durable observation continuity
+
+Historical reads distinguish retained records from periods in which Heima could observe.
+Persistence owns one durable process-wide observation-continuity timeline, independent of
+`retention_coverage` and of any live hold. A bounded declared durable history read returns
+one `HistoricalReadResult` for its requested interval and required streams; the hot-path
+`FrozenHistoryView` remains the separate frozen in-memory contract of §4.1.
+
+```python
+ObservationCoverageStatus = Literal["complete", "incomplete"]
+ObservationGapReason = Literal[
+    "process_interruption", "required_stream_unavailable", "continuity_metadata_unknown",
+]
+
+@dataclass(frozen=True)
+class ObservationCoverage:
+    status: ObservationCoverageStatus
+    reasons: tuple[ObservationGapReason, ...]
+    first_incomplete_at: EvidenceInstant | None
+
+@dataclass(frozen=True)
+class HistoricalReadResult:
+    records: tuple[HouseFact, ...]
+    retention_coverage: Literal["complete", "truncated"]
+    observation_coverage: ObservationCoverage
+```
+
+`reasons` is empty and `first_incomplete_at` is None exactly for
+`status="complete"`; an incomplete result has a nonempty, distinct, ASCII-sorted
+tuple of applicable closed reasons and the first instant *within the requested
+interval* at which a required observation is missing. A gap that began before
+the request contributes the request start, not its earlier opening instant.
+If continuity metadata is unknown, `first_incomplete_at` is
+the request start, conservatively. The requested interval's declared endpoint
+semantics decide whether a gap exactly on a boundary intersects it. The field
+identifies an observation limit, never the occurrence time of a missing event.
+`complete` requires that the
+requested interval intersects neither a process interruption nor an unavailable interval
+of any required stream, and that continuity metadata is trustworthy. An unknown boundary
+reports `continuity_metadata_unknown`, never optimistic completeness. Per-Actuator/channel
+`available=False` intervals remain ordinary state history and affect only reads that
+require that stream; they do not extend a process-wide interruption. A multi-stream read
+is incomplete if any required stream is incomplete. `retention_coverage` independently
+reports pruning: complete retention cannot establish that an unobserved window was complete.
+No gap becomes zero events, an unchanged state, a resident action, or a hold. State
+reconstruction (§4.1) cannot carry an at-or-before value across an incomplete interval
+as proof of continuous observation.
+
+For a state stream, the latest record is resolved **before** its availability is
+tested. A newer `available=False` record cannot be skipped to reuse an older
+available value. `HouseFact.when` dates an accepted transition, not an
+identical subsequent read: neither a complete history query nor a current
+policy declares a stable available state stale solely because its last change
+was long ago. A requested interval can be complete only while Layer 2's
+declared source-validity rules and the observation timeline permit it.
+
+An ordinary `available=False` state transition already marks its required
+stream unavailable from that fact's `when` until the next available
+transition; Layer 0 does not duplicate that interval in another journal.
+Separate stream-scoped interruption metadata records only an additional
+**known break** not reconstructible from those facts, not every successful
+read. If a staged Layer-2 `max_source_age` expires between cycles, Layer 2
+supplies the known `last_reported + max_source_age` expiry as the gap start
+and the first later valid observation barrier as its end. The unavailable
+state fact, if one is emitted, keeps its actual detecting-cycle instant and
+is never backdated. If an identical fresh report arrives before the next
+cycle, the expiry gap still persists as metadata without creating either
+an unavailable or duplicate same-value fact. Layer 2 keeps only the latest
+report instant in bounded process memory to detect that case; a process
+interruption covers lost memory across restart. Stream-gap boundaries are
+keyed by the required `FactIdentityKey`, retained for every declared
+historical window that could intersect them, and pruned only when no
+supported read can require them; missing necessary boundary metadata makes
+that read incomplete. The gap boundary is durable metadata on the ordinary
+end-of-cycle path; until its acknowledgement, a historical read spanning
+the uncertain boundary returns incomplete. Failed writes and unknown
+boundaries use `continuity_metadata_unknown`, never fabricated continuity.
+For an active report-age gate, Layer 2's ordinary `AtJob` expiry check (§3.2)
+starts an evaluation even if no HA state edge arrives. A historical read
+between expiry and durable gap acknowledgement must conservatively report
+incomplete from that known expiry, rather than treating a delayed cycle as
+positive evidence of continuity.
+
+For a binding without a declared source-age limit, an available HA state
+remains the current state until an observable failure or process gap. That is
+the registered source's state semantics, not proof that a silent physical
+device has reported again. A source that promises periodic reports must
+declare a suitable Layer-2 age gate; one that only reports changes cannot be
+assigned an invented heartbeat. These rules apply to every staged state
+stream, independent of sensor or actuator kind.
+
+A system-owned 60-second recurrence, off the evaluation and HA-command paths, advances one
+durable continuity watermark only after all accepted facts **and** independently queued audit
+events, including inline hold-audit facts (§6.4), through its chosen observation barrier
+have durable acknowledgement. It may piggyback on
+the Recovery checkpoint cadence, but must run even when the critical-entity checkpoint is clean.
+An empty observation period can therefore advance the watermark without inventing a fact. An
+unacknowledged queue item or failed write leaves the watermark where it was; the failure is
+diagnostic and cannot certify a complete historical interval. The marker is bounded system
+metadata, not a `HouseFact`, hold journal, or per-Actuator checkpoint.
+An attempted hold transition that cannot construct a valid audit fact despite
+its staged proof is also a continuity blocker from that known transition instant
+(§6.4): the watermark cannot cross it. Reads requiring that audit stream
+report `required_stream_unavailable` from that instant rather than infer zero
+interventions. Unknown continuity metadata separately uses the request start.
+
+On orderly shutdown, Heima drains and durably acknowledges all accepted facts and audit
+events through its final observation barrier, then durably records the observation stop. If
+that drain or stop write fails, the next startup uses the hard-crash boundary instead. At startup it durably opens the historical interruption before any historical read can
+report complete coverage. With a matching orderly stop, the gap begins at that stop; after a hard
+crash or uncertain stop, it begins no later than the last durable continuity watermark. The gap closes at the first post-restart `CycleInputBarrier` built from a newly completed
+HA intake snapshot: the source-health result must be valid and every staged binding
+must have an explicit current-cycle availability result, including `available=False`
+for unreadable individual channels. A barrier made only from startup timers, a prior
+cache, or a single entity edge does not close it. The global closure does not wait
+for every Actuator to become readable; those still unavailable affect only their
+required historical streams. The closure barrier id and UTC instant must be durable
+before a historical read may report complete observation beyond that boundary.
+Repeated failed startups leave the interruption open.
+If the opening or closing metadata cannot be written, historical completeness stays unknown
+and learning excludes affected windows until a durable boundary is established; live automation
+continues under ordinary current-state admission. This metadata is separate from the single-use
+`CleanShutdownMarker` for `previous_cycle` hydration (§4.1): consuming that marker cannot erase
+historical coverage.
+
+While HA is unreadable, no fresh current-state action is admitted. Once HA observation resumes,
+current policy is evaluated normally, with no missed-command replay. If one Actuator/channel
+remains unreadable, only its commands are suppressed as `actuator_state_unconfirmed` and its
+dependent historical windows remain incomplete; other readable channels may act. The first
+valid returned state starts a new observation epoch and does not itself create a hold (§6.3).
+
+### 4.5 Durable Reaction follow-up intent and delivery
+
+Layer 0 provides the durable outbox, operation-id uniqueness, atomic fact/intent transaction,
+and recovery read mechanics in this section. Layer 6 must supply the typed
+`reaction.follow_up` adapter: it validates Layer-5 intent and occurrence payloads,
+renders the resident event, drives the outbox transitions, and retries delivery.
+These Layer-6 obligations are an interface required by this storage protocol;
+Layer 0 does not implement resident rendering or notification delivery.
+
+The Layer-6 `reaction.follow_up` adapter uses one small durable outbox keyed by the Layer-5
+per-boundary, per-Actuator/channel `operation_id` (Layer 5 §6.0). Its `ReactionFollowUpIntent` schema is owned by Layer 5 §6.0 and validated by Layer 6
+before persistence. It is a typed `PersistedProjection`, not a `HouseFact`,
+checkpoint, hold journal, or second resident-delivery envelope. Before a qualifying Reaction
+boundary advances, Layer 6 durably inserts its `prepared` intent with the immutable Reaction,
+generation, activation, Actuator/channel, path, possible hold id, target and last observed projection.
+Its persisted `subject` is the scalar canonical `LocationKey` JSON text,
+decoded back to a validated `Location` on recovery; facet maps contain only
+canonical JSON text scalars. These rules keep the entire projection within
+Layer 1's depth-two and 8 KiB limits, including a multi-room subject.
+Layer 5 awaits acknowledgement only for this preparation and only until its
+versioned, positive finite, monotonic core preparation deadline (Layer 5 §6.0).
+It neither waits for rendering nor for HA delivery. A repeated id with a different canonical intent is rejected; an exact
+retry returns the same acknowledgement. The outbox write occurs at the follow-up boundary,
+not on every evaluation, state observation, or hold audit event.
+An exit spanning several channels has one independent prepared/ready/retired
+record for each channel id, not one activation-wide row or an atomic
+all-channel notification. An exact retry of a channel reuses its frozen
+first intent; a changed preparation under the same id fails. A failed or
+timed-out prepare on one channel does not prevent successful preparations
+on other channels. Recovery finalizes each committed prepared row
+independently; an unprepared channel has only the existing best-effort
+notice guarantee. The per-channel notification key prevents delivery
+deduplication from merging different channels.
+
+When Layer 5 supplies the final typed occurrence, Layer 6 validates it against the prepared
+intent and renders the Layer-1 `OperationalEventValue`. One durable transaction appends the
+event fact and changes that intent to `ready`; a failed transaction leaves it `prepared`, never
+a half-persisted event. The durable key `(fact_type="reaction.follow_up", operation_id)`
+allows one identical event on retry and rejects a different canonical payload; ordinary event
+facts retain the append-every-occurrence semantics of §4.2. A fully confirmed action atomically retires its prepared intent without an event.
+The same no-event retirement applies if fresh admission proves the proposed path no
+longer qualifies before a command, including authority revocation. A failed retirement
+can leave a conservative interruption notice after a crash; it never permits a stale call.
+A prepared intent with no committed outcome or confirmed-success retirement at process
+restart is finalized exactly once as `interrupted_before_outcome`; the
+adapter never infers whether an HA call was sent or whether its physical target took effect.
+A committed event wins over a stale prepared-state view. A follow-up event uses the
+Layer-6 `FactSource(kind="system", source_id="layer6.reaction_follow_up")`,
+the intent's registered `Location`, and the occurrence's UTC `occurred_at`; a
+recovery interruption uses the recovery finalization instant as `when`, while keeping
+`prepared_at` in the intent. The resulting notice may use the last
+pre-interruption observation only with that timestamp/label; no old value is asserted current.
+Recovery of this outbox never replays an Actuator call, restores a hold, or delays ordinary
+current-policy automation.
+
+The `ready` record remains available for Layer-6 delivery retry until the delivery attempt is
+acknowledged, then may be retired; retention cannot remove an undelivered payload needed for
+replay. A crash after HA accepts a delivery but before its acknowledgement can produce a
+second visible notification, so the guarantee is recoverable at-least-once delivery, not
+exactly-once display. The stable notification key lets an idempotent destination suppress
+such a repeat when supported; it is not a fact identity. An unavailable storage
+write or an unacknowledged preparation at that deadline exposes
+`follow_up_durability_degraded`, even if storage has not declared an outage.
+Unlike a hold audit failure (§6.4),
+Layer 5 may then advance the scheduled step under ordinary guards and authority, so crash
+recovery of that particular notice is not guaranteed. The same operation id is reused if an
+uncertain preparation later becomes discoverable. On storage recovery the Layer-6
+adapter resolves that id against the outbox before persisting a best-effort queued
+event: a found intent is finalized atomically with the fact; an absent intent uses the
+ordinary event queue with the same durable unique key. The timed-out prepare may
+still commit later. Its insertion and final-event commitment therefore serialize
+on the same operation id in one durable transaction domain: preparation checks
+for an already committed final fact and cannot recreate `prepared` after it;
+finalization checks for a prepared intent and retires it atomically with the fact.
+The same per-operation ordering covers a fully confirmed or no-longer-qualifying
+boundary with no event: its terminal retirement follows any in-flight prepare,
+and a later prepare cannot reopen it. This ordering is background work after
+the action boundary; it never extends Layer 5's preparation wait. An exact
+late prepare is harmless, while a changed payload is rejected. It cannot
+commit a final fact while leaving a found intent prepared. This reconciliation may fail during an ongoing
+storage outage, in which case delivery is only best effort until storage returns. Revocation is
+never blocked on this outbox.
+This narrow synchronous preparation exception does not turn the ordinary event queue or
+hold-audit queue into a synchronous write path.
+
 ---
 
 ## 5. `FactSource` / `ApplyStepSource`
@@ -877,12 +1210,13 @@ class FactSource:
     configuration_fingerprint: str | None = None  # resolved per-producer execution-semantic
                                               # fingerprint, assigned only by its active composed
                                               # generation; never accepted from an untrusted producer
+    route_fingerprint: str | None = None   # stable contributing-input route for a trusted derived
+                                          # producer; not the producer's configuration identity
     actor_type: FactSourceActorType = "heima"
     correlation_id: str = field(default_factory=lambda: str(uuid4()))  # see §5.2 — this default is
                                               # a safety net only, never relied on in production code
-    # deliberately no actor_id: a fact isn't produced by a human the way an admin_command/
-    # resident_response action is authorized by one — add it back only if a concrete need surfaces,
-    # not by default symmetry with ApplyStepSource
+    # no actor identity in operational fact/action provenance; authenticated decisions retain
+    # their attributable actor reference in the separate governance ledger
 
 @dataclass(frozen=True)
 class ApplyStepSource:
@@ -893,9 +1227,6 @@ class ApplyStepSource:
     source_type: str | None = None
     configuration_fingerprint: str | None = None
     actor_type: FactSourceActorType = "heima"
-    actor_id: str | None = None              # the one field that differs from FactSource: which
-                                              # human/service actually authorized this action, when
-                                              # known (an admin user id, a resident's response id)
     correlation_id: str = field(default_factory=lambda: str(uuid4()))
 
 FactSourceKind = Literal[
@@ -905,7 +1236,7 @@ FactSourceKind = Literal[
     "analyzer",            # derived from combining or analyzing existing data rather than one direct
                             # entity read — a same-cycle deterministic combination (Layer 2 FusionRule),
                             # a slow-cycle statistical computation (Layer 3 PatternLearner), or a
-                            # structural match (Layer 5's template matcher). The unifying property is
+                            # structural match (Layer 5's Reaction-descriptor matcher). The unifying property is
                             # "derived from something other than a single direct entity read", not
                             # "statistical" specifically — FusionRule belongs here, not under "sensor"
     "third_party_plugin",  # produced by a Layer 7 plugin's own compute(), reading its own registered
@@ -918,14 +1249,12 @@ FactSourceKind = Literal[
                             # ApplyStepSource with this same kind on the action side
     "admin_command",        # a direct consequence of an admin-panel action, assignable only after HA
                             # confirms the connection's user is an admin (§5.1)
-    "resident_response",    # a direct consequence of a resident's explicit action (an explicit manual
-                            # hold, Layer 0 §6; a runtime confirmation response; or a verified actuator
-                            # control edge) — three different boundary checks, neither reducible to
-                            # another; see §5.1
+    "resident_response",    # a direct consequence of a verified resident response to an active
+                            # runtime confirmation request or a matched direct Actuator control edge
+                            # — two distinct boundary checks; see §5.1
     "timeout",              # recorded because an expected response/confirmation window elapsed with
                             # nothing arriving — assignable only by the in-process timeout controller
-    "recovery",             # produced by Recovery/Checkpoint itself (§7) — e.g. an implicit hold
-                            # restored after a clean restart (§6.3)
+    "recovery",             # produced by Recovery/Checkpoint itself (§7) — e.g. a recovery diagnostic after a restart (§6.3)
     "system",               # produced by system-owned runtime infrastructure not covered by a more
                             # specific kind above (e.g. a system-owned CronEntry's own bookkeeping)
     "test",                 # produced by test code — never present in production data
@@ -945,7 +1274,7 @@ ApplyStepSourceKind = Literal[
 
 FactSourceActorType = Literal[
     "ha_admin",    # a Home Assistant user confirmed as admin by HA's own permission check
-    "resident",    # a non-admin resident (a mobile-app response, an explicit-hold helper toggle)
+    "resident",    # a non-admin resident (a mobile-app response or verified direct device control)
     "heima",       # Heima itself, autonomously — no human in the loop for this specific fact/action;
                     # the default
     "scheduler",   # Timing's own execution (an AtJob/CronEntry firing), not a semantic conclusion
@@ -959,12 +1288,12 @@ FactSourceActorType = Literal[
 ]
 ```
 
-One provenance taxonomy, two shapes with one deliberate action-boundary difference — never two independently evolving
-designs. `ApplyStepSource` (the action-side sibling, produced whenever a `Reaction` emits an
-`ApplyStep`) has its own closed action vocabulary, excluding the four fact-only kinds, `actor_type`, and the
-`correlation_id` mechanism; it carries `actor_id` because an action can be traced to a specific human
-or service that authorized it, while a fact — even one produced as a side effect of a resident's
-action — is not itself "authorized by" anyone the way a command is.
+One provenance taxonomy has two shapes with distinct closed fact/action kinds, never two
+independently evolving designs. `ApplyStepSource` carries the action-side kind, source identity,
+actor category and correlation id, but no person/service identity. Authenticated admin and resident
+authorization is attributable in the separate Layer-5 governance ledger, not copied into an
+`ApplyStep`, execution audit or fact payload. A `correlation_id` links bounded operational
+projections without becoming an authorization proof or an actor identifier.
 
 ### 5.1 Non-forgeability: trust is derived, never stored
 
@@ -975,16 +1304,8 @@ is derived by the code at the boundary that assigns it, never read off the data 
 - an admin-panel action can produce `kind="admin_command"` only after Home Assistant confirms the
   connection's user is an admin;
 - a resident's response can produce `kind="resident_response"` only after it matches an active
-  runtime confirmation request — this is the boundary for one of the three `resident_response` cases;
-- the other case, an **explicit hold** (§6), has a different boundary, stated separately because
-  "matches an active request" doesn't apply to it (added 2026-09-08, found in review — the boundary
-  for this case was never stated, only the confirmation-response one was): `kind="resident_response"`
-  is assignable here only on a false-to-true or true-to-false edge from the dedicated helper/control
-  entity, when Home Assistant's event context identifies a non-admin resident. Its `source_id` is that
-  helper entity id and `source_type="manual_hold_control"`. The same helper edge attributed to an HA
-  admin is legitimate but instead uses the `admin_command` provenance in §6.1; automation, service,
-  or unknown-context edges are rejected as explicit-hold actions and raise a diagnostic. It never
-  merely asserts that a resident acted because a helper happens to be active;
+  runtime confirmation request and passes the current-proposal recheck in §7.4.1 — this is the
+  boundary for one of the two `resident_response` cases;
 - a third-party plugin (Layer 7) can produce `kind="third_party_plugin"`, but nothing it returns can
   make the core treat it as `kind="sensor"` or `kind="recovery"`.
 - `configuration_fingerprint`, when present, is assigned only by the active composed generation; a
@@ -999,15 +1320,14 @@ they reach diagnostics or storage (no secrets, tokens, or raw payloads retained)
 
 ### 5.1.1 Trusted resident-control edge
 
-The third `resident_response` boundary is a manual control of a registered logical Actuator channel.
+The other `resident_response` boundary is a verified direct manual control of a registered logical Actuator channel.
 At HA event ingress, before raw context is discarded, Layer 0 may emit the immutable event fact
 `actuator.resident_control` only when all of these are true:
 
 1. the edge addresses a Layer-2 registered `actuator_id` and its registered `controlled_channel`;
 2. it changes that channel's valid observable physical state, rather than only availability or an
    unrelated entity attribute;
-3. HA's authenticated event context identifies a non-admin resident, not an automation, integration,
-   service, unknown context, or merely an entity whose state happened to change;
+3. the edge is linked to a direct authenticated non-admin resident device command or a core-approved physical-control adapter; a propagated HA user context, automation, integration, service, unknown context, or merely an entity state change is insufficient;
 4. the edge has a fresh non-forgeable ingress identity and passes the ordinary duplicate filter.
 
 The event is a Layer-1 event fact at the Actuator's registered `Location`, with
@@ -1019,12 +1339,120 @@ context, state payload, or service data. The event is evidence of a resident ope
 evidence that the operation corrected Heima. Layer 5 alone compares it to a successful compatible
 `ApplyStep` and may create the separately specified `actuator.correction` event (§6.1 of Layer 5).
 
-This reuses the Manual Hold Manager's existing trusted HA-context boundary; it introduces no
+This shares the Divergence Hold Manager's verified-origin ingress boundary; it introduces no
 per-cycle poll, HA I/O, lookup over unregistered entities, or new persistent live-state table. A
 physical/integration event without an authenticated resident identity, including a typical dumb wall
 switch that merely makes a smart bulb disappear, deliberately emits no resident-control event. A
 future core-approved hardware provenance adapter may add a separately verified local-control boundary;
 generic state divergence is never treated as that adapter.
+
+### 5.1.1.1 Normalized observation edge and origin proof
+
+The registered Actuator adapter extracts only versioned canonical channel facets from an available
+HA state change. At ingress Layer 0 assigns a non-forgeable edge id, a per-channel process-local
+observation epoch, and a strictly increasing revision. A transient immutable observation contains
+that identity, the validated logical Actuator/channel/facet, canonical observed value and UTC time,
+the evidence-based HoldOrigin (§6.1), and the closed origin proof class. All facets from
+one HA change share the edge id and revision; duplicate changes do not receive a second revision.
+Layer 5 consumes this normalized record for physical confirmation and later divergence (§6.0.1);
+Layer 0 never reads Layer 2's registry or evaluates the action matcher itself. The record is not
+a HouseFact; its bounded state projection below is. The separate
+`actuator.resident_control` event above is emitted only for the verified
+direct-resident subset and keeps its exact three-field value.
+
+**Durable channel-state projection.** Each registered channel has one distinct
+state `fact_type`, `actuator.channel_state.<digest>`, where `<digest>` is the
+full lowercase SHA-256 hex of RFC-8785 canonical JSON over the ordered
+`[actuator_id, controlled_channel]` pair. Staging rejects a duplicate digest
+or `(fact_type, Location)` claim. The resulting `FactIdentityKey` addresses
+one channel even when several Actuators share a room. The core publishes
+one available state at the first valid current-cycle observation and then
+only on a changed canonical physical state, availability, or stable
+observation-source fingerprint under §4.2. An identical HA report emits
+neither an edge nor a new state fact. The value is the exact bounded
+`ChannelStateValue`:
+
+```python
+ChannelStateValue = {
+    "actuator_id": str,
+    "controlled_channel": str,
+    "observable_state_contract_id": str,
+    "observed_facets": dict[str, str],  # all valid channel facets as canonical JSON text
+    "changed_facets": list[str],  # sorted/unique, nonempty only for a physical change edge
+    "control_edge_id": str | None,     # same id as the verified resident event, if any
+    "origin": Literal["initial", "heima", "resident_manual", "admin_manual",
+                      "external_automation", "external_integration", "unknown"],
+}
+```
+
+The first valid observation after startup or an availability gap uses
+`changed_facets=[]`, `control_edge_id=None`, `origin="initial"`; it proves
+current state, not an intervention during the gap. A later physical edge
+uses the exact normalized changed-facet set, non-forgeable edge id and
+verified origin class from this ingress. The projected `HouseFact.when` is
+the observation edge instant, or the first valid barrier instant for an
+initial state. On unavailable input it emits `available=False`; its value is
+undefined and no edge id or resident event is fabricated. If a verified
+resident control changes the channel, the state fact and unchanged
+three-field `actuator.resident_control` event share the same
+`control_edge_id`/`HouseFact.when` and enter the same ordered cycle batch.
+The edge id is a join key, never a proof of resident identity by itself:
+Layer 3 requires the separately claimed resident event. An edge linked to
+a Heima `ApplyCall` has `origin="heima"` and cannot join a resident event.
+External/unknown changed edges remain visible as confounders without being
+promoted to resident actions.
+The first valid observation after a process restart is force-written for
+each staged channel even if its old durable fingerprint matches; this
+marks the new observation epoch after Layer 0 §4.4's process gap without
+inventing an intervening control edge. It is one restart boundary record,
+not a per-cycle confirmation.
+
+The Layer-2 staged facet bounds and the Layer-5 lossless canonical JSON-text
+codec apply to `observed_facets`. Every possible complete value must fit
+Layer 1's depth-two/8 KiB limit; staging rejects an unbounded channel
+projection before publication. No raw HA entity id, State object, service
+data, user id, personal identity or unregistered attribute is retained.
+The projection is a history source and read-only current observation; it
+never authorizes an `ApplyStep`, restores a hold or asserts causal origin
+from an unavailable transition. Layer 0 persists its state and the paired
+resident event atomically in the ordinary end-of-cycle fact batch; a failed
+batch/uncertain crash follows §4.4's incomplete-history rule.
+
+A direct resident/admin origin requires a matched authenticated device command or a versioned
+core-approved physical-control adapter. A propagated HA user id or parent id alone is insufficient.
+An automation or integration label requires its own verified execution/link; otherwise use unknown.
+An edge linked to a Heima ApplyCall is tagged internally as Heima-originated and excluded from
+external hold and resident-control attribution before the public HoldOrigin is assigned. No raw HA
+context, personal identity, service payload, or full entity attributes are retained.
+
+### 5.1.1.2 Durable managed-episode projection
+
+A descriptor may opt into resuming an episode it physically started after a
+process restart (Layer 5 §3.2). For each eligible `(actuator_id,
+controlled_channel)`, Layer 5 emits one bounded `reaction.managed_episode.<digest>`
+state fact, using the same channel digest and Location as §5.1.1.1. Its value
+has exactly `status="open"|"closed"`, `reaction_id`,
+`configuration_generation_id`, `reaction_activation_id`,
+`opening_apply_step_id`, and `opening_edge_id`. An opening has all identities;
+a closure retains the identities of the episode it closes. The edge id is the
+verified physical transition linked to that ApplyStep, not a service-call
+success or a target match produced by another actor. No endpoint, raw HA
+state, actor identity, timer or target payload is stored. Layer 5 defines
+when the state opens and closes; Layer 0 validates the bounded schema and
+persists it as an ordinary state fact.
+
+Opening or closure joins the ordinary ordered end-of-cycle fact batch (§4.2),
+atomically with other accepted facts in that batch. There is no extra
+per-command flush, journal, periodic refresh or write for a speed change.
+Write-on-change emits only the opening and closure transitions; the latest
+state record per channel is retained under §4.3, even after older event
+history is pruned. A failed batch remains queued while Heima runs. A crash
+before a committed opening leaves no durable proof; a malformed or absent
+projection likewise supplies no proof. A committed `open` value is only a
+candidate for Layer-5 current-policy revalidation after restart, never an
+independent command permission, restored activation, timer or hold. The first
+fresh physical channel observation is required before that revalidation;
+historical intervals crossing the process gap remain incomplete (§4.4).
 
 ### 5.1.2 Unavailability is an observation break
 
@@ -1035,7 +1463,9 @@ network loss, device fault, or integration restart, and Layer 0 cannot infer whi
 state alone. A later available state likewise cannot reconstruct the channel's intervening state or
 actions.
 
-Layer 0 persists the normal availability change under the ordinary Sensor/source contract, but emits
+Layer 0 persists the channel's normal unavailable state transition under the
+`actuator.channel_state.*` contract above (independent registered Sensors
+retain their own claims), but emits
 neither `actuator.resident_control` nor an implicit conclusion from that transition. Consumers that
 need complete observation windows must treat an interval containing an unavailable channel as
 interrupted rather than as a negative observation. In particular, a later count learner must mark a
@@ -1061,13 +1491,14 @@ an intermediate step. Origin points:
   `LearnedPattern`/`LearningProposalCandidate` it produces. That output's evidence references the
   `fact_type`/`Location`/time-window query used to mine it, so the chain is still walkable backward
   to the source data, even though the relationship is many-to-one rather than one-to-one.
-- **An admin or resident action** (accepting a proposal, clearing a hold, responding to a runtime
-  confirmation): a new `correlation_id` is minted at the boundary that authorizes the action (the
-  admin-verified handler, or the resident-response matcher), with `actor_type` reflecting who acted.
-- **A Recovery-driven event** (§7), including a manual hold restored after a restart (§6.3): mints
-  its own new `correlation_id` with `kind="recovery"`, distinct from the id the original hold was
-  created under — the restore is its own traceable event, not a continuation of the pre-restart
-  chain, since that chain's runtime state no longer exists to continue.
+- **An admin or resident action** (accepting a proposal, directly controlling a device, or
+  responding to a runtime confirmation): a new `correlation_id` is minted at the verified ingress
+  boundary. A hold transition caused by the observed device edge inherits that causal id; it does
+  not become a separately authorized resident action. The recorded origin category remains
+  evidence-based (§6.1).
+- **A Recovery-driven event** (§7), including a recovery diagnostic after a restart (§6.3): mints
+  its own new `correlation_id` with `kind="recovery"`; no pre-restart hold chain or active
+  identity is continued.
 
 The dataclass-level default (a freshly generated id per instance) exists only as a safety net for
 objects constructed outside a tracked causal chain (tests, ad hoc tooling). Production code paths
@@ -1080,382 +1511,365 @@ definition, precisely where there is nothing to inherit *from*).
 
 ---
 
-## 6. Manual Hold Manager
+## 6. Divergence Hold Manager
 
-A manual hold is a resident's override that suppresses some automated behavior in some functional
-domain (lighting, heating, security...) at some `Location`. Two kinds, with genuinely different
-detection, release, and restart behavior — collapsing them into one undifferentiated shape would
-lose real distinctions, not simplify anything:
+A hold is internal runtime state for one or more valid differences between confirmed,
+current admitted Reaction targets and later observations of the same registered Actuator channel.
+The physical value may have been produced by Heima or another actor; its observed origin is
+retained independently of the Reaction target. A standalone direct-admin or recovery-only
+ApplyStep has no continuing Reaction target and does not create a hold anchor. One observation that
+changes several facets creates one hold episode, not one hold per facet. Residents use
+the ordinary Home Assistant controls for that device; there is no hold helper, proxy switch,
+manual-hold service, or separate resident workflow. A hold does not assert that a resident acted.
+The verified origin of the observed change is recorded separately from the fact that a difference
+exists. Layer 0 owns hold lifetime and its frozen admission view. Layer 5 owns the command target,
+facet normalization, physical-confirmation matcher, and pending-apply reconciliation
+(Layer 5 §6.0.1); it submits normalized per-facet expectation and observation transitions to this lower-layer manager.
+Layer 0 never reads a Layer-5 registry or a raw Home Assistant state to infer an expected target.
 
-- **Explicit hold**: the resident turns on a dedicated control (a helper entity, or an equivalent
-  admin/panel-declared override) that unambiguously means "hold this." The control itself is a Home
-  Assistant entity with state that Home Assistant persists natively, so an explicit hold's **live
-  status** is always re-read fresh from that entity's current state every cycle. Heima does retain a
-  narrow checkpoint record for the active instance's identity (§6.2); it is never a live-state
-  fallback and cannot make a helper that is currently off appear active.
-- **Implicit hold**: Heima infers an override from an *unexpected* state divergence — an actuator
-  Heima manages shows a state Heima didn't command, and no other explanation accounts for it. The
-  main such explanation is a **pending apply**: after a Reaction issues an `ApplyStep` (§5), Layer 0
-  expects the target entity to reach that state within a bounded `Window` (§3.2) — an entity-side
-  `HouseFact` change that matches an outstanding expected apply, within its window, is Heima's own
-  doing and never triggers an implicit hold; only a divergence with no matching pending apply does.
-  This is an inference, not a direct signal, and its reliability is exactly what §6.3 has to reason
-  carefully about.
+### 6.1 Identity, origin, and lifecycle
 
-### 6.1 Representation
+The key is `(actuator_id, controlled_channel)` under the committed Actuator generation: at most
+one active hold exists per channel. It carries a nonempty canonical set of currently divergent,
+confirmed facets, one origin trail, and one release boundary. A later valid differing edge may add
+a facet or update an already divergent facet, but never extends the original fixed deadline or
+advances the original next-step boundary. A converged or superseded facet leaves
+the set; the hold ends when the set becomes empty under the applicable event
+reason. The location is the registered Actuator location for audit, not admission.
+The earlier domain/location-wide scope and explicit/implicit distinction are superseded.
+
+The administrator may optionally select `changed_facets` scope for a channel only when its core
+actuation adapter declares complete, deterministic affected-facet sets for every allowed command;
+otherwise the staged scope is `channel`, which is also the default. The administrator does not
+configure individual actions, facet lists, or a resident-facing hold control. A versioned core
+Reaction descriptor selects `fixed_duration` or `next_reaction_step` release for its confirmed
+target. `next_reaction_step` is available only when that descriptor provides a stable identity for
+future timed or event-selected steps of the same Reaction and a versioned normal-exit contract for
+verified cancellation or exhaustion; ordinary re-evaluation and ordered `ApplyStep`s in one
+current bundle are not future steps. The release mode and scope are frozen into the hold at
+activation. Layer 5 §6 defines admission and step recognition.
 
 ```python
-@dataclass(frozen=True)
-class ManualHoldValue:
-    hold_id: str                              # opaque id minted once for this hold instance; a
-                                              # replacement always gets a new id
-    active: bool
-    kind: Literal["explicit", "implicit"]
-    held_state: dict[str, EvidenceValue] | None = None   # optional: the specific state/attributes the
-                                                 # resident wants respected while the hold suppresses
-                                                 # automation here (e.g. a thermostat's target), when
-                                                 # the hold pins a value rather than only suppressing.
-                                                 # Corrected 2026-09-08, was dict[str, Any]: this is a
-                                                 # HouseFact.value (below), which Layer 1 §3 requires
-                                                 # to be EvidenceValue-shaped throughout, recursively —
-                                                 # Layer 1 §3 cites this exact field as its own
-                                                 # compliant example, so the type must actually say so.
+HoldOrigin = Literal[
+    "resident_manual", "admin_manual", "external_automation",
+    "external_integration", "unknown",
+]
+HoldOriginProof = Literal[
+    "direct_authenticated_command", "approved_physical_control",
+    "automation_execution", "integration_link", "none",
+]
 
 @dataclass(frozen=True)
-class ManualHoldLifecycleValue:
+class HoldAdmissionEntry:
+    actuator_id: str
+    controlled_channel: str
     hold_id: str
-    kind: Literal["explicit", "implicit"]
-    event: Literal[
-        "activated", "cleared", "expired", "replaced", "restored", "restoration_discarded",
-    ]
-    reason: Literal[
-        "incomplete_evidence", "expired", "not_eligible", "restart_not_clean",
-        "state_no_longer_coherent",
-    ] | None = None                           # required only for restoration_discarded; forbidden
-                                              # for every other event
-```
+    release_owner_activation_id: str
+    divergent_facets: tuple[str, ...]  # canonical nonempty set
+    scope: Literal["channel", "changed_facets"]
+    expires_at: EvidenceInstant | None  # None for next_reaction_step
 
-Every ordinary lifecycle transition produces one state/audit `HouseFact` pair with a mechanical,
-non-optional contract. Replacement produces two such pairs (one terminal, one activating); a discarded
-restoration produces its audit event alone:
-
-- **Current-state fact**: `fact_type="manual_hold.<domain>"`, `value=ManualHoldValue`, and
-  `where=Location`. It is written on activation, clearing, expiry, replacement, and restoration.
-  `active=True` means this hold instance is now in force; `active=False` closes precisely the
-  identified instance. This is the only manual-hold fact a consumer may read as state.
-- **Audit event**: `fact_type="manual_hold.<domain>.lifecycle"`,
-  `value=ManualHoldLifecycleValue`, and the same `where`. It is written exactly once for every
-  transition, including a discarded restoration that has no current-state fact. Lifecycle events are
-  never read as state; their purpose is a complete audit/notification trail.
-
-`domain` is the functional policy scope being suppressed (lighting, heating, security...), not a
-Layer-4 semantic claim. It is orthogonal to `where`, not folded into it. `hold_id` is opaque,
-non-empty, and minted at activation;
-the paired state fact and lifecycle event use the same id and correlation id. A terminal state fact
-and its lifecycle event likewise share a correlation id. `held_state` is carried on an active state
-fact only; it is `None` on every inactive one.
-
-The required transition table is:
-
-| Transition | State fact | Lifecycle event | `FactSource` |
-| --- | --- | --- | --- |
-| explicit activation / clear | `active=True` / `False`, `kind="explicit"` | `activated` / `cleared` | `resident_response`, `source_id=<helper_entity_id>`, `source_type="manual_hold_control"`, `actor_type="resident"`; only the verified resident helper edge in §5.1 |
-| implicit activation | `active=True`, `kind="implicit"` | `activated` | `analyzer`, `source_id=<domain>`, `source_type="implicit_hold_detector"`, `actor_type="heima"`; never `resident_response` |
-| explicit admin activation / clear | `active=True` / `False`, `kind="explicit"` | `activated` / `cleared` | `admin_command`, `source_id="manual_hold.activate"` / `"manual_hold.clear"`, `source_type="manual_hold_manager"`, `actor_type="ha_admin"`; the verified admin helper edge in §5.1 |
-| implicit admin clear | `active=False` | `cleared` | `admin_command`, `source_id="manual_hold.clear"`, `source_type="manual_hold_manager"`, `actor_type="ha_admin"` |
-| implicit expiry | `active=False` | `expired` | `timeout`, `source_id="manual_hold.expiry"`, `source_type="manual_hold_manager"`, `actor_type="scheduler"` |
-| replacement | old instance `active=False`, then new instance `active=True` | old `replaced`, then new `activated` | exactly the source values of the successor's activation; all four facts share its one newly minted correlation id |
-| successful explicit identity restoration | `active=True`, `kind="explicit"` | `restored` | `recovery`, `source_id="recovery.manual_hold"`, `source_type="manual_hold_restore"`, `actor_type="system"`, with a fresh recovery correlation id |
-| explicit recovery activation without an identity record | `active=True`, `kind="explicit"` | `activated` | `recovery`, `source_id="recovery.manual_hold"`, `source_type="manual_hold_restore"`, `actor_type="system"`, with a fresh recovery correlation id |
-| explicit recovery clear of a stale identity record | `active=False`, `kind="explicit"` | `cleared` | `recovery`, `source_id="recovery.manual_hold"`, `source_type="manual_hold_restore"`, `actor_type="system"`, with a fresh recovery correlation id |
-| successful implicit restoration | `active=True`, `kind="implicit"` | `restored` | `recovery`, `source_id="recovery.manual_hold"`, `source_type="manual_hold_restore"`, `actor_type="system"`, with a fresh recovery correlation id |
-| discarded implicit restoration | none | `restoration_discarded` | `recovery`, `source_id="recovery.manual_hold"`, `source_type="manual_hold_restore"`, `actor_type="system"`, with a fresh recovery correlation id |
-
-An explicit hold has no Heima expiry: its helper entity's current state is authoritative. An implicit
-hold has one `AtJob`; its expiry emits the `expired` transition above before removing the in-memory
-entry. `restoration_discarded.reason` is exactly one of `"incomplete_evidence"`, `"expired"`,
-`"not_eligible"`, `"restart_not_clean"`, or `"state_no_longer_coherent"`; its evidence includes the
-same frozen restoration fields defined in §6.3. This records every Recovery decision as durable,
-queryable data rather than only as a diagnostic message.
-
-An explicit control is therefore not a generic HA boolean: it is a configured, dedicated control
-entity with a known domain and `Location`, and its state edge retains the HA event context until the
-Manual Hold Manager has authorized or rejected it. A resident edge maps to `resident_response`; an
-admin edge maps to `admin_command`, and may therefore activate or clear the explicit hold. An
-unattributable or automation/service-originated edge creates neither state nor lifecycle fact and leaves
-any existing hold unchanged. It is surfaced as a diagnostic rather than silently reclassified as an
-implicit hold, whose distinct divergence evidence is required by §6's own definition.
-
-**Live state never lives in the durable `HouseFact` log.** The Manual Hold Manager keeps the
-authoritative "is this active right now" state for **implicit** holds in an **ephemeral in-memory
-table**, keyed by `(domain, Location)`, each entry holding its own expiry `AtJob` (§3.1). The
-`HouseFact` above is still written for durable audit and learning ("how often does the resident
-override X") — but reading that durable log is never how "is this active now" gets answered, for
-either kind of hold. For an implicit hold specifically, this matters because it means the in-memory
-table, not the durable log, is what determines restart behavior: whatever is in memory when the
-process stops is gone, full stop, regardless of what's sitting in durable storage. **Corrected
-2026-09-08**: an earlier version of this paragraph said the in-memory table determines restart
-behavior "for either kind of hold" — an overgeneralization §6.2 already contradicts: an explicit
-hold never has an entry in this table at all, live or otherwise — its status is re-read fresh from
-its backing entity every cycle (§6.2), so nothing about this table's restart fate applies to it.
-
-**Concurrency**: starting a new hold on an already-held `(domain, Location)` replaces the existing
-in-memory entry and its `AtJob` — last-write-wins, not stacked. It emits the mandatory `replaced`
-terminal transition for the old `hold_id`, then the mandatory `activated` transition for the new one.
-Both state/lifecycle pairs inherit the one source and one new correlation id of the action that caused
-the replacement; replacement itself is not a second causal origin.
-Clearing a hold (its `AtJob` firing, an explicit resident action, or an admin action) emits its
-mandatory terminal transition before removing the in-memory entry. None of these durable facts is what
-a live "is this still active" check consults.
-
-### 6.2 Explicit holds and restart
-
-The backing helper remains the sole authority for whether an explicit hold is live. Its ordinary
-Sensor-produced `HouseFact` is read every cycle; neither the audit log nor a checkpoint may override
-an observed inactive helper. A separate checkpoint record exists solely to preserve the immutable
-identity and optional pinned state of an already-active instance:
-
-```python
 @dataclass(frozen=True)
-class ExplicitHoldIdentity:
-    helper_entity_id: str
-    domain: str
-    where: Location
+class HoldAdmissionView:
+    entries: tuple[HoldAdmissionEntry, ...]  # canonical key order, unique key
+    actuator_generation_fingerprint: str
+    fingerprint: str
+
+@dataclass(frozen=True)
+class HoldLifecycleValue:
+    operation_id: str  # unique per admitted transition; stable on queue retry
     hold_id: str
-    held_state: dict[str, EvidenceValue] | None
-```
-
-There is at most one active record per `(helper_entity_id, domain, Location)`. Manual Hold journal
-compaction (§6.4) writes it after an explicit activation, replacement, or material change, and removes
-it after an ordinary clear. It is metadata for identity and audit continuity, not an alternative state
-store.
-
-At bootstrap, before the first semantic resolver evaluates, the Manual Hold Manager reconciles each configured
-explicit helper against its matching checkpoint record exactly once:
-
-1. Helper active and matching record present: recreate the ephemeral runtime association with the
-   recorded `hold_id` and `held_state`, then emit an active state fact and `event="restored"` under one
-   fresh Recovery correlation id. The helper's current active state, not the record, authorizes this.
-2. Helper active and record absent or malformed: mint a new `hold_id`, create and immediately
-   journal its record, then emit the active state fact and `event="activated"` under one fresh
-   Recovery correlation id. This is an honest new observed instance: Heima cannot claim identity it
-   did not durably retain.
-3. Helper inactive and matching record present: emit the terminal inactive state fact and
-   `event="cleared"` for that record's `hold_id` under one fresh Recovery correlation id; its journal
-   compaction removes the record. This closes a transition that may have occurred immediately before
-   an unclean stop.
-4. Helper inactive and no record: do nothing.
-
-After reconciliation, ordinary edges use the transition table in §6.1. This mechanism adds no
-per-cycle I/O or lookup: normal evaluation consults only the fresh helper fact and its in-process
-association; checkpoint reads and reconciliation occur once during bootstrap, while writes are only
-on explicit-hold transitions.
-
-### 6.3 Implicit holds and restart
-
-**Default: an implicit hold never survives a restart.** If it were silently restored, a suppression
-could remain in effect indefinitely with the resident unaware it's still blocking a
-potentially safety-relevant behavior — and immediately after a restart, the very signal implicit
-holds are detected from (state divergence) is contaminated: Home Assistant may report power-restore
-state before real device state is available, and Heima cannot yet tell that apart from a genuine
-manual override. Restoring by default would risk manufacturing a false, permanent override out of a
-restart artifact.
-
-**Conditional restoration is possible, gated narrowly, opt-in per entity class, never silent.**
-
-**Eligibility is a property of the actuator behind the hold, not of the functional domain.**
-Risk varies within a domain far more than across domains — a domain-level "Heating may restore its
-holds" toggle would be too coarse (a thermal-safety-relevant actuator and a purely comfort one both
-being "heating" doesn't mean they carry the same restart risk). Layer 2's `Actuator` registry entries
-carry a classification field for this purpose (corrected 2026-09-06: `Sensor` does not carry this
-field — an implicit hold is by definition triggered by a *commanded* entity diverging from its
-expected state, so the eligibility lookup is always against the diverging entity's `Actuator`
-record, never its `Sensor` record):
-
-```python
-implicit_hold_restore_class: Literal["eligible", "never"] = "never"   # conservative default
-```
-
-Whichever logic detects the divergence and creates the implicit hold already knows which entity
-triggered it — it reads that entity's `implicit_hold_restore_class` once, at hold-creation time, and
-**freezes** the result into the hold's own evidence:
+    actuator_id: str
+    controlled_channel: str
+    divergent_facets: tuple[str, ...]  # state after transition; empty on terminal transition
+    event: Literal["activated", "updated", "converged", "expired", "released", "invalidated"]
+    release_reason: Literal["next_reaction_step", "reaction_cancelled",
+                            "reaction_completed"] | None
+    invalidation_reason: Literal["observation_lost", "configuration_changed",
+                                 "authority_revoked", "removed_or_rebound",
+                                 "expectation_superseded"] | None
+    scope: Literal["channel", "changed_facets"]
+    release_mode: Literal["fixed_duration", "next_reaction_step"]
+    expires_at: EvidenceInstant | None  # original deadline; absent for next_reaction_step
+    reaction_id: str  # release owner, fixed when the hold opens
+    reaction_generation_id: str  # release-owner generation
+    reaction_activation_id: str  # release-owner activation, fixed when the hold opens
+    anchor_step_id: str | None  # None for a fixed-duration Reaction
+    anchor_target_fingerprint: str
+    origin: HoldOrigin
+    origin_evidence: HoldOriginProof  # closed proof class; "none" exactly for unknown
+    observation_context: Literal["normal", "after_observation_break"]
+    expected_values: dict[str, str]  # facet -> bounded canonical JSON text
+    observed_values: dict[str, str]  # current or last known before break; same facets
+    expectation_reaction_ids: dict[str, str]  # facet -> admitted Reaction id
+    expectation_generation_ids: dict[str, str]  # facet -> Reaction generation
+    expectation_activation_ids: dict[str, str]  # facet -> Reaction activation
+    expectation_target_fingerprints: dict[str, str]  # facet -> confirmed target
+    expectation_step_ids: dict[str, str]  # facet -> confirmed planned step, if any
+    expected_fingerprint: str
+    observed_fingerprint: str
 
 ```
-Provenance.evidence.restore_eligible: bool         # resolved and frozen at creation; a later change
-                                                     # to the registry classification does not
-                                                     # retroactively change already-created holds
-Provenance.evidence.trigger_entity_id: str          # the entity whose divergence produced this
-                                                     # inference — needed by the restart checks below
-Provenance.evidence.trigger_state: dict[str, EvidenceValue]   # that entity's relevant state/
-                                                     # attributes at the moment the hold was created —
-                                                     # corrected 2026-09-07, was dict[str, Any]: Layer
-                                                     # 1 §4.3 constrains every `evidence` value to
-                                                     # EvidenceValue (JSON primitives, depth <= 2) and
-                                                     # cites this exact field as its compliant example
-                                                     # ("one level of nested attributes, not deeper");
-                                                     # the type annotation must actually say so, not
-                                                     # imply a looser shape than Layer 1 permits
-Provenance.evidence.expiry: EvidenceInstant         # Layer 1 §4 canonical UTC ISO-8601 text; the
-                                                     # raw Python datetime is normalized before it is
-                                                     # placed in evidence
-                                                     # added 2026-09-07, closing a gap found in
-                                                     # review: the restoration algorithm below
-                                                     # (steps 1 and 5) needs the hold's original
-                                                     # expiry to know whether it already lapsed and to
-                                                     # compute the remaining delay — this was
-                                                     # referenced as "recorded_expiry" without ever
-                                                     # being declared as a stored field anywhere
-```
 
-Layer 0's restart logic (below) only ever reads these already-resolved fields — it never queries
-Layer 2's registry at restart time, preserving the rule that Layer 0 depends on nothing above it.
+The origin is assigned at ingress from verified causal evidence, not guessed from the state value,
+time, location, or a propagated HA `user_id` alone. `resident_manual`/`admin_manual` require a
+matched direct authenticated device command or a separately approved physical-control adapter;
+an automation descendant of a user action is not that direct command. `external_automation`
+requires a verified automation execution or service-call link; `external_integration` requires a
+verified integration link. Heima's own pending or completed command is excluded before origin
+classification. If no such proof exists, the origin is `unknown`, and the hold still applies.
+The proof class is direct_authenticated_command for a matched resident/admin call,
+approved_physical_control for a core-approved physical adapter, automation_execution for a
+verified automation link, integration_link for a verified integration link, and none only for
+unknown. Neither the live view nor durable audit retains a personal identity, raw HA context,
+full HA entity state, or service payload. The two value maps are copied canonical
+scalar projections, never raw HA state or arbitrary attributes. Each map value
+is the RFC-8785 canonical JSON text of the target contract's normalized facet
+value, under the shared codec and facet-key grammar of Layer 5 §6.0. It is a
+string in the audit payload even when the physical facet is a number, boolean,
+array or object; parsing the text recovers the same normalized value. The
+complete dataclass is normalized and validated as an ordinary Layer-1 §3
+`HouseFact.value`, including depth two and 8 KiB.
+The first four expectation-source maps have exactly the canonical facet keys of
+both value maps; `expectation_step_ids` has a subset of those keys and includes a
+key only when that confirmed expectation came from a planned step. They identify
+the confirmed expectation used for this transition, including its previous source
+when a facet is removed after that expectation is superseded. An observation
+cannot invent a step id. Every source map is canonically ordered by facet name,
+contains only copied scalar ids/fingerprints, and is bounded by the registered
+facet set and normalized adapter contracts. At staging, the core computes the
+maximum canonical UTF-8 bytes and collection depth of the *complete*
+`HoldLifecycleValue` for each permitted channel adapter/scope and the full
+staged set of Reactions that may confirm facets on that channel. The
+calculation includes mixed-Reaction transitions, every transition kind, the
+largest allowed facet set and source maps, optional step ids, longest closed labels,
+canonical timestamps, and enforceable maximum RFC-8785 escaped JSON byte
+lengths on every variable id,
+facet name and facet-value text. Generated ids and fingerprints have fixed
+length; registry/configuration ids must declare a finite accepted length.
+If any maximum cannot be proved, or a possible value exceeds depth two or
+8 KiB, staging rejects that composition atomically. A change to an adapter,
+facet contract, identity bound or any contributing Reaction generation repeats the proof before
+cutover. No accepted audit is truncated to fit. The runtime validator checks
+the actual complete value again; a violated staged bound is an explicit
+producer diagnostic, never permission to weaken a live hold (§6.4).
+The top-level Reaction and activation fields name the first hold's release
+owner, even when a later transition's facet source belongs to another Reaction.
+An `updated`
+transition caused solely by target supersession retains the last verified
+observed-change origin and last known observed values; it does not claim a new
+manual edge. On an
+observation-break invalidation, the observed values are explicitly the last known values, not a
+claim about the newly unavailable device. `invalidation_reason` is required only for
+`event="invalidated"`; `release_reason` is required only for `event="released"`; otherwise
+those reasons are None. Every transition has its own operation id, including an update that adds
+a facet to the same hold. The origin category is evidence about
+*how the observation arose*, never a resident authorization or a reason to vary the hold's
+blocking effect.
 
-**Interaction with `evidence`'s fail-soft policy (Layer 1 §4.3) — resolved 2026-09-07.** A shape or
-size violation on `evidence` silently resets it to `{}` for that `HouseFact`, per Layer 1's own rule;
-nothing above previously said what the restoration algorithm should do if that happened to an implicit
-hold's record. Resolved as an explicit precondition on the algorithm below: if any of
-`restore_eligible`/`trigger_entity_id`/`trigger_state` is absent, or `expiry` is absent or not a valid
-canonical `EvidenceInstant`, in a checkpointed hold's `evidence` (whether because it was never
-populated, malformed, or wiped by the fail-soft policy), discard the candidate — the same conservative
-outcome as `restore_eligible=false` (step 3 below), checked earlier as its own step (step 1) since
-every later step needs these fields to be readable at all. This keeps
-the failure mode conservative (never restoring on incomplete data) and consistent with every other
-gate in this algorithm being a "discard unless every check passes" design, rather than leaving an
-implementer to guess at undefined behavior for a safety-relevant decision.
+Every admitted lifecycle change submits one complete typed transition and fact
+metadata to the ordered asynchronous audit queue, subject to §6.4's write-failure
+and invalid-payload diagnostics. The writer produces exactly one event `HouseFact`
+with `fact_type="manual_hold.lifecycle"`, `value=HoldLifecycleValue`, and the Actuator's registered
+`Location`. Its `FactSource` is the Manager (`kind="analyzer"`, `actor_type="heima"`) for activation,
+update, convergence, release, and invalidation, or `kind="system"`, `actor_type="scheduler"` for scheduled expiry. Here `analyzer` identifies
+the Manager's derived comparison of a confirmed expectation with a later observation; it
+does not classify the actor who changed the device. The stable `manual_hold.lifecycle`
+identifier names internal intervention history and makes no claim of resident action;
+`origin` and its proof carry that separate attribution.
+The event carries a fresh transition operation id distinct from its causal `correlation_id`;
+retry of the same operation cannot append it twice. There is no current-state `manual_hold.<domain>` fact:
+the generic `FactIdentityKey(fact_type, Location)` cannot identify multiple held channels in one room.
+The in-memory association and its frozen `HoldAdmissionView` alone authorize live admission.
+Historical event facts are audit/learning evidence, never a way to reconstruct an active hold.
 
-**How the data survives the restart at all**: the in-memory table is genuinely gone after a restart,
-with nothing recoverable from it — that part doesn't change. What makes conditional restoration
-possible is a **second, redundant, durable copy**: the Manual Hold journal (§6.4) durably records the
-transition before its facts and checkpoint mutation can diverge, then compacts its checkpoint update
-after the facts commit. The checkpointed entry for an implicit hold carries
-the complete active-state identity (`hold_id`, domain, `Location`, `kind="implicit"`, and
-`held_state`) plus `restore_eligible`/`trigger_entity_id`/`trigger_state`/`expiry` verbatim,
-independent of whether `trigger_entity_id` happens to also be on Recovery's own general
-critical-entity allowlist (§7.3) — the hold's own record is self-sufficient for the checks below and
-for the state/lifecycle facts it may need to emit; it does not rely on that separate allowlist covering
-the right entity by coincidence. This checkpoint copy is intentionally redundant with the audit
-`HouseFact` written for the same event (§6.1) — the two serve different purposes (restart continuity
-vs. long-term audit/learning trend) and are not a duplication to collapse into one. On restart,
-Recovery reads the last-written checkpoint — the same file it already reads to answer "did anything
-change while Heima was offline" — and that snapshot, not the vanished in-memory table, is what the
-restoration algorithm below runs against.
+### 6.1.1 Frozen admission view
 
-**Restoration algorithm**, run once at startup, before the first semantic resolver evaluates, for each implicit
-hold found in the last checkpoint:
+Before each decision input barrier, the Manager publishes a deeply immutable view. `fingerprint` is
+SHA-256 of RFC-8785 canonical JSON over the ordered entries and Actuator-generation fingerprint;
+actor identity and origin are excluded because they do not change admission. Layer 4 transports
+this view opaquely in `DecisionSnapshot`; Layer 5 uses only that snapshot for a decision and never
+reads a newer mutable table. A configuration cutover invalidates entries whose Actuator identity, channel, scope, release
+policy, affected-facet contract, or authorized expectation changed. It emits `invalidated` for each in canonical key
+order and publishes a new view before another automatic admission. An unresolvable Actuator key
+fails admission at the Layer-5 validation boundary rather than being treated as disjoint.
 
-Every discard in steps 1-5 emits exactly one `manual_hold.<domain>.lifecycle` fact with
-`event="restoration_discarded"`, the checkpointed `hold_id`/`kind="implicit"`/`Location`, the fresh
-Recovery correlation id, and the matching `reason` named in §6.1. It emits no current-state fact:
-the candidate was never active in this runtime. The implementation records the same outcome in the
-diagnostic surface, but the lifecycle fact is the durable, authoritative audit record.
+### 6.2 Detection and release
 
-1. If `restore_eligible`/`trigger_entity_id`/`trigger_state`/`expiry` is not all present in the hold's
-   `evidence`, or if `expiry` cannot be parsed as Layer 1 §4's canonical `EvidenceInstant` — whether
-   never populated, malformed, or wiped by Layer 1 §4.3's fail-soft policy — discard it. Same
-   conservative outcome as step 3 below (`restore_eligible=false`), checked first since every later
-   step needs these fields to even be readable. The lifecycle reason is `"incomplete_evidence"`. Call
-   the parsed result `expiry_at`.
-2. If `expiry_at` has already passed, discard it — it would have expired anyway. The lifecycle reason
-   is `"expired"`.
-3. If `Provenance.evidence.restore_eligible` is `false`, discard it. The lifecycle reason is
-   `"not_eligible"`. No exceptions past this point —
-   this is the per-entity opt-in from above.
-4. If Recovery's classification (§7.2) flags ambiguity for `Provenance.evidence.trigger_entity_id`
-   (`power_restore_candidate` or `unknown_during_downtime`), or the cycle-level state is not
-   `normal`/`startup_recovery`, discard it — this is the restart-cleanliness gate; §7.2 explains
-   exactly which states block and why `startup_recovery` alone does not. The lifecycle reason is
-   `"restart_not_clean"`.
-5. If `trigger_entity_id`'s **current** live state no longer matches
-   `Provenance.evidence.trigger_state` (captured when the hold was created), discard it — the
-   premise that justified the inference no longer holds, independent of restart cleanliness. The
-   lifecycle reason is `"state_no_longer_coherent"`.
-6. Otherwise: recreate the in-memory entry and arm a fresh `AtJob(due=expiry_at)` (§3.1 computes
-   `expiry_at - now()` once into its monotonic delay, preserving the hold's original real-world
-   duration rather than restarting a full-length window), then
-   emit both facts required by §6.1: `manual_hold.<domain>` with the original `hold_id`,
-   `active=True`, and `kind="implicit"`; then `manual_hold.<domain>.lifecycle` with
-   `event="restored"`. Both have `FactSource(kind="recovery", actor_type="system")` and one fresh
-   correlation id (§5.2). Layer 0 never calls into Layer 6 directly; it only produces facts, exactly
-   as it already does for everything else it records, preserving the rule that Layer 0 depends on
-   nothing above it. Layer 6's notification pipeline — already designed to consume this kind of
-   event from Reactions and Semantic Resolution — is what turns the lifecycle event into "an implicit
-   hold on `<domain>` at `<Location>` was restored after restart" for the resident. Restoration is
-   never silent, regardless of which entity class made it eligible; this is what actually closes the
-   "resident unaware" risk that motivated the default in the first place, on top of getting the
-   restoration decision right.
+Layer 5 submits all qualifying confirmed-facet changes from one normalized observation as
+one atomic channel transition; it never calls the Manager once per facet for that observation.
+A divergence qualifies only when the channel/facet is registered and
+currently observable; its current admitted Reaction target was physically confirmed during the present
+uninterrupted runtime observation epoch; the current valid observation differs under the versioned
+core matcher; the observation is a new, deduplicated state edge after that confirmation; and it is
+neither a Heima-originated command nor an observation still being reconciled under a pending apply.
+Layer 0 checks the submitted Actuator/generation key and release contract before activation;
+only `fixed_duration` requires a configured positive `Window`. A command with completed HA service calls but no physical confirmation by its deadline has an
+`unconfirmed` execution outcome under Layer 5's pending-apply contract, not a hold or a claimed
+resident correction at that deadline. Partial confirmation establishes expectations only for the facets actually
+confirmed. After a terminal pending timeout, a fresh valid read matching a facet of the still
+authorized recorded target may establish a current expectation for that facet without revising
+the terminal execution outcome. Only a later distinct differing edge may activate its hold. A
+timeout or unavailable state alone never activates a hold.
 
-This is a deliberate, narrow, explicitly-declared amendment to the default rule above — restoring
-requires an admin/installer to have explicitly classified the specific entity as eligible; nothing
-is restored by default, and nothing is ever restored quietly.
+The Manager mints one hold id on the first qualifying edge. It copies the
+release owner's current `reaction_activation_id` into the live entry and audit;
+that id never changes when another facet joins. For `fixed_duration` it arms one
+`AtJob` at that instant; for `next_reaction_step` it retains the originating Reaction/generation/activation
+and the confirmed target/step identity supplied by Layer 5. One qualifying observation may add
+several divergent facets in one `activated` transition. A later distinct valid edge on the same
+channel updates the observed fingerprint, verified origin and divergent-facet set in one `updated`
+transition; it never extends or replaces the shared boundary. Under selective scope, a later
+facet whose confirmed expectation came from a different Reaction still inherits the first hold
+anchor if it becomes divergent while that channel hold is active. Layer 5 supplies
+the five expectation-source maps for the facets involved in that transition,
+including a mixed-facet observation; Layer 0 validates matching keys and retains the first hold's
+Reaction/generation/activation, step and release boundary. The observed-change origin and
+the source of the expected value remain separate. A later Reaction's step cannot
+release the first Reaction's hold. There is no second concurrent hold on the
+channel. A duplicate does nothing. This is
+intentional: a facet first changed just before expiry receives only the remaining interval.
+Convergence removes matching facets in one `updated` transition while some remain; only
+complete physical convergence emits `converged` and ends the hold. When a
+non-owning Reaction activation's confirmed target for a held facet is no longer current,
+Layer 5 reports the committed supersession or loss of that expectation. Layer 0
+removes only its affected facets, with one `updated` transition if other divergent
+facets remain; it preserves the opening Reaction's release owner and boundary.
+If this empties the set without physical convergence, it emits `invalidated` with
+`invalidation_reason="expectation_superseded"`. A due candidate step alone, before
+Layer 5 establishes that the earlier admitted target is no longer current, does
+not remove a facet. A replacement target must pass ordinary admission and
+physical confirmation; only a later distinct edge can diverge from it. Fixed expiry emits
+`expired` and releases all remaining facets. Release acknowledges the current observation revision:
+the unchanged mismatch cannot immediately create a new hold; another qualifying edge is required.
+Loss of observation, removal/rebinding, revocation of the release owner's
+expectation, or a semantic configuration change emits `invalidated` and releases
+the hold; loss of a non-owner expectation follows the facet rule above. A newly authorized target is not treated as a divergence until Heima has recorded the admitted
+target decision and confirmed its expected facets from a valid observation; an
+`already_satisfied` decision can do so without sending a command. Each transition updates the
+live table before the next frozen view;
+durable audit completion is never a prerequisite for an in-memory safety decision.
 
-### 6.4 Manual Hold journal and crash consistency
+For fixed release, the duration is one explicit positive `Window` in the staged Actuator
+configuration, shared by every fixed-duration channel on that Actuator. Each channel hold arms
+its own deadline from its activation instant; the shared duration does not merge those deadlines.
+It cannot come from an observation source or historical inference. Layer 0 uses Timing's
+monotonic `AtJob`, never resumed after restart. For next-step release, Layer 5 reports
+the first later timed or fresh-event-selected step of the *same Reaction,
+generation and activation on the same channel* whose canonical target differs.
+An event-selected step must carry the staged typed current-snapshot boundary
+and stable planned-step identity; a past event cannot be replayed to release
+a hold. Layer 5 may report it as release-capable only when its descriptor
+declares a typed continuation condition for the fresh post-release snapshot;
+failure of that condition admits no later command. Layer 0 rejects a step
+from an earlier or later activation, even under the same configuration
+generation. This releases the entire hold via Layer 5's preliminary non-command result and a fresh
+frozen snapshot before ordinary guard/admission checks, even if those checks then prevent
+the new command. A normal re-evaluation or another current-bundle
+member is not such a step. A programmed change to any target facet on that channel releases the
+whole hold, even when the resident changed a different facet: the later full target may restore
+that earlier facet. This tradeoff is explicit, not a hidden per-facet exception. A
+Layer-5 `ReactionNormalExitResult` proving normal cancellation or natural
+completion of the *owning activation* without another step also releases its
+hold. Layer 0 checks Reaction, generation and activation against the fixed
+release owner and rejects a terminal result from any other activation.
+Finishing an individual `ApplyStep` or one-shot bundle is not a normal
+exit. A valid, exhausted step stream is completion only when the versioned
+descriptor contract verifies no later step and no ongoing target; temporary
+source unavailability is not. Both terminal outcomes share the
+default exit behavior: no restore command, leave the observed device state, and produce
+a typed Layer-5 follow-up occurrence for Layer-6 event production when the last
+confirmed target still differs from the observed state or observation is unavailable
+(Layer 5 §6.0). A versioned core descriptor may
+instead specify a final target. For a normal cancellation request, Layer 5 releases the hold,
+obtains a fresh snapshot, and attempts that terminal action under still-current authority,
+guards, arbitration and physical verification before closing the activation.
+A blocked or unconfirmed final action does not prevent that closure; Layer 5
+reports the actual observed state through that same operational event path.
+Pending observation after closure cannot cause another call from that activation;
+the configured Reaction remains eligible for a later qualifying start.
+Administrative disablement and consent revocation of the release owner remain
+immediate, invalidate the whole hold, and admit no terminal call after revocation;
+loss of a non-owner expectation follows the facet-only rule above. Temporary unavailability
+of next-step data is not cancellation or completion and does not invent a release event.
+Only Layer 5's validated normal-exit result applies the exit behavior; an
+invalid or unreadable program alone does not prove it ended. An indefinitely
+constant Reaction cannot offer `next_reaction_step` as its release mode. There
+is no implicit timer fallback.
 
-Every Manual Hold transition — explicit or implicit activation, clear, expiry, replacement,
-restoration, and restoration discard — is one `ManualHoldJournalEntry` before it is a durable fact or
-checkpoint mutation:
+### 6.3 Restart and observation breaks
 
-```python
-@dataclass(frozen=True)
-class ManualHoldCheckpointUpdate:
-    action: Literal["upsert", "delete"]
-    hold_id: str
-    domain: str
-    where: Location
-    kind: Literal["explicit", "implicit"]
-    payload: PersistedProjection | None       # full §6.2/§6.3 checkpoint payload for upsert;
-                                               # None only for delete; Layer 1 bounded projection
+Every process restart starts with an empty live hold table. A checkpoint, journal, or historical
+`HouseFact` never restores a hold. The first valid observation after HA/Heima restart, confirmed
+power recovery, or an availability gap establishes a new observation epoch and is not itself a
+manual-control edge or hold cause. A difference between that reading and the last pre-restart
+expectation may be displayed on Layer 0 §10's existing non-authoritative diagnostic surface,
+alongside the current RecoveryState and the known observation break. It is not a
+`HoldLifecycleValue`, a hold lifecycle `HouseFact`, or checkpoint state; it creates no new
+diagnostic type or persisted event. Its cause remains unknown, is not attributed to a resident,
+and does not block normal current-policy evaluation. Heima may issue the newly authorized current
+target through the ordinary Layer-5 admission and recovery rules. A power-on default for a bulb
+receives the same treatment. There is no claim about what occurred while power or observation was
+absent. A hold active before an observation break is invalidated; the first returned value cannot
+continue it or create another without a newly confirmed expectation and later edge.
 
-@dataclass(frozen=True)
-class ManualHoldJournalEntry:
-    operation_id: str                         # exactly the transition's correlation_id
-    facts: tuple[HouseFact, ...]              # state/lifecycle pair, or two pairs for replacement
-    fact_roles: tuple[str, ...]               # stable roles within operation; e.g. state, lifecycle,
-                                               # old_state, old_lifecycle, new_state, new_lifecycle
-    checkpoint_update: ManualHoldCheckpointUpdate
-```
+### 6.4 Audit ordering and failures
 
-`operation_id` is one causal operation, not one fact: a replacement has four roles under its one
-correlation id. The journal is a small write-ahead log owned solely by the Manual Hold Manager; it is
-not a general event journal and is never used for ordinary sensor facts, evaluation output, or actuator
-commands.
+The live table is process-local. Each lifecycle transition mints a unique opaque
+operation id before updating the table, stores it in `HoldLifecycleValue`,
+and reuses it on every queue retry. The producer copies the complete typed
+transition, its facet-source maps and frozen `where`, `when`, `how` fact
+metadata; it validates the normalized value against Layer 1 §3 and retains
+canonical bytes at acceptance, without any mutable caller-owned map
+reference. Each reader receives a separate reconstructed value rather than
+the queue's internal mapping. A validated transition enters the ordinary
+short-term event buffer and ordered asynchronous durable queue at its
+original append order and time. Live hold admission updates independently
+of durable acknowledgement and never reads audit history.
 
-The protocol is mandatory:
+Staging has already proved that every admitted adapter/scope/Reaction
+combination can produce a complete inline `HoldLifecycleValue` within
+Layer 1's depth-two and 8 KiB limits (§6.1). The actual runtime value is
+checked again. If an implementation violates that bound or supplies an
+invalid shape, it reports a producer-contract failure and does not publish
+a malformed or truncated fact. The live hold still takes effect; it is not
+cleared or bypassed merely because its audit could not be constructed.
+The producer records the attempted transition instant as an in-process
+continuity blocker: the §4.4 watermark cannot advance past it, and a
+historical read requiring lifecycle audit reports
+`required_stream_unavailable` from that known instant. If the process crashes,
+the last acknowledged watermark conservatively opens the interruption.
+The gap is visible in diagnostics and historical continuity, never
+interpreted as proof that no hold existed. An invalid value cannot enter
+the ordinary retry queue.
 
-1. Authorize the transition and construct its complete facts, checkpoint update, and correlation id.
-   The upsert payload must first pass Layer 1's `PersistedProjection` validation; a shape, depth, or
-   size violation rejects this proposed hold transition before any fact or journal entry exists and
-   emits a diagnostic. This is distinct from a later medium write failure, for which the explicit
-   degradation rule below applies.
-2. Append and `fsync` the journal entry before considering the transition durably complete.
-3. Update the live hold state and enqueue the facts for the normal end-of-cycle durable batch. The
-   EventStore accepts each fact idempotently by `(operation_id, fact_role)`; a replay cannot append a
-   duplicate lifecycle event or a second replacement pair.
-4. After that batch acknowledges every role, atomically merge `checkpoint_update` and delete the
-   journal entry in one checkpoint-file replacement.
+The in-memory admission index coalesces an exact repeated operation id
+only after comparing the complete canonical fact payload; a mismatch is
+rejected immediately without disk I/O. The index covers queued or
+in-flight events and drops an entry after durable acknowledgement. The
+background writer enforces a durable unique key on
+(`fact_type="manual_hold.lifecycle"`, `operation_id`) and compares
+complete canonical payloads on a collision: an exact retry retains one
+fact, while a changed payload is a diagnostic failure. This durable
+check runs outside evaluation. Equal causal `correlation_id` values do
+not deduplicate independent transitions; one multi-facet observation
+creates one transition and operation id, while two distinct transitions
+receive different ids.
 
-At bootstrap, before §6.2 helper reconciliation or §6.3 implicit restoration, the manager replays
-every remaining journal entry: it idempotently commits any missing fact roles, applies its checkpoint
-update, and removes the entry atomically. The replay retains the original facts and correlation id;
-it completes the interrupted original operation, rather than fabricating a new Recovery event.
-
-**Journal write failure is explicit degradation, never a reason to ignore an override.** If append or
-`fsync` fails, the Manager keeps the explicit helper state or inferred implicit suppression live in
-memory, emits a diagnostic, and marks the Manager's diagnostic state `durability_pending`. Its fact
-pair remains available in the in-memory buffer for current-cycle consumers but is withheld from the
-durable batch until the journal is durable; a background retry with backoff performs no disk I/O in
-the evaluation path. A process crash while it remains pending can lose identity/audit continuity
-because no durable record exists — an unavoidable consequence of the failed medium, stated rather
-than hidden. On restart the existing conservative rules apply (explicit helper reconciliation; no
-implicit restore absent its durable record). Once the retry succeeds, the original operation is
-committed through the same idempotent protocol above.
-
----
+A durable write failure leaves the live hold effective and exposes
+`durability_pending` until retry; it never turns the failed write into
+permission to act. A crash can lose queued but unwritten audit, so history
+consumers use the known process/observation break rather than infer
+uninterrupted hold state from the last event. The §4.4 continuity
+watermark advances only after this ordinary audit fact is durably
+acknowledged. No hold checkpoint update or hold-specific `fsync` is
+required because no live hold or identity is restored.
 
 ## 7. Recovery / Checkpoint
 
 A lightweight, pre-DAG context computed once per evaluation cycle, before any semantic resolver runs. It
 classifies runtime state and makes that classification available, **read-only**, to everything
-downstream — including the Manual Hold Manager (§6.3) — so behavior can be conservative and
+downstream — including the hold observation boundary (§6.3) — so behavior can be conservative and
 explainable right after a restart or during a partial outage.
 
 ### 7.1 Cycle-level classification
@@ -1484,13 +1898,7 @@ after a restart, Recovery attaches one of:
   behavior (e.g. a light or switch returning to a default state when power is restored).
 
 Both labels, and the cycle-level states `power_recovery`, `degraded_recovery`, and
-`recovery_settling`, are what §6.3's restart-cleanliness gate consults — a "clean" restart is one
-where none of the entities behind a given implicit hold carry either label, and the cycle-level
-state is `normal` or `startup_recovery`. `startup_recovery` alone does **not** disqualify a restore
-candidate: it is the classification necessarily in effect during the very cycle this algorithm runs
-in — nothing has been evaluated yet to know otherwise. What disqualifies a candidate is specific
-evidence of an actual power event, ongoing degradation, or not yet having settled back to normal,
-not merely "just started".
+`recovery_settling`, identify observation ambiguity for consumers; they never establish an offline manual action or restore a hold (§6.3).
 
 ### 7.3 Checkpoint mechanics
 
@@ -1502,32 +1910,30 @@ the rest of the checkpoint. At recovery, an entity without a usable prior projec
 and is treated conservatively as unknown, never as evidence that nothing changed. The checkpoint is
 written:
 
-- **periodically**, by one system-owned `IntervalRecurrence(interval_s=60)` (§3.1), since Recovery
+- **periodically**, by one system-owned `IntervalRecurrence(interval=Window(seconds=60))` (§3.1), since Recovery
   consumes Timing's execution primitive like everything else that needs periodic work. The callback
   performs a checkpoint replacement only when the checkpoint is `dirty` (a critical-entity projection,
   recovery target, or checkpoint-owned recovery field changed since the completed commit); otherwise
   it performs only an O(1) dirty-flag check and no disk I/O. A failed replacement leaves the flag set
   for retry and emits the ordinary persistence diagnostic;
 - **immediately** after specific events that must not be lost to periodic-write staleness: a manual
-  confirmation created, approved, dismissed, cancelled, or timed out; a transition back to
-  `normal` from any non-normal `RecoveryState`. Manual hold checkpoint mutation instead follows its
-  stricter, fact-consistent journal protocol in §6.4.
+  confirmation created, approved, dismissed, invalidated, cancelled, or timed out; a transition back to
+  `normal` from any non-normal `RecoveryState`. Hold state is process-local and never mutates
+  this checkpoint (§6.3).
 
 `RecoveryTargetSnapshot` entries (§7.4) are deliberately different: accepted target changes are
-coalesced in memory and written at the next checkpoint commit, at most once per entity in that commit.
-They never trigger the immediate-write path; a dirty snapshot is eligible for the next 60-second
+coalesced in memory. They never trigger the immediate-write path; at most one merged snapshot per
+`(actuator_id, controlled_channel)` is eligible for the next 60-second
 checkpoint tick's commit. This bounded loss window is the
-explicit performance trade-off for actuator
-baseline recovery; manual-hold identity/audit state remains on the stricter journal-`fsync` path in
-§6.4.
+explicit performance trade-off for actuator baseline recovery. Hold events use the ordinary
+ordered audit queue (§6.4).
 
 It answers "did anything change while Heima was offline" cheaply; it is **not** a general restore
 mechanism, and — deliberately — it never forces every piece of runtime state through the full
 `HouseFact`/`Provenance` shape. The narrowness (only allowlisted attributes, only critical entities)
 is a safety/efficiency property, not an oversight: most runtime state genuinely should start clean
-after a restart. §6.3's conditional implicit-hold restoration and §7.4's opt-in desired-target
-baseline are the two narrow, explicitly-gated exceptions; neither is a precedent for widening this
-into a general restore engine.
+after a restart. §7.4's opt-in desired-target baseline is the narrow, explicitly-gated exception; it is not a
+precedent for widening this into a general restore engine.
 
 ### 7.4 Power-recovery reconciliation
 
@@ -1546,45 +1952,110 @@ nor issues an actuator command:
 
 ```python
 @dataclass(frozen=True)
-class RecoveryTargetSnapshot:
-    entity_id: str
-    target: PersistedProjection             # accepted desired target, never a raw HA State
+class RecoveryFacetBaseline:
+    facet: str                               # closed by target_contract_id
+    value: EvidenceValue                     # copied canonical target value
     captured_at: EvidenceInstant
+    authority_kind: Literal["reaction", "direct"]
+    reaction_id: str | None                   # required exactly for reaction authority
+    configuration_generation_id: str | None  # required exactly for reaction authority
+    direct_source_kind: Literal["admin_command", "resident_response"] | None
+                                             # required exactly for direct authority
+
+@dataclass(frozen=True)
+class RecoveryTargetSnapshot:
+    actuator_id: str
+    controlled_channel: str
+    entity_id: str
+    target_contract_id: str
+    facets: tuple[RecoveryFacetBaseline, ...] # non-empty; one entry per canonical facet
     policy: Literal["reconcile", "require_confirmation"]
     actuator_configuration_fingerprint: str # candidate Actuator execution semantics at target
                                              # acceptance; reload discards a target that no longer matches
+
+@dataclass(frozen=True)
+class FrozenRecoveryView:
+    state: RecoveryState
+    recovery_episode_id: str | None       # present for a pending confirmed power-recovery episode
+    baselines: tuple[RecoveryTargetSnapshot, ...]  # §7.4-exposed, canonical channel-key order, copied
+    fingerprint: str
 ```
 
-The owner that accepts an `ApplyStep` records or replaces this snapshot only for an actuator whose
+Layer 0 freezes this read-only view at the `CycleInputBarrier`, after the current
+recovery classification and checkpoint reads are settled. The episode id is minted
+once when a power-recovery episode is confirmed and remains stable through its
+settling/reconciliation cycles; ordinary startup has none. `baselines` contains
+exactly the snapshots exposed by §7.4 for this cycle, or an explicit empty
+tuple when reconciliation is not yet permitted or no baseline exists. Layer 5
+uses the same cycle's observed channel availability and current policy to
+decide whether an exposed target can act. Its `fingerprint` is SHA-256 over
+RFC-8785 canonical JSON of the state, episode id and ordered copied baselines.
+A checkpoint commit or
+recovery classification change after the barrier affects only the next view.
+Layer 4 §5.1 transports it opaquely in `DecisionSnapshot`; Layer 5 combines it
+with its separately frozen authority view and never asks Layer 0 for a newer
+baseline while evaluating a snapshot.
+
+The key is `(actuator_id, controlled_channel)`, not HA `entity_id`. The owner that accepts an
+`ApplyStep` records or updates this snapshot only for an actuator whose
 composition-time `power_recovery_policy` (Layer 2 `Actuator`) is `"reconcile"` or
-`"require_confirmation"`. The snapshot is **last-write-wins per entity**, queued for the next
-checkpoint commit and coalesced to at most one write per entity in that commit. There is no synchronous
+`"require_confirmation"`. For each `ChannelTarget.targeted_facets`, it replaces only that
+facet's copied value and trusted authority anchor; untouched facets and other channels
+remain. The coalesced snapshot is validated against the channel's closed target contract
+and Layer-1 projection bound. An invalid update omits the touched channel's recovery
+snapshot and emits a diagnostic without cancelling the already-admitted command; it
+never leaves a misleading partial merge. Identical updates coalesce. The snapshot is
+queued for the next checkpoint commit, at most one write per channel in that commit. There is no synchronous
 flush on a target change, no journal for ordinary facts or commands, and no checkpoint read on the
 normal evaluation path. Performance is the deliberate reason for this bounded best-effort guarantee:
 a power loss after a target changes but before its batch commits may recover the preceding completed
 target, or no target at all, never a fabricated newer one.
 
+Layer 5 assigns the authority anchor when it accepts the target. An admitted Reaction
+target records its exact `reaction_id` and configuration generation even if the command's
+`ApplyStepSource.kind` is `recovery`. A standalone direct admin or verified resident
+command records `authority_kind="direct"` and its trusted source kind. A recovery
+reconciliation of an older direct target preserves that direct anchor; it cannot relabel
+a revoked Reaction target as direct. Unknown or external actions do not create a
+checkpointed desired target. A single channel may have facet entries from different
+authorized sources; no fictitious whole-channel Reaction owner is inferred.
+
 Snapshot persistence is not an additional acceptance condition for an `ApplyStep`. If its proposed
 target cannot form a valid `PersistedProjection`, the already-authorized command still proceeds, the
-owner omits that entity's recovery snapshot and emits a diagnostic. A later restart then has no
-baseline for that entity rather than retaining an oversized or malformed target.
+owner omits that channel's recovery snapshot and emits a diagnostic. A later restart then has no
+baseline for that channel rather than retaining an oversized or malformed target.
 
 At configuration-generation cutover (Layer 2 §2.5), Layer 0 receives resolved Actuator policy and
-fingerprint deltas rather than reading a registry. A snapshot whose recorded fingerprint differs from
-the active candidate is discarded; `policy="never"` deletes it. A target therefore cannot be applied
-under changed capabilities or a newly stricter policy.
+fingerprint deltas rather than reading a registry. A snapshot whose recorded fingerprint or
+recovery policy differs from the active candidate is discarded; `policy="never"` deletes it.
+A target therefore cannot be applied
+under changed capabilities or a newly stricter policy. Layer 5's active generation also
+filters every Reaction-anchored facet: a missing, superseded, disabled or non-automatic
+Reaction, including a revoked required household consent, removes that facet from the
+recovery baseline. A direct-anchored facet does not require a Reaction, but still needs
+the current Actuator recovery policy and ordinary channel/safety admission. If no
+facets survive, the channel contributes no baseline. This filter is repeated against
+current authority before any recovery command or confirmation proposal, not trusted
+solely because an earlier checkpoint or cutover accepted it.
 
 Once Recovery has identified a confirmed `power_recovery`, current entity reads are available, and
 the system has left `degraded_recovery`/`recovery_settling`, it exposes the last completed snapshots
 as a read-only baseline for one full current evaluation. The evaluation order is mandatory:
 
-1. Start from the snapshot target only for an opted-in actuator; an absent snapshot means no
-   historical baseline for that entity.
+1. Start from the surviving per-channel facet baselines only for an opted-in actuator;
+   an absent or filtered snapshot means no historical baseline for that channel.
 2. Evaluate all current facts, time/calendar state, safety constraints, and manual holds. Their
    present-time result has higher precedence than the baseline.
-3. Compute one final desired target per actuator and compare it with the freshly read actual state.
+3. Merge surviving facet baselines with current admitted targets, giving each current
+   target precedence on the facets it addresses. Validate the resulting channel target
+   through its current closed contract and ordinary admission; incompatible mixed
+   facets cause abstention on that channel, not a guessed command or cross-channel
+   erasure. Compute one final desired target per channel and compare it with the freshly read actual state.
    Only this final delta may become an `ApplyStep`; recovery never first applies the old baseline and
-   then applies a second, newly calculated target.
+   then applies a second, newly calculated target. A retained baseline by itself is a one-time
+reconciliation target, not an ongoing Reaction or a hold anchor. If the current evaluation
+admits a Reaction target, its identity is retained separately from the recovery source kind;
+after that target is physically confirmed, only a later distinct divergent edge can open a hold.
 
 `power_recovery_policy="reconcile"` permits that final delta to be applied automatically.
 `"require_confirmation"` turns the final target into a normal runtime-confirmation proposal; it is
@@ -1592,8 +2063,71 @@ never applied before confirmation. `"never"` contributes no snapshot and no auto
 target. The recovery baseline is consumed only by power recovery, not by an ordinary process restart.
 If recovery or a command attempt is interrupted, the next cycle repeats the same read/evaluate/compare
 operation; actuator recovery is therefore idempotent reconciliation, not impossible physical
-exactly-once delivery. This is intentionally separate from the Manual Hold journal, whose purpose is
+exactly-once delivery. This is intentionally separate from the hold lifecycle event queue, whose purpose is
 identity/audit continuity rather than command replay.
+
+### 7.4.1 Runtime confirmation of a recovery target
+
+The confirmation request is a process-local authorization opportunity, not a restored command.
+Layer 5 supplies the current admitted recovery proposal from §7.4; Layer 0 owns its identity,
+deadline and lifecycle. This mechanism applies to any opted-in Actuator channel and never
+introduces an actuator-kind-specific response path.
+
+```python
+@dataclass(frozen=True)
+class RecoveryConfirmationRequest:
+    request_id: str                 # core-minted, unique within and across process runs
+    recovery_episode_id: str        # current confirmed power-recovery episode
+    actuator_channel_id: str
+    generation_fingerprint: str     # active configuration and authority generation
+    proposal_fingerprint: str       # canonical digest of final target, observed channel
+                                      # state/epoch, baseline identity and admission inputs
+    created_at: EvidenceInstant
+    expires_at: EvidenceInstant
+    state: Literal["open", "approved", "dismissed", "invalidated", "cancelled", "expired"]
+```
+
+Only one `open` request may exist per recovery episode and Actuator channel. An identical
+proposal in later cycles reuses it and does not renew its deadline. The Initial-V3 core
+confirmation lifetime is 24 hours from creation, measured against the monotonic runtime
+deadline and represented by `expires_at` for diagnostics; changing this bound requires a
+new core contract version. At `now >= deadline`, Layer 0 records `expired` and rejects
+late responses. An expired or dismissed proposal is not generated again merely because
+an unchanged evaluation repeats; a materially new proposal or a new recovery episode may
+create a new request.
+
+At each fresh relevant cycle Layer 5 recalculates the final target and ordinary admission.
+The request stays open only while the same observed state/epoch, target, baseline identity,
+configuration/authority generation and guards still make the same command admissible.
+An unrelated fact change or repeated identical observation does not invalidate it. A
+changed proposal, unreadable channel, failed guard, revoked authority, cancelled recovery
+episode or unavailable baseline invalidates it atomically before the next response can be
+accepted. If the current complete observation already satisfies the target, it closes as
+`cancelled` with reason `already_satisfied`; no command is sent. A newly admissible,
+different proposal may create a fresh request after the current-cycle checks.
+
+Response ingress authenticates the resident and matches `request_id` to the current
+`open` request. Approval then takes a fresh cycle input barrier and reruns the same
+read/evaluate/compare and dispatch admission under a serialized compare-and-swap on
+request state, proposal fingerprint and active generation. If unchanged, it records
+`approved` before the ordinary single `ApplyStep` path; a service outcome and physical
+confirmation remain separate. If changed, expired or already satisfied, it records the
+appropriate terminal state and sends no command. Dismissal records `dismissed` and sends
+no command. A second response, a stale request id or a race with invalidation is rejected
+without a second command.
+
+Every transition is committed through §7.3's immediate checkpoint path before it is
+acknowledged to the resident or exposed as an actionable request. Checkpoint failure
+leaves the transition pending and no approval dispatch occurs; retry with the same
+request id is idempotent. The checkpoint is an audit trace, not authority to resume an
+`open` request. On every process restart, all pre-restart open requests become invalid
+for ingress regardless of their persisted state. Recovery records their `invalidated`
+terminal transitions through §7.3 before exposing any replacement request; a failed
+commit keeps replacement requests non-actionable but never reauthorizes the old id.
+Only a fresh complete intake and
+current-policy recalculation may create a new request, with a new id, if the delta still
+needs confirmation. A response to the old id is always rejected. This rule is separate
+from the non-restoration of channel holds (§6.3).
 
 ### 7.5 Dependency on Timing, and bootstrap order
 
@@ -1618,10 +2152,9 @@ Silent failure is not acceptable anywhere in this section.
   treated as having fired (for a `CronEntry`, the recurrence still re-arms for its next occurrence).
   A single failing job must never take down the engine or silently stop a recurring safety net. This
   mirrors the fault-isolation boundary already required around third-party plugin `compute()` calls
-  (Layer 7) — one mechanism, reused, not reinvented here. For an `AtJob` tied to cleanup logic with a
-  safety consequence if skipped (e.g. a manual hold's expiry, §6), there is deliberately no automatic
-  retry beyond this — a loud diagnostic event is the safety net, not a retry loop that could itself
-  mask a persistent underlying bug.
+  (Layer 7) — one mechanism, reused, not reinvented here. For a divergence-hold expiry (§6), the Manager also checks the monotonic deadline when
+  publishing each admission view. A failed `AtJob` callback therefore cannot leave an expired hold
+  blocking action indefinitely; the next input barrier releases it and reports the callback fault.
 - **Duplicate `job_id` registration**: replace, never error (§3.1) — an owner re-arming the same
   logical deadline is the expected common case, not a conflict to reject.
 - **A `CronEntry`'s `due` passes while Heima is offline**: no missed occurrence is queued, replayed,
@@ -1630,17 +2163,18 @@ Silent failure is not acceptable anywhere in this section.
   This requires no durable scheduling state beyond the standing rule itself and avoids an unprovable
   catch-up decision. An owner that needs startup work performs it explicitly during bootstrap, where
   that work can be named, reviewed, and tested independently of recurrence timing.
-- **Durable-tier write failure** (§4): logged and surfaced as a diagnostic event; the cycle is not
+- **Ordinary durable-tier fact-batch write failure** (§4.2): logged and surfaced as a diagnostic event; the cycle is not
   aborted and the in-memory buffer is unaffected. The durable tier is important for audit and
-  learning but is not the source of truth for same-cycle correctness — losing one write is
-  recoverable, crashing the engine over it is not an acceptable trade.
-- **Checkpoint write failure** (§7): logged and surfaced; Recovery falls back to treating the next
-  cycle conservatively (i.e. as if still `degraded_recovery` for classification purposes) rather than
-  silently assuming `normal` on stale or missing checkpoint data.
-- **Manual Hold journal append/`fsync` failure** (§6.4): the hold remains live for safety but is marked
-  `durability_pending`; its durable facts wait for a background retry with backoff. A crash before a
-  successful journal write can lose its identity/audit record, which is surfaced as degradation and
-  resolved at restart only by the ordinary explicit/implicit conservative rules — never fabricated.
+  learning but is not the source of truth for same-cycle correctness — losing one ordinary batch write is
+  recoverable, crashing the engine over it is not an acceptable trade. The separately bounded
+  follow-up preparation and historical-continuity guarantees use their own failure rules below.
+- **Checkpoint write failure** (§7.3): logged and surfaced as a persistence diagnostic; the
+  checkpoint remains dirty for retry. The failure does not change the cycle's `RecoveryState`,
+  which is classified from current recovery inputs (§7.1). A missing or unusable prior projection
+  still supplies no baseline for that entity (§7.3), never evidence that nothing changed.
+- **Follow-up outbox preparation/finalization failure** (§4.5): surface `follow_up_durability_degraded` when preparation fails or misses its finite acknowledgement deadline; do not indefinitely block a scheduled step or immediate revocation. Reconcile an uncertain write under the same operation id, and keep a prepared or ready intent for the prescribed recovery and delivery retry. A failed finalization must not claim that the event fact was committed.
+- **Hold-audit validation or durable write failure** (§6.1/§6.4): a violated staged depth/size bound is a producer-contract diagnostic and blocks the continuity watermark, never a truncated fact or permission to bypass the live hold. An already valid fact whose durable write fails remains queued with `durability_pending`; its queue resource bound/overflow remain CA4-38. A crash can leave an audit gap bounded by §4.4; restart never restores the hold from audit.
+- **Observation-continuity metadata failure** (§4.4): do not acknowledge a historical watermark or report complete coverage across an uncommitted interruption boundary. Surface degraded continuity and use the conservative incomplete/unknown coverage result for affected historical reads; current-cycle action admission still uses fresh inputs.
 
 ---
 
@@ -1684,14 +2218,21 @@ Layer 0 state must be inspectable, consistent with the project's broader diagnos
 runtime/plugins/event-store diagnostics surface already exists for other layers):
 
 - **Timing**: every pending `AtJob` and `CronEntry` (id, owner, due, label), queryable at any time.
+- **Observation continuity**: last durable watermark, any open process interruption, its
+  start/end and write failure, plus per-stream availability and incomplete-window reasons.
 - **Recovery**: current `RecoveryState`, age of the last checkpoint write, count and identity of
   entities currently carrying `unknown_during_downtime`/`power_restore_candidate`, plus the count,
-  age, and entity ids of pending `RecoveryTargetSnapshot`s and the recovery baseline/final-target
-  decision for each reconciled actuator.
-- **Manual Hold Manager**: every active hold (kind, domain, `Location`, since when, remaining time
-  if any), and — specifically for §6.3 — a log of restoration decisions (restored, and why each
-  discarded candidate was discarded: expired / not eligible / restart not clean / state no longer
-  coherent) so an installer can audit why a given hold did or didn't come back.
+  age, and `(actuator_id, controlled_channel)` keys of pending `RecoveryTargetSnapshot`s,
+  with surviving facet counts and the recovery baseline/final-target decision for each
+  reconciled channel. Expose checkpoint dirty/retry status and the last
+  checkpoint-write failure separately from `RecoveryState`.
+- **Divergence Hold Manager**: each active `(actuator_id, controlled_channel)`, hold id,
+  divergent facets, configured scope and release mode, time remaining or next Reaction-step identity,
+  verified origin category or `unknown`, normalized expected/observed facet values and fingerprints,
+  and audit-durability status. The existing diagnostic surface may also display the first
+  post-break observation against the last known expectation, with current RecoveryState and
+  known break context. This comparison is not a hold event, persisted fact, or claim about an
+  offline resident action (§6.3).
 - **Persistence**: durable-tier size and retention pressure per `fact_type` (§4.3) — how close each
   is to its count ceiling, so a misbehaving sensor's volume is visible before it needs to be
   diagnosed reactively; and, per `fact_type`, its effective retention window and which registered
@@ -1706,40 +2247,64 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
 
 ## 11. Relationship to the core DAG
 
-Semantic resolvers (Layer 4) read only the *previous* cycle's resolved output from other semantic
-resolvers — this is what keeps the DAG acyclic. Layer 0 is exempt from that rule by construction:
-wall-clock time and Recovery's classification are **engine-computed context**, read-only input
-available to every semantic resolver and plugin within the *current* cycle, not another resolver's
-output. A semantic resolver freely reads Layer-0 context fresh every cycle, the same way it freely
-reads Layer-2 facts fresh every cycle — neither is subject to the previous-cycle restriction, because
-neither is produced by another semantic resolver earlier in the same pass.
+Layer 4 owns an acyclic same-cycle semantic DAG: a resolver may read only its declared upstream
+semantic claims already resolved earlier in the deterministic topological order. A `previous_cycle`
+value is instead an explicitly declared Layer-0 snapshot input, never an implicit substitute for an
+upstream semantic edge. Layer 0 is outside that DAG by construction: wall-clock time and Recovery's
+classification are **engine-computed context**, read-only input available to every semantic resolver and
+plugin within the current cycle, not another resolver's output. A semantic resolver reads Layer-0
+context fresh every cycle, as it reads Layer-2 facts fresh every cycle; neither is produced by an
+earlier semantic resolver in the same pass.
 
 ---
 
 ## 12. Not yet decided
 
-No unresolved Layer-0 runtime parameter remains.
+Open cross-layer contracts affecting this runtime are tracked in the CA4 backlog, including
+CA4-28 (fact immutability) and CA4-38 (audit queue bound).
 
 ---
 
 ## 13. Acceptance criteria (for the eventual implementation phase)
 
+- A `HistoryViewRequirement` stages only for a registered state/event stream
+  with its matching slice kind, unique id and retained positive `Window`.
+  At one `CycleInputBarrier`, the frozen view returns the same bounded slice
+  on retry; a later append is invisible. A complete empty event interval is
+  `()`, while a missing state-at-start record, gap or evicted interval is
+  `None`, never an empty slice (§4.1).
+- A state that changes once and is then read unchanged for hours creates one
+  `HouseFact`, while complete required-stream coverage permits a later
+  historical as-of read. A known source-report expiry opens a durable
+  stream gap at expiry even when detected on a later cycle; a subsequent
+  identical reported value closes it at the first valid observation without
+  backdating either fact. A newer unavailable transition is the latest
+  state during its interval. If stream-gap metadata cannot be acknowledged,
+  the affected read is incomplete (§4.0/§4.2/§4.4).
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
 
 - One `AtJob`/`CronEntry` execution path, monotonic-safe by construction; no remaining independent
   timer call site anywhere in the codebase.
+- Re-registering the same `(owner, job_id)` leaves one pending timer; owner cancellation is
+  idempotent. A callback already handed to the owner before replacement/cancellation may arrive,
+  but its old arm revision cannot execute a programmed Reaction step or release its hold
+  (Layer 5 §6.0).
 - `Window`/`LearnedWindow`/`WarmupGate`/`WeeklyRecurrence`/`IntervalRecurrence`/`CalendarWindow` used
   everywhere a bespoke duration/threshold/schedule field exists today — none left on a semantic resolver or
   reaction config directly.
-- `LearnedWindow` construction rejects a `seed` outside `[min_seconds, max_seconds]`, in a test that
+- `LearnedWindow` construction rejects a `seed` outside `[minimum, maximum]`, in a test that
   tries both an under-range and an over-range seed — verified separately from calibration's own
   clamping, since seed is what every dwell check uses before the first calibration completes (§3.2).
 - Temporal construction rejects `bool`, zero, negative, `NaN`, and infinite durations for `Window`,
   `IntervalRecurrence`, and `LearnedWindow` bounds; rejects inverted learned ranges; accepts an equal
-  positive learned range; rejects invalid weekly weekday/hour/minute fields; and rejects a naive or
-  non-UTC `AtJob.due`. Static failures reject startup/reload staging, while a dynamic invalid job is
+  positive learned range; rejects invalid weekly weekday/hour/minute fields; and rejects a malformed,
+  non-UTC or noncanonical `AtJob.due`. Static failures reject startup/reload staging, while a dynamic invalid job is
   diagnosed and never armed (§3.1/§3.2).
+- Canonical round-trip fixtures give the same bytes to equal `EvidenceInstant` values in facts,
+  jobs and calendar snapshots, and to equal `Window` values in recurrence, fusion and learning
+  contracts. A `Z` alias, a bare millisecond integer or a native `datetime`/`timedelta` at a
+  declared contract boundary is rejected (§3; Layer 1 §4).
 - Each short-term input stream has a 15-minute default buffer horizon. A declared `Window`/
   `LearnedWindow` requirement longer than that extends only the addressed state `FactIdentityKey` or
   event `(fact_type, Location)` stream, not unrelated facts; a test registers an hour-long dwell and
@@ -1752,25 +2317,90 @@ concrete checklist rather than re-deriving one:
   were present, never that a forgery attempt is actually rejected), for every listed case in §5.1:
   a fabricated `kind="admin_command"` from a non-admin connection is rejected/reassigned
   non-authoritative; a fabricated `kind="third_party_plugin"` result is never upgraded to
-  `kind="sensor"`/`kind="recovery"`; and `kind="resident_response"` is verified against all three of
-  its distinct boundary checks separately — an attempted assignment with no matching active
-  confirmation request; an attempted assignment for an explicit hold with no corresponding
-  resident-attributed helper edge; and an attempted assignment for an Actuator channel with either an
-  unregistered endpoint/channel, unavailable-only transition, admin/automation/service/unknown HA
-  context, or duplicate ingress identity. An admin-attributed edge instead emits `admin_command` where
-  applicable; every other rejected case produces a diagnostic. Passing one check must never be treated
-  as satisfying another.
-- An explicit hold's live state is never anything but a fresh per-cycle helper read; across a restart,
-  its checkpointed identity is retained only when that helper is still active, otherwise it is
-  terminally reconciled or discarded as §6.2 requires. An implicit hold's live
-  state never survives a restart unless it passes all five checks in §6.3 (evidence completeness,
-  expiry, eligibility, restart-cleanliness, live-state match) — including a test where `evidence` was
-  wiped by Layer 1 §4.3's fail-soft policy, verifying discard rather than undefined behavior — and
-  every restoration — in every test that exercises one — produces both its active current-state fact
-  and its `restored` lifecycle fact, with a fresh Recovery correlation id; every failed restore
-  produces exactly one `restoration_discarded` lifecycle fact with its specified reason. Lifecycle
-  events reach the resident through Layer 6's notification pipeline, never through a direct Layer 0
-  call into Layer 6.
+  `kind="sensor"`/`kind="recovery"`; and `kind="resident_response"` is verified against
+  its two distinct boundaries: an active confirmation request, or a matched direct Actuator
+  command. Propagated user context, an unregistered channel, or a duplicate ingress identity
+  cannot establish resident control.
+- An authenticated admin or resident action retains the attributable actor only in its
+  governance transition; its `ApplyStepSource`, `ApplyStep` and execution audit carry no
+  `actor_id` or equivalent personal identity. A correlation id links the records without
+  authorizing a command or exposing the actor in the operational projection (§5).
+- Bootstrap composes exclusive `event` claims for `actuator.resident_control` (Layer 0)
+  and `actuator.correction` (Layer 5). A competing exact or overlapping claim from another
+  owner, including a plugin, is rejected before producers run. Each accepted fact has its
+  owner's closed value and is read as an event, never current state (§4; Layer 5 §6.1).
+- A verified resident, admin, automation, or integration edge receives only its proven origin
+  (§6.1). An unproven but valid post-confirmation divergence activates a channel hold with
+  `origin="unknown"`. A pending Heima action, unconfirmed command timeout, availability change,
+  and first observation after restart or an observation break create no hold. A later valid edge
+  after a confirmed expectation does. Convergence of all divergent facets, expiry or the
+  next planned Reaction step, revocation, rebinding, and observation loss release the channel
+  hold as specified in §6. Expiry cannot reactivate from the unchanged observation. Restart
+  begins with no holds and current-policy automation resumes normally.
+- Given a Heima restart with an old Reaction target and a current HA reading that differs,
+  when the first valid post-restart observation arrives, no hold or resident-origin claim is
+  produced; the known difference appears only in the existing non-authoritative diagnostic
+  surface, and current policy may evaluate. The same holds for two bulbs at power-on defaults
+  (§6.3, §10).
+- Given a confirmed standalone `admin_command` or `recovery` ApplyStep with no current admitted
+  Reaction target, when a later different valid edge arrives, no Reaction hold opens. Given
+  a current admitted Reaction target already fully observed, the matching external/admin
+  physical state may anchor a later hold without assigning that state to Heima (§6.2).
+- One valid observation changing two confirmed facets on a channel creates one hold and one
+  activation event. With a 30-minute fixed deadline established at 10:00, a new facet divergence
+  at 10:29 joins that hold and is released at 10:30; the update does not grant it another 30
+  minutes. Partial convergence removes only the matching facet. Under default scope, any
+  automatic command on the channel is blocked until release; under a validated selective scope,
+  only a command whose complete affected-facet set intersects the divergent set is blocked.
+- Given one Actuator with two fixed-duration channels and one configured 30-minute
+  `hold_duration`, a qualifying divergence on channel A at 10:00 and another on channel B
+  at 10:10 create separate holds. A expires at 10:30 while B remains active until 10:40;
+  updating A or B does not reset either deadline. The shared configuration supplies the
+  duration, not a shared expiry instant (§6.2; Layer 2 §6).
+- Given two activations A and B of the same configured Reaction generation,
+  an A-owned hold retains A's activation id in its frozen admission entry and
+  lifecycle audit. A B step or terminal result cannot release it; A's verified
+  normal exit can. If A has already ended, a later B-owned hold receives B's
+  distinct id. A crash restores neither activation nor hold, and a fresh
+  activation after restart cannot claim the old release boundary (§6.1–6.3;
+  Layer 5 §3.2/§6.0).
+- Given selective scope and Reaction A's confirmed power target held at 10:00, when
+  Reaction B confirms a disjoint brightness target and a later valid edge diverges
+  on brightness, the same hold is updated without changing A's release owner or
+  deadline. Its lifecycle event has source-map entries for the involved facets,
+  attributing B's expectation to B rather than A. A mixed-facet edge makes one
+  transition whose maps identify both sources. B's future step cannot release the
+  hold; A's qualifying step releases the whole hold. A map with missing, extra or
+  conflicting facet keys is rejected; staging refuses any channel contract
+  whose worst-case complete inline payload exceeds Layer 1 §3's limits.
+  Release-owner revocation or observation loss invalidates the shared hold; restart restores
+  neither hold nor expectation-source maps.
+- Given A's and B's divergent facets share one hold, when B's current target
+  is superseded, only B's facet leaves in one `updated` transition and A's
+  release boundary stays fixed. When B was the final divergent facet, the
+  terminal event is `invalidated` with `expectation_superseded`, never
+  `converged`. A merely due or rejected B step changes neither live set nor
+  audit; the next B target must be admitted and physically confirmed before
+  a later edge can create another divergence (§6.1–6.2).
+- For next-step release, a valve moved by the resident from the confirmed 100% target to 50%
+  stays held through ordinary Reaction re-evaluations. The same Reaction's later timed step to
+  0% releases the hold before attempting closure. A timed step changing only a different target
+  facet also releases the whole channel hold; if its complete new target includes 100% opening,
+  that opening may be requested again. If guards block the new step, release still occurs but
+  no closure is claimed; the unresolved observed state is surfaced. A normal
+  cancellation or exhausted step stream proven by the versioned Layer-5
+  descriptor contract uses the declared exit policy: absent a final target, the
+  observed valve position is left as is and the resident is notified. With a core-declared
+  final target, hold release and a fresh snapshot precede one guarded terminal attempt;
+  cancellation completes even when that attempt is skipped or remains unconfirmed. Immediate
+  authority revocation permits no terminal call. Temporary source unavailability does not
+  count as completion.
+- A descriptor-declared fresh event step with the same Reaction, generation,
+  activation and channel releases a `next_reaction_step` hold when its full
+  canonical target differs from the anchor. A replayed old event, unrelated
+  Reaction event, ordinary re-evaluation or repeated target cannot release
+  it. The event step and a simultaneous due timer resolve to one effective
+  target in Layer 5 before Layer 0 sees a release request (§6.2; Layer 5 §6.0).
 - A confirmed power recovery with an opted-in light/fan preserves the last completed desired-target
   snapshot only as a baseline, evaluates current conditions before issuing any command, and sends one
   final idempotent delta rather than replaying historical commands. A simulated four-hour outage whose
@@ -1779,26 +2409,106 @@ concrete checklist rather than re-deriving one:
   A target changed immediately before an intentionally unflushed checkpoint batch verifies that only
   the preceding completed target (or no baseline) is used, never a claimed newer target. `never` sends
   no recovery command and `require_confirmation` creates a proposal rather than an `ApplyStep`.
-- Every hold transition emits the exact §6.1 state/lifecycle pair and source: activation, resident or
-  admin clear, expiry, replacement, explicit identity reconciliation, restoration, and every
-  restoration-discard reason. A replacement
-  closes the old `hold_id` before activating the new one; terminal state facts have `active=False` and
-  no `held_state`; no lifecycle event is used as a live-state read. Tests verify each required
-  `kind`/`source_id`/`source_type`/`actor_type`, including `ha_admin` rather than an untyped "admin",
-  and confirm all four replacement facts share exactly one newly minted correlation id.
-- Every Manual Hold journal state is exercised: a crash after journal `fsync` but before the facts
-  batch, and a crash after its facts batch but before checkpoint compaction, both recover exactly the
-  original fact roles and checkpoint update with no duplicate lifecycle event; a replacement recovers
-  all four roles under its one operation id. A forced journal-`fsync` failure leaves the hold live and
-  `durability_pending`, performs no durable fact write before retry, and after a simulated hard crash
-  follows the documented conservative restart outcome rather than inventing an id or audit record.
-- Manual-hold `Provenance.evidence.expiry` is written as Layer 1's canonical `EvidenceInstant`, never
-  as a raw `datetime`; restart recovery discards a checkpoint whose expiry is absent, malformed, or
-  non-UTC, verified independently from the generic evidence-shape fail-soft case.
+- Two logical channels on one HA endpoint keep separate recovery snapshots. Successive
+  partial targets on one channel replace only addressed facets, including their
+  individual source anchors. A removed or consent-revoked Reaction loses only its
+  anchored facets; surviving direct-admin facets still face current policy and safety
+  checks. Mixed facets that cannot form a valid current channel target cause abstention,
+  not a guessed partial command. Changed endpoint, adapter fingerprint or recovery
+  policy discards the affected snapshots. An invalid merged projection omits only its
+  channel while the accepted command still proceeds.
+- A recovery confirmation for a valve opening, blind position or HVAC target keeps one
+  request id across identical fresh evaluations. A relevant changed target, observed
+  channel state, guard or authority invalidates it; unrelated facts do not. A target
+  already reached closes it without dispatch. Expiry or dismissal does not repeatedly
+  reprompt for the same proposal. A response racing invalidation cannot dispatch, and
+  two responses cannot dispatch twice. After a crash, a checkpointed open request id
+  is rejected; fresh complete intake and recalculation may create a new id. Checkpoint
+  failure prevents acknowledging or executing an approval.
+- Hold lifecycle audit is one event per admitted transition (§6.1), with a unique operation id
+  independent of its causal correlation id. A single multi-facet observation makes one transition; distinct transitions may share a
+  correlation id but never an operation id. A reused operation id with different payload is
+  rejected. Event-write failure leaves
+  the hold live and reports `durability_pending`; after a crash the historical stream may have a
+  gap but cannot restore a hold.
+- A lifecycle fixture serializes and validates every `HoldLifecycleValue` field
+  declared in §6.1, including owner and facet-source identities, four equal
+  source-map key sets and the optional step-map subset, target/value
+  fingerprints, origin proof, observation context, frozen
+  scope/release mode/deadline, and event-specific reasons. It rejects a missing,
+  extra or inconsistent field. A light with composite RGB colour remains a
+  complete inline value because each facet value is canonical JSON text.
+  An illustrative future-descriptor valve position and Initial-V3 HVAC
+  mode/setpoint_c fixture pass the same Layer-1 depth-two and 8 KiB
+  value-shape validator; the valve follow-up does not claim Initial-V3
+  outcome eligibility (complete serialized
+  examples: [CA4-01 serialization examples](ca4_01_serialization_examples.md)).
+  Staging computes the worst-case complete canonical value for each permitted
+  adapter/scope/Reaction combination, including longest allowed identities
+  and every source map. A configuration with an unbounded string or a
+  8,193-byte worst case is rejected before cutover; an 8,192-byte worst case
+  is admitted only if depth also passes. A runtime bound violation is a
+  producer-contract diagnostic and leaves the live hold in force without
+  publishing a malformed fact. A valid fact enters the short-term buffer
+  immediately at its original `when`; a slow durable write does not delay
+  that visibility or admission. An exact operation-id retry retains one
+  inline fact; a changed payload fails in memory or against the durable key.
+  A crash before durable acknowledgement may lose the audit tail under §4.4,
+  never a live hold. The continuity watermark waits for the ordinary fact
+  acknowledgement. A separate frozen-view fixture checks every
+  `HoldAdmissionEntry` and `HoldAdmissionView` field and fingerprint before
+  Layer 5 consumes the view.
+- A declared durable history read returns `HistoricalReadResult` with independent
+  retention and typed observation coverage. A clean stop, hard crash after an
+  unacknowledged audit event, failed continuity metadata write, repeated failed
+  startup, and restart shorter than a freshness bound never report complete
+  observation across the process gap. The gap closes only at a durable
+  `CycleInputBarrier` from a newly completed HA intake with source health and
+  explicit binding availability; a timer-only barrier, cache, or first entity edge
+  does not close it. One unavailable valve stream makes only reads requiring it
+  incomplete while an unrelated readable light stream may be complete after
+  closure. The validator rejects an unknown reason, duplicate/unsorted reasons,
+  nonempty reasons/non-None boundary with `complete`, or empty reasons/missing
+  boundary with `incomplete`. A gap at an excluded endpoint does not intersect
+  the read; a gap already open at the requested start and an unknown-metadata
+  read both use that start as the conservative
+  boundary (§4.4).
+- A `reaction.follow_up` boundary with preparation acknowledged before the finite
+  core deadline durably prepares one bounded intent before its step or normal exit
+  advances; an exact retry returns the same id, while
+  a changed payload under that id fails. An atomic transaction writes the one Layer-6
+  rendered event fact and marks the intent ready. A crash before the outcome recovers an
+  `interrupted_before_outcome` warning without an Actuator call; a crash after event commit
+  cannot append another fact. An undelivered ready payload survives ordinary fact retention
+  until delivery acknowledgement; lost acknowledgement permits a repeat delivery. Failed
+  preparation or an unacknowledged write at the monotonic deadline reports
+  `follow_up_durability_degraded` but never stalls a scheduled guarded step or
+  an administrative revocation. A late prepare cannot recreate `prepared` after
+  final fact commit or no-event retirement; a crash yields an interruption warning only if preparation
+  committed (§4.5; Layer 5 §6.0).
+- Given one presence-simulation normal exit for lights A, B and C, core
+  derives three distinct channel operation ids from the same activation and
+  exit boundary. A and C prepare successfully; B's write remains unacknowledged
+  at the finite deadline and reports `follow_up_durability_degraded` only for B.
+  A crash before outcomes recovers one `interrupted_before_outcome` fact for
+  each committed prepared A/C row and no guaranteed B fact. Exact A/C retries
+  retain one fact each; a changed retry fails; the three notification keys
+  cannot coalesce. A late B prepare and a B final fact or no-event retirement
+  serialize under B's id, without changing A/C. Revocation stops all unsent
+  calls and does not erase committed notices (§4.5; Layer 5 §6.0).
 - A query for "every `HouseFact` true in `Location` X between t1 and t2" correctly reports a fact as
   true throughout the window when its only durable record predates `t1` by a wide margin (§4), via the
   at-or-before-`t1` plus within-window reconstruction — verified for a fact stable for a period longer
   than its `fact_type`'s own retention window.
+- With state A at day 0 and B at day 20, ordinary pruning of A before a days 10–21
+  query returns `retention_coverage="truncated"`, even though that interval is inside
+  the nominal retention window. Early count/global pruning of an intermediate B
+  cannot make an older surviving A look like a complete predecessor. The
+  early-pruning marker records the evicted record's `when`, not maintenance time.
+  An unaffected event stream may still report complete retention. The short-term
+  frozen view returns `None` for an unseeded state interval or an interval crossing
+  buffer startup/eviction; it returns an empty tuple only for a complete event
+  interval with no occurrence. Layer 5 abstains on `None` (§4.0–4.3; Layer 5 §5.1).
 - Persistence computes the same `FactIdentityKey` for two facts that share `fact_type` and canonical
   `Location` but differ in `when`, `value`, `Provenance.source.correlation_id`, or `evidence`; a test
   verifies that provenance changes alone do not create a second latest-value slot for the same
@@ -1816,16 +2526,16 @@ concrete checklist rather than re-deriving one:
   segment matching only (`*` never crosses `.`), match complete fact types only, and are checked for
   overlap during staging. An overlap with differing owner or emission kind — including a Layer-2 state
   claim that reaches Layer 0's reserved manual-hold event namespace — is rejected without an
-  evaluation-path lookup; an equivalent-owner/equivalent-kind overlap is accepted. An event fact is
-  appended twice when emitted twice with identical payload, has no `FactIdentityKey`/latest-value
-  entry, and is rejected when requested as current state or via `FactRef.previous_cycle` (§4).
+  evaluation-path lookup; an equivalent-owner/equivalent-kind overlap is accepted. Two distinct event occurrences with identical payload are appended twice; exact retries
+  under the reserved `manual_hold.lifecycle` and `reaction.follow_up` operation ids append
+  once. Event facts have no `FactIdentityKey`/latest-value entry and are rejected when
+  requested as current state or via `FactRef.previous_cycle` (§4).
 - A configuration-generation swap assigns a new non-forgeable `configuration_fingerprint` to every
   impacted source, forcing an otherwise unchanged state fact to persist; an Actuator recovery snapshot
   whose fingerprint no longer matches is discarded before recovery can propose or apply it (§5/§7.4).
-- Every non-fact durable projection is checked as a copied Layer-1 `PersistedProjection`: a malformed
-  manual-hold update is rejected before its journal write; an oversized recovery target leaves its
+- Every non-fact durable projection is checked as a copied Layer-1 `PersistedProjection`: an oversized recovery target leaves its
   already accepted `ApplyStep` intact but creates no baseline; and one invalid critical-entity
-  projection is omitted without invalidating other checkpoint entries (§4.1/§6.4/§7.3/§7.4).
+  projection is omitted without invalidating other checkpoint entries (§4.1/§7.3/§7.4).
 - Retention (time-based or count-ceiling) never evicts the single most recent record for a given
   `FactIdentityKey`, verified by a test that ages a stable fact's only record well past its
   `fact_type`'s retention window and confirms it is still present and still returned by the
@@ -1885,7 +2595,10 @@ concrete checklist rather than re-deriving one:
 - Recovery's periodic checkpoint is an `IntervalRecurrence` of 60 seconds and writes only while dirty:
   a clean sequence of ticks performs no disk writes; multiple accepted target changes for one entity
   before the next tick produce one last-write-wins snapshot commit; and a failed checkpoint remains
-  dirty for retry while the evaluation path continues without disk I/O (§7.3/§7.4).
+  dirty for retry while the evaluation path continues without disk I/O (§7.3/§7.4). With otherwise
+  normal current inputs, that write failure leaves `RecoveryState="normal"` and reports the
+  persistence failure separately; genuinely unavailable entities still produce the §7.1
+  recovery classification regardless of checkpoint-write status.
 - A declared `FactRef.previous_cycle` key resolves from the sealed O(1) in-memory snapshot on the
   next in-process cycle even when the preceding durable batch failed. After a simulated clean
   shutdown/restart, the key is pre-hydrated before the first DAG from the matching committed cycle;
@@ -1903,9 +2616,24 @@ concrete checklist rather than re-deriving one:
   `actuator.resident_control` event with `resident_response` provenance and no raw HA identity/context.
   The same edge from an unavailable channel, an unknown/automation/service/admin context, or a duplicate
   ingress report emits none. A device that becomes unavailable after a dumb wall switch power-cut is
-  persisted only as `available=False`; it never becomes `off`, a resident-control event, an implicit
+  persisted as an unavailable channel-state transition; it never becomes `off`, a resident-control event, an implicit
   hold, or a zero-correction observation, and recovery of availability cannot synthesize the missing
   intervening history (§5.1.1/§5.1.2).
+- A staged channel publishes one bounded `actuator.channel_state.<digest>`
+  state fact on first valid observation, physical change, availability change
+  and the first post-restart observation, but no fact per identical HA report.
+  A verified resident edge joins the unchanged three-field resident event
+  by its unique edge id in the same durable cycle; an external/unknown or
+  Heima-linked edge has no resident event. Two Actuators in one room retain
+  distinct fact identities, and an oversized/ambiguous facet projection
+  fails staging (§4/§5.1.1.1; Layer 2 §6.1).
+- An eligible managed-episode opening and closure each append one bounded
+  `reaction.managed_episode.<digest>` state transition in the ordinary
+  end-of-cycle batch; repeated identical observations and speed changes append
+  none. The latest state survives ordinary retention. A crash before opening
+  commit, a malformed projection or a closed state yields no restart proof;
+  neither a historical `complete_observation` nor a recovery target substitutes
+  for it (§4.2–4.3/§5.1.1.2; Layer 5 §3.2).
 
 ---
 

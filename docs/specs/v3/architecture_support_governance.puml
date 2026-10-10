@@ -11,15 +11,15 @@ skinparam componentBorderColor #3C4043
 skinparam packageBorderColor #80868B
 
 package "Foundation slice" {
-  component "Layer 0\nPersistence, retention coverage,\nTiming, runtime health" as L0 #E6F4EA
+  component "Layer 0\nPersistence, continuity, follow-up outbox,\nTiming, runtime health" as L0 #E6F4EA
   component "Layer 1\nHouseFact, Provenance,\nLocation, Zone, Topology" as L1 #E6F4EA
 }
 
 component "Layer 2\nstaged registry generation\nSensors, FusionRules, Actuators" as L2 #E6F4EA
 component "Layer 3\nhistorical learning, artifacts,\nfindings, signals, candidates" as L3 #E6F4EA
 component "Layer 4\nSemantic DAG\nauthorized signal consumer" as L4 #E6F4EA
-component "Layer 5\ncandidate review, configured policy,\naction admissibility" as L5 #E6F4EA
-component "Layer 6 - future\nAvailabilityEpisodeTracker\nnotification delivery" as L6 #FCE8E6
+component "Layer 5\ncandidate review, configured Reaction,\naction admissibility" as L5 #E6F4EA
+component "Layer 6 - future\nAvailabilityEpisodeTracker, follow-up adapter\nnotification delivery" as L6 #FCE8E6
 
 L0 --> L3 : bounded fact-history reads\nand runtime-health snapshot
 L2 -[#1A73E8,dashed]-> L3 : staged registry generation
@@ -29,19 +29,24 @@ L3 --> L4 : one authorized, expiring\nInferenceSignal
 L3 --> L5 : LearningProposalCandidate\nfor independent validation and review
 
 L3 --> L6 : typed suppression occurrence
+L4 --> L6 : typed suppression occurrence
 L5 --> L6 : typed suppression occurrence
+L5 --> L6 : typed follow-up intent and occurrence
 L3 -[#1A73E8,dashed]-> L6 : staged owner declaration
 L4 -[#1A73E8,dashed]-> L6 : staged owner declaration only
 L5 -[#1A73E8,dashed]-> L6 : staged automation binding
+L6 -[#1A73E8,dashed]-> L5 : bounded renderer output for staging
 L6 --> L0 : sole producer of\nautomation.availability event fact
+L6 --> L0 : follow-up intent outbox and\nreaction.follow_up event fact
 
 note bottom of L3
-  Slow path only: no HA runtime reads,
-  no hot-path blocking I/O, no direct action.
+  Historical learning and model work use the slow path.
+  Authorized bounded signals may serve the current DAG;
+  no HA runtime reads, blocking I/O, or direct action.
 end note
 
 note bottom of L5
-  Candidate kind/version and template payload
+  Candidate kind/version and Reaction-descriptor payload
   are validated independently. Learning proposes;
   policy review and action authority stay here.
 end note
@@ -49,7 +54,8 @@ end note
 note bottom of L6
   The tracker is transient. It reconciles active
   suppression episodes at a publication-generation swap.
-  Only Layer 6 renders, delivers, and audits availability.
+  Only Layer 6 renders, delivers, and audits availability
+  and reaction follow-up; its output lengths are bounded.
 end note
 
 legend bottom

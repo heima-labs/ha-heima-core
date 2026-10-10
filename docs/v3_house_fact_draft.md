@@ -1,6 +1,9 @@
 # Heima v3 — `HouseFact` foundational model (draft shapes)
 
-Status: **draft for discussion, not approved, not implemented.** Captures the concrete shape of
+> **Historical draft.** The current V3 contracts are [Layer 0](specs/v3/layer0_runtime_spec.md)
+> and [Layer 1](specs/v3/layer1_substrate_spec.md); this file preserves earlier reasoning only.
+
+Status: **historical draft, superseded by Layers 0–1, not implemented as written.** Captures the concrete shape of
 the four axes converged on in `v3_backlog.md` (what/how/when/where), so the reasoning survives
 context loss. Python-flavored pseudocode, not final code — field names/types are proposals.
 

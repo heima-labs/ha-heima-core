@@ -1,6 +1,9 @@
 # Heima v3 — `PatternLearner` (draft shapes)
 
-Status: **draft for discussion, not approved, not implemented.** Promotes Layer 3's central
+> **Historical draft.** The current V3 learning contract is
+> [Layer 3](specs/v3/layer3_learning_spec.md); this file preserves earlier reasoning only.
+
+Status: **historical draft, superseded by Layer 3, not implemented as written.** Promotes Layer 3's central
 primitive out of backlog prose (`v3_backlog.md`, LP-1 through LP-6) into a concrete shape, the same
 way `HouseFact`/`Provenance`/`Timing` and `Sensor`/`FusionRule`/`Actuator` already have one. Builds
 on `v3_house_fact_draft.md` (`HouseFact`, `Window`, `WarmupGate`, `Location`) and

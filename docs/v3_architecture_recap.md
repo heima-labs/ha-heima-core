@@ -6,6 +6,15 @@ familiarity with any earlier version of Heima. Each block links to the backlog s
 where the full reasoning/evidence trail lives, for anyone who wants to go deeper — but the recap
 itself should be enough to understand the system on its own.
 
+**Authority and maintenance.** The Layer 0--5 specifications are authoritative; where this recap
+differs from one, the specification wins. This is a manually maintained orientation document and is
+updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
+through:** 2026-10-04 for the CA4-01 A1/B1/C2 contracts and their dependent
+ownership paths in `docs/v3_backlog.md`.
+
+For current specification work, the [contract registry](specs/v3/contract_registry.json) and
+[workflow](specs/v3/spec_workflow.md) provide bounded navigation and review evidence.
+
 Out of scope, explicitly: `chi` (per-person learning — Heima learns at the household level, not per
 resident), push-model plugins (third-party extensions are pulled by the core, never push data in on
 their own). V3 uses a deliberate clean-start cutover: it does not migrate V2 configuration, history,
@@ -13,9 +22,9 @@ runtime state, or learning; a V2 export can exist only outside V3 as rollback/re
 
 ```
 Layer 8  Admin / config surface        config_flow forms + admin panel (registries + actions)
-Layer 7  Extensibility                 third-party semantic extensions, pull-only, 2 capability tiers
+Layer 7  Extensibility                 third-party extensions, pull-only, core-mediated contracts
 Layer 6  Notification / communication  one pipeline, 3-tier quiet hours, digest
-Layer 5  Action / reaction generation  Reactions, template requirements -> auto-proposals
+Layer 5  Action / reaction generation  Reaction descriptors, review and safe application
 Layer 4  Semantic Resolution (the DAG) independent semantic claims and episodes
 Layer 3  Learning / pattern recognition PatternLearner, bounded live signals, proposal analyzers
 Layer 2  Registries                    Sensor + Interpretation + FusionRule, Actuator
@@ -34,35 +43,36 @@ document.
 
 ## Full logical architecture — diagram
 
-![Heima v3 logical architecture: 9 layers, colored by layer, with the runtime data flow between them](img/v3_architecture.png)
+```mermaid
+flowchart TB
+    HA[Home Assistant] -->|ReadBinding| L2[Layer 2: current facts and Actuator inventory]
+    L2 -->|accepted HouseFact| L0[Layer 0: persistence, continuity, holds and outbox]
+    L2 -->|current typed facts| L4[Layer 4: semantic DAG]
+    L0 -->|frozen history, calendar and hold views| L4
+    L0 -->|declared history| L3[Layer 3: learning]
+    L3 -->|authorized signal| L4
+    L3 -->|candidate for review| L5[Layer 5: Reaction review and action]
+    L4 -->|completed DecisionSnapshot| L5
+    L5 -->|one-endpoint ApplyStep| HA
+    L5 -->|typed suppression and follow-up| L6[Layer 6: delivery adapters]
+    L6 -->|event facts and follow-up intent| L0
+    L1[Layer 1: immutable contracts] -.-> L0
+    L1 -.-> L2
+    L7[Layer 7: staged extensions] -.-> L2
+    L8[Layer 8: administration] -.-> L5
+```
 
-Rendered with Graphviz (source kept alongside it at `img/v3_architecture.dot`, regenerate with
-`dot -Tpng -Gdpi=150 img/v3_architecture.dot -o img/v3_architecture.png`), so the layout is exact
-and stable — not subject to an auto-layout engine's guesswork about node placement.
-
-**Reading it**: each shaded block is one numbered layer. A solid arrow is real per-cycle data flow.
-A dashed, labeled arrow is a bounded or exceptional path — narrower than a plain dependency
-(`bounded` = one of the 3 audited live-signal exceptions in Layer 3; `admin review` = a statistical
-pattern that must be approved before it can act). A dotted arrow is configuration or registration,
-never runtime data (Layer 8 configuring a registry, Layer 0 persisting/tagging a fact, Layer 7
-registering a plugin).
-
-Walking it top to bottom: a `Sensor` (Layer 2) turns a raw entity state into a `HouseFact`; a
-`FusionRule` (Layer 2) may combine several of those into one derived fact, same cycle; both feed
-Semantic Resolution (Layer 4) — independently resolved semantic claims and episodes — which in turn
-feeds Reactions (Layer 5) in the *same* cycle, producing `ApplyStep`s. `PatternLearner` (Layer 3)
-runs on its own slower cycle, mining history rather than the live cycle, and reaches Semantic
-Resolution only through the closed, individually authorized signal contracts; its registry analyzers
-instead produce a `ReactionProposal` that always needs admin review before becoming a Reaction.
-Reactions and Semantic Resolution both emit events into the notification pipeline (Layer 6). Layer 0 underlies everything;
-Layer 7 registers third-party extensions into Semantic Resolution and, for their own entities, into the
-registries; Layer 8 configures the registries, Reactions, and notification policy.
+The current detailed diagrams separate [runtime and authority](specs/v3/architecture_runtime_authority.puml)
+from [support, learning and delivery governance](specs/v3/architecture_support_governance.puml).
+The older `img/v3_architecture.dot` and its generated PNG retain superseded architecture
+concepts and are historical reference only. The overview explains the arrows and ownership
+boundaries of the current diagrams.
 
 ---
 
 ## Layer 0 — Cross-cutting runtime facilities
 
-Five facilities that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
+Six facilities that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
 depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 
 - **Timing**: one execution primitive, an "at" job — a scheduled one-shot deadline. A "cron" policy
@@ -72,6 +82,11 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   not a separate bespoke timer mechanism per feature. Admin-authored recurrence instead belongs to an
   HA `schedule.*` helper; Heima consumes only its effective state as an ordinary sensor fact and never
   duplicates HA's schedule picker or timezone/DST logic.
+  Every declared V3 instant, including fact, job and model-artifact fields, is the same canonical
+  UTC `EvidenceInstant` with six fractional digits and `+00:00`. Every positive elapsed duration,
+  including model horizons and registry delay summaries, is the same `Window` with canonical
+  seconds. Internal calculations can use other forms temporarily; contract fields and artifact
+  serialization cannot. Calendar weekday/hour/minute values are civil coordinates.
   `Window` (a bounded time span) is a separate, non-executing comparison type used for dwell timers
   and correlation/follow-up matching — "has this been true for at least N seconds," "did Y happen
   within N seconds of X." `LearnedWindow` is a `Window` that starts from a seed value and calibrates
@@ -84,7 +99,7 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   evaluated before the core DAG runs each cycle, not a semantic resolver or a plugin.
   Duration and civil-time values are validated at configuration staging or dynamic job registration,
   never repaired or rechecked per cycle.
-  → `v3_house_fact_draft.md` §WHEN.
+  → Layer 0 §3 is the current timing contract; `v3_house_fact_draft.md` is historical.
 - **Persistence**: `HouseFact` storage is **always atomic** — one fact per WHAT/WHERE/WHEN/HOW,
   never a bundled record. It has two tiers: a durable long-term store (for learning and audit) and
   a short-term in-memory buffer (for correlation/follow-up matching within a bounded recent window),
@@ -92,12 +107,32 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   disk I/O. A producer declares each fact family as `state` or `event` at composition: state facts use
   canonical identity and write-on-change; unchanged state observations append nowhere, while every
   distinct state transition is retained in deterministic internal append order and latest-state lookup
-  remains O(1). Events append every occurrence and are never current state.
-  The same bootstrap pass reserves fact-type ownership across layers, preventing a registry producer
-  from colliding with a Layer-0-owned family such as manual holds. A "snapshot" (everything true at
+  remains O(1). Events append every occurrence and are never current state. `HeimaEvent` is
+  a transient delivery envelope; its durable audit representation is an event `HouseFact`,
+  and delivery deduplication never erases history. The same bootstrap pass reserves fact-type
+  ownership across layers, preventing a registry producer from colliding with a Layer-0-owned
+  family such as hold lifecycle events. A "snapshot" (everything true at
   one instant, or in one place, over one window) is never its own stored shape; it's a query
-  reconstructed at read time.
-  → `v3_backlog.md` §`HouseFact` persistence model.
+  reconstructed at read time. A separate durable process-continuity watermark, advanced
+  every 60 seconds only after earlier fact and audit writes are acknowledged, bounds the
+  uncertain tail after a crash. A normal stop and the first durable `CycleInputBarrier`
+  built from a newly completed HA intake with explicit binding availability delimit
+  a known interruption. Windows crossing it are incomplete even when retention is
+  complete; one unreadable Actuator makes only its dependent windows incomplete.
+  Unchanged values keep their last-change `HouseFact.when`; a declared HA
+  report-age gate uses `last_reported`, and durable per-stream gap boundaries
+  record known observation breaks. Historical state age is never inferred
+  from the last change alone, and a newer unavailable state cannot be skipped.
+  One bounded `actuator.channel_state.<digest>` state stream per registered
+  channel records physical/availability changes and the first fresh
+  post-restart state. Its edge id joins the unchanged three-field verified
+  `actuator.resident_control` event. Layer-5
+  `actuator.target_lifecycle` phases record admitted target decisions,
+  first complete observations and closures; Layer 3 joins these with
+  `actuator.correction` and typed coverage for routine and correction
+  learning. An unavailable bulb after a wall-switch power cut has no
+  inferred resident edge or correction.
+  → `v3_backlog.md` §`HouseFact` persistence model, CA4-05, CA4-09 and CA4-33.
 - **`FactSource` / `ApplyStepSource`**: one structured-provenance vocabulary spanning both facts and
   actions — every `HouseFact` and every `ApplyStep` carries a `kind` (sensor, analyzer, third-party
   plugin, reaction, admin command, resident response, timeout, recovery, system...), a `source_id`,
@@ -105,69 +140,22 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   sanitized into a clearly non-authoritative value, never silently trusted) and redacted before it
   reaches diagnostics or storage. This is what makes "why is the house in this state" answerable:
   follow one `correlation_id` from a resolved state back through the facts that fed it to whatever
-  produced them.
+  produced them. A plugin-related `ApplyStepSource` is provenance only; it never grants a plugin a
+  direct command capability.
   → `v3_backlog.md` §Observability, re-grounded.
-- **Manual Hold Manager**: a manual hold — a resident's explicit override that suppresses some
-  automated behavior in some functional domain — has a state `HouseFact`
-  (`fact_type: "manual_hold.<domain>"`, scoped by `Location`, with an immutable `hold_id`,
-  `active`, `kind`, and optional pinned state) plus one audit `HouseFact` per transition
-  (`fact_type: "manual_hold.<domain>.lifecycle"`: activated, cleared, expired, replaced, restored,
-  or restoration discarded). State facts alone answer live-state queries; lifecycle facts make every
-  decision auditable. Their `FactSource` is deterministic and complete: a resident-attributed helper
-  entity edge, implicit-hold analyzer, admin command, timeout, or Recovery as appropriate. The same helper
-  accepts an admin-attributed activation or clear as `admin_command`; automation, service, and
-  unattributable edges are rejected rather than misreported as resident action.
-- **Operational events**: `HeimaEvent` is a transient notification envelope, never a second audit
-  store. Each event maps to one append-only `HouseFact`: its type becomes `fact_type`; a structured
-  value retains the notification key, severity, rendered title/message, and JSON-compatible context;
-  its `Location` and correlation id remain mandatory. Notification deduplication/rate limiting uses
-  the key at delivery time without deleting or coalescing historical event facts. The transient
-  delivery id is neither fact identity nor a durable parallel field.
-  An implicit hold's expiry is handled by
-  `Window`/`AtJob` instead of a bespoke timer. A hold's functional `domain` (which behavior is being
-  suppressed — lighting, heating, security...) is a separate, orthogonal field from `Location`
-  (where), not folded into it.
-  **By default, a hold must never silently survive a restart.** Its `HouseFact` can still be
-  durably logged for audit and learning ("the resident overrode X, how often") — but the live "is
-  this hold active right now" state is never reconstructed from that log after Home Assistant
-  restarts. If it were, a suppression could remain silently in effect indefinitely after a restart,
-  with the resident unaware it's still blocking a security-relevant behavior. Same `HouseFact`
-  shape, two deliberately different read paths: one for history, one for live state, with different
-  restart guarantees.
-  **Power recovery is baseline-plus-recalculation, not command replay.** For an actuator explicitly
-  configured to participate, Heima coalesces its last accepted desired target into the checkpoint;
-  after a confirmed outage it combines that baseline with current facts, time, safety, and manual
-  holds before calculating one final delta. Thus unchanged conditions restore the house's prior
-  desired state, while elapsed time can correctly change it. The coalesced snapshot deliberately has
-  no synchronous per-target flush; a target not yet committed at power loss may be absent or older.
-  `FactRef.previous_cycle` is likewise performance-bounded: it reads a small snapshot sealed in memory
-  after the preceding evaluation, never disk. A clean shutdown lets Layer 0 pre-hydrate that snapshot
-  before the next DAG; an unclean restart starts this input unavailable for one cycle rather than
-  pretending an older durable record is the immediate predecessor.
-  Manual-hold transitions have the opposite durability profile: a small, `fsync`-backed journal makes
-  their state/lifecycle facts and restart checkpoint idempotently crash-consistent. If the medium is
-  unavailable, the hold remains live for safety but is explicitly `durability_pending`, never quietly
-  represented as durable.
-  Registry reload is an immutable, atomically swapped configuration generation. Staging computes and
-  compares per-producer execution-semantic fingerprints only once, outside the hot path: any changed,
-  added, removed, relocated, Zone-affected, or formula-version-affected producer and every
-  current-cycle Fusion dependent enter the direct/transitive impact set. Their dwell and prior-cycle
-  memory reset and retained facts receive a new semantic configuration fingerprint; display-only
-  metadata leaves unrelated runtime state intact.
-  Two kinds of hold, not one, with different restart behavior: an **explicit** hold (helper-entity
-  backed) is re-read live from Home Assistant every cycle. A narrow checkpoint mapping preserves its
-  immutable `hold_id` and pinned state across a restart, but can never override an inactive helper;
-  a missing mapping produces a newly observed Recovery activation rather than a fabricated historic
-  identity. An **implicit** hold (inferred from an unexpected state divergence) follows
-  the default above — with one narrow, opt-in, never-silent exception: an installer may mark a
-  specific `Actuator` record eligible for conditional restoration after a *clean* restart (no
-  power-restore ambiguity for that entity, current state still coherent with what triggered the
-  hold); every such restoration is itself recorded as a `HouseFact` that reaches the resident
-  through notification, never quietly. Resolved 2026-09-02, amending this rule's original
-  unconditional form.
-  → `docs/specs/v3/layer0_runtime_spec.md` §6 (full mechanism, current source of truth for Layer 0).
-  → `v3_backlog.md` §"Manual Hold Manager / Recovery-Checkpoint", §"Full architecture re-review"
-  (AR-3), §"Layer 0 promoted to a real spec, first amendment found along the way".
+- **Divergence Hold Manager**: residents use ordinary HA device controls. Layer 0 §6 tracks
+  one process-local hold per Actuator channel when a valid observation diverges from a
+  confirmed current Reaction target; facets share its release boundary and audit records
+  their expectation sources. Layer 5 §6 defines descriptor release, normal exit and follow-up.
+  Restart restores no hold; Layer 0 §7 uses any retained baseline only for a fresh
+  current-policy recovery decision. The earlier domain-wide explicit/implicit hold model is
+  historical (CA4-01).
+- **Historical observation continuity**: declared durable history reads carry typed
+  `ObservationCoverage` separately from retention. After restart, the process gap
+  closes at the first durable `CycleInputBarrier` from a fresh complete HA intake;
+  unreadable individual channels remain incomplete only for dependent windows,
+  while readable channels resume current policy. A timer-only cycle or cached state
+  cannot certify continuity.
 - **Recovery / Checkpoint**: a lightweight, pre-DAG context computed once per evaluation cycle,
   before any semantic resolver runs — it classifies runtime state (normal / just started / recovering from a
   power loss / degraded because many entities are unavailable / settling back to normal) and makes
@@ -178,23 +166,41 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   consumes Timing's execution primitive like everything else that needs periodic work). It answers
   "did anything change while Heima was offline" cheaply; it is not a general restore mechanism, and
   it never forces every piece of runtime state through the full `HouseFact`/`Provenance` shape —
-  some state (like this one) is narrow and minimal on purpose, not by oversight.
-  **Same restart rule as Manual Hold**: neither an active hold nor a pending "please confirm this
-  before I apply it" runtime confirmation is ever silently restored from a checkpoint after a
-  restart — both are the kind of state that must start clean, by design, every time.
+  some state (like this one) is narrow and minimal on purpose, not by oversight. An opted-in
+  Actuator's coalesced per-channel, per-facet desired-target checkpoint is a read-only
+  baseline for current-policy
+  recalculation after power recovery, never a command replay. `FactRef.previous_cycle` reads
+  a sealed in-memory snapshot; an unclean restart cannot claim older durable history as its
+  immediate predecessor. Registry reload swaps a validated generation atomically.
+  Each baseline facet retains its Reaction generation or trusted direct-command
+  origin. A removed, edited or consent-revoked Reaction loses its baseline facets;
+  surviving facets still pass current target and safety admission.
+  The cycle's `DecisionSnapshot` freezes recovery state, episode and exposed
+  baselines together with current Reaction authority; later checkpoint writes
+  or consent changes require a new decision and cannot rewrite that snapshot.
+  Declared `state_transition` triggers compare a typed previous/current state
+  pair in that same completed snapshot; a missing predecessor after restart
+  abstains, and explicit episodes retain their separate event meaning.
+  **Hold restart rule**: an active channel hold is never restored from a checkpoint after a
+  restart; the first returned observation does not create one. An open recovery-target
+  confirmation request also loses authority on restart. While running it remains open
+  only for the same admissible proposal, with a 24-hour core ceiling; fresh readings
+  and recalculation can create a new request after restart when still needed (CA4-39).
   → `v3_backlog.md` §"Manual Hold Manager / Recovery-Checkpoint" +
-  §"Full architecture re-review", AR-3.
+  §"Full architecture re-review", AR-3; `docs/specs/v3/layer0_runtime_spec.md` §§6–7.
+- **Runtime health telemetry**: a read-only capability and resource snapshot serves slow-path
+  learning admission; Layer 0 measures but never chooses a learner or action.
 
 ---
 
 ## Layer 1 — The substrate primitive
 
-- **`HouseFact`**: `fact_type` + `value` + `where: Location` + `when: datetime` + `how: Provenance`.
-  This is the one shape everything else in the system is built from — a sensor reading, a fused
-  derived state, a learned statistical signal, a reviewable proposal, a manual hold, a notification
-  trigger. There is no second, parallel representation competing with it for the same kind of
-  information; anything that looks like "a thing that's true, somewhere, at some time, with some
-  confidence" is a `HouseFact`.
+- **`HouseFact`**: `fact_type` + `value` + `where: Location` + `when: EvidenceInstant` + `how: Provenance`.
+  This is the one persistent shape for an assertion about the house or an auditable operational
+  occurrence: a sensor reading, a fused derived state, a resolved semantic claim, or a declared event
+  fact. It is not a generic message or workflow container: a transient `InferenceSignal`, a
+  `LearningProposalCandidate`, a reviewable `ReactionProposal`, and an `ApplyStep` each retain their
+  own contract and lifecycle.
 - **`Location`**: always present on a `HouseFact`, never absent. Four forms: `casa` (the whole
   house, the root), a single `room`, a declared `zone`, or `rooms` — an ad hoc, unnamed set of room
   IDs, needed when a fact is genuinely scoped to a dynamically-observed combination of rooms that
@@ -207,9 +213,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   `Location` says *which* place a fact is about; `Zone` says *an explicit group someone declared*;
   `Topology` says *how rooms physically relate to each other* — adjacency, openings between rooms,
   connection type, orientation, floor. It is not itself a fact producer or a fusion input — it's
-  context that `FusionRule`s, Reactions, and template requirements can query (e.g. "does this room
+  context that `FusionRule`s, Reactions, and Reaction-descriptor requirements can query (e.g. "does this room
   have an opening to the outside," "what's adjacent to it") when deciding whether and how to act.
-  → `v3_house_fact_draft.md` §WHERE.
+  → Layer 1 §5–§7 is the current location/topology contract; `v3_house_fact_draft.md` is historical.
 
 ---
 
@@ -233,6 +239,11 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   numeric thresholds, e.g. dark/dim/bright), or calendar-window aggregation composed with the reusable
   pure `KeywordClassifier` (fuzzy keyword matching with a priority order for conflicts, open-ended by
   nature since admins define the keywords).
+  Core solar geometry uses this same Sensor path: two reserved casa facts read
+  `sun.sun` elevation/azimuth attributes from one HA snapshot, gate stale or
+  invalid source values and convert degrees to canonical radians. The
+  per-opening solar-incidence formula keeps each orientation in its staged
+  configuration. Solar position is not a learner-owned forecast.
 - **`FusionRule`**: how N facts become one derived `HouseFact` — inputs may come from `Sensor`s, or
   (resolved 2026-09-04) from another `FusionRule`'s own output, addressed uniformly by
   `fact_type`/`Location` rather than by producer id. A genuinely separate concept from `Sensor`, not
@@ -270,7 +281,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   family contributes at most one vote, and only explicitly immediate evidence may take the fast
   primary path. New sensor kinds alter configuration rather than formula code. A formula configuration
   is persisted as bounded canonical JSON and compiled once during generation staging into that
-  formula's private immutable type; the evaluator never parses it.
+  formula's private immutable type; the evaluator never parses it. The Initial-V3
+  solar-incidence and humidity-ratio formulas use this same closed mechanism for a
+  staged opening orientation and an exclusive pressure-source choice.
   The formula catalog is core-built and frozen before cycles; its immutable id and semantic
   implementation version are persisted with each resolved binding, while callables are not.
   A changed version selectively invalidates only dependent fusion rules. No formula is assumed
@@ -296,8 +309,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 - **`Actuator`**: an inventory fact only — which entity, where, optionally which physical opening it
   operates, optionally which coarse role it plays (light, shutter, HVAC unit, water valve, switch...
   — deliberately an open string, never a closed enum, since HA's own device domains keep growing),
-  and (resolved 2026-09-06, restoring a dropped Layer 0 decision) whether it's eligible for implicit
-  manual-hold restoration after a restart — never a command itself. One HA command endpoint has one
+  and, for fixed-duration hold release, one configured positive duration shared across its
+  fixed-duration channels. Each channel still gets its own deadline. A hold never
+  survives restart; the Actuator record is never itself a command. One HA command endpoint has one
   Actuator record; an optional opening must belong to its room, while lights and other ordinary room
   equipment have no opening relation. Commands live only in whichever
   Reaction decides to send them. → `docs/specs/v3/layer2_registries_spec.md`; the older
@@ -317,6 +331,16 @@ Learning requests a retention duration from Layer 0, but that request is not all
 carries retention coverage; a pruned requested window keeps the learner in warm-up/degraded mode rather
 than letting it infer from a silently shortened sample. Latest state records remain protected even
 under global storage pressure.
+The typed `FutureStateFractionOutcome` gives a bounded scalar fraction of a
+complete future interval spent in a qualifying state, including separate
+returns to that state. It reuses Layer 3's state-history integration; a gap
+or missing anchor state excludes the label. Separately,
+`RoomOccupancySurvivalModel.return_delay` estimates the chance of a room
+return after a physically supported vacancy transition. Its validated
+survival artifact may time a descriptor-approved, single-member generic
+Actuator action whose versioned intent-to-target translation declares
+delay eligibility. The model never chooses or sends that action. Layer 5
+supplies one trigger-driven replacement job and one-shot admission identity.
 
 **Disambiguation from Layer 2's `FusionRule`** — same surface shape ("combine multiple facts into
 one"), genuinely different job. `FusionRule` combines *current* facts, same cycle, synchronous
@@ -337,10 +361,11 @@ history to mean anything and would make no sense recomputed every cycle.
     resident-approved-routine positive sleep-, relax-, and domestic-working-context contracts; every
     other statistical signal is diagnostic-only by design — computed and observable, but never
     consumed by semantic resolution.
-  - **`LearningProposalCandidate`** — the registry-analyzer stage's typed hand-off to Layer 5 (one
-    analyzer per learning family — heating, lighting, presence, room-assist composites, security
-    presence simulation). Layer 5 alone validates it and creates the reviewable `ReactionProposal`,
-    always gated by admin review, no exception.
+  - **`LearningProposalCandidate`** — the registry-analyzer stage's typed hand-off to Layer 5. An
+    active analyzer may emit it only under its exact registered core candidate kind and permitted
+    egress; Layer 5 alone validates it and creates the reviewable `ReactionProposal`, always gated by
+    admin review, no exception. `security.presence_simulation` is an active admin-direct V3 descriptor,
+    but remains neither a learning family nor an analyzer.
 - **`PatternLearner` and optional ML models** — `PatternLearner` is the shared, explainable baseline
   every learning family builds on, instead of each hand-rolling its own bucket/threshold/confidence
   logic: buckets history by an arbitrary key,
@@ -358,7 +383,15 @@ history to mean anything and would make no sense recomputed every cycle.
   subprocess or remote server, but local Heima retains validation, promotion, inference, and all
   authority. The first candidate is a topology-constrained thermal model: it may estimate effective
   thermal coupling and temperature trajectories from temperature/HVAC/opening facts, while claiming
-  airflow or air quality only when corresponding measurements exist.
+  airflow or air quality only when corresponding measurements exist. Its Initial-V3 evidence-gated HVAC response
+  profile produces only exact-context passive-drift and recovery reachability estimates; it never
+  chooses a setpoint, calendar schedule, target endpoint, or command.
+- **Environmental episode anchor**: one `EnvironmentalEpisodeLearner` serves exact
+  profile-declared observed transitions on registered Sensor states or Actuator channels.
+  Layer-0 channel-state facts provide bounded normalized facets for an extraction fan
+  or later humidifier/dehumidifier profile. Initial post-gap state, a proposed command,
+  and an unrelated facet are not observed transition episodes; profile-specific
+  outcomes and confounders remain separately registered.
 - **Governance**: whether a learning family runs at all is a single admin-facing toggle, covering
   both the slow-cycle analyzer stage and any bounded live-signal module in the same family — not two
   separate, inconsistently-gated mechanisms.
@@ -369,7 +402,8 @@ history to mean anything and would make no sense recomputed every cycle.
   validation — never a learner/model type or a `ReactionProposal` directly. It never gets a seat at
   the live-`InferenceSignal` tier, which stays a short, individually-audited list that only the core
   team extends.
-  → `v3_pattern_learner_draft.md` for the concrete shape; `v3_backlog.md` §"Learning pipeline"
+  → Layer 3 §4–§6 for the current contract; `v3_pattern_learner_draft.md` preserves the older shape;
+  `v3_backlog.md` §"Learning pipeline"
   sections and §"Full architecture re-review" (AR-1 through AR-6) for the full reasoning trail.
 
 ---
@@ -379,8 +413,9 @@ history to mean anything and would make no sense recomputed every cycle.
 Layer 4 materializes independently owned `SemanticState` claims and event-only
 `SemanticEpisode` occurrences from Layer-2 facts and bounded Layer-3 signals. Each
 `SemanticResolver` is registered, validated and dependency-ordered in a staged DAG. A resolver reads
-fresh Layer-2 facts and only the prior-cycle outputs of other resolvers, so the evaluation is
-acyclic and deterministic in one pass.
+fresh Layer-2 facts and only its declared same-cycle upstream claims already resolved in deterministic
+topological order; separately declared `previous_cycle` values come from Layer 0's bounded snapshot.
+The resulting evaluation is acyclic and deterministic in one pass.
 
 The initial semantic claims are `room_occupancy`, `presence`, and independently scoped
 `activity.<activity_id>`. They intentionally do not form one global enum: presence, activity,
@@ -392,28 +427,173 @@ being recreated as a V3 claim. See the authoritative Layer-4 specification for e
 
 ## Layer 5 — Action / reaction generation
 
-**Freshness rule** — the opposite of the prior-cycle rule inside Layer 4: Reactions read the
-*current* cycle's semantic claims and Layer-2 facts. Semantic resolvers restrict dependencies on
-other semantic resolvers to prior-cycle outputs specifically to keep the DAG acyclic; Reactions run
-strictly *after* the full DAG has resolved for that cycle, so no resolver can depend on a Reaction's
-output within the same pass. Layer-2 facts are likewise recomputed before semantic resolution, so a
-Reaction can read the current fine-grained detail such as a room's lux bucket.
+**Freshness rule** — Reactions read the *current* cycle's completed semantic claims and Layer-2 facts.
+Inside Layer 4, semantic resolvers may read only declared same-cycle upstream claims already resolved
+in topological order; cycles are rejected, while `previous_cycle` is a separate explicit Layer-0
+snapshot input. Reactions run strictly *after* the full DAG has resolved for that cycle, so no resolver
+can depend on a Reaction's output within the same pass. Layer-2 facts are likewise recomputed before
+semantic resolution, so a Reaction can read the current fine-grained detail such as a room's lux bucket.
 
 - **Reactions** produce ordered `ApplyStep`s, each carrying an `ApplyStepSource` (Layer 0's provenance
   vocabulary) and addressing exactly one Layer-2 `Actuator` by id. The runtime alone resolves the HA
   endpoint; a step cannot override it with a target selector, while HA remains the source of truth for
-  the service schema and supported operation. A `ReactionProposal` is a `HouseFact` plus `Provenance`,
-  wrapped with a review status (pending/accepted/rejected) and an identity/fingerprint for deduplication
-  — not a separate, bespoke shape.
-- **Template-driven auto-proposals**: an admin-authored automation template can declare what it
-  needs — some `Sensor` fact types, some `Actuator` roles, optionally a topology requirement (e.g.
-  "needs an opening to the outside"). A generic matcher scans every `Location` against every
-  template with requirements declared, and where the registries already satisfy what a template
-  needs, it proposes the automation automatically — no per-template bespoke discovery code, one
-  generic path for every template that opts in. Its defaults are derived from what the matched
-  `Sensor`'s `Interpretation` actually looks like (e.g. which lux bucket exists) rather than a
-  guessed room-type heuristic.
-  → `v3_template_matching_draft.md`.
+  the service schema and supported operation. A `ReactionProposal` is a persisted Layer-5 governance
+  record, not a `HouseFact`: it preserves the admitted canonical proposal payload and contract identity,
+  references its source evidence, retains a redacted immutable evidence snapshot for later audit, and
+  owns review status and lifecycle. The referenced facts remain Layer-0/1 history; the proposal's
+  snapshot is an audit attachment, never a fact assertion.
+- **One descriptor path**: the frozen core `ReactionDescriptorRegistry` is the sole contract for a
+  `ConfiguredReaction`. A descriptor may permit direct authenticated administrative configuration,
+  learned proposal review, or both; origin is provenance, never a second evaluator or execution
+  engine. A Layer-3 candidate is advisory-preflight checked there, then Layer 5 authoritatively
+  validates it before persisting a `ReactionProposal` and again on acceptance. A Layer-3
+  candidate keeps descriptor and member-target semantics stable while measured
+  environmental response, thermal reachability and routine frequency stay in
+  the sole profile-registered typed artifact and refreshable evidence.
+  Layer 5 validates that exact output schema; it does not keep a duplicate
+  effect summary. Per-member numeric thresholds
+  apply only where the exact descriptor/profile declares a numeric outcome.
+  Routine frequency is one bundle/context result compared with an
+  event-independent, complete sliding-window time-exposure baseline; zero baseline gives
+  no finite lift and cannot make a proposal eligible.
+  A configured Reaction has one stable identity plus immutable append-only configuration generations; its canonical compiled
+  plan is persisted without callables, while authorization and consent remain separate runtime-authority
+  transitions. All six Initial-V3 descriptors require resident consent. Missing
+  consent blocks commands through authority state rather than an availability
+  suppression. Reaction guards use one bootstrap-frozen core capability registry and typed,
+  versioned household guard-profile generations, not per-descriptor condition expressions.
+- **Review and application**: `ReactionProposal` governs learned configuration only. Accepted
+  proposals first stage a `ConfiguredReaction` in `notification_only` mode; automatic action is a
+  separate authenticated transition. An admitted semantic channel target compiles through one closed
+  intent/channel/adapter translation into one endpoint-owned `ApplyStep`, with ordered `ApplyCall`s
+  when HA requires several services. Every step retains its exact configuration generation, so retry,
+  scheduled work and audit cannot cross a semantic edit. Pre-command blocks produce the closed
+  availability reasons; attempted-call failures are Layer-5 audit diagnostics, not availability events.
+- **Programmed steps**: Layer 5 §6.0 gives each active scheduled Reaction one stable next-`AtJob`
+  replacement slot, separate from its step identity. A temporary input gap keeps the activation;
+  re-evaluation selects at most one next job and stale callbacks do not issue commands.
+- **Solar-shading timing**: the minimum dwell is an elapsed wait from
+  qualifying solar exposure. A gap counts only if valid exposure is
+  qualifying immediately before and on the first fresh reading after it;
+  this operational inference is never a complete learning interval. A closed Layer-2
+  `numeric.hysteresis_condition.v1` formula owns the numeric entry/exit
+  thresholds and publishes the boolean condition consumed by Layer 3 and
+  Layer 5. Initial V3 uses one staged fixed dwell for this solar path;
+  no solar-fraction timing model is registered or required by CA4-13.
+  An observed exit crossing cancels the occurrence. A cover-movement cooldown
+  is a separate admission check. CA4-13's first learned-delay profile is
+  room-return survival; its trigger-driven replacement job is specified.
+  CA4-14 specifies artifact adoption.
+- **Timing-model binding**: a Reaction plan may retain the descriptor-approved
+  model definition, exact typed state, qualifying values and `LearnedWindow`
+  seed/bounds as immutable
+  configuration. The current artifact revision is separate serving evidence;
+  for a registered room-vacancy path, Layer 5 uses the return cumulative
+  incidence at the staged maximum to select a continuous bounded wait for
+  one member with an exact versioned translation delay permission. When no valid adopted result serves,
+  Layer 5 uses the staged seed. Layer-2 vacancy debounce precedes this wait, so their
+  durations add; a valid room return cancels the pending action. A
+  separate typed declaration in the same plan fixes whether a gap resets,
+  pauses or counts elapsed timer time after fresh requalification;
+  after process restart the old activation and timer are discarded, and a
+  sustained qualifying state starts a full new wait from its first fresh read;
+  compatible refresh does not change the Reaction fingerprint. Ordinary
+  shadow, review, promotion and consent gates still control action authority.
+  A learned proposal records exact supplemental artifact revisions by declared
+  role in its evidence. Layer 5 stores the adopted revision in an append-only
+  transition for the current Reaction generation. Each later `pinned`
+  revision receives a distinct adoption proposal for admin review; compatible
+  `bounded_adaptive` revisions may advance under the existing approved bounds.
+  Validated diagnostics need no adoption; a registered signal uses Layer-3
+  approval per `pinned` revision or bounded compatible adoption. Layer 3
+  separates analysis and serving-generation fingerprints, so a serving-only
+  objective edit preserves the response artifact while changing proposal
+  identity. An authenticated mode-change transition retains the current
+  adopted artifact and its consumer; it does not restage a Reaction or
+  extend a live signal.
+- **Shared Reaction program:** each descriptor version registers one pure
+  `evaluate_program` specialization; its compiler persists canonical plan
+  data. The specialization selects start, target changes, wait or normal end
+  from the frozen context and supplies the selected step's typed target. Typed
+  events and timed boundaries request the same evaluation; one current
+  target and step identity per channel enter common hold, guard, ownership,
+  `ApplyStep` and follow-up handling. Only timed future boundaries use the
+  next `AtJob` slot. An event step that releases a next-step hold needs a
+  fresh current-state continuation before any command.
+- **Initial catalog scope**: descriptors include solar shading, external exchange,
+  room-neutral air extraction, and the generic routine actuation bundle. The extraction descriptor
+  selects one typed room-humidity level, delta or rate trigger; current room occupancy is required
+  only where declared. A fan already active at qualifying start is untouched
+  for that activation, while an initially inactive fan can follow its
+  declared start/change/end steps. The earlier one-shot draft specified only
+  activation; the required Initial-V3 specialization remains CA4-12 work.
+  Learning preserves observed entry state, transitions and
+  verified origin without treating an active-at-entry no-op as a Heima effect.
+  Its common environmental learner keys separate response estimates by the
+  profile's finite physical transition class: start, each bounded
+  modification direction/range and termination. No start estimate can stand
+  in for another step's effect. The descriptor declares an exact estimate
+  dependency per programmed step; missing support suppresses that step, not
+  an independently declared deterministic step or verified normal exit.
+  A learned modification additionally needs a current qualifying condition
+  and an exact-class conservative response that meets the reviewed objective;
+  its physical benefit is learned from eligible local observations rather
+  than declared as a fixed value by the developer. No later target is
+  presumed indispensable in advance.
+  Solar shading and external exchange permit both direct admin configuration
+  and learned proposals through the same descriptor path. Their direct
+  envelope may have the one empty-key cell while learned proposals retain
+  supported context cells; direct trigger and guard checks remain mandatory.
+  External-exchange guard requirements use its validated purpose variant,
+  rather than requiring every purpose's capabilities together.
+  The required extraction program declares managed-episode resumption and
+  fixed-duration hold release. A registered ongoing-program descriptor may
+  resume after restart only from a
+  committed proof of Heima's physical inactive-to-active edge and a fresh
+  current reading. That compact open/closed channel state joins ordinary
+  cycle persistence on opening and closure, without a per-command flush;
+  speed changes do not update it. At every restart, if the first fresh valid
+  device reading is active and usable proof is missing, Heima leaves it
+  untouched and produces the existing Layer-6
+  availability notice with reason `active_channel_unmanaged_after_restart`.
+  The notice does not require the action trigger; Layer 6 gives each process
+  run a distinct delivery key. The issue stays open until the device is freshly observed inactive or
+  management proof becomes valid; a changing trigger alone does not resolve it.
+  Resumption recalculates current
+  policy with a new activation and never restores a hold, timer, missed step
+  or learning coverage across the gap.
+  Its full `humidity_extraction` relation-profile registration remains CA4-12
+  work. `environment.planned_comfort_trajectory`
+  is also a registered Initial-V3 descriptor, but evidence-gated: its administrative HVAC/calendar/
+  comfort prerequisites may be staged as immutable versioned generations, while a proposal requires
+  validated thermal evidence and action requires the subsequent notification-only shadow, authenticated
+  promotion, and current consent. It
+  stages one explicit desired mode source; only the matching heating or cooling
+  Reaction can act in a cycle, with physical-mode compatibility checked before dispatch. It
+  applies the absence target directly, then uses a core-generated recovery-only ramp: one fresh,
+  model-supported HVAC step at a time, bounded by adapter constraints and never replayed in a burst.
+  Its channel holds use the next target-changing step of that Reaction for release.
+  `security.presence_simulation` is also a registered Initial-V3 `admin_direct` descriptor, not a
+  Layer-3 learning family: an admin stages an explicit set of suitable interior-light endpoints plus
+  calendar/session/activity settings. Endpoint admission uses registered light-state channels and
+  adapters; the free-text Actuator role is only a selection hint. The core deterministically derives bounded, day-varying
+  episodes. It uses the ordinary `planned_absence`/stabilized-away guards, authority/consent lifecycle,
+  scheduler and one-endpoint `ApplyStep` path. Its planned light steps include
+  switch-off after the last activity for each light and run while their current criteria
+  hold. Its channel holds likewise release at the next target-changing planned step. An early committed return cancels unsent steps and adds no terminal
+  command. It is a
+  deterrence aid, never a security guarantee.
+  Its notification-only preview is optional and emits no command. A future learned/imported temporal
+  profile may replace only the episode selector after its own contract and shadow gate are defined.
+  Its profile-free plan gets typed slots, parameters and start criteria from
+  the frozen descriptor version and guards from its direct guard contract.
+  The common `CanonicalEnvelope` has zero axes and one empty-key direct cell
+  without learner support/calibration. Fresh current `away` plus an active
+  planned absence can start a new activation after restart; a departure
+  episode, calendar update or due job only requests re-evaluation of the
+  current plan. Future direct descriptors declare any typed axes, versioned
+  partitions and bounded joint cells in their own version, under the same
+  envelope lookup and action path.
 
 ---
 
@@ -424,12 +604,22 @@ condition, a semantic-claim transition) and review items (a new learned proposal
 suggestions) alike — instead of one sophisticated, configurable path for the former and a separate,
 unconfigurable direct-call path for the latter.
 
+The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
+uses Layer 0's per-channel durable outbox, renders and persists the one event fact,
+and retries delivery. Its renderer declares finite maximum UTF-8 title and message
+lengths in every supported locale so Layer-5 staging can prove the complete event
+fits Layer 1's depth-two/8 KiB value contract. A failed or timed-out intent
+preparation has the diagnosed, best-effort notice guarantee described above;
+the adapter never replays an Actuator command.
+
 - **Quiet hours are resolved per family/type, not as one blanket switch**, in 3 behaviors: `bypass`
   (security-posture-relevant, can't wait — e.g. "went to sleep without arming security"), `defer`
   (held until quiet hours end, folded into the digest), `silent` (never actively pushed at all —
-  template-match proposals land here, since "N automations are now possible" is never urgent).
-  Quiet-hours-active is a dynamic condition (an active `sleeping` `HouseFact`), not a fixed clock
-  window.
+  learned Reaction proposals land here, since "N automations are now possible" is never urgent).
+  Layer 5 separately defines an opt-in `quiet_hours.v1` action guard over a
+  casa-scoped boolean `quiet_hours.active` fact. Layer-6 notification quiet-hours
+  input and routing remain to be specified there; room-scoped `activity.sleeping`
+  alone does not establish a casa-wide quiet context.
 - **Digest**: a periodic batch summary ("12 new suggestions today") instead of one push per item —
   the mechanism that makes routing large volumes of low-urgency review items to `defer`/`silent`
   actually usable instead of just delayed spam. Not yet built.
@@ -451,12 +641,12 @@ unconfigurable direct-call path for the latter.
   inside a boundary — a failure is skipped for that cycle and surfaced as a diagnostic event, never
   taking the whole engine down) and a version-compatibility check at registration, so an
   incompatible plugin is rejected loudly, never loaded silently broken.
-- **Two capability tiers, declared at registration**: `read_only` (facts/signals only —
-  fail-closed: if a `read_only` plugin returns an `ApplyStep` anyway, it's dropped and logged, never
-  executed) vs. `apply` (can command actuators). Activating `apply`-tier authority for a newly
-  registered plugin goes through the same one-time, admin-confirmed, persisted approval flow used
-  elsewhere for promoting a pending automated action to trusted status — a new `apply` plugin runs
-  in shadow mode (computes what it would do, without doing it) until then.
+- **Core-mediated operational boundary**: a plugin has no `apply` capability. It cannot return an
+  `ApplyStep`, invoke an Actuator, register a candidate kind or Reaction descriptor, or install a
+  private action protocol. It may produce registered facts and diagnostics. It may also submit a
+  `LearningProposalCandidate` only for an exact existing core candidate kind and Reaction descriptor;
+  the candidate then follows the ordinary Layer-5 validation, review, staging, admissibility, and
+  audit path.
 - **Open tension, not resolved**: this project's "no backward compatibility, sole user of the
   project" stance is incompatible with a public plugin API by definition — shipping this needs a
   conscious, explicit amendment to that rule (e.g. scoped to internal-only contracts), not a silent
@@ -466,7 +656,8 @@ unconfigurable direct-call path for the latter.
   registry CRUD every built-in `Sensor`/`Actuator` goes through, not a private, invisible read of
   raw entity state. Registration itself stays admin-gated: a plugin may declare what it needs, but
   the registry record is created through the panel, never silently self-registered against
-  arbitrary entities — the same reasoning as pull-only, one layer up.
+  arbitrary entities — the same reasoning as pull-only, one layer up. Such an Actuator remains an
+  inventory entry: only a core Layer-5 descriptor and the common `ApplyStep` pipeline may command it.
   → `v3_backlog.md` §Third-party plugin API, §"Full architecture re-review" (AR-8).
 
 ---
@@ -475,16 +666,18 @@ unconfigurable direct-call path for the latter.
 
 Two UI surfaces, each with a clear job. A linear, step-based config flow for settings that are
 genuinely occasional and don't benefit from a registry-style editor (notification delivery policy,
-plugin `apply`-authority grants, general settings). An admin panel for everything registry- or
+plugin registration/diagnostic settings, general settings). An admin panel for everything registry- or
 review-shaped, itself with two mutation patterns: a dedicated CRUD endpoint per registry
 (`Sensor`/`Zone`/`FusionRule`/`Actuator`/`Topology`, full structural editing — the right tool for
 relational/graph-shaped data that a linear form doesn't fit well) and a generic action dispatcher
-for point-actions on existing objects (accept/reject/remove one proposal, clear one hold — not full
-CRUD, just a discriminated action call). Proposal review, including new template-match proposals,
-goes through the generic-dispatcher pattern.
-**Still open**: whether Reactions (today reachable from both surfaces, with no dedicated panel
-mutation endpoint) should move fully into the panel once template-matching reduces how often an
-admin needs to author one by hand.
+for point-actions on existing objects (accept/reject/remove one proposal — a discriminated
+action call, not full CRUD). Holds remain internal and have no manual clear action. Proposal
+review, including new learned Reaction proposals, goes through the generic-dispatcher pattern. `environment.planned_comfort_trajectory` belongs entirely
+to the panel: one atomic prerequisite-generation staging action, generic proposal review, read-only
+shadow/audit, and version-checked promotion/disablement actions. Household consent is a distinct
+resident-authorized action; it never appears in the prerequisite generation or proposal review. If an
+admin removes a resident authorized to consent, they explicitly retain or revoke each consent that
+resident previously granted.
 → `v3_backlog.md` §Configuration surface.
 
 ---
@@ -506,13 +699,12 @@ explainability system built on top.
 2. The digest notification capability — designed for, not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
    path — depends on the digest existing first.
-4. Which admin-authored templates get a `TemplateRequirement` declared first.
+4. The common Layer-8 commands for each registered `ReactionDescriptor` (CA4-44).
 5. Whether Reactions configuration moves fully into the admin panel (Layer 8).
 6. The "no backward compatibility" project rule vs. a public plugin API (Layer 7) — needs a
    conscious amendment, not a silent exception.
 7. A namespacing convention for third-party-registered identifiers
-   (`"plugin.<plugin_id>.<name>"`) — not yet enforced anywhere, needed before Layer 7 ships to avoid
-   cross-plugin collisions. Covers `fact_type`, `proposal_type`, and `reaction_type` alike.
-8. ~~Functional-policy redesign work...~~ Resolved 2026-09-02 — promoted to `v3_domains_draft.md`
-   (Lighting's `PrecedenceRelation`, Heating's reconciled `HeatingBranch` and thermal model,
-   Security's `SequentialConfirmationPolicy`).
+   (`"plugin.<plugin_id>.<name>"`) — still to be reviewed for Layer 7; the current
+   cross-layer claims and candidate-kind/Reaction-descriptor references must remain collision-free.
+8. The remaining Layer 0–5 specification corrections are tracked individually as CA4 backlog
+   items; the retired domain drafts are historical context, not pending architecture decisions.

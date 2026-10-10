@@ -13,7 +13,7 @@ skinparam packageBorderColor #80868B
 component "Home Assistant\nraw entity and calendar state" as HA #FFFFFF
 
 package "Foundation slice" {
-  component "Layer 0\nTiming, Persistence, provenance,\nmanual holds, recovery, runtime health" as L0 #E6F4EA
+  component "Layer 0\nTiming, Persistence, provenance,\nchannel divergence holds, recovery, runtime health" as L0 #E6F4EA
   component "Layer 1\nHouseFact, Provenance, Location,\nZone, Topology" as L1 #E6F4EA
 }
 
@@ -25,6 +25,7 @@ HA --> L2 : raw values through ReadBinding
 L2 --> L0 : accepted Layer-1 HouseFact
 L2 --> L4 : current typed facts
 L2 --> L5 : logical Actuator inventory
+L0 --> L4 : frozen history, calendar, and hold views
 L4 --> L5 : completed immutable DecisionSnapshot
 L5 --> HA : one endpoint per ApplyStep
 

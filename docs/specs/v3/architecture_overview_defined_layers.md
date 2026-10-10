@@ -3,9 +3,18 @@
 **Status:** Explanatory reconciliation document. It does not replace the authoritative layer
 specifications and introduces no new implementation requirement.
 
+**Maintenance:** Manually synchronized when a confirmed decision is promoted to an authoritative
+specification. **Reviewed through:** 2026-10-04 for the CA4-01 A1/B1/C2 contracts and
+their dependent ownership paths in `docs/v3_backlog.md`. Where it differs from an
+authoritative specification, that specification wins.
+
 **Scope:** Layers 0, 1, 2, 3, 4, and 5 are defined in detail today. Layer 6 appears only where an
 already-defined layer has a deliberately narrow future interface to it. Layers 7 and 8 are outside this
 document.
+
+For bounded change work, start with the [contract registry](contract_registry.json) and
+[specification workflow](spec_workflow.md). They record ownership and review evidence without
+adding normative behavior.
 
 ## 1. Purpose and Reading Order
 
@@ -48,12 +57,12 @@ an immutable contract or staging dependency, never runtime message delivery.
 
 | Layer | Owns | Main outputs | Does not own |
 |---|---|---|---|
-| 0 | Runtime facilities: time, persistence, provenance source vocabulary, manual holds, recovery, runtime-health measurement | Durable/short-term history, timers, checkpoints, runtime-health snapshot | Fact meaning, registry semantics, learning policy, semantic resolution, actuator commands |
+| 0 | Runtime facilities: time, persistence, provenance source vocabulary, channel divergence holds, recovery, runtime-health measurement | Durable/short-term history, timers, checkpoints, runtime-health snapshot | Fact meaning, registry semantics, learning policy, semantic resolution, actuator commands |
 | 1 | Immutable semantic contracts: `HouseFact`, `Provenance`, `Location`, `Zone`, `Topology` | Typed values used by all other layers | Storage mechanics, HA reads, fusion, learning, commands, workflow records |
 | 2 | Composition-time registry generation; HA read bindings; interpretations; fact fusion; formula registry; actuator inventory | Typed sensor/fused `HouseFact`s and logical Actuator descriptions | Durable storage, historical learning, semantic resolution, policy evaluation, action execution |
 | 3 | Historical analysis; shared statistical lifecycle; optional ML governance; artifacts; findings; typed signals and learned candidates | `DiagnosticFinding`, `InferenceSignal`, `LearningProposalCandidate`, typed availability suppression occurrences | Fact persistence, HA access, semantic-claim resolution, policy approval, commands, notification rendering |
 | 4 | Core semantic-resolver registry; staged semantic DAG; authorized signal gateway; current semantic-claim resolution | Resolved semantic `HouseFact`s, completed immutable `DecisionSnapshot`, typed availability suppression occurrences | HA reads, historical learning/model lifecycle, policy/guard/envelope evaluation, Actuator commands, notification delivery |
-| 5 | Candidate validation/review; configured policy staging; policy evaluation; action admissibility; `ApplyStep` generation | `ReactionProposal`, configured policy, ordered one-endpoint `ApplyStep`s, typed suppression occurrences | HA read bindings, raw state interpretation, historical learning, notification delivery |
+| 5 | Candidate validation/review; configured-Reaction staging; Reaction evaluation; action admissibility; `ApplyStep` generation | `ReactionProposal`, `ConfiguredReaction`, ordered one-endpoint `ApplyStep`s, typed suppression and follow-up occurrences | HA read bindings, raw state interpretation, historical learning, notification delivery |
 
 ## 4. Foundation: Layers 0 and 1
 
@@ -75,16 +84,98 @@ Layer 0 standardizes the machinery every higher layer needs:
   per-type ceiling, and a 512 MiB global watermark.
 - **Honest history:** retention coverage is stream-scoped. A noisy stream in one room can make its
   own historical interval truncated without falsely degrading the same fact type in another room.
+  Separate durable process-continuity metadata marks restart/outage intervals; a 60-second
+  all-queue-acknowledged watermark bounds uncertainty after a crash. A typed
+  `ObservationCoverage` accompanies declared durable history reads independently of
+  retention. The process gap closes at the first durable `CycleInputBarrier` built
+  from a fresh complete HA intake with explicit binding availability; an unreadable
+  channel makes only its dependent windows incomplete. Windows crossing a process
+  interruption or unavailable required channel are never zero-event evidence.
+  Readable channels may resume current-policy automation while another is unreadable.
+  An unchanged state keeps its last-change `HouseFact.when`; source-report age
+  and durable stream-gap boundaries, not that old timestamp, determine whether
+  a later historical interval was observed. Only changes and interruptions
+  produce durable records, never every identical read.
+  Each staged Actuator channel also publishes one bounded normalized
+  `actuator.channel_state.<digest>` state stream on physical/availability
+  changes and one fresh post-restart boundary. Its edge id joins the
+  existing three-field verified `actuator.resident_control` event; Layer 5
+  appends `actuator.target_lifecycle` phases only for admitted target
+  decisions, complete observations and closure. Layer 3 uses these
+  declared streams with correction facts and coverage to build routine
+  outcomes and zero-correction denominators, never raw HA history.
 - **Provenance and causality:** Layer 0 owns the non-forgeable `FactSource`/`ApplyStepSource`
   vocabulary and correlation-id propagation rules.
-- **Manual control and recovery:** manual holds have an explicit lifecycle and carefully limited
-  restart restoration. Recovery restores a prior known target first, then ordinary evaluation may
-  change it when current conditions require it.
+- **Manual control and recovery:** Layer 0 §6 owns one internal divergence hold per Actuator
+  channel, with a shared release boundary, attributed facet expectations and bounded lifecycle
+  audit. Layer 5 §6 chooses a descriptor's fixed-duration or next-step release and handles
+  normal exit and resident follow-up. A restart restores no hold; Layer 0 §7 exposes only a
+  read-only per-channel, per-facet recovery baseline with trusted source anchors for
+  a fresh current-policy decision. Revoked Reaction facets are filtered. A recovery target
+  requiring resident confirmation has one bounded request per channel; relevant
+  changes invalidate it, and a restart requires a new proposal from fresh reads.
+- **Environmental calculations:** Layer 2's registered formulas stage closed solar-incidence
+  and humidity-ratio configurations, including opening orientation and an exclusive
+  pressure-source choice. The reusable `numeric.hysteresis_condition.v1`
+  converts a canonical numeric state into one typed boolean condition using
+  entry/exit thresholds and validated previous-cycle self-memory. Layer 3
+  consumes these typed facts for environmental learning. Its common
+  environmental episode anchor is a profile-declared observed transition on
+  a registered Sensor state or Actuator channel; Layer-0 channel-state facts
+  provide exact normalized facets without a fan-specific learner. A first
+  post-gap state or requested command is not a physical-transition anchor.
+  Two core-generated
+  Layer-2 Sensors read one frozen `sun.sun` elevation/azimuth snapshot, enforce
+  HA `last_reported` age and numeric bounds, convert degrees to canonical radians,
+  and exclusively claim the casa geometry facts. Per-opening formula bindings
+  then use each opening's staged orientation; no learner computes an ephemeris.
+  For irradiance-triggered solar shading, Layer 5 counts one elapsed wait from
+  qualifying exposure; an observation gap counts only when the last valid
+  state and first fresh state are both qualifying. Initial V3 uses a staged
+  fixed dwell on this path and registers no solar-fraction forecast. The
+  generic state-fraction outcome and bounded-delay selector remain available
+  only to descriptor paths with a separately reviewed learning definition.
+  hysteresis can end the occurrence, while a separate movement
+  cooldown gates admission.
+- **Learned timing authority:** Layer 5 stores a stable
+  `ReactionTimingModelBinding` with the descriptor path, learning definition,
+  typed state, closed qualifying-value set and authorized window in the
+  immutable Reaction plan. The generic state-fraction path and the
+  registered room-return survival path use distinct result schemas. The
+  latter selects `min+(max-min)*P(return by max)` for a member whose
+  versioned intent-to-target translation declares delay eligibility and a
+  maximum. The staged seed applies when no eligible artifact serves.
+  A typed room-occupancy path qualifies at `absent` without another boolean
+  fact. This does not register a solar timing model.
+  Every delayed Reaction plan declares whether a gap resets observed dwell,
+  pauses verified elapsed time or counts elapsed time after fresh
+  requalification. Gap time counted for action is never training evidence.
+  These modes retain an anchor only within a running Heima process. Restart
+  restores no delayed job; a fresh qualifying sustained state begins a new
+  full wait under current policy.
+  Compatible artifact revisions are evidence/adoption state, not a changed
+  Reaction configuration; shadow, review, promotion and consent use the
+  ordinary gates. Proposal evidence carries exact role-tagged references for
+  supplemental artifacts such as a timing model. Layer 5 records an exact
+  adopted revision separately from the Reaction generation. A later `pinned`
+  revision uses a revision-specific proposal through `review_proposal`;
+  `bounded_adaptive` may advance only within its approved compatibility
+  envelope. Validated administrator-only diagnostics need no artifact
+  adoption. Registered live signals use Layer-3 adoption: exact admin
+  approval per `pinned` revision or a core-validated compatible
+  `bounded_adaptive` transition. Layer 3 keeps analysis identity separate
+  from serving-generation identity: an objective edit can reuse the
+  statistical response while requiring a new proposal. An authenticated
+  mode-change transition retains the current adopted artifact; entry to
+  `bounded_adaptive` revalidates the approved bounds, while exit to `pinned`
+  fixes the current revision.
 - **Runtime health:** Layer 0 measures latency, memory, CPU and runtime capabilities. It never
   decides whether a learner may run; Layer 3 consumes the read-only snapshot on its slow path.
 
-Layer 0 reserves `automation.availability` as a Layer-6-owned event fact type. A lower layer may not
-append that event directly.
+Layer 0 reserves `automation.availability` and `reaction.follow_up` as Layer-6-owned
+event fact types. A lower layer may not append either event directly. The latter has
+one narrow durable-intent preparation boundary (Layer 0 §4.5); event rendering and
+delivery remain Layer-6 work.
 
 ### Layer 1: Semantic Substrate
 
@@ -97,6 +188,13 @@ Layer 1 makes every durable house assertion answerable as WHAT, WHERE, WHEN, and
 - `Location`, `Zone`, and `Topology` model place, declared groups, and physical relation separately.
   A Zone is not a Topology edge; a room inventory is referenced, not reimplemented here.
 - Canonical JSON follows RFC 8785 where fingerprints or persisted canonical payloads require it.
+- Time has one contract representation across layers: Layer 1 `EvidenceInstant` is the exact
+  UTC microsecond `+00:00` instant for facts, jobs, snapshots, model artifacts and Reaction
+  records; Layer 0 `Window` is the canonical seconds object for positive elapsed durations.
+  A zero interval is represented explicitly by the owning contract (for example `None` at a
+  point-outcome anchor). Calendar weekday/hour/minute values remain civil coordinates.
+  Arithmetic may use temporary native values, but a declared contract never publishes an
+  alternate `Z` instant, integer-millisecond duration or native datetime/timedelta object.
 
 Layer 1 deliberately excludes artifacts, signals, candidates, commands, and review workflow records
 from `HouseFact`. They have different authority and lifecycle, even when they are about the house.
@@ -139,8 +237,29 @@ it never reads HA runtime objects or a mutable HA payload.
 - A learner declares a typed `SampleBinding`, complete `training_window`, feature lookbacks, target
   horizons, supported scope, resource envelope, and allowed egress. Staging derives its per-stream
   retention requirements and registers them one way with Layer 0.
+- A bounded `FutureStateFractionOutcome` measures the share of a future
+  interval spent in one staged typed state condition, including returns after
+  an exit. It reuses state-history reconstruction and the scalar result; an
+  incomplete interval contributes no training label. It grants no action
+  authority by itself (CA4-13).
+- The registered `RoomOccupancySurvivalModel.return_delay` instead estimates
+  the cumulative incidence of a return after a physically supported room
+  vacancy transition. Its finite grid starts at one minute and preserves
+  censoring and declared competing events. A validated, adopted artifact may
+  supply timing evidence to the generic single-member vacancy path of
+  `routine.actuation_bundle`; Layer 5 alone selects the bounded wait and
+  performs fresh admission. Delay permission belongs to the versioned
+  translation of a typed target, not the Actuator's display role; no
+  universal device-kind allowlist is required. Diagnostics and model evidence never command an
+  Actuator directly.
 - A learner requiring complete history refuses a truncated interval. It stays warm-up/degraded rather
   than silently learning from a shorter window.
+- Routine discovery keeps one measured output per canonical bundle/context
+  cell. It compares trigger-window frequency with a subject baseline from
+  complete sliding-window time exposure of the same assembly duration; lift is the
+  finite conditional-to-baseline ratio. A zero baseline cannot qualify a
+  proposal. This evidence never gives individual bundle members authority
+  (Layer 3 §4.4.3; Layer 5 §3.2).
 - `PatternLearner` centralizes support, warm-up, confidence, tiers, fallback, diagnostics, staleness,
   and bounded findings. Tier fallback chooses the first valid declared tier; it never averages or
   searches for a nearest context.
@@ -159,7 +278,7 @@ it never reads HA runtime objects or a mutable HA payload.
 | `LearningProposalCandidate` | Layer 5 | Evidence for review; Layer 5 independently validates candidate kind/version and policy payload |
 | `AvailabilitySuppressionOccurrence` | Future Layer-6 `AvailabilityEpisodeTracker` | Typed availability transition, not a notification, event fact, command, or persistence request |
 
-The proposal path is intentionally one way: learning proposes, Layer 5 reviews, a configured policy
+The proposal path is intentionally one way: learning proposes, Layer 5 reviews, a `ConfiguredReaction`
 later evaluates under current conditions. A statistical result can refine only its pre-approved
 authority; it cannot expand scope, add an Actuator, alter guards, or command HA.
 
@@ -177,7 +296,27 @@ tracker reconciles active episodes: newly visible bindings receive the current i
 disabled bindings close in administrative audit without a misleading later restoration. This keeps
 resident delivery correct without polling or callback dependencies between Layer 3 and Layer 5.
 
-## 7. Layer 5: Review, Policy, and Action
+## 7. Layer 4: Semantic Resolution
+
+Layer 4 turns declared Layer-2 facts and the narrow authorized Layer-3 signal input into current
+semantic claims and completed semantic episodes. Its staged core resolver registry is a deterministic
+DAG: every resolver can read only its declared lower-fact slots, declared upstream claims, one declared
+signal slot, declared previous-cycle values, and canonical parameters. It cannot read HA, a global fact
+map, policy configuration, future resolver output, or arbitrary history.
+
+After the Layer-4 DAG completes, the engine assembles the immutable `DecisionSnapshot` for Layer 5. It carries the
+resolved semantic claims and episodes plus the Layer-0 `FrozenHistoryView`, `FrozenCalendarView`
+and `HoldAdmissionView`, the Layer-0 `FrozenRecoveryView`, and Layer 5's
+`CommandOwnershipView` and `FrozenReactionAuthorityView`, assembled at the shared intake barrier.
+For declared state-transition triggers, the coordinator adds typed
+previous/current state pairs after semantic resolution; it does not insert
+Layer-4 claims into the Layer-2 intake group or mirror all state changes as
+episodes.
+Layer 4 transports those frozen views opaquely: it never reads, classifies, resolves, or otherwise
+interprets calendar windows or hold/ownership decisions, and it never evaluates a reaction,
+guard, envelope, or Actuator.
+
+## 8. Layer 5: Review, Policy, and Action
 
 Layer 5 is downstream of the Layer-4 semantic DAG. It is outside that DAG and sees one immutable
 `DecisionSnapshot` after Layer-2 equal-`when` intake facts have been consolidated behind a cycle
@@ -187,30 +326,111 @@ action.
 
 ### One policy mechanism
 
-- The core-owned, frozen `PolicyTemplateRegistry` supplies one evaluator, one configured-policy
+- The core-owned, frozen `ReactionDescriptorRegistry` supplies one evaluator, one configured-Reaction
   persistence path, one admissibility phase, and one `ApplyStep` protocol. Namespaces such as
   `environment.*`, `lighting.*`, and `security.*` are descriptors, not separate rule engines.
 - The frozen `ProposalCandidateKindRegistry` validates the outer candidate kind/version before the
-  selected template validates its own independent template version and payload. Initial V3 supports
-  `("policy.template", 1)`.
+  selected Reaction descriptor validates its own independent version and payload. Initial V3 supports
+  `("reaction.descriptor", 1)`.
 - A learned candidate becomes a persisted `ReactionProposal`, then an explicitly reviewed configured
   policy. Strong evidence never enables an automatic action on its own.
+- A learner's measured effect has one authoritative, profile-registered
+  output schema. Layer 5 validates the referenced artifact under that schema;
+  descriptor intent/target checks and the proposal evidence revision remain
+  separate. No second effect-summary payload is required (Layers 3 §6.4,
+  5 §3.1).
+- The candidate carries stable descriptor, target and applicable numeric-outcome
+  requirements. Measured response, thermal reachability and whole-bundle
+  routine frequency stay in the profile's typed artifact and refreshable
+  proposal evidence; no routine member receives a fictitious physical delta.
+- A `ConfiguredReaction` has one stable identity and immutable append-only configuration generations.
+  Its compiled canonical plan is persisted without callables; administrative enablement and any
+  household consent are separate authority transitions, so neither can silently rewrite policy meaning.
+  All six Initial-V3 descriptors declare resident consent as required. An awaiting or
+  revoked consent blocks commands as an authority state, not as an unavailable input.
+- The frozen descriptor version supplies the base typed plan grammar. A
+  learner relation profile narrows it; a profile-free admin-direct Reaction
+  uses the descriptor's complete non-guard grammar and its exact direct guard
+  contract. Both compile into the same plan. `CanonicalEnvelope` remains
+  common: direct cells have no learner support/calibration metadata, and
+  presence simulation uses one zero-axis empty-key cell. A descriptor may
+  register that same direct shape while its learned profile uses nonempty
+  supported context axes; typed trigger and required guards still delimit
+  the direct action. Guard requirements resolve from the descriptor-validated
+  action intent and semantic variant, so an external-exchange purpose need
+  not inherit unrelated purpose guards. Future direct axes and pure
+  versioned partitions are declared by descriptor version.
+- Initial-V3 `environment.air_extraction` applies to any registered room with
+  a compatible extraction fan. Its single staged room-humidity trigger may be
+  a level crossing, a rise over a window or a rise rate; room occupancy is
+  required only when declared. A fan already active at qualifying start is
+  untouched by that activation; an initially inactive fan may be controlled
+  through its declared steps. Observed entry state, active/speed/stop edges
+  and origin remain distinct learning evidence. The common environmental
+  learner keeps a separate profile-declared physical transition class,
+  comparable reference cohort and response estimate for start, each
+  supported modification direction/range and termination. Each programmed
+  step declares whether it needs its exact class estimate; a missing estimate
+  suppresses that step, while a descriptor-declared deterministic step remains
+  subject to current admission. For a learned modification the descriptor
+  also requires current need and a conservative response qualifying under
+  the reviewed objective; the developer declares legal bounded actions,
+  not their fixed efficacy or indispensable future targets. The earlier one-shot draft
+  declared only activation; the required Initial-V3 start/change/end
+  specialization remains CA4-12 work. The `humidity_extraction` relation-profile
+  evidence and policy registration remains open under CA4-12.
+  This descriptor declares managed-episode resumption; it is available only
+  after a verified Heima inactive-to-active edge. Layer 5 stores one compact
+  open/closed state per channel in Layer 0's ordinary cycle batch. After
+  restart, a committed open state and fresh current inputs permit a new
+  activation to recalculate its program. If the first fresh valid channel
+  reading after a restart is active without usable proof, Layer 5 leaves that
+  channel untouched and reports the typed
+  `active_channel_unmanaged_after_restart` availability cause to Layer 6.
+  It reports this even when the action trigger is false; Layer 6 uses a new
+  process-run notification key. That issue persists until a fresh inactive
+  reading or verified proof; a changed trigger alone cannot falsely report restoration. No hold, timer or
+  missed step is restored, and the unobserved interval is excluded from learning.
+- Reaction guards use one core capability registry assembled and frozen at bootstrap. Descriptor
+  contracts reference its versioned entries, while households stage only typed guard-profile bindings;
+  a new guard-profile generation cannot silently alter an active Reaction.
+  Its `quiet_hours.v1` capability reads an explicit casa boolean fact only for
+  descriptor intents that require it; Layer-6 notification quiet hours remain separate.
 
 ### Safe execution
 
-- A policy has one temporal trigger, typed guards, one `CanonicalEnvelope`, and one finite ordered
+- A policy has one temporal trigger or versioned programmed-activation start
+  criterion, typed guards, one `CanonicalEnvelope`, and one finite ordered
   `ActuationBundle`.
+- A step-programmed descriptor's already declared start criteria are checked
+  on current frozen inputs, including after restart. Semantic episodes,
+  calendar updates and due jobs request re-evaluation; they do not create
+  additional triggers or a second evaluator.
+- Its descriptor version registers one pure `evaluate_program` specialization;
+  the compiler persists only typed parameters and bindings. The specialization
+  uses the frozen snapshot and activation state to select start, target
+  changes, wait or normal end and supplies each selected step's typed target.
+  Fresh typed events and due timers request that same evaluation; a
+  simultaneous event and timer produce one effective
+  target and step identity per channel. Only timed future steps occupy the
+  shared `AtJob` slot. Event steps use the same admission and `ApplyStep`
+  path; a next-step hold requires a fresh post-release continuation check.
+- Step-programmed Reactions share one activation-stable next-`AtJob` replacement slot, separate
+  from each descriptor's planned-step identity. Temporary input loss preserves the activation;
+  a fresh evaluation replaces at most the next job, and stale callbacks cannot dispatch
+  (Layer 5 §6.0).
 - The whole bundle passes admissibility before execution. A known-invalid member prevents all steps;
   a later HA failure stops remaining steps and records a partial outcome without speculative
   compensation.
-- Each `ApplyStep` addresses exactly one logical actuator endpoint. Multiple actuator changes are
-  represented as ordered steps in the same bundle, not as a multi-entity HA command.
+- Each `ApplyStep` addresses exactly one logical actuator endpoint and retains the exact reaction
+  configuration generation that produced it. Multiple actuator changes are represented as ordered steps
+  in the same bundle, not as a multi-entity HA command.
 - Manual holds, command ownership, capability, confirmed physical state, dwell/cooldown, and safety
   guards are checked on the immutable decision snapshot.
 - When a configured action cannot proceed, Layer 5 emits a typed availability occurrence with every
   applicable closed reason. It does not render, persist, or send resident notifications.
 
-## 8. Cross-Layer Communication Rules
+## 9. Cross-Layer Communication Rules
 
 | From | To | Allowed contract | Prohibited shortcut |
 |---|---|---|---|
@@ -222,20 +442,24 @@ action.
 | 3 -> 5 | Review path | Typed `LearningProposalCandidate` | Approval, configuration mutation, or command generation by Layer 3 |
 | 5 -> HA | Execution | Ordered one-endpoint `ApplyStep`s | Raw multi-entity command graph or arbitrary service payload |
 | 3/4/5 -> 6 | Availability | Typed runtime suppression occurrences; own immutable staged publication declarations | Rendering, direct notification, policy lookup, or `automation.availability` persistence |
-| 6 -> 0/1 | Delivery audit | Sole Layer-6 `automation.availability` event producer | Any lower-layer claim of the reserved event fact type |
+| 5 -> 6 | Reaction follow-up | Typed `ReactionFollowUpOccurrence` and a durably prepared intent at the qualifying boundary; Layer 6 renders, persists the existing `reaction.follow_up` event fact, and delivers its derived `HeimaEvent` | Layer-5 rendering, a second delivery envelope, or replaying an Actuator command from the outbox |
+| 6 -> 0/1 | Delivery audit | Sole Layer-6 `automation.availability` and `reaction.follow_up` event producers; the latter uses Layer 0 §4.5 intent and operation-id retry | Any lower-layer claim of these reserved event fact types |
 
-## 9. Performance and Technology Choices Already Fixed
+## 10. Performance and Technology Choices Already Fixed
 
 These are architectural technology choices, not incidental implementation preferences:
 
 - **Typed immutable contracts:** dataclass-like immutable records, closed vocabularies, explicit
   versions and pure validators are the default cross-layer protocol. No untyped generic event bus is
   introduced.
-- **Staged immutable generations:** registries, policy templates, candidate kinds, formulas, and
+- **Staged immutable generations:** registries, Reaction-descriptor definitions, candidate kinds, formulas, and
   publication bindings validate before atomic activation. The active engine reads frozen O(1) indexes.
-- **No blocking I/O in the hot path:** HA data are read at Layer 2's binding boundary; learning,
-  persistence maintenance, resource probing, and notification delivery do not block Sensor/Fusion/
-  semantic-resolution/policy evaluation.
+- **No ordinary blocking I/O in the hot path:** HA data are read at Layer 2's binding boundary; learning, persistence maintenance, resource probing, and
+  notification delivery do not block Sensor/Fusion/semantic-resolution/policy
+  evaluation. The narrow Layer-0 §4.5 follow-up-intent preparation waits for a
+  durable acknowledgement at a qualifying Reaction boundary only up to the
+  finite, versioned Layer-5 core preparation deadline; a failed or still
+  unacknowledged write degrades notice recovery without holding a scheduled step.
 - **Two time scales:** current facts and fusion are synchronous per cycle; historical learning,
   model rebuilds, publication reconciliation, retention pruning, and notification delivery are slow
   or background operations.
@@ -250,26 +474,54 @@ The specifications intentionally do **not** select a durable database engine, ML
 training protocol, or notification transport yet. Those choices must implement the contracts above;
 they must not weaken ownership, typed boundaries, staged validation, or hot-path constraints.
 
-## 10. What Is Deliberately Deferred
+## 11. Defined but Gated, and Deferred Ownership
 
-The following are not gaps in the defined layers; they are ownership reserved for later work:
+The following descriptors are defined Initial-V3 contracts, but remain gated per household rather than
+being unconditional behavior:
 
-- **Layer 4 initial semantics:** the architecture, registry, staging contract, DAG execution model,
-  signal gateway, and boundaries are defined. The individual initial semantic resolvers
-  (`room_occupancy`, `presence`, and independent `activity.<activity_id>` claims) still need their
-  separately approved definitions: inputs, vocabulary, priority, transition stability, availability
-  and provenance. The monolithic V2 `house_state` is retired.
+- **Evidence-gated Initial-V3 descriptor:** `environment.planned_comfort_trajectory` is registered
+  from the start. Its administrative HVAC/calendar/comfort prerequisites are staged as an
+  immutable versioned generation. A proposal additionally requires validated thermal evidence;
+  automatic action requires the separate operational shadow, authenticated promotion and
+  current household consent gates.
+  Its prerequisite stages one explicit desired heating/cooling mode source;
+  only the matching mode Reaction can act, and opposing active equipment
+  blocks the command.
+  Its descriptor uses `next_reaction_step` hold release; a future target-changing HVAC step is
+  evaluated through a fresh snapshot after that release.
+  It applies an absence target directly and a core-generated, model-supported recovery-only ramp one
+  fresh bounded step at a time; it has no fallback behavior.
+- **Admin-direct Initial-V3 descriptor:** `security.presence_simulation` is registered from the
+  start as a bounded planned-absence deterrence aid, never a security guarantee. Its initial
+  core-generated light-activity episodes use the common calendar/presence guards, scheduler,
+  `ConfiguredReaction` authority lifecycle and one-endpoint `ApplyStep` path. It is not a Layer-3
+  learning family. Selected endpoints are admitted by their registered light-state channel and
+  adapter, not by a free-text Actuator role. It also uses `next_reaction_step` hold release.
+  Its planned light steps include switch-off after the last
+  activity for each light, and run while current absence and action criteria hold. A
+  committed early return cancels unsent steps without adding a terminal
+  command. Preview shadow is optional rather than an evidence gate; a future learned or
+  imported temporal profile needs its own contract before it can replace the core generator.
+
+The following ownership remains deliberately deferred beyond Layers 0--5:
+
 - **Layer 6:** Full `AvailabilityEpisodeTracker` implementation, composition/publication of the
-  `AvailabilityPublicationGeneration`, notification routing, rendering, deduplication/rate limiting,
-  delivery/audit storage, and resident channel behavior.
-- **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers but
-  deliberately do not permit plugins to extend core hot-path semantic registries.
+  `AvailabilityPublicationGeneration`, and the `reaction.follow_up` adapter that validates typed
+  Layer-5 intents and occurrences, renders resident text, drives the Layer-0 outbox and event-fact
+  transaction, and retries delivery. Its renderer must declare finite maximum UTF-8 lengths
+  for title and message in every supported locale; Layer-5 staging needs those bounds to
+  prove the complete follow-up fact fits Layer 1's depth-two/8 KiB limits.
+  Notification routing, rendering, deduplication/rate limiting,
+  delivery/audit storage, and resident channel behavior also belong here.
+- **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers,
+  diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
+  plugins to extend core hot-path semantic registries or create `ApplyStep`s/invoke Actuators.
 - **Layer 8:** Administrative configuration, review, diagnostics and cutover user experience.
 
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.
 
-## 11. Implementation Reading Checklist
+## 12. Implementation Reading Checklist
 
 Before implementing a component, answer these questions in order:
 

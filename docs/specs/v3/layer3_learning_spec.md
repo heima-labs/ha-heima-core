@@ -1,6 +1,6 @@
 # Heima v3 - Layer 3: Learning / pattern recognition
 
-**Status:** Draft - architecture baseline pending component-by-component approval. Not implemented.
+**Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
 mined). It does not read Home Assistant runtime objects, entity state, or registry internals.
@@ -32,9 +32,11 @@ decisions.
 - **Atomic facts only.** Every input is read through Layer 0's ordinary history API, scoped by
   `fact_type`, `Location`, and time interval. Layer 3 neither consumes nor reintroduces a bundled
   house-snapshot format.
-- **Bounded and honest evidence.** A learner declares the history it needs. A result requiring a
-  complete interval is unavailable while Layer 0 reports `retention_coverage="truncated"`; it does
-  not silently train on the shorter remainder.
+- **Bounded and honest evidence.** A learner declares the history it needs. A
+  fixed-window result requiring complete observation is unavailable when Layer 0
+  reports truncated retention or typed incomplete `ObservationCoverage`; a
+  time-to-event sample is right-censored at the first gap. Neither silently
+  trains on an unobserved remainder.
 - **A simple baseline, with bounded ML extension.** `PatternLearner` owns shared bucketing, support,
   warm-up, confidence, tier fallback, diagnostics, and failure semantics. A model-learning component
   may use the same historical bindings and governance when the statistical baseline cannot express a
@@ -78,7 +80,7 @@ Layer 3 does not own:
 ### 4.1 `LearningDefinition` and family governance
 
 A learning family is a named, coherent capability such as approved activity, indirect-room
-occupancy, heating calibration, lighting routines, or presence simulation. Its
+occupancy, heating calibration, or lighting routines. Its
 definition declares the learners and analyzers belonging to that family, their historical inputs,
 and their permitted egress paths.
 
@@ -106,11 +108,15 @@ revalidates and selectively invalidates the definitions/artifacts that use that 
 generation semantics as other core registries.
 
 The admin can instantiate a registered core type for an explicit scope, enable or disable it, and set
-only its explicitly exposed typed parameters. A legal scope is one `Location`, one explicit `Zone`,
-one canonical ordered `LocationSet`, or `house` where the core type declares it valid. A wildcard or
+only its explicitly exposed typed parameters. A legal scope is exactly one
+Layer-1 `Location` with a `scope` value permitted by that core type: `room`,
+`zone`, `rooms`, or `casa`. An explicit set of at least two rooms is
+`Location(scope="rooms")`; a singleton is `Location(scope="room")`.
+A wildcard or
 live query such as "every room with humidity" is never a scope: it could silently change a learner's
 population, binding, retention demand, resource cost and evidence meaning when registries change. The
-resolved ordered membership is included in the definition fingerprint. A Zone or set membership change
+canonical `LocationKey` and resolved ordered membership are included in the
+definition fingerprint. A Zone or set membership change
 therefore stages a new generation and receives the type's ordinary selective invalidation; it never
 adds a room to an active learner implicitly.
 
@@ -150,12 +156,31 @@ class, codec, target, egress path, tier algorithm, or resource envelope.
 At staging, Layer 3 combines blueprint and instance into one immutable `ResolvedLearningDefinition`.
 It resolves scope membership and only the blueprint-declared configurable bindings against the active
 Layer-2 generation; validates fact type, unit, `Location` compatibility, history/retention needs and
-parameter values; derives the complete fingerprint; and classifies the reload impact from the changed
+parameter values; derives separate analysis-definition and serving-generation
+fingerprints; and classifies the reload impact from the changed
 fields. Any unresolved/ambiguous binding, missing required input, unapproved scope, unknown parameter
 or invalid value rejects the new definition without affecting the active generation. A change marked
 `analysis_semantics` restarts the normal warm-up/artifact lifecycle; `serving_semantics` immediately
-withdraws incompatible live use; `scheduling_only` takes effect at the next scheduler boundary; and
+withdraws candidates and live signals bound to the old learner serving
+generation, without rewriting a separately approved configured Reaction;
+`scheduling_only` takes effect at the next scheduler boundary; and
 `presentation_only` changes neither evidence nor scheduling.
+
+The artifact's existing `definition_fingerprint` is the
+analysis-definition fingerprint of the resolved learner: it covers the
+fields enumerated in §4.5 and excludes parameters classified only as
+`serving_semantics`, `scheduling_only` or `presentation_only`. The distinct
+`serving_generation_fingerprint` covers the active
+`definition_fingerprint`, all `serving_semantics` values and the exact
+registered operational consumer/contract bindings. A serving-only edit
+changes this fingerprint without changing the artifact's analysis revision
+or restarting warm-up. It immediately withdraws incompatible live serving
+under the old serving generation; renewed signal use requires the ordinary
+current generation's administrative adoption/promotion gate. For an
+action-bearing candidate it changes the proposed semantic payload and
+follows Layer-5 review, while an already approved Reaction keeps its own
+immutable configuration until explicitly changed. No serving fingerprint
+silently overrides Layer-5 authority.
 
 This keeps an administrative instance a typed declaration rather than a user-programmable ML pipeline.
 It follows the separation of component implementation from typed parameters in
@@ -178,7 +203,7 @@ class FactSlot:
 
 @dataclass(frozen=True)
 class IntervalAnchor:
-    sampling_interval: timedelta  # >= 5 minutes; slow-path reconstruction only
+    sampling_interval: Window  # >= 5 minutes; slow-path reconstruction only
 
 @dataclass(frozen=True)
 class StateTransitionAnchor:
@@ -204,16 +229,16 @@ class FeatureBase:
 
 @dataclass(frozen=True)
 class AsOfStateFeature(FeatureBase):
-    max_age: timedelta
+    pass  # state age is governed by source validity and historical coverage
 
 @dataclass(frozen=True)
 class CausalAggregateFeature(FeatureBase):
-    window: timedelta
+    window: Window
     aggregation: Literal["event_count", "true_duration", "mean", "minimum", "maximum", "rate"]
 
 @dataclass(frozen=True)
 class CausalSequenceFeature(FeatureBase):
-    window: timedelta
+    window: Window
     max_items: int                # bounded before analysis and at runtime
 
 FeatureBinding = AsOfStateFeature | CausalAggregateFeature | CausalSequenceFeature
@@ -221,26 +246,31 @@ FeatureBinding = AsOfStateFeature | CausalAggregateFeature | CausalSequenceFeatu
 @dataclass(frozen=True)
 class PointOutcome:
     source: FactSlot
-    horizon: timedelta            # >= 0; evaluated at anchor_at + horizon
-    max_age: timedelta
+    horizon: Window | None        # None means the anchor instant; otherwise positive
 
 @dataclass(frozen=True)
 class EventWindowOutcome:
     source: FactSlot
-    horizon: timedelta            # > 0; interval is (anchor_at, anchor_at + horizon]
+    horizon: Window               # > 0; interval is (anchor_at, anchor_at + horizon]
     result: Literal["occurred", "count"]
 
 @dataclass(frozen=True)
 class TimeToEventOutcome:
     source: FactSlot
-    horizon: timedelta            # > 0; absence at the end is explicit right-censoring
+    horizon: Window               # > 0; absence at the end is explicit right-censoring
     values: tuple[EvidenceValue, ...] | None = None
+
+@dataclass(frozen=True)
+class FutureStateFractionOutcome:
+    source: FactSlot               # one typed state stream, not an event stream
+    horizon: Window               # > 0; bounded interval [anchor_at, anchor_at + horizon]
+    qualifying_values: tuple[EvidenceValue, ...]  # nonempty closed subset of this state's vocabulary
 
 @dataclass(frozen=True)
 class NoOutcome:
     pass
 
-OutcomeBinding = PointOutcome | EventWindowOutcome | TimeToEventOutcome | NoOutcome
+OutcomeBinding = PointOutcome | EventWindowOutcome | TimeToEventOutcome | FutureStateFractionOutcome | NoOutcome
 
 @dataclass(frozen=True)
 class SampleBinding:
@@ -263,7 +293,7 @@ event and an event cannot be reconstructed as current state.
 one concurrent observation group, even when Layer 0 used its internal `AppendOrder` to reconstruct a
 state deterministically. `AppendOrder` is not exposed to Layer 3 and has no causal meaning there.
 The sample builder first consolidates the complete equal-time group, then evaluates features against
-the resulting state at `T`: `AsOfStateFeature` reconstructs the latest available state at-or-before
+the resulting state at `T`: `AsOfStateFeature` reconstructs the latest state record at-or-before
 `T`, `CausalAggregateFeature` summarizes `[T - window, T]`, and `CausalSequenceFeature` returns at
 most `max_items` ordered observations from that same interval. Thus two facts emitted at the same
 instant are context observed together, never an implicit cause and outcome merely because one was
@@ -271,25 +301,64 @@ appended first. This deliberately treats the exceptional case of two separate ev
 identical timestamp as concurrent too: it can merge otherwise separable evidence, but cannot invent a
 false causal relation.
 The aggregate is valid only for a source claim and aggregation that its core family validator permits
-(for example, `event_count` for events; `mean` only for a finite numeric state). A required feature
-that is unavailable, stale, invalid, or lacks required retention discards the sample with a diagnostic
-reason. Optional never means implicit imputation: it requires its declared
-`missing_representation_id`. A target that is absent or invalid always discards the sample.
+(for example, `event_count` for events; `mean` only for a finite numeric state). Every declared historical feature/anchor read checks both `retention_coverage` and the
+Layer-0 §4.4 `ObservationCoverage` result before sample construction. An incomplete
+observation window discards the fixed-window sample; an optional feature's ordinary
+missing representation cannot turn a process gap into observed context. A required
+feature that is unavailable, stale, invalid, or lacks required retention discards
+the sample with a diagnostic reason. Optional never means implicit imputation: it requires its declared
+`missing_representation_id`. A missing or invalid `PointOutcome` target discards
+the sample. An absent event in a complete `EventWindowOutcome` window is a valid
+zero/false outcome; an absent `TimeToEventOutcome` event at the end of complete
+observation is a right-censored duration. Neither rule applies to an incomplete
+observation window. A `FutureStateFractionOutcome` likewise requires complete
+observation and retention for its entire interval and a valid state at its anchor;
+an incomplete fraction is excluded, never filled from a later matching state.
 
-Outcomes are intentionally separate and training-only. `PointOutcome` reads a state at `T + horizon`;
-`EventWindowOutcome` reads occurrences in `(T, T + horizon]`; `TimeToEventOutcome` measures the first
-matching event strictly after `T` and retains the explicit right-censoring result when the observation
-ends; and `NoOutcome` is limited to unsupervised/anomaly/drift learners. A transition- or
-event-occurrence anchor must declare a strictly positive `PointOutcome.horizon`: a zero-horizon target
+`AsOfStateFeature` and `PointOutcome` address typed state claims. Their
+previous `max_age` field is removed: elapsed time since the last *change* is
+not elapsed time since a valid source observation. At a requested instant,
+the builder first resolves the latest state record, including an unavailable
+one, then checks the exact required interval's retention and typed
+observation coverage and the source's staged validity rule. A newer
+`available=False` state never lets an older available state reappear. A
+stable value can therefore remain usable across a long complete interval;
+an expired report, unavailable state, process gap or missing boundary cannot.
+The same rule applies to current inference through the shared resolver;
+source report age is Layer 2 §3.2, not a second Layer-3 historical timer.
+
+Outcomes are intentionally separate and training-only. `PointOutcome` reads a state at `T` when
+`horizon=None`, otherwise at `T + horizon`;
+`EventWindowOutcome` reads occurrences in `(T, T + horizon]` and cannot treat an
+incomplete window as zero or false; `TimeToEventOutcome` measures the first matching
+event strictly after `T` and right-censors at Layer 0 §4.4's
+`first_incomplete_at` when coverage breaks before an event; a valid target event
+strictly before that boundary remains observed even if the rest of the horizon
+is incomplete. `FutureStateFractionOutcome` integrates the elapsed time for which
+the typed state belongs to its staged `qualifying_values`, using the same
+write-on-change state reconstruction as historical `true_duration`, then divides
+by its positive horizon. It includes the consolidated state at `T` and treats a
+transition exactly at `T + horizon` as zero additional duration. The resulting
+finite dimensionless scalar lies in `[0, 1]`; the existing scalar-result and
+continuous-confidence contracts apply. It captures both uninterrupted
+persistence and later returns to a qualifying state. A source that is
+unavailable, stale or invalid anywhere in the interval, a process gap, missing
+anchor state or truncated retention excludes the entire sample, even if valid
+observations appear on both sides; it is neither a zero fraction nor a
+right-censored first-event sample. `NoOutcome` is limited to
+unsupervised/anomaly/drift learners. A transition- or
+event-occurrence anchor must declare a strictly positive `PointOutcome.horizon`: an anchor-instant target
 would still be inside its concurrent observation group. Thus training may read a future outcome only
 after it has occurred, while no feature can depend on information newer than `T`. An outcome is never
 requested by runtime inference.
 
 The core stages every `SampleBinding` before the generation becomes active. It rejects an empty or
 duplicate feature name; unknown fact/location; a duration that violates its field contract (including
-an interval below the five-minute floor, and a zero point-outcome horizon for a transition/event
+an interval below the five-minute floor, and `PointOutcome.horizon=None` for a transition/event
 anchor); a source whose
 Layer-0 claim has the wrong state/event persistence kind; an invalid aggregate/claim pairing;
+an empty, duplicate, unregistered or wrong-type `FutureStateFractionOutcome.qualifying_values`
+set, or a fraction outcome whose declared source is not a typed state;
 unbounded sequence; a required feature with any missing representation; an optional feature without
 one; and a retention or current-buffer requirement that Layer 0 cannot satisfy. It records the
 binding/version and canonical parameters in the learner definition fingerprint.
@@ -338,8 +407,8 @@ range `[-(2^53 - 1), 2^53 - 1]`. Arrays preserve their declared order, including
 validator reorders them. Field-specific core validators decide whether an empty object, `null`, or a
 given array/value shape is meaningful after this common structural validation.
 
-The validator runs before a `ContextTransformRef` enters staging and before
-`PolicyTemplateCandidate.semantic_parameters` is constructed. It is a data/persistence boundary,
+The validator runs before a `ContextTransformRef` enters staging and before a
+`ReactionDescriptorCandidate` root or member parameter object is constructed. It is a data/persistence boundary,
 not a generic configuration language and not a replacement for the template/transform-specific
 validators that constrain semantic meaning.
 
@@ -464,7 +533,8 @@ on transient initialization state rather than only on the staged learning defini
 configuration, audit, and recovery bounded while tier-specific `min_support` continues to handle
 ordinary local sparsity after the learner is warmed up.
 
-At an anchor, the sample builder resolves the tier's declared dimensions under §4.2 and produces its
+At an anchor, the sample builder first applies §4.2's typed historical observation-coverage gate; a gap-crossing training sample cannot
+enter any tier as a zero or negative outcome. It then resolves the tier's declared dimensions and produces its
 concrete `ContextBucketKey`: the tier identity plus the ordered canonical dimension values. For
 example, a `rich` semantic-context tier can use `(day_kind=weekday, local_time_bucket=19:15,
 occupancy=present, darkness=dark)`, while a `coarse` tier can use only
@@ -568,7 +638,12 @@ factor in either confidence formula.
 
 `PatternLearner` deliberately supports only two supervised result shapes: a single categorical
 outcome, or a scalar continuous outcome. An event-window target is represented as a categorical
-event/non-event outcome. This keeps the baseline statistical engine explainable and lets its shared
+event/non-event outcome; a future-state-fraction target uses the existing
+scalar result with dimension `dimensionless`, canonical unit `1` and range
+`[0, 1]`. Its `ScalarResult.horizon` equals the staged outcome horizon; a
+Layer-5 state-fraction delay consumer requires that horizon to equal its
+authorized `LearnedWindow.maximum` (§4.2; Layer 5 §6.0).
+This keeps the baseline statistical engine explainable and lets its shared
 support, confidence, tier, and fallback rules retain one meaning.
 
 Every published inference result has one bounded, immutable envelope. The envelope is a Heima
@@ -577,10 +652,15 @@ contract in §6 separately decides whether a valid result may be consumed at all
 
 ```python
 @dataclass(frozen=True)
+class TimeRange:
+    start: EvidenceInstant
+    end: EvidenceInstant
+
+@dataclass(frozen=True)
 class ArtifactRef:
     definition_fingerprint: str
     analysis_revision: int
-    evidence_through: datetime
+    evidence_through: EvidenceInstant
 
 @dataclass(frozen=True)
 class ResultEvidence:
@@ -597,10 +677,16 @@ class ResultEnvelope:
     sample_binding_id: str
     sample_binding_version: int
     subject: Location
-    predicted_at: datetime
+    predicted_at: EvidenceInstant
     evidence: ResultEvidence
     payload: "ResultPayload"
 ```
+
+`TimeRange` is the closed interval of actual evidence instants described by a
+diagnostic or proposal. Both endpoints use Layer-1 `EvidenceInstant` and
+`start <= end`; equality permits one observed instant. It does not assert
+continuous observation between endpoints: Layer-0 `ObservationCoverage` and
+the learner's sample validation remain authoritative for gaps and retention.
 
 `ResultEnvelope` carries no entity id, HA attribute, raw source payload, actuator target, or policy
 authority. Its `result_schema_id`/version identifies the core-owned serialization and validator;
@@ -615,9 +701,10 @@ decides its inference usability.
 The persisted/interprocess representation of an envelope or artifact manifest uses Layer 1's shared
 RFC-8785 canonical JSON rule: objects have no duplicate keys, properties have deterministic order, and
 numbers are finite IEEE-754 binary64 values. `NaN`, infinities, and negative zero are rejected before
-serialization;
-counts and duration milliseconds must be non-negative safe integers (`<= 2^53 - 1`). Instants are
-UTC RFC 3339 timestamps with `Z`; durations are integer milliseconds. Probability mass and the
+serialization; counts must be non-negative safe integers (`<= 2^53 - 1`). Every contract instant uses the exact
+Layer-1 `EvidenceInstant` UTC microsecond `+00:00` form; every positive elapsed duration uses the
+Layer-0 `Window` canonical seconds object. The artifact codec rejects a `Z` instant or bare integer
+milliseconds as an alternate encoding. Probability mass and the
 survival/competing-risk identity use the core constant `PROBABILITY_TOLERANCE = 1e-12`. This supplies
 repeatable fingerprints, comparisons, and validation without pretending that arbitrary Python float
 rendering is a stable wire format ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html),
@@ -662,7 +749,7 @@ class ScalarResult:
     point_estimate: float         # finite and within declared physical range
     dimension: str
     unit: str
-    horizon: timedelta
+    horizon: Window | None          # None only for an anchor-instant point outcome
     interval: PredictionInterval | None = None
 
 @dataclass(frozen=True)
@@ -673,14 +760,14 @@ class CountBucketProbability:
 
 @dataclass(frozen=True)
 class CountResult:
-    horizon: timedelta
+    horizon: Window
     buckets: tuple[CountBucketProbability, ...]
     probability_one_or_more: float
     expected_count: float | None  # finite and >= 0 only when model semantics define it
 
 @dataclass(frozen=True)
 class SurvivalPoint:
-    horizon: timedelta            # finite, strictly increasing declared grid
+    horizon: Window               # finite, strictly increasing declared grid
     survival_probability: float   # finite and in [0, 1]
 
 @dataclass(frozen=True)
@@ -776,6 +863,14 @@ Smart-home research has successfully forecasted the expected time to an activity
 real use case but does not remove these semantic requirements
 ([Minor and Cook, *Forecasting Occurrences of Activities*](https://rex.libraries.wsu.edu/esploro/outputs/journalArticle/Forecasting-Occurrences-of-Activities/99900546937201842)).
 
+The generic `FutureStateFractionOutcome` remains available to a future
+registered learning type, subject to §4.2's complete-window and typed-state
+rules. Initial V3 registers no solar-exposure-fraction timing profile for
+`environment.solar_shading`: its operational hysteresis and dwell are owned
+by Layer 2 §5.3 and Layer 5 §7. A future solar forecast requires its own
+reviewed definition, evidence gates and descriptor timing path; the mere
+presence of this outcome type does not activate one.
+
 #### 4.4.1 `RoomOccupancySurvivalModel`
 
 `RoomOccupancySurvivalModel` is the first concrete `SurvivalModel`. It is one core learner with a
@@ -787,17 +882,31 @@ initial profiles are:
 - `return_delay`: anchor on `present -> absent`; target event is a later `absent -> present`
   transition. It describes the delay before a possible return.
 
-Both profiles use only completed, resolved room-occupancy facts and named typed context bindings at or
+Both profiles use only completed, resolved room-occupancy facts whose own
+occupancy labels are eligible physical evidence under Layer 4 §9.1, and named typed context bindings at or
 before their anchor. The profile declares its reset boundary, finite horizon grid, censoring reasons,
-and a closed competing-event vocabulary. A missing/stale occupancy input, `available=False` interval,
-or the end of the retained complete observation span is right-censoring: it says only that the event
-has not been observed by that point. For `return_delay`, a declared house transition such as `away`
+and a closed competing-event vocabulary. A missing/stale required context at the anchor rejects the sample. After a
+valid anchor, a missing/stale occupancy input, `available=False` interval,
+process interruption, or the end of the retained complete observation span
+right-censors at Layer 0 §4.4's first incomplete instant (or the end of
+complete history).
+It says only that the event has not been observed by that point. A valid target
+transition before the first gap remains an observed event; a transition at or
+after that boundary cannot be joined to the pre-gap risk interval. A process gap
+is not a competing event and an unchanged post-restart occupancy state cannot
+bridge it. For `return_delay`, a declared house transition such as `away`
 that makes a room return semantically non-comparable is a competing event, not a censored non-return.
 No generic admin event pair can create a profile; adding one requires a reviewed core profile with its
 own input, censoring, and competing-event validation.
 
-The initial algorithm is core-owned `DiscreteTimeHazardModel-v1`. Its finite grid starts at the
-Layer-3 hard five-minute floor. For each at-risk interval `j`, a regularized logistic hazard estimates
+The initial algorithm is core-owned `DiscreteTimeHazardModel-v1`. For `return_delay`, the
+finite declared horizon grid starts at one minute and includes every permitted
+`LearnedWindow.maximum` used by its registered action-serving timing path.
+The one-minute point needs the same support, calibration and operational-slice
+evidence as every other serving horizon; an unvalidated short horizon cannot
+serve an action. `stay_duration` retains its separately declared grid. This
+time-to-event grid does not change §4.2's five-minute floor for interval-sampled
+anchors. For each at-risk interval `j`, a regularized logistic hazard estimates
 `h_j = P(event in j | event-free before j, anchor context)`. The artifact derives the monotone survival
 curve `S(t_j) = product(k <= j, 1 - h_k)` and, where a profile declares competing events, their bounded
 cumulative incidences. It serializes only a canonical feature order, training-partition normalization,
@@ -830,14 +939,21 @@ unobserved future as if it were known; survival metrics distinguish discriminati
 ([scikit-survival evaluation guide](https://scikit-survival.readthedocs.io/en/stable/user_guide/evaluating-survival-models.html)).
 Failure at a required horizon or operational slice leaves the artifact diagnostic/unavailable.
 
-The initial egress is diagnostic only. It may show a room's observed stay/return profile and compare it
-with its baseline, but it cannot decide a light action, turn a light off while occupancy is present,
-create an `InferenceSignal`, or alter a policy/hold. A later core lighting descriptor may use an
-approved artifact only to propose bounded policy parameters such as an off-delay between configured
-minimum and maximum values. It must still turn lighting on from current trusted occupancy/darkness,
-respect current occupancy, holds and guards, and fall back to deterministic behavior when the model or
-input is unavailable. This preserves lighting responsiveness while allowing a future policy to choose
-a short delay for a likely pass-through and a longer delay for a likely sustained use or return.
+`stay_duration` has diagnostic egress only. `return_delay` may also publish a
+validated, reviewable action-serving artifact for the exact registered Layer-5
+`routine.actuation_bundle` vacancy-delay path. Its role is timing evidence, not
+the primary evidence that selects the bundle or permission to act. The profile,
+resolved room subject, anchor, competing-event vocabulary, horizon grid,
+result schema, quality gates and serving envelope must match that path exactly.
+The existing Layer-3 validation/shadow and CA4-14 adoption lifecycle governs
+this artifact; insufficient evidence or failed calibration at the selected
+maximum horizon leaves it unavailable. Diagnostics remain available without
+adoption. The `SurvivalResult` supplies target-event cumulative incidence at
+the declared horizon; it is not a `FutureStateFractionOutcome`, an expected
+return time, or an operational command. Layer 5 alone selects a bounded delay
+and later checks current state, authority, holds and guards through its common
+Reaction path. No room-return model may turn an Actuator on/off by itself,
+alter a hold, create an `InferenceSignal`, or authorize a lighting-only path.
 
 An optional `CountModel` predicts a non-negative discrete count in one declared future event window;
 it is not a continuous `PatternLearner` result. It publishes a declared discrete distribution or
@@ -848,11 +964,17 @@ operational instruction. A `CountModel` remains diagnostic or proposal-only unle
 consumer-specific contract explicitly authorizes a bounded use.
 
 The first intended count use case is actuator-correction learning: the number of resident corrections
-in a declared analysis interval after a Heima actuation. Its only evidence source is Layer 5 §6.1's
-immutable Layer-1 `actuator.correction` event. A usable record has
-`classification="resident_manual_override"`, a non-null unique `anchor_apply_step_id`, matching
-logical `actuator_id`/`controlled_channel`, completed anchor time, correction time, and
-deduplication identity. Layer 3 reads these durable attributed records exactly as historical evidence;
+in a declared analysis interval after an admitted, recorded Heima target decision whose complete
+target was observed. The counted corrections come **only** from Layer 5
+§6.1's immutable Layer-1 `actuator.correction` event. Denominator and
+censoring inputs additionally require the same section's
+`actuator.target_lifecycle` event phases and Layer 0 §5.1.1.1's
+per-channel state/coverage history; no raw ApplyStep audit is a learner API.
+A usable correction record has `classification="resident_manual_override"`, a
+non-null unique `anchor_apply_step_id`, matching logical `actuator_id`/`controlled_channel`,
+complete-target observation time, correction time, and deduplication identity; service completion
+time is optional for `already_satisfied` and failed/timed-out calls. Layer 3 reads these durable
+attributed records exactly as historical evidence;
 it never calls Layer 5, extends its attribution horizon, relabels an origin, or infers a manual
 override from a raw HA state change.
 
@@ -869,14 +991,43 @@ authority to alter that routine autonomously.
 registered logical `actuator_id` and `controlled_channel` that can produce Layer-5 correction
 evidence; lighting is only its first expected use, not a separate learner engine. One learner instance
 has an explicit Actuator/channel and semantic policy scope, one positive `observation_window`, and the
-closed target vocabulary `0`, `1`, `2+`. Its target window starts at the successfully completed anchor
-`ApplyStep`, never at requested-command time.
+closed target vocabulary `0`, `1`, `2+`. Its target window starts when a recorded, admitted
+`ApplyStep` decision has its complete target observed, including an `already_satisfied` decision
+or a dispatched step whose calls completed, failed, or timed out, including a valid complete
+target reading after the execution confirmation deadline. It never starts at mere command request
+or service completion. A decision whose complete target is never observed is censored and cannot
+contribute a zero-correction sample. A terminal `unconfirmed` execution outcome remains unchanged
+even when a later full-target reading starts a learning window. Repeated evaluations that reuse the same active
+target decision and first `anchor_apply_step_id` are one denominator episode, not additional
+zero-count samples or restarted observation windows. The live confirmation rule is
+Layer 5 §6.0.1. The historical builder resolves exactly one admitted
+`decision` phase and its first `complete_observation` phase by
+`apply_step_id`, `(actuator_id, controlled_channel)` and frozen
+configuration generation; a missing, duplicate, malformed, mismatched or
+out-of-order phase excludes the episode. The `decision` phase supplies the
+versioned matcher and targeted/expected facets; the observation phase
+supplies the first anchor instant. The same-id pair is one denominator
+episode even when calls failed or were skipped as `already_satisfied`.
+Only a non-null Reaction/generation within the learner's declared semantic
+policy scope is eligible; standalone admin/recovery actions remain audit,
+not learned automatic-policy corrections. A later `closed` phase or new
+admitted decision on that channel bounds/censors the earlier sample under
+the already defined supersession and authority rules. Layer 3 cannot
+create, repair or relabel any of these phases.
 
 A sample is complete only when the entire observation window is observable and remains attached to its
-anchor. Any `available=False` interval for the addressed channel makes the sample
-`censored_by_unavailability` and excludes it from training, validation, and the zero-count class. A
-later successful compatible `ApplyStep` before the window ends makes the earlier sample
-`censored_by_superseding_apply`; the new action opens its own candidate sample. Layer 3 never truncates
+anchor. Layer 0 §4.4's typed coverage determines the exclusion: an interval whose
+reasons include `process_interruption` or `continuity_metadata_unknown` is
+`censored_by_observation_gap`; otherwise `required_stream_unavailable` for the
+addressed channel is `censored_by_unavailability`. Both exclude the sample from
+training, validation, and the zero-count class. A restart shorter than the
+ordinary freshness bound remains a process gap. `first_incomplete_at` locates
+the break; the remainder cannot contribute a zero.
+Neither a complete retention read nor matching states on both sides of the gap establish a
+zero-correction sample. A process restart does not censor unrelated later windows that begin
+after valid observation has resumed; an unreadable individual channel affects only windows
+that require that channel. A later admitted, recorded compatible target decision before the
+window ends makes the earlier sample `censored_by_superseding_apply`; the new decision opens its own candidate sample. Layer 3 never truncates
 either window and calls the partial result a zero count. These censoring reasons, and every excluded
 event class from the preceding paragraph, are retained as diagnostics and coverage measures rather
 than silently discarded statistics.
@@ -958,7 +1109,7 @@ consistent with [ASHRAE occupant-centric control guidance](https://handbook.ashr
 `ActuationRoutinePatternModel-v1` is the first concrete learner for recurring resident-controlled
 actuation compositions. It is generic over a bounded `ActuationBundle`, not a lighting engine: turning
 on a projector followed by changing three lights is one example, as are any later room-scoped
-combinations permitted by a core Layer-5 template. It discovers an **observed conditional routine**;
+combinations permitted by a core Layer-5 Reaction descriptor. It discovers an **observed conditional routine**;
 it does not infer resident intent, causality, an arbitrary HA script, or a cross-room orchestration.
 This keeps the useful part of V2 routine discovery while discarding its raw entity/service payloads
 and ad-hoc sequence analyzer. Smart-home research supports temporal episode and frequent-pattern
@@ -967,7 +1118,7 @@ an authorized action ([Cook et al., *Improving Home Automation by Discovering Re
 Device Interactions*](https://eecs.wsu.edu/~cook/pubs/icdm03.pdf), [Cook et al., *Mining the Home
 Environment*](https://pmc.ncbi.nlm.nih.gov/articles/PMC4264109/)).
 
-One declaration fixes exactly one room `subject`, one registered Layer-5 routine template/version and
+One declaration fixes exactly one room `subject`, one registered Layer-5 routine Reaction-descriptor id/version and
 `relation_profile`, one typed trigger binding, a finite pre-trigger context binding set, and a
 core-versioned positive `bundle_assembly_window`. The trigger is a declared Layer-1 fact or completed
 Layer-4 output transition, such as `projector.power: off -> on`; it is never an HA event name, entity
@@ -976,20 +1127,52 @@ The trigger may be an ordinary observed physical transition even where its resid
 known; provenance becomes mandatory only for the learned actuation outcome.
 
 An `ActuationRoutineEpisode` starts at that trigger. It contains the canonical ordered bundle formed
-only from subsequent Layer-0 `actuator.resident_control` facts occurring inside the declared assembly
+only from subsequent verified Layer-0 `actuator.resident_control` facts joined to their
+canonical channel-state edges inside the declared assembly
 window. Facts with the same `when` are concurrent members of one observation group, irrespective of
-`AppendOrder`; their deterministic canonical member order is the registered template's closed ordering,
+`AppendOrder`; their deterministic canonical member order is the registered descriptor's closed ordering,
 not a claim that one caused another. A resident-control fact in the trigger's own concurrent group is
 not subsequent and cannot be an outcome member: it may describe the same real-world interaction, but
-cannot establish a trigger-to-outcome relation. The episode is rejected if the resulting bundle is empty,
-over the template's bound, repeats an `(actuator_id, controlled_channel)`, has a missing/invalid
-member target, or cannot be mapped to the template's permitted member vocabulary. A member attributed
+cannot establish a trigger-to-outcome relation. A complete, observable window with no subsequent
+resident control is retained with the closed training-outcome tag
+`RoutineTrainingOutcome = Literal["resident_bundle", "no_resident_control"]`, using
+`no_resident_control` and no bundle;
+it cannot become a positive `ActuationRoutineEpisode` or an actionable candidate. This tag is
+eligible for a given candidate only when its required channels were observable and free of
+confounding control throughout the window. A positive episode
+has `resident_bundle` and a non-empty canonical bundle. It is rejected if that bundle
+is over the descriptor's bound, repeats an `(actuator_id, controlled_channel)`, has a missing/invalid
+member target, or cannot be mapped to the descriptor's permitted member vocabulary. A member attributed
 to Heima, another automation, an external/unknown source, or an unavailable observation never becomes
 resident outcome evidence. A known policy action that overlaps the assembly window censors the episode
-rather than being relabelled as a resident omission or a negative example.
+rather than being relabelled as a resident omission or a negative example. An external/unknown control
+on a channel required by a candidate likewise makes that candidate's window ambiguous and excluded;
+it is not evidence that the resident chose no action.
+
+**Historical join for routine outcomes.** The registered channel's
+`actuator.channel_state.<digest>` history provides its complete canonical
+post-edge facet snapshot and exact changed-facet set; the unchanged
+three-field `actuator.resident_control` event proves resident origin only
+when its `(actuator_id, controlled_channel, control_edge_id)` joins exactly
+one available channel-state transition with the same `when`, and that
+transition has `origin="resident_manual"`. A missing, duplicate,
+unavailable, initial-after-gap, Heima-linked or mismatched edge cannot
+become a resident member. The descriptor's staged channel/intent adapter
+projects the observed canonical state and changed facets into the exact
+permitted semantic member target; it never copies every observed facet
+as an intended command or infers an omitted parameter. If no unique
+descriptor-valid target exists, the episode is ambiguous and excluded.
+The same channel-state stream reveals external/unknown and Heima-origin
+changes that confound a candidate's assembly window; no fabricated
+resident event is required for them. A verified physical wall switch
+registered as its own channel may be a member for that switch, while an
+unavailable bulb is only an observation break. State, resident, target
+lifecycle and correction streams all declare retention and
+`ObservationCoverage` requirements before training; missing join evidence
+or a relevant gap excludes the sample, never supplies a negative outcome.
 
 The candidate bundle is a complete canonical target composition, not a list of observed event deltas:
-for each member it records the template-declared final semantic intent and canonical parameters. A
+for each member it records the descriptor-declared final semantic intent and canonical parameters. A
 resident may issue several controls during the window; an episode with incompatible or repeated
 commands to the same channel is ambiguous and rejected, never reduced by incidental event ordering.
 This makes the later Layer-5 policy deterministic while retaining the Layer-2 invariant that every
@@ -999,33 +1182,145 @@ The initial algorithm is `ConditionalBundleFrequency-v1`, a bounded statistical 
 core-declared trigger/context bucket and candidate canonical bundle it retains support in complete
 episodes, support across distinct calendar blocks, and the conditional precision
 `P(bundle | trigger, context)`. It compares that precision with the same bundle's declared scope
-baseline `P(bundle | subject)` and requires a core-owned minimum positive lift as well as the common
+baseline `P(bundle | subject)` and requires a core-owned minimum lift greater than 1 as well as the common
 `WarmupGate`, support floor, calendar-diversity floor and confidence floor. A trigger/context sample
-with complete observable assembly window and no matching resident bundle is a negative observation;
-any unavailable, ambiguous, overlapping-policy or incomplete window is excluded rather than counted as
-a negative. The bounded candidate vocabulary comes only from observed template-valid bundles in the
+with a complete observable assembly window enters the denominator for each eligible candidate bundle:
+an exact matching bundle is positive; a different descriptor-valid resident bundle or the typed
+`no_resident_control` observation is negative for that candidate. A different valid bundle is also
+positive for its own candidate. No-action observations never create a bundle candidate or positive
+support. Any unavailable, ambiguous, overlapping-policy or window with incomplete
+`ObservationCoverage` (Layer 0 §4.4) is excluded rather than counted as
+a negative. This includes process interruptions and unavailable required channels. A single unreadable member channel excludes only candidate observations that require it. The bounded candidate vocabulary comes only from observed descriptor-valid bundles in the
 training span; it never enumerates the combinatorial product of actuators and target values.
+
+For this model, `P(bundle | subject)` is a time-exposure probability within
+the same room subject and evaluation partition. Let `W` be the positive
+`bundle_assembly_window`. Its denominator is the total duration of eligible
+start instants `t` for which the full `(t, t + W]` window lies inside that
+partition, the declared trigger stream and required candidate channels have
+complete `ObservationCoverage`, context bindings resolve as-of `t`, and
+resident-control joins and confounder checks are decidable. Its numerator is
+the duration of the subset of those start instants whose window contains
+exactly the candidate's descriptor-valid resident bundle. Other valid
+bundles and a complete window with no resident control contribute only to
+the denominator, under the same negative-outcome rule as
+`no_resident_control`; a baseline window is not an
+`ActuationRoutineEpisode` and never creates a candidate. Ambiguous,
+invalid, unavailable or policy-overlapped windows contribute to
+neither. Exposure duration counts admissible Layer-1 microsecond start
+instants, giving each the same weight; it uses no fixed assembly buckets or
+starts selected from observed actions. The `ConditionalBundleFrequency-v1`
+contract fixes these window and exposure semantics. An offline interval
+sweep over existing event timestamps,
+`t_event - W` boundaries and coverage/confounder boundaries computes the
+two durations without persisting a reading or iterating at every instant.
+Full-window containment and the existing embargo prevent either cohort
+from importing a later partition. A bundle spanning any arbitrary clock
+boundary remains eligible whenever a complete sliding window contains it.
+Overlapping starts are correlated time exposure, not independent training
+episodes or support samples. Temporal-block validation recomputes both
+probabilities and their lift from complete contiguous blocks; it never uses
+the microsecond-start count as a binomial sample size or confidence floor.
+
+`lift = P(bundle | trigger, context) / P(bundle | subject)` when the baseline
+is positive. Independence has lift 1; a positive association must exceed
+the descriptor's core-owned minimum above 1. An empty baseline cohort or
+zero observed baseline probability makes lift unavailable, not infinite;
+the candidate stays diagnostic and cannot pass the lift gate. The same rule
+applies to a validation partition or temporal-block resample with zero
+baseline: it cannot supply a passing lift interval. The existing
+conditional precision, support, calendar-diversity, calibration and temporal
+block confidence gates remain separate. This ratio measures association,
+not a causal effect or permission to command a member.
+The subject frequency here is the lift reference; the no-routine validation
+baseline below remains a separate comparator.
 
 Validation is chronological walk-forward with an embargo at least equal to feature lookback plus the
 assembly window, followed by an untouched final holdout. It records support, distinct calendar blocks,
 conditional precision, baseline frequency, lift, calibration of the binary matching-bundle outcome,
 window completeness/censoring, bundle-size distribution, operating-envelope coverage and the same
 metrics for the no-routine baseline. A temporal block confidence interval for precision and lift must
-exclude the template's no-effect threshold in the declared direction; aggregate frequency alone cannot
+exclude the descriptor's no-effect threshold in the declared direction; aggregate frequency alone cannot
 pass an operational slice. A sparse routine, a context slice with poor calibration, or a bundle whose
 member composition changes across partitions remains diagnostic/unavailable.
 
+The routine relation profile must register the sole policy-output schema
+`routine.bundle_frequency.v1`, with schema-version field `"1"`. Its bounded
+artifact contains one `RoutineBundleFrequencyCell` per canonical bundle and
+exact context cell, never one result per member:
+
+```python
+@dataclass(frozen=True)
+class RoutineEstimateInterval:
+    lower: float
+    upper: float
+    nominal_coverage: float
+
+@dataclass(frozen=True)
+class RoutineBundleFrequencyCell:
+    canonical_bundle_fingerprint: str
+    context_cell_key: tuple[BucketValue, ...]
+    assembly_window: Window
+    complete_trigger_count: int
+    matching_trigger_count: int
+    distinct_calendar_blocks: int
+    conditional_probability: float
+    baseline_eligible_exposure: Window | None
+    baseline_matching_exposure: Window | None
+    baseline_probability: float | None
+    precision_interval: RoutineEstimateInterval | None
+    lift_interval: RoutineEstimateInterval | None
+```
+
+The bundle fingerprint identifies the descriptor-ordered complete target
+composition; `context_cell_key` uses the exact `CanonicalEnvelope` axis
+order. The artifact rejects duplicate `(canonical_bundle_fingerprint,
+context_cell_key)` records. The validator requires positive complete and
+matching trigger counts,
+`matching_trigger_count <= complete_trigger_count`, positive calendar-block
+count, and a conditional probability equal to the count ratio within the
+shared probability tolerance. `distinct_calendar_blocks` counts blocks
+with matching, complete trigger episodes, not overlapping baseline starts.
+The two exposure fields use the sole Layer-0 duration type: `None` means
+zero duration, and a present `Window` is positive. Matching exposure cannot
+exceed eligible exposure; if eligible exposure is absent, matching exposure
+and baseline probability are both `None`. Otherwise baseline probability
+is their ratio within the shared probability tolerance, treating absent
+matching exposure as zero. Both probabilities are finite in `[0, 1]` when
+present. Zero baseline and `None` have no finite lift. Interval bounds and
+coverage are finite and ordered; precision bounds lie in `[0, 1]`, lift
+bounds are nonnegative, and a lift interval is absent when lift is undefined.
+Each interval's nominal coverage must equal the profile-declared value and
+its bounds must match the artifact's keyed temporal-block validation report.
+Both intervals must be present for proposal eligibility. The point estimates
+pass the existing confidence and minimum-lift floors; the temporal-block
+intervals exclude the profile's registered no-effect thresholds in the
+declared direction, as specified above. An absent interval,
+failed calibration, missing calendar diversity, incomplete coverage or
+failed chronological validation keeps the cell diagnostic. The same
+artifact retains the keyed temporal-block, calibration, holdout and
+coverage report from the preceding validation contract; the registered
+validator checks that report and its gate results against this cell before
+Layer 3 may publish it as policy-consumable. Until the exact routine
+`RelationProfileRef` and validator are registered, the output is not
+proposal-eligible (CA4-12). Neither the point lift (derived
+from the two probabilities) nor any measured field enters the immutable
+candidate's semantic fingerprint.
+
 Its frozen `shadow_requirement` is `optional_before_proposal`: its only actionable egress after an
-explicit administrative transition is a reviewable `PolicyTemplateCandidate` for the core Layer-5
-descriptor `routine.actuation_bundle`, with the observed bundle, declared trigger/context profile,
-evidence span, coverage envelope and measured conditional precision/lift. An administrator may first
+explicit administrative transition is a reviewable `ReactionDescriptorCandidate` for the core Layer-5
+descriptor `routine.actuation_bundle`, with the observed bundle, declared trigger/context profile
+and coverage envelope. Its accompanying typed artifact and proposal evidence carry the evidence
+span, measured conditional precision, derivable point lift and its validated
+interval; those values are not member or root descriptor parameters. An
+administrator may first
 run it in shadow to inspect `ShadowProposalPreview` frequency and scope, but cannot bypass any
 Layer-5 validation after promotion. It cannot activate the policy, emit an `InferenceSignal`, change a
 hold, issue an `ApplyStep`, or send a notification. Once a reviewed policy is configured, ordinary
 Layer 5 evaluates its current typed trigger and guards; the learner is not polled on the hot path and
 never decides a live action. A compatible retraining refreshes evidence for the same canonical bundle
 candidate; a changed member, semantic parameter, trigger/profile or envelope creates a new review
-item. Changing the template-owned member order changes the descriptor version and therefore follows
+item. Changing the descriptor-owned member order changes the descriptor version and therefore follows
 Layer 5's ordinary selective revalidation.
 
 This model deliberately does not infer a future calendar schedule from a sequence of resident actions.
@@ -1048,7 +1343,7 @@ operational path.
 `ContextRegimeNoveltyModel` is the first concrete `UnsupervisedModel`. It detects that a complete,
 explicitly scoped room or house-context vector is unlike the operating regimes already observed; it
 does not declare a fault, safety violation, resident intent, or a causal explanation. Known security
-posture requirements, such as an alarm mode incompatible with resolved `sleep` or `away`, remain
+posture requirements, such as an alarm mode incompatible with current `presence=away`, remain
 deterministic future Layer-5 policies. A model that learned an unsafe posture as historically common
 must never normalize, suppress, or replace that rule.
 
@@ -1134,7 +1429,8 @@ no signal and never a negative assertion.
 
 `physical_reference` is a core-validated direct physical label. The initial
 `occupancy.room_present.indirect.v1` contract uses exactly the same-room Layer-2
-`occupancy.physical` `PhysicalOccupancyReference`: individual per-sensor evidence, semantic
+`FactSlot(fact_type="occupancy.physical", where=subject_room)` with the
+registered physical producer and its provenance: individual per-sensor evidence, semantic
 occupancy, a learned output, a manually authored assumption, or mixed/unknown provenance are rejected.
 Both physical outcomes train and validate the categorical learner, but the contract may emit only
 `present`. It uses `calibrated_probability`, with positive predictive value and false-positive/negative
@@ -1252,15 +1548,21 @@ conditions, following the benchmark-oriented approach of
 ### 4.5 Model publication and diagnostics
 
 An analyzed model is immutable for readers. A successful analysis atomically replaces the prior model
-only after all required history reads, coverage checks, and validations succeed. A failed or
-incomplete analysis leaves the last valid model inspectable, but marks its current analysis state
-degraded and must not represent that model as refreshed from incomplete evidence.
+only after required retention reads, per-sample observation-coverage checks and validations succeed.
+A retained span may contain observation gaps: §4.2/§5.2 exclude or censor the affected samples,
+and the remaining eligible support must pass the existing gates. A failed read or analysis,
+or insufficient support after those exclusions, leaves the last valid model inspectable,
+marks its current analysis state degraded, and must not represent that model as refreshed
+from the incomplete samples.
 
 Every learner declares a stable `definition_fingerprint` and a mandatory, learner-specific
 `max_artifact_staleness`; there is no global default. The fingerprint covers every field that changes
 the meaning of a result: target and output semantics, subject Location, feature/outcome bindings,
 canonicalization and tier definitions, warm-up/support/confidence gates, and any source-generation
-dependency. A published artifact records that fingerprint, a monotonically increasing
+dependency. It excludes serving-only objective, materiality, action and
+consumer parameters whose changes leave that statistical result unchanged;
+those belong to §4.1.2's `serving_generation_fingerprint`. A published
+artifact records that fingerprint, a monotonically increasing
 `analysis_revision` within it, and `evidence_through`, the latest historical anchor represented by a
 complete successful analysis. Staleness is measured from `evidence_through`, not from the job's
 completion time.
@@ -1300,9 +1602,10 @@ allowed, runs only from a preloaded immutable artifact and already-available fac
 computation and no I/O.
 
 Core models are reviewed implementations. A third-party model follows the same Layer-7 boundary as a
-third-party analyzer: it may emit diagnostics or proposal candidates, but cannot create a new live
-signal path. The detailed model-definition, artifact, validation, and resource contracts remain a
-component decision in §8.
+third-party analyzer: it may emit diagnostics or a proposal candidate under an exact already-registered
+core candidate kind and `ReactionDescriptor`, but cannot create a new live-signal path, `ApplyStep`,
+or actuator invocation. The detailed model-definition, artifact, validation, and resource contracts
+remain a component decision in §8.
 
 An observational model may predict an outcome under observed conditions, but must not claim that an
 action caused that outcome merely from historical correlation. Counterfactual or reinforcement
@@ -1366,12 +1669,16 @@ notify a resident, enter a bounded live-signal path, or alter a HouseFact or act
 compares predictions with subsequently observed outcomes across the declared coverage profile and
 evaluates the frequency, scope and guard compatibility that a preview would have had.
 
-Promotion, continued shadowing, rollback, disablement, and entry to or exit from `bounded_adaptive`
-adoption are explicit administrative generation transitions. On promotion to `proposal_eligible`, a
+Promotion, continued shadowing, rollback and disablement are explicit
+administrative generation transitions. Entry to or exit from
+`bounded_adaptive` instead appends an authenticated adoption-mode transition
+under §4.9 without changing the analysis definition or a configured Reaction
+generation. On promotion to `proposal_eligible`, a
 still-valid preview may motivate a new `LearningProposalCandidate`, but is never converted in place:
 Layer 3 rechecks artifact/fingerprint/evidence/validity and Layer 5 performs its ordinary independent
 validation before any `ReactionProposal` exists. On promotion to `live_signal_eligible`, only the
-registered signal type may be emitted and only under its existing current-input/freshness gates. No
+registered signal type may be emitted from the exact adopted artifact for its
+consumer (§4.9), and only under its existing current-input/freshness gates. No
 model self-promotes; a later compatible artifact may receive bounded adoption without another
 per-revision decision only after an explicit core/admin authority defines that policy (§4.9).
 
@@ -1390,28 +1697,56 @@ retraining.
 The first concrete environmental capability is one graph-constrained core learner,
 `EnvironmentalEpisodeLearner`. It is a common episode, sampling, artifact, validation, coverage, and
 proposal mechanism; it is not a separate runtime engine for every environmental use case. Its selected
-`relation_profile` declares the legal physical transition, observation slots, outcome shape and
-horizons, confounder exclusions, metrics, and permitted Layer-5 policy-template descriptors.
-`solar_shading`, `thermal_exchange`, `air_quality_exchange`, and `hygrometric_exchange` are the
-initial active profiles of that one learner, not distinct learner kinds. The reserved future
-`hvac_thermal_response` profile may later supply supporting evidence through the same contracts, but
-is not itself an initial user-facing product.
+Layer-5 `RelationProfileRef` is read only through the proposal facet. Its evidence facet declares the
+legal physical transition, observation slots, outcome shape and horizons, confounder exclusions,
+metrics, and shadow requirement; its policy facet declares the permitted Layer-5 descriptors and
+policy meaning. Layer 3 never registers, edits, or interprets the policy facet.
+`thermal_shading`, `solar_shading`, `thermal_exchange`, `air_quality_exchange`,
+`hygrometric_exchange`, and the
+evidence-gated `hvac_thermal_response` are Initial-V3 profiles of that one learner, not distinct
+learner kinds. The latter is registered from the start but cannot produce an operational candidate
+until its stricter profile evidence and Layer-5 staged-prerequisite gates pass. Each Initial-V3 profile
+is registered as `RelationProfileRef(profile_id=<named profile>, version="1")`.
 Layer 1 `Topology` is structural prior knowledge: it identifies rooms, exterior openings, facade
 exposure, and permitted connections; it is never treated as a measurement of heat or airflow.
 
-Each declaration selects exactly one validated `relation_profile` during staging. The selected profile,
-all resolved bindings, and its permitted outcomes are part of the definition fingerprint;
+Each declaration selects exactly one validated `RelationProfileRef` during staging. The exact ref, its
+evidence facet, all resolved bindings, and its permitted outcomes are part of the definition fingerprint;
 a generation cannot silently gain or lose capabilities when an optional source later appears or
 disappears.
+
+The same selected `RegisteredRelationProfile` fixes the sole policy-output
+schema id/version and pure validator (Layer 5 §3.1). The artifact records that
+exact schema identity; publication validates its typed output under any required
+core-frozen release-gate calibration before a candidate can be formed. The five non-HVAC
+Initial-V3 profiles use the common `environmental_response.v1` schema for the
+bounded response-artifact cells defined in §4.8.2: exact
+profile/transition-class/context/horizon
+identity, canonical outcome unit, transition and reference quantiles and support,
+response difference, bootstrap interval and provenance, and coverage/eligibility.
+The validator checks the profile-declared transition class, outcome shape,
+unit, horizons and bounds;
+it does not accept an open-ended JSON object or an ineligible cell as a policy
+estimate. This artifact output is distinct from the per-inference `ResultEnvelope`
+in §4.4, whose closed `ResultPayload` union does not describe a complete response
+artifact. `hvac_thermal_response` uses
+`hvac_thermal_response.policy_output.v1`, validating its
+`ThermalResponseParameter` against the separately core-frozen
+`ThermalEvidenceGateCalibration` without changing either type's fields. The
+calibration is release metadata, never a learner output. Neither the learner nor the candidate chooses a schema from its
+payload shape or creates a new Layer-5 transport path. An incompatible schema
+revision makes the prior artifact ineligible for a new candidate under the
+ordinary profile-version invalidation rule.
 
 Every active environmental relation profile has frozen
 `shadow_requirement="required_before_proposal"`. Its candidate can affect comfort, indoor-air quality,
 or the use of openings/covers even though Layer 5 later reviews it, so offline observational validation
 alone is insufficient for an eligible proposal. Shadow evaluates bounded predictions and
 `ShadowProposalPreview` records against real subsequent outcomes and declared guard availability;
-only an explicit administrative promotion can allow the ordinary Layer-5 proposal path. The inactive
-`hvac_thermal_response` profile and every future profile must declare one of the same closed
-requirements when their complete contract is introduced.
+only an explicit administrative promotion can allow the ordinary Layer-5 proposal path.
+`hvac_thermal_response` uses the same closed requirements plus its stricter thermal evidence gates;
+future profiles must declare one of the same closed requirements when their complete contract is
+introduced.
 
 | Relation profile | Required observations | Permitted meaning |
 | --- | --- | --- |
@@ -1421,24 +1756,149 @@ requirements when their complete contract is introduced.
 | `air_quality_exchange` | `thermal_exchange` plus room CO2 | conditional CO2 response subject to thermal constraints |
 | `hygrometric_exchange` | `thermal_exchange` plus indoor/outdoor temperature and relative humidity, resolved to humidity ratio or dew point | conditional moisture response subject to thermal constraints |
 
-The following core profile is reserved but **inactive** in the initial V3 generation. Staging rejects
-every attempted initial instance; it becomes eligible only when the detailed contract in item 6 of §8 and its
-future Layer-4/Layer-5 dependencies are complete.
+The following Initial-V3 profile is registered but evidence-gated. Staging accepts it only with its
+declared observation bindings; it remains unable to publish a `ThermalResponseParameter` or an
+operational candidate until its exact-cell evidence, calibration, and Layer-5 staged prerequisites
+pass.
 
-| Reserved relation profile | Required observations | Permitted meaning after activation |
+| Evidence-gated relation profile | Required observations | Permitted meaning when eligible |
 | --- | --- | --- |
-| `hvac_thermal_response` | room and outdoor temperature, observed registered HVAC action and HVAC mode; compatible observed target, solar exposure, and delivered power only where staged | validated thermal trajectory and passive-drift evidence supporting a bounded reviewed HVAC setback/setup parameter |
+| `hvac_thermal_response` | room and outdoor temperature, observed registered HVAC action and HVAC mode; compatible observed target, solar exposure, and delivered power only where staged | validated passive-drift and recovery reachability evidence for a bounded `ThermalResponseParameter` |
 
-The core baseline estimator for every active profile, and for `hvac_thermal_response` if it is later
-activated, is `StratifiedResponseModel`. It compares only complete observed-transition
+#### Evidence-gated `hvac_thermal_response` contract
+
+This registered profile is operationally dormant until eligible, and its artifact is limited to validated thermal reachability for
+one explicit Layer-5 `conditioning_scope` and exactly one declared mode, `heating` or `cooling`. It is
+not a whole-home physics model, an occupancy/arrival predictor, a setpoint recommendation, a calendar
+schedule, or an actuator command. Heating and cooling use distinct artifacts, cells, envelopes, and
+parameters even when one physical endpoint can serve both modes.
+
+The evidence facet separates two complete, profile-declared cohorts: `passive_drift`, during which the
+observed HVAC action is inactive for the required stable interval; and `active_response`, during which
+the observed mode, action and compatible target remain stable for the declared interval. A manual
+setpoint change, mode change, opening/control transition, unavailable required observation, or another
+declared confounder excludes the interval from both cohorts. The artifact may use indoor/outdoor
+temperature, staged solar exposure, observed target and delivered power only in typed slots declared by
+the profile; it does not infer missing observations or borrow an adjacent context cell.
+
+For each supported exact context cell, bounded room-thermal-delta bucket, and bounded recovery
+setpoint-step bucket, the sole policy-consumable output is a versioned `ThermalResponseParameter`:
+
+```python
+@dataclass(frozen=True)
+class ThermalResponseParameter:
+    profile_ref: RelationProfileRef
+    artifact_ref: str
+    conditioning_scope_id: str
+    mode: Literal["heating", "cooling"]
+    context_cell_fingerprint: str
+    thermal_delta_min_c: float
+    thermal_delta_max_c: float
+    recovery_setpoint_step_min_c: float  # positive absolute magnitude; mode determines direction
+    recovery_setpoint_step_max_c: float
+    passive_drift_rate_min_c_per_hour: float
+    passive_drift_rate_max_c_per_hour: float
+    recovery_duration_min: Window
+    recovery_duration_max: Window
+    conservative_recovery_duration: Window
+    conservative_step_settle_duration: Window
+    valid_until: EvidenceInstant
+```
+
+`conservative_recovery_duration` is a bounded, validated upper recovery estimate for that exact cell and
+delta bucket. `recovery_setpoint_step_*` and `conservative_step_settle_duration` describe one observed,
+stable HVAC-target move and the conservative time before evaluating the next recovery step; they do not
+encode an absolute target or a command sequence. Staging requires finite ordered positive bounds,
+`recovery_duration_min.seconds <= conservative_recovery_duration.seconds <= recovery_duration_max.seconds`, and
+a positive step-settle duration. The parameter contains no HA entity, service, absolute setpoint,
+calendar interval, resident identity, energy-saving claim, or prebuilt command sequence. Layer 5 may
+use it only while current inputs match its exact cell and both the requested thermal delta and recovery
+setpoint step lie in its declared buckets; otherwise the descriptor abstains. It cannot interpolate,
+extrapolate, select a nearby cell, or substitute a fallback parameter.
+
+The profile's shadow compares these passive-drift and recovery-step estimates with later compatible
+observed temperature trajectories only. It cannot stage a target, send an `ApplyStep`, or treat an
+observed calendar end as an arrival label. Activation requires calibrated trajectory/prediction-interval
+and operating-envelope coverage for both cohorts and every published step bucket; an energy benefit is
+publishable only with a separately staged measured energy/power outcome.
+
+##### Initial thermal evidence-gate calibration
+
+The Initial-V3 numerical gates are not administrator preferences and are not selected from a current
+household's early observations. Before `hvac_thermal_response@1` can publish an operational artifact,
+core maintainers must freeze one versioned `ThermalEvidenceGateCalibration` after evaluating the
+registered baseline against a documented matrix of BOPTEST scenarios and provenance-recorded replay
+fixtures, then confirming the result through a documented opt-in field pilot. BOPTEST is used to
+compare control outcomes and uncertainty under reproducible building and boundary-condition scenarios;
+it does not itself supply product thresholds. The calibration report must make the chosen trade-off
+between false late recovery, abstention rate and warm-up duration explicit.
+
+```python
+@dataclass(frozen=True)
+class ThermalEvidenceGateCalibration:
+    calibration_id: str
+    profile_ref: RelationProfileRef
+    benchmark_protocol_version: str
+    replay_fixture_set_fingerprint: str
+    field_pilot_protocol_version: str
+    field_pilot_evidence_fingerprint: str
+    minimum_passive_drift_support_per_cell_delta: int
+    minimum_active_response_support_per_cell_delta_step: int
+    minimum_distinct_calendar_blocks_per_cohort: int
+    bootstrap_replica_count: int
+    minimum_valid_bootstrap_replicas: int
+    maximum_response_interval_width_c: float
+    maximum_trajectory_error_by_horizon_c: CanonicalJsonObject
+    prediction_interval_nominal_coverage: float
+    minimum_empirical_prediction_interval_coverage: float
+    minimum_independent_thermal_shadow_episodes: int
+    maximum_conservative_recovery_underprediction_rate: float
+    approved_by: str                    # reviewed core-release authority, never household admin
+    calibration_evidence_fingerprint: str
+```
+
+All support/block/replica/shadow counts are positive integers and
+`minimum_valid_bootstrap_replicas <= bootstrap_replica_count`. Every error/interval-width value is
+finite and positive; `maximum_trajectory_error_by_horizon_c` contains exactly one finite positive value
+for every profile-declared outcome horizon. Both coverage values are in `(0, 1]` with empirical minimum
+no greater than nominal coverage, and the allowed underprediction rate is in `[0, 1)`. These invariants
+and all fields are frozen with the profile version. The calibration must cover both passive-drift and active-response cohorts; heating and cooling where each is supported;
+the declared context, thermal-delta and recovery-step partitions; forecast/sensor uncertainty; and
+representative thermal mass and actuator-response regimes. A cell/delta/step artifact is eligible only
+when it meets every corresponding frozen gate: passive support applies to its cell/delta cohort,
+active support and thermal-shadow evidence apply to its exact cell/delta/step bucket, and no missing
+bucket may borrow a threshold result or evidence from a neighbour.
+
+The field pilot validates external validity of the release gate, not a cross-home serving model. Each
+participating household explicitly opts in; its local instance remains `notification_only` and produces
+no pilot-specific automatic `ApplyStep`. Raw fact history, calendar content, resident identity and
+artifact payload stay local. The release process receives only protocol-bounded, redacted aggregate
+outcomes sufficient to evaluate warm-up duration, abstention, interval calibration and conservative
+recovery underprediction. Withdrawal ends future collection. Pilot evidence never enters another
+household's artifact, candidate, envelope, action decision or runtime evaluation.
+
+There is intentionally no Initial-V3 numeric default in this specification. Until a reviewed core
+release supplies this complete calibration and its reproducible evidence, the profile remains
+diagnostic-only and cannot produce a `LearningProposalCandidate`. Once frozen, a changed numeric gate,
+benchmark protocol, fixture set, metric definition, or trade-off is a new profile/calibration version:
+it invalidates affected operational artifacts for new candidate production and never silently promotes
+or rewrites a pending proposal or configured Reaction.
+
+The core baseline estimator for every active profile, including eligible `hvac_thermal_response`, is
+`StratifiedResponseModel`. It compares only complete observed-transition
 `EnvironmentalEpisode` records with a profile-declared reference cohort from the same canonical
-profile cell. A reference cohort contains `EnvironmentalReferenceWindow` records:
+profile and `transition_class_id` cell. A reference cohort contains `EnvironmentalReferenceWindow` records:
 bounded historical windows with the same typed pre-anchor context and post-anchor outcome shape, where
 the relevant physical state is observed stable for the profile-declared pre/outcome/exclusion interval.
-It is not an `EnvironmentalEpisode`, never pretends that a transition occurred, and is rejected on the
-same freshness, completeness, and confounder rules. For each supported cell and declared outcome
+It is not an `EnvironmentalEpisode` and never pretends that a transition occurred.
+Any declared reference or confounder-exclusion span with incomplete
+`ObservationCoverage` or truncated retention rejects it: an unobserved interval
+cannot become a stable no-action reference. The same freshness, completeness, and
+confounder rules apply. For each supported class/context cell and declared outcome
 horizon the artifact persists the bounded empirical response distributions, their declared descriptive
-quantiles, support of both cohorts, uncertainty interval, and coverage/eligibility status. Its primary
+quantiles, support of both cohorts, uncertainty interval, and coverage/eligibility status. It never pools
+start, modification and termination cohorts or different registered
+modification directions/ranges. Its primary
 estimate is the difference of the two cohort medians:
 
 ```text
@@ -1453,6 +1913,18 @@ a wide or asymmetric response distribution. The estimator never interpolates bet
 for nearest contexts, pools incompatible profiles, or attributes a difference to an action. Its
 published conclusion is strictly an **observed conditional response difference**. Insufficient support
 in either cohort leaves that cell unavailable rather than borrowing evidence from another cell.
+Cell availability is local to its exact profile, transition class, context
+and horizon: absence of one class estimate does not invalidate another
+eligible class or decide whether a descriptor's separate deterministic step
+may run. Layer 5 declares and checks each programmed step's estimate
+dependency under §3.2; Layer 3 publishes evidence, never a fallback target.
+Observed resident, external and Heima-origin transitions retain their
+attribution and enter a profile's cohort only when its declared physical
+matcher, coverage and confounder rules admit them. The cohort records the
+actual bounded pre/post target, not a developer-assigned improvement for a
+particular target. An eligible modification-class response can inform the
+descriptor's current decision, but it does not prove that the target is
+needed now or that an entire later program will achieve its objective.
 
 The uncertainty interval is a core-owned percentile **temporal block bootstrap** of
 `response_delta_p50`, never an iid resampling of individual records. For one profile cell, the
@@ -1466,8 +1938,10 @@ the seed obtained from the SHA-256 digest of the RFC-8785-canonical JSON object 
 `definition_fingerprint`, `canonical_cell_key`, `training_span`, and `bootstrap_version`, replication
 count, interval coverage, block duration, valid-replica count, and lower/upper bounds. This preserves
 local temporal dependence and makes the published artifact reproducible.
+The `canonical_cell_key` includes `transition_class_id`, so two physical
+transition classes cannot share a bootstrap sample identity or interval.
 
-Every `relation_profile` declares core-owned `minimum_transition_support`,
+Every selected relation profile's evidence facet declares core-owned `minimum_transition_support`,
 `minimum_reference_support`, `minimum_distinct_calendar_blocks`, and
 `maximum_response_interval_width` in the outcome's canonical unit. A cell is usable only when both
 cohort-support gates and its temporal-diversity gate pass and its bootstrap interval is no wider than that profile's
@@ -1479,11 +1953,11 @@ because the records arise from a temporally dependent house process
 
 An `EnvironmentalEpisodeLearner` instance also declares one mandatory, core-owned `objective_id` and
 one explicit positive `minimum_practical_delta`, represented in the declared outcome's canonical unit.
-There is no global objective or materiality default. The selected relation profile validates the closed
-objective vocabulary, its compatible outcome orientation, permitted action intent, and the threshold's
-unit/range. This is deliberately separate from the response estimate: a lower room temperature, for
+There is no global objective or materiality default. The selected relation profile's policy facet
+validates the closed objective vocabulary, its compatible outcome orientation, permitted action intent,
+and the threshold's unit/range. This is deliberately separate from the response estimate: a lower room temperature, for
 example, is not intrinsically desirable without an explicit objective. Initial objective/action pairs
-include `reduce_solar_gain -> increase_shading`, `admit_solar_gain -> decrease_shading`,
+include `limit_solar_gain -> increase_shading`, `admit_solar_gain -> decrease_shading`,
 `reduce_co2 -> open_for_exchange`, and `reduce_moisture -> open_for_exchange`; they are finite
 profile-owned semantics, not admin-authored labels or an arbitrary utility function.
 
@@ -1497,6 +1971,8 @@ current comfort, safety, weather, security, manual hold, or resident preference.
 `objective_id` and `minimum_practical_delta` are `serving_semantics`: changing either never retrains
 or invalidates the response artifact, but immediately withdraws an unreviewed candidate selected under
 the preceding values and re-evaluates candidate/envelope eligibility from the same compatible artifact.
+The artifact's `definition_fingerprint` and `analysis_revision` stay fixed;
+the `serving_generation_fingerprint` changes.
 They enter the candidate's semantic payload and deduplication fingerprint. A previously approved
 configured Layer-5 policy is not silently altered; a changed objective or threshold creates a distinct
 ordinary review proposal.
@@ -1549,7 +2025,7 @@ over a profile-declared recent historical observation window, with the window/sp
 The core may classify that evidence as `recurring`, `occasional`, or `rare` using profile-owned
 thresholds, so review can distinguish a daily shading opportunity from an infrequent weather regime.
 Opportunity frequency never adds an unsupported cell, suppresses a statistically valid rare candidate,
-changes a configured policy's execution authority, or alters live Layer-5 evaluation. It is excluded
+changes a configured Reaction's execution authority, or alters live Layer-5 evaluation. It is excluded
 from the candidate deduplication fingerprint: a changed observed rate refreshes review evidence rather
 than creating a different policy proposal.
 
@@ -1591,26 +2067,67 @@ diagnostic-only.
 #### 4.8.1 EnvironmentalEpisode and outcome contract
 
 `EnvironmentalEpisodeLearner` learns only from the common `EnvironmentalEpisode`. Its `anchor_at` is
-the timestamp of an observed physical state transition of a cover, opening, or a profile-declared
-HVAC action, never the timestamp of a requested command.
+the timestamp of one profile-declared, observed physical state transition on a staged registered
+Sensor state or Actuator channel, never the timestamp of a requested command. A profile fixes the
+exact source `FactRef`, canonical state contract, channel/facet identity where applicable, and
+versioned transition matcher before training. Existing cover, opening and HVAC-action transitions
+use this same rule. The required Initial-V3 extraction profile, and a later
+humidifier or dehumidifier profile, declare their own
+compatible observed transition and outcome without another learner implementation. For Layer 0
+§5.1.1.1 `actuator.channel_state.<digest>` sources, the anchor requires an available valid record
+whose `changed_facets` includes a profile-declared facet, a matching registered logical channel and
+observable-state contract, and a complete preceding state in the same observation epoch. The first
+valid reading after restart or an availability gap has no changed facets and cannot be an anchor.
+An unchanged value, service-call completion, `already_satisfied` decision, or unrelated facet change
+is not a physical transition. The profile's bounded transition matcher, binding and required
+history enter its definition fingerprint; observed origin remains evidence, not a causal claim.
+The registered matcher classifies the complete pre/post physical edge into
+exactly one `transition_class_id` or excludes it. A class can describe a
+program start, bounded target modification or termination; for a quantitative
+modification its matcher distinguishes direction and bounded pre/post target
+range. The class is profile-owned and reusable across Actuator kinds, never
+derived from an HA domain or a Heima command label. The episode and its
+comparable stable-pre-state reference windows retain that class id;
+`environmental_response.v1` cells carry it explicitly. A single-class
+output such as `ThermalResponseParameter` keeps its existing shape: its
+exact profile/version resolves the sole registered `primary` class without
+adding a field to that parameter. An edge matching two classes is invalid
+rather than counted twice.
+For a profile of temporary Actuator operation, learning retains the complete
+observed entry state, the physical transition sequence and verified origin
+per edge. An extraction activation that finds a fan already active is a
+no-intervention decision, not a fan-start response episode. An observed
+inactive-to-active transition and later speed or stop transitions each form
+their own profile-declared class and estimate only with complete pre/post,
+matching stable-state reference and confounder coverage. Initial and
+resulting speed remain typed context;
+active-at-entry observations cannot be silently pooled with
+inactive-at-entry activations to estimate the latter's response. The exact
+`humidity_extraction` transition matchers, comparable reference cohorts and
+outcome horizons still require CA4-12 registration; recording or estimating a speed edge
+does not itself authorize a speed policy.
 Its named, typed feature bindings describe only the context at or before that transition: the selected
 profile's measurements, topology, solar/weather conditions, presence where declared, and all relevant
 observed device states. Its named outcome bindings describe measurements strictly after the anchor at
 the relation-profile-declared horizons.
 
-An episode is rejected when its required observation is stale, missing, invalid, or truncated, when
-the post-transition state cannot be observed for the declared minimum window, or when a declared
+An episode is rejected when any required pre-anchor, post-anchor, or confounder-exclusion
+read has truncated retention or incomplete `ObservationCoverage`, or when its required
+observation is stale, missing, or invalid. It is also rejected when the post-transition
+state cannot be observed for the declared minimum window or when a declared
 confounder occurs in its exclusion window. At minimum, confounders include a relevant HVAC mode,
-action, target, or delivered-power change; another relevant cover/opening transition; and any other
-relation-profile-declared control change that invalidates attribution. A short-lived transition is consequently
+action, target, or delivered-power change; another relevant registered Sensor or Actuator-channel
+transition, including cover/opening changes where applicable; and any other relation-profile-declared
+control change that invalidates attribution. A short-lived transition is consequently
 not evidence merely because it appeared in the history.
 
 Each registered relation profile owns a bounded list of outcome horizons; there is no global
 environmental response duration. Initial target shapes are: room-temperature change for thermal
 shading and thermal exchange; indoor illuminance change only where an indoor illuminance binding is
 declared; CO2 reduction or time below a declared threshold for air-quality exchange; and humidity
-change for hygrometric exchange. The reserved `hvac_thermal_response` profile uses a
-room-temperature trajectory only after activation under item 6 of §8. The horizons, target shape, exclusion
+change for hygrometric exchange. The evidence-gated `hvac_thermal_response` profile uses a
+room-temperature trajectory only when it meets the evidence-gated eligibility contract in §4.8 and
+the `hvac_thermal_response` requirements in §8 item 6. The horizons, target shape, exclusion
 policy, and relation profile all enter the definition fingerprint.
 
 The artifact may compare a transition episode with profile-matched `EnvironmentalReferenceWindow`
@@ -1625,11 +2142,15 @@ it, a declared simulation or explicitly approved experiment under §4.7.
 typed binding slots. A declaration resolves each slot to a `FactRef` during staging; the validator checks the
 expected value shape/unit, required `Location`, source availability/freshness policy, and profile
 eligibility. It never reads an HA `State`, entity attribute, actuator target, buffer, or payload.
+For a quantitative slot, staging checks the producing Layer-2 Sensor's
+canonical unit contract against the slot unit; history and current inference
+use only the resulting canonical value. A unit-drift `available=False` fact
+cannot become an episode sample or a thermal parameter input.
 The initial core-owned slots are `room_temperature`, `outdoor_temperature`, `room_co2`,
 `indoor_humidity`, `outdoor_humidity`, `indoor_humidity_ratio`, `outdoor_humidity_ratio`,
 `room_illuminance`, `solar_irradiance`, `incident_solar_exposure`, `outdoor_air_quality`,
 `observed_opening_state`, `observed_cover_position`, `actual_hvac_action`, `observed_hvac_mode`,
-`observed_hvac_target`, and `hvac_delivered_power`. A registered family may require only the slots
+`observed_hvac_target`, `hvac_delivered_power`, and `observed_actuator_channel_state`. A registered family may require only the slots
 its `relation_profile` permits. `observed_hvac_target` and `hvac_delivered_power` are optional
 installation capabilities, never values read from an HA attribute by a learner.
 
@@ -1640,13 +2161,37 @@ physical source traces to that same id. This preserves the distinction between t
 room without adding an opening scope to `Location`. Opening and cover readings use stable logical
 Sensor identities in their fact types, for example `environment.opening_state.<sensor_id>` and
 `environment.cover_position.<sensor_id>`, never a Home Assistant `entity_id`.
+`observed_actuator_channel_state` resolves to exactly one staged
+`actuator.channel_state.<digest>` state `FactRef` for the profile's registered
+`(actuator_id, controlled_channel)` at its owning room, with the declared
+`observable_state_contract_id` and a bounded core matcher over named canonical
+facets. Layer 0 §5.1.1.1 supplies its observed changed-facet projection; Layer 3
+does not read raw HA attributes, invent an origin, or infer an Actuator's
+purpose from its HA domain. A profile selects one physical transition source
+per episode so parallel Sensor and channel projections of the same physical
+change cannot double-count it. A different channel, mismatched contract,
+unavailable reading, incomplete predecessor history or post-restart baseline
+cannot be substituted for the declared anchor.
+For an extraction fan, staged canonical active and speed facets preserve
+whether it was already active at a qualifying start and which physical
+speed transitions followed. No requested speed, last Heima command or
+assumed ownership replaces those observations. Complete observed speed
+changes can inform a registered response profile; an active-at-entry
+no-command decision remains separate from an observed response to a change.
 
-Solar geometry is also a declared fact input, supplied by a core-owned deterministic Layer-2 producer
-as `external.solar_elevation` and `external.solar_azimuth` at `casa`; it is not recomputed ad hoc by a
-learner from raw HA configuration. A core FormulaStrategy whose staged immutable configuration
-captures one opening's id and resolved orientation combines this geometry with that opening. For a
-vertical opening its geometric direct-incidence proxy is
-`max(0, cos(elevation) * cos(solar_azimuth - opening_orientation))`; with direct-normal irradiance it
+Solar geometry is also a declared fact input, supplied by the two
+core-generated Layer-2 `Sensor` registrations of Layer 2 §3.5 as
+`external.solar_elevation` and `external.solar_azimuth` at `casa`; both read
+one frozen `sun.sun` state, enforce freshness, and convert degrees to canonical
+radians. It is not recomputed ad hoc by a learner from raw HA configuration.
+The core `environment.solar_incidence.v1` FormulaStrategy
+uses Layer 2 §5.3's closed staged configuration to capture one opening's id and resolved
+orientation before combining this geometry with that opening. For a
+vertical opening its geometric direct-incidence proxy is zero when
+`elevation <= 0`; only above the horizon is it
+`max(0, cos(elevation) * cos(solar_azimuth - opening_orientation))`. Without
+that horizon gate the cosine expression would falsely report solar exposure
+at night. With direct-normal irradiance it
 becomes direct incident irradiance, and a measured/trusted diffuse component completes
 `environment.incident_solar_exposure.<solar_binding_id>`. The stable `solar_binding_id`, not a raw
 `opening_id`, is the fact-type suffix; staging resolves it back to exactly that opening. Without
@@ -1677,7 +2222,7 @@ of manual window behavior, but their importance varies materially by household, 
 
 An optional, separate `ResidentPresentationPreferenceModel` may learn a supported non-safety
 notification priority, quiet-period, channel, or frequency parameter for one declared
-`presentation_scope`. This is a generic presentation scope supplied by a registered policy-template
+`presentation_scope`. This is a generic presentation scope supplied by a registered Reaction
 descriptor, such as its semantic intent plus explicit Location; it is never a raw HA entity, payload,
 or a ventilation-specific model. The model uses only explicit resident feedback such as useful/not
 useful, postpone, disable, or a declared action response. Missing response is censored evidence, not
@@ -1698,13 +2243,16 @@ target, and delivered power are used only where staged and available. An unrelat
 manual setpoint change, opening/cover transition, or other profile-declared thermal disturbance in the
 exclusion window rejects the episode rather than being averaged into it.
 
-One future operational use is a reviewed bounded `setback`/`setup` calibration parameter of a Layer-5
-HVAC descriptor: in `heating` it can cap the maximum reduction from that descriptor's occupied comfort
-target, and in `cooling` it can cap the maximum increase. It cannot select a target, choose an
-endpoint, schedule recovery, issue an `InferenceSignal`, or command an Actuator. The same validated
-artifact may later be consumed only by Layer 5's `environment.planned_comfort_trajectory`, under its
-separate frozen `CalendarPlanBinding`, observed departure/return, comfort/energy, guard and
-shadow-validation contract; this profile never creates a recovery schedule itself. Without an
+Its Initial-V3 operational use is a bounded thermal-reachability artifact for Layer 5's HVAC descriptor.
+It estimates passive drift and recovery-step duration for an exact scope, mode and context bucket;
+Layer 5 combines that evidence with administrator-authored absence/return bounds to decide the next
+safe step. It cannot select or cap a target, choose an endpoint, schedule recovery, issue an
+`InferenceSignal`, or command an Actuator. The same validated artifact may be consumed only by Layer
+5's `environment.planned_comfort_trajectory`, under its separate current-absence, calendar,
+comfort/energy, guard and shadow-validation contract; that descriptor requires a current stabilized
+`presence=away` claim plus an active matching plan, uses `departure` only for live-process reevaluation,
+and treats committed `return` as terminal cancellation. This profile never
+creates a recovery schedule itself. Without an
 explicitly bound energy measurement, its validation and
 proposal may claim only bounded thermal
 comfort/safety applicability, never energy savings. This follows the system-specific limits of
@@ -1724,7 +2272,8 @@ that opening windows can worsen conditions when outdoor air quality is poor
 core FormulaStrategy derives `environment.humidity_ratio.<humidity_binding_id>` from temperature,
 relative humidity, and either a bound pressure fact or an explicit installation reference pressure:
 `p_v = RH * p_ws(T)` and `w = 0.621945 * p_v / (p - p_v)`. The formula emits kg water/kg dry air and
-is unavailable when its declared pressure source/configuration is absent or invalid; it does not fall
+uses Layer 2 §5.3's closed `environment.humidity_ratio.v1` configuration. It is
+unavailable when its declared pressure source/configuration is absent or invalid; it does not fall
 back to comparing RH. An optional staged formula may derive moist-air enthalpy
 `h = 1.006*T + w*(2501 + 1.86*T)` kJ/kg dry air for a joint thermal/moisture context, but it is a
 proxy for the relative desirability of external air, never a measured airflow or energy saving. This
@@ -1739,20 +2288,19 @@ threshold as a command rule ([survival-model study](https://www.sciencedirect.co
 #### 4.8.4 Environmental safety and comfort envelope
 
 Learning does not enforce live safety or comfort. An environmental `LearningProposalCandidate` may
-describe only its semantic intent and the core-defined guard capabilities it requires, chosen from
-`manual_hold`, `confirmed_physical_state`, `opening_security`, `precipitation`, `wind`,
-`thermal_bounds`, `co2_bounds`, `humidity_bounds`, `outdoor_air_quality`, `presence`, and `privacy`.
-It neither embeds arbitrary live predicates nor decides that an observed historical condition is safe
-enough now.
+describe only the exact core `ReactionGuardCapabilityRef`s required by its selected Layer-5
+guard contract. It neither embeds a threshold/binding, arbitrary live predicate, nor decides that an
+observed historical condition is safe enough now.
 
-Layer 5 may create an automatically applicable environmental `ReactionProposal` only when a
-core-defined `EnvironmentalGuardProfile` supplies every required capability. Its numeric limits and
-the enabled weather/security/presence checks are explicit administrator configuration, with no hidden
-global defaults; Layer 5 evaluates its current facts and resolved semantic claims on every proposed
-execution. An unavailable,
-stale, or invalid required guard fact blocks automatic actuation. An active manual hold or a
-higher-precedence safety/security policy always blocks it and is not overridable by a learner or guard
-profile.
+Layer 5 may admit an environmental `ReactionProposal` for review only when a core-defined
+`ReactionGuardProfile` supplies every required capability. Its numeric limits and the enabled
+weather/security/presence checks are explicit administrator configuration, with no hidden global
+defaults. An accepted proposal creates only a `notification_only` `ConfiguredReaction`; automatic
+actuation belongs exclusively to that reaction's subsequent authenticated promotion and required
+household consent. On every proposed execution, Layer 5 evaluates the reaction's current facts and
+resolved semantic claims. An unavailable, stale, or invalid required guard fact blocks automatic
+actuation. An active manual hold or a higher-precedence safety/security policy always blocks it and is
+not overridable by a learner or guard profile.
 
 A candidate without an owned compatible actuator is necessarily `notification_only`. Every newly
 approved environmental policy also begins `notification_only`; changing it to automatic actuation is
@@ -1776,8 +2324,8 @@ relative-humidity comfort range, it records time outside that range as an operat
 No profile can become eligible when it lacks the metrics needed to substantiate its own permitted
 meaning.
 
-When the reserved `hvac_thermal_response` profile is activated, it requires room-temperature
-trajectory error at every declared horizon, comfort-range degree-minutes where the future HVAC
+When the evidence-gated `hvac_thermal_response` profile becomes eligible, it requires room-temperature
+trajectory error at every declared horizon, comfort-range degree-minutes where the registered HVAC
 descriptor declares a range, prediction-interval coverage, and operating-envelope coverage for both
 active HVAC and passive-drift cohorts. It records energy error or energy benefit only when a staged
 energy/power outcome makes that claim measurable; without it, the profile cannot promote an
@@ -1810,13 +2358,15 @@ It exists only where the exact cells of the statistical baseline are too sparse 
 measurable non-linear relation among already-declared physical context variables.
 
 The estimator learns an **observed conditional response contrast**, never a causal effect or a
-counterfactual action result. For one profile and outcome it fits two separate cohort predictors over
+counterfactual action result. For one profile, `transition_class_id` and
+outcome it fits two separate cohort predictors over
 the identical pre-anchor feature space:
 
 - `transition_model` uses only complete observed-transition `EnvironmentalEpisode` records;
 - `reference_model` uses only complete stable-state `EnvironmentalReferenceWindow` records.
 
-It never trains one model with a synthetic "action happened" feature, requests an unobserved action,
+It never pools records from another transition class, trains one model with
+a synthetic "action happened" feature, requests an unobserved action,
 or simulates a command. At serving context `x`, it compares the separately observed conditional
 outcomes of these cohorts. This is deliberately the ML analogue of the baseline's two-cohort
 comparison, so it retains the statement "conditional observed response difference" rather than
@@ -1947,23 +2497,126 @@ Each learner declares the retention needed to support its own history and season
 Layer 0. Fourteen days remains only the default retention: a learner may request months of complete
 history, subject to Layer 0's retention and storage governance. It must not impose an arbitrary annual
 warm-up or infer a year-round behavior from one short period. New evidence can yield a new validated
-artifact continuously, but it never expands a configured policy's authority or bypasses its current
+artifact continuously, but it never expands a configured Reaction's authority or bypasses its current
 guard profile.
 
-Every core-owned learner/model type declares one `artifact_adoption_mode`, selected by an authenticated
-administrator: `pinned` or `bounded_adaptive`. `pinned` requires a new Layer-5 reviewable proposal for
-every revision. `bounded_adaptive` is an explicit, pre-authorized compatibility envelope: the core
-validator may adopt a later validated artifact only if the type-specific predicate proves that it
-remains within the pre-approved authority. A learner, model, or plugin cannot select this mode or
-weaken its predicate.
+Only an operational egress (`InferenceSignal` or an action-bearing Reaction)
+requires artifact adoption. A validated `DiagnosticFinding` is a bounded
+administrator-only observation: its current publication/withdrawal rules in
+§6.1.1 apply without an adoption mode, proposal, or operational permission.
+If one model also has an operational egress, non-adoption suppresses that
+egress only; it does not suppress an independently eligible diagnostic.
+
+For each operational consumer, the core-owned learner/model type declares
+whether the administrator may select `pinned`, `bounded_adaptive`, or both.
+`pinned` requires a new authenticated decision for every exact revision:
+Layer 3 owns that decision for a registered `InferenceSignal` consumer;
+Layer 5 owns a revision-specific reviewable adoption proposal for an
+action-bearing Reaction. `bounded_adaptive` is an explicit, pre-authorized
+compatibility envelope: the core validator may adopt a later validated
+artifact only if the type-specific predicate proves that it remains within
+the pre-approved authority. A learner, model, or plugin cannot select the
+mode or weaken its predicate.
+
+```python
+@dataclass(frozen=True)
+class SignalArtifactAdoptionTransition:
+    transition_id: str
+    transition_kind: Literal["initial", "pinned_revision", "bounded_refresh", "mode_change"]
+    operation_id: str                  # stable retry identity for admin or core transition
+    learning_instance_id: str
+    definition_fingerprint: str
+    serving_generation_fingerprint: str
+    signal_type: str
+    contract_id: str
+    subject: Location
+    previous_transition_id: str | None
+    artifact: ArtifactRef
+    adoption_mode: Literal["pinned", "bounded_adaptive"]
+    actor_ref: str                     # authenticated administrator or closed system actor
+    recorded_when: EvidenceInstant
+```
+
+Layer 3 keeps one ordered, durable transition chain for each exact staged
+`(learning_instance_id, serving_generation_fingerprint, signal_type, contract_id,
+subject)` consumer. Initial `live_signal_eligible` promotion requires the
+type's shadow/quality gates and atomically selects an exact artifact and
+administrator-selected mode; it cannot infer the latest artifact. A later
+`pinned` revision requires an authenticated administrator's exact-artifact
+decision through the Layer-3 administrative transition path, with
+current-head precondition and idempotent operation identity. The
+`adopt_pinned_signal_artifact` request names the same exact consumer,
+expected current head, selected immutable `ArtifactRef`, authenticated
+actor and stable operation id; it cannot alter the mode or consumer contract.
+A `bounded_adaptive` revision may append under the closed system actor only
+after the registered signal predicate proves unchanged value vocabulary,
+semantics, sole consumer, source/scope, expiry authority, and approved
+parameter/envelope bounds. Both paths recheck validation, shadow and
+staleness at commit, serialize against the current head, and reveal either
+the old or new complete transition after a crash. A definition or contract
+change starts a new consumer chain and requires ordinary shadow/promotion;
+an edit limited to `serving_semantics` also starts a new chain but may reuse
+the still-valid analysis artifact after current serving and approval checks.
+Neither path inherits adoption or creates a `ReactionProposal`.
+
+`set_signal_artifact_adoption_mode` names the exact learning instance,
+serving-generation fingerprint, signal type, contract, subject, current
+adoption head and requested mode, with authenticated actor and stable
+operation id. It changes only the mode for that registered consumer. A
+`mode_change` transition keeps the same artifact and serving-generation
+fingerprint. Entering `bounded_adaptive` requires an authenticated
+administrator, a currently eligible artifact, and explicit revalidation of
+the current generation's approved compatibility bounds; only later
+compatible revisions can advance under the system actor. Returning to
+`pinned` fixes the current revision, including when that artifact is
+temporarily unavailable, and blocks future automatic adoption. A stale
+head, absent adoption, unknown bounds or unsupported mode rejects without
+mutation. The command carries an idempotent `operation_id`; concurrent
+mode changes and artifact advances serialize on the same head. It neither
+reruns training nor extends an emitted signal's expiry.
+
+At emission Layer 3 must match the exact adopted `ArtifactRef` and also pass
+the current artifact, context, freshness and contract gates in §6.3. A
+withdrawn, stale, disabled or otherwise ineligible adopted artifact emits
+no signal; Layer 3 does not silently return to an older revision or serve a
+newer unadopted one. Already emitted signals retain only their original
+bounded expiry and Layer-4 validation; an adoption transition cannot extend
+one. The transition itself is permission history, not an `InferenceSignal`,
+`HouseFact`, or notification.
+
+| Egress | `pinned` revision | `bounded_adaptive` revision |
+| --- | --- | --- |
+| `DiagnosticFinding` | Mode does not apply; validate and publish the current bounded finding. | Mode does not apply; same current-finding path. |
+| `InferenceSignal` | Authenticated Layer-3 administrative transition for the exact artifact and registered consumer. | Core-validated compatible Layer-3 transition for that consumer; otherwise no signal from the new revision. |
+| Action-bearing Reaction | Revision-specific Layer-5 `ReactionArtifactAdoptionProposal` and `review_proposal`. | Core-validated compatible Layer-5 adoption transition for the same generation and role; otherwise the old serving decision/fallback remains. |
+
+Every operational row still checks the artifact's current eligibility at
+use time. Adoption never overrides a stale, withdrawn or incompatible
+artifact, and a new semantic definition or consumer contract cannot be
+treated as a compatible revision.
+
+For an existing action-bearing Reaction, an eligible first artifact, or an
+eligible new revision while the role is in `pinned` mode, yields a
+`LearningProposalCandidate` with the closed
+`("reaction.artifact_adoption", 1)` kind: exact
+Reaction/generation, descriptor-declared artifact role and immutable
+`ArtifactRef`. Layer 5 validates that target and persists a
+revision-specific `ReactionArtifactAdoptionProposal` (§4.1); its admin review
+uses `review_proposal` and can only append the corresponding adoption
+transition. The existing semantic configuration proposal remains terminal.
+The adoption candidate's deduplication identity includes the artifact
+revision, unlike a candidate proposing a new Reaction configuration. This
+does not let Layer 3 choose a mode, approve a revision or alter the Reaction.
 
 The common mechanism has different compatibility predicates, not a generalized policy object. For an
 `InferenceSignal`, compatibility preserves its registered type, value vocabulary and semantics, sole
 authorized consumer, expiry/freshness authority, and source scope; only declared statistical
 parameters, confidence, coverage, and fallback thresholds may refine. For an action-bearing policy,
 compatibility additionally preserves semantic action kind, Location/opening/Actuator scope, execution
-mode, guard profile, and administrator-approved parameter bounds. Any other change is incompatible
-and produces a normal reviewable proposal. Thus continuous learning can refine semantic-context and other
+mode, guard profile, and administrator-approved parameter bounds. Any other
+change is incompatible: a signal needs a new staged consumer and Layer-3
+promotion, while an action-bearing policy needs ordinary Layer-5
+configuration review. Thus continuous learning can refine semantic-context and other
 signals without silently redefining a state or expanding an action's authority.
 
 ### 4.10 Analyzer adapters
@@ -1994,7 +2647,9 @@ interval, a cache horizon, or a hint that an implementation may silently shorten
 common builder derives and registers the Layer-0 retention requirement separately for each bound
 input stream: the anchor interval, the largest causal feature lookback that reads that stream, and a
 target horizon only when that stream supplies the outcome. A learner remains warm-up/degraded until
-complete derived coverage exists for **every** required bound stream. This makes a request such as
+complete derived **retention** coverage exists for every required bound stream;
+typed observation gaps within that retained span instead exclude or censor
+individual samples under §4.2 and §5.2. This makes a request such as
 "thirty days of anchors with a six-hour causal feature" precise without requiring an administrator to
 calculate a separate retention value for every input fact. Layer 0 still aggregates the retained
 target and hard ceiling per `fact_type`; its coverage result is deliberately stream-scoped, so an
@@ -2067,10 +2722,16 @@ coalesced requests, skipped inspections, and timeout/failure reasons are diagnos
 3. The inspection captures the active generation and learner definition fingerprint, calculates its
    training watermark, and requests only its bounded incremental inspection range. A failed read,
    unmet warm-up, or insufficient new eligible evidence produces no rebuild.
-4. An eligible rebuild recomputes the complete requested `TrainingSpan`, verifies its required
-   retention coverage, and reads that full span plus declared causal lookbacks. The sample builder,
-   `PatternLearner`, and optional ML training run off the engine hot path. They operate only on copied
-   `HouseFact` data and bounded model data.
+4. An eligible rebuild recomputes the complete requested `TrainingSpan` and verifies
+   required retention coverage for the whole span and its declared causal lookbacks.
+   It reads typed `ObservationCoverage` for each declared anchor, feature and
+   outcome interval; the common builder excludes or censors windows intersecting
+   an observation gap. The run keeps the full requested span identity and may
+   publish only if the remaining eligible samples pass the existing support and
+   validation gates. It never shortens the span to hide a gap or counts an
+   incomplete window as negative/zero evidence. The sample builder,
+   `PatternLearner`, and optional ML training run off the engine hot path. They
+   operate only on copied `HouseFact` data and bounded model data.
 5. Before publishing, the run verifies that its captured generation and fingerprint still match the
    active definition. A stale run discards its result without delaying reload or replacing an artifact.
 6. An ML candidate first completes chronological validation and, when eligible, shadow evaluation;
@@ -2292,7 +2953,10 @@ The two initial shadow-preview schemas are listed in §6.1.2.
 A compatible retraining refreshes evidence for the same `finding_key`;
 a changed schema or definition fingerprint creates a new finding. The administrative diagnostics
 surface may render, filter, acknowledge, or dismiss a finding, but those actions are not training
-labels and do not alter a configured policy. Diagnostic findings never notify residents directly.
+labels and do not alter a configured Reaction. Diagnostic findings never notify residents directly.
+Their validation, current-set publication and withdrawal do not wait for an
+artifact-adoption decision (§4.9); a concurrent operational signal or policy
+from the same model retains its own separate adoption gate.
 
 Each registered schema additionally fixes a positive `max_active_findings_per_subject`, its own
 core-defined eligibility/review gate, and a deterministic `selection_key` over only validated payload
@@ -2343,7 +3007,7 @@ resolved dynamically at runtime. The frozen core binding is:
 class ShadowPreviewBinding:
     producer_type_id: str
     producer_type_version: int
-    candidate_kind: str                 # e.g. "policy.template"
+    candidate_kind: str                 # e.g. "reaction.descriptor"
     candidate_kind_version: int         # core proposal-facet semantic contract
     preview_finding_schema_id: str
     preview_finding_schema_version: int
@@ -2355,11 +3019,11 @@ bound, eligibility gate and selection key under §6.1.1.
 
 | Producer `kind_id` | Producer version | Candidate kind | Candidate version | Preview finding schema |
 | --- | ---: | --- | ---: | --- |
-| `environmental_episode` | `1` | `policy.template` | `1` | `shadow_proposal_preview.policy_template.environmental.v1` |
-| `actuation_routine_pattern` | `1` | `policy.template` | `1` | `shadow_proposal_preview.policy_template.routine.v1` |
+| `environmental_episode` | `1` | `reaction.descriptor` | `1` | `shadow_proposal_preview.reaction_descriptor.environmental.v1` |
+| `actuation_routine_pattern` | `1` | `reaction.descriptor` | `1` | `shadow_proposal_preview.reaction_descriptor.routine.v1` |
 
 For `environmental_episode`, every initial active `relation_profile` uses the one environmental
-binding above. Its relation profile, policy-template id/version, subject, objective, canonical bundle,
+binding above. Its relation profile, Reaction-descriptor id/version, subject, objective, canonical bundle,
 parameters, required guards and `CanonicalEnvelope` remain validated candidate payload fields; none
 can choose a different preview schema. `actuation_routine_pattern` uses its binding whenever the
 administrator enables its optional shadow phase. Both preview finding keys derive from that same
@@ -2392,7 +3056,7 @@ The ordinary operational path is:
 `PatternLearner or ML finding -> family analyzer -> LearningProposalCandidate -> Layer-5 validation -> ReactionProposal -> admin review -> configured Reaction`
 
 An environmental learner is therefore a **policy learner**, never an instantaneous command source.
-It may propose a bounded semantic policy template, physical scope, action intent, typed parameters,
+It may propose a bounded semantic Reaction-descriptor configuration: physical scope, action intent, typed parameters,
 guard requirements, and validity for ventilation or solar shading; it cannot say "open this HA entity
 now", supply arbitrary live conditions, or evaluate that policy against current state itself. Once an
 administrator has approved the resulting configured Reaction, Layer 5 evaluates its declared trigger
@@ -2401,13 +3065,14 @@ windows. Layer 5 retains authority over proposal validation and actuation; Layer
 delivery. An approved policy may intentionally be notification-only before any separately approved
 automatic action is enabled.
 
-Policy templates are not the only representation of a relationship between events. A manually
-configured deterministic Reaction may express a typed event-condition-action (ECA) rule directly;
-a Layer-4 `SemanticResolver` may publish a derived state or occurrence that an ordinary Reaction consumes; and a
-calendar or timing entry may be the trigger for either. Policy templates are instead the only generic
-action-bearing representation that a Layer-3 learner may propose. This boundary lets a human-authored
-rule remain concise when its intended behavior is already known, while preventing a learned artifact
-from introducing an arbitrary predicate language or command path. It follows the established ECA
+`ReactionDescriptor` is the sole generic action-bearing representation of a relationship between
+events. A descriptor may expose `admin_direct` for an authenticated typed event-condition-action (ECA)
+configuration, or `learner_proposal` for the separate Layer-3 candidate -> review path; both compile
+and execute through the same Layer-5 contract. A Layer-4 `SemanticResolver` may publish a derived state
+or occurrence that a Reaction consumes, and a calendar or timing entry may be its trigger. Layer 3 may
+submit only a candidate for a compatible `learner_proposal` descriptor. This lets a human-authored rule
+remain concise when its intended behavior is already known, while preventing a learned artifact from
+introducing an arbitrary predicate language or command path. It follows the established ECA
 separation of trigger, condition and action in [Home Assistant](https://www.home-assistant.io/docs/automation/basics/)
 and [openHAB](https://www.openhab.org/docs/concepts/rules), without importing either platform's
 unbounded scripting surface into Heima.
@@ -2415,11 +3080,15 @@ unbounded scripting surface into Heima.
 ### 6.3 Typed egress contracts
 
 `InferenceSignal` is a transient, typed Layer-3-to-Layer-4 input, never a persistence format or a
-generic event bus. Its core-owned type identifies exactly one allowed semantic resolver and declares
-the value shape. Every instance carries its subject `Location`, learner/model and artifact identity,
+generic event bus. Its core-owned signal type declares the value shape; each frozen
+`IndirectAssistanceContract` identifies exactly one target resolver kind, claim-parameter tuple and
+set of legal scope kinds. Several contracts may share one signal type without sharing authority.
+Every instance carries its subject `Location`, learner/model and artifact identity,
 definition fingerprint, selected tier or model context where applicable, confidence/uncertainty,
 `evidence_through`, and an explicit expiry. It carries neither raw history/HA payload nor command
-intent. It is emitted only when its artifact is active, compatible, within its staleness limit, and
+intent. It is emitted only when its exact artifact is the current adopted
+revision for that registered signal consumer under §4.9, active, compatible,
+within its staleness limit, and
 its current bounded inputs pass the type's freshness rules; otherwise it is absent rather than
 fabricated as a low-quality signal.
 
@@ -2438,8 +3107,8 @@ class IndirectSemanticAssistSignal:
     confidence: float                 # finite [0, 1], interpreted only with confidence_kind
     confidence_kind: IndirectConfidenceKind
     validation_summary: IndirectValidationSummary
-    emitted_at: datetime
-    expires_at: datetime
+    emitted_at: EvidenceInstant
+    expires_at: EvidenceInstant
     artifact: ArtifactRef
     definition_fingerprint: str
     tier_id: str
@@ -2481,6 +3150,7 @@ AutomationSuppressionReason = Literal[
     "command_ownership_unavailable",
     "actuator_capability_unavailable",
     "actuator_state_unconfirmed",
+    "active_channel_unmanaged_after_restart",
     "cooldown_active",
     "action_guard_active",
 ]
@@ -2497,7 +3167,7 @@ class AvailabilitySuppressionOccurrence:
                                     # non-empty, distinct, ASCII-lexicographic order; current causes, or the
                                     # ended episode's causes on restore
     artifact: ArtifactRef | None                # required for an artifact-derived abstention
-    detected_at: datetime
+    detected_at: EvidenceInstant
 ```
 
 `reasons` is an unordered logical set represented by one canonical tuple. The frozen core owns the
@@ -2512,10 +3182,13 @@ The occurrence carries only its closed reason codes and bounded identity/context
 correlation; it cannot contain an arbitrary error string, an Actuator id, an HA entity id, or a raw
 guard result. The first five codes describe unavailable learning evidence or unsupported context. The
 remaining codes describe Layer-5 action admission: an active resident hold, absent command ownership,
-missing capability, unconfirmed physical state, dwell/cooldown, or one or more required
-safety/security/weather/privacy/quiet-hours guards. Administrative disablement and invalid
-authorization do not create an occurrence: an enabled resident-visible binding is a prerequisite for
-publication, while invalid authorization rejects staging rather than becoming a runtime suppression.
+missing capability, unconfirmed physical state, an active channel without verified
+post-restart management authority, dwell/cooldown, or one or more required
+safety/security/weather/privacy/quiet-hours guards. Administrative disablement,
+missing or revoked descriptor-required household consent, and invalid authorization
+do not create an occurrence: the first two are visible Layer-5 authority states,
+while invalid authorization rejects staging rather than becoming a runtime
+suppression. None is relabeled `action_guard_active`.
 
 An owner includes every applicable closed cause through that helper; it never chooses an arbitrary
 "primary" reason and thereby hides another real block. The canonical tuple is the episode identity for
@@ -2535,7 +3208,7 @@ At staging, Layer 6 owns the composition and atomic publication of one immutable
 and Layer 5 contribute only their own immutable staged declarations: a suppression owner declares its
 exact semantic owner/scope/subject key, while Layer 5 declares each configured automation's explicit
 binding, enabled state, and resident visibility. Layer 4 declares no policy or automation binding and
-never queries configured-policy state. Layer 6 validates the cross-generation references during this
+never queries ConfiguredReaction state. Layer 6 validates the cross-generation references during this
 slow composition phase; no Layer-3/Layer-4/Layer-5 runtime callback or policy query is created.
 
 An exact key
@@ -2564,6 +3237,21 @@ bindings recorded as notified and still active for the episode. It groups delive
 Layer-1 audit fact. Delivery configuration may choose channel and grouping duration, but may not turn
 repeated per-cycle diagnostics into resident-facing spam or suppress the first user-visible failed
 automation without an explicit higher-level policy decision.
+For `active_channel_unmanaged_after_restart`, the resident text states that the
+actuator is observed active, Heima has no usable current proof to manage it,
+and Heima will leave it as observed rather than assume responsibility for a
+later automatic stop. It assigns no actor to the observed state. A `restored`
+event states only that this specific block ended; it never asserts that
+Heima switched the actuator off.
+For this reason, "return to usable" means a fresh inactive observation or
+validated management proof under current authority. A changed initiating
+trigger alone cannot end an already published unmanaged-active episode.
+At each process start the Layer-6 tracker uses a fresh, non-reused run identity
+in this reason's notification key, together with the exact staged suppression
+key. Retries within one run retain the same key; a later restart creates a
+new key and may warn again even if the channel, Reaction and reason are
+unchanged. This run identity is transient Layer-6 delivery metadata, not a
+new HouseFact, channel-state write or Layer-5 authority input.
 
 **Publication-generation reconciliation is a slow, serialized Layer-6 operation.** The tracker
 serializes occurrence handling and an atomic publication-generation swap, so every occurrence is
@@ -2602,9 +3290,43 @@ evidence/finding identity, model/artifact and data-span identity, deduplication 
 confidence/uncertainty, validity interval, and only the typed semantic parameters permitted by that
 exact candidate contract. It cannot contain an `ApplyStep`, a raw HA entity/service target, a final
 Reaction configuration, review status, or approval decision.
-It is transient: if Layer 5 accepts the candidate under its actuator/reaction/template contracts, it
-creates and persists the `ReactionProposal`; if it rejects it, the candidate remains only a Layer-3
+When a candidate depends on more than its primary artifact, it also carries
+the exact immutable `ArtifactRef` of each supplemental source with a closed,
+candidate-version-declared `role_id`. The tuple is canonically ordered with
+unique roles and maps to Layer 5 `ProposalSupportingArtifact` evidence (§4.1),
+not to semantic descriptor parameters or the deduplication fingerprint.
+Layer 3 cannot attach an arbitrary model merely by naming a role: Layer 5
+checks each supporting artifact against the staged binding and current
+validation/shadow state before admission and again before acceptance.
+It is transient: if Layer 5 accepts the candidate under its registered
+candidate and Reaction contracts, it persists a `ReactionProposal` for a
+new configuration or a `ReactionArtifactAdoptionProposal` for one existing
+Reaction role; if it rejects it, the candidate remains only a Layer-3
 diagnostic reason.
+
+The second closed Initial-V3 candidate payload is:
+
+```python
+@dataclass(frozen=True)
+class ArtifactAdoptionCandidate:
+    reaction_id: str
+    configuration_generation_id: str
+    role_id: str
+    artifact: ArtifactRef
+```
+
+It uses outer `candidate_kind="reaction.artifact_adoption"` and
+`candidate_kind_version=1`. The generic `LearningProposalCandidate` carries
+its exact validation/shadow evidence, confidence, uncertainty, validity
+interval and data span. For this kind, its `finding_id` is the stable identity
+of the immutable artifact assessment from that evidence, not a published
+`DiagnosticFinding`; Layer 5 resolves it against the same `ArtifactRef` and
+rejects an assessment for a different revision. The deduplication
+fingerprint covers the outer kind/version and exactly the four payload
+fields, including the full artifact revision identity. There are no
+descriptor parameters or action members, and the candidate cannot make
+itself eligible by choosing a role or assessment identity. Layer 5's current
+Reaction/role registry and Layer-3 quality/shadow records remain authoritative.
 
 `ContextHypothesisCandidate` is the separate non-action-bearing diagnostic hand-off described in
 §4.4.7. It has no V3 instance; its future closed payload is:
@@ -2615,10 +3337,10 @@ class ContextHypothesisCandidate:
     hypothesis_kind: SemanticValueId  # active only in a future reviewed core vocabulary
     subject: Location                 # exactly the staged casa scope
     confidence: float                 # finite [0, 1]
-    uncertainty: UncertaintySummary
+    uncertainty: CanonicalJsonObject  # future registered hypothesis schema; no Initial-V3 instance
     evidence_span: TimeRange
-    operating_envelope: OperatingEnvelopeRef
-    expires_at: datetime
+    operating_envelope: CanonicalEnvelope
+    expires_at: EvidenceInstant
     artifact: ArtifactRef
     definition_fingerprint: str
     finding_id: str
@@ -2626,96 +3348,200 @@ class ContextHypothesisCandidate:
 
 It is immutable and deduplicated by the staged hypothesis kind, subject, artifact/finding identity,
 and evidence span. `expires_at` is bounded by the model's staleness/freshness rules and is never a
-state-expiry instruction. A future authenticated administrative-review contract may persist a
+state-expiry instruction. A future core hypothesis schema must validate the
+bounded `uncertainty` object before this currently non-instantiable candidate
+can be published; `CanonicalEnvelope` already supplies its operating-cell
+contract. A future authenticated administrative-review contract may persist a
 confirmation, rejection, or dismissal with its own actor/time/audit fields; Layer 3 cannot add those
 fields, decide a disposition, or generate resident-facing text. This distinct path prevents a
 non-actionable question from being accidentally admitted through Layer 5's action-policy workflow.
 
-Layer 3 therefore never constructs a `ReactionProposal`, sends a notification, decides approval, or
+Layer 3 therefore never constructs a `ReactionProposal` or
+`ReactionArtifactAdoptionProposal`, sends a notification, decides approval, or
 applies a resulting configuration. Except for the operational availability occurrences in §6.3.1,
 Layer 6 may notify an administrator and Layer 8 may present a review surface only after Layer 5 has
 created the reviewable proposal. The future administrative-review surface may additionally render a
 `ContextHypothesisCandidate`, but its decision reaches a future semantic resolver only through that separate
 audited contract; neither path bypasses Layer-5 action review.
 
-### 6.4 PolicyTemplateCandidate
+### 6.4 ReactionDescriptorCandidate
 
-`PolicyTemplateCandidate` is the closed payload for the outer
-`(candidate_kind="policy.template", candidate_kind_version=1)` contract supplied by Layer 5's
+`ReactionDescriptorCandidate` is the closed payload for the outer
+`(candidate_kind="reaction.descriptor", candidate_kind_version=1)` contract supplied by Layer 5's
 read-only proposal facet. The generic `LearningProposalCandidate` carries that outer identity together
 with its artifact/evidence/data-span identity, confidence, validity interval, and deduplication
-fingerprint; this payload carries only:
+fingerprint. The outer version is the JSON integer `1`; `relation_profile.version` in this payload
+is the exact registered JSON string `"1"` for an Initial-V3 profile. Layer 5 §3/§3.1 owns both
+wire encodings and rejects numeric/string coercion across them. This payload carries only:
 
 ```python
 @dataclass(frozen=True)
-class ActuationMemberCandidate:
-    actuator_id: str                  # one compatible registered endpoint owned by subject
-    controlled_channel: str           # one registered logical capability/channel
-    opening_id: str | None            # required, optional, or forbidden for this member
-    action_intent: str                # closed template-owned semantic intent
-    minimum_practical_delta: float    # finite > 0, in the profile outcome's canonical unit
-    semantic_parameters: CanonicalJsonObject
-    predicted_effect: TypedEffectSummary
+class NumericOutcomeRequirement:
+    minimum_practical_delta: float    # finite > 0, in the registered outcome's canonical unit
 
 @dataclass(frozen=True)
-class PolicyTemplateCandidate:
-    policy_template_id: str
-    policy_template_version: str
-    subject: Location                 # exactly one room
-    relation_profile: str             # closed temporal-input-and-guard profile of selected template
+class ActuationMemberCandidate:
+    actuator_id: str                  # one compatible registered endpoint owned by subject
+    controlled_channel: str           # one registered Layer-2 logical channel of that endpoint
+    opening_id: str | None            # required, optional, or forbidden for this member
+    action_intent: str                # closed ReactionDescriptor-owned semantic intent
+    semantic_parameters: CanonicalJsonObject
+    numeric_outcome_requirement: NumericOutcomeRequirement | None
+
+@dataclass(frozen=True)
+class ReactionDescriptorCandidate:
+    reaction_descriptor_id: str
+    reaction_descriptor_version: str
+    subject: Location                 # exact scope accepted by the selected descriptor
+    relation_profile: RelationProfileRef  # exact Layer-5 shared evidence/policy contract
     objective_id: str                 # closed profile-owned objective; never a resident-authored label
+    descriptor_parameters: CanonicalJsonObject
+                                     # root-level closed schema selected by this descriptor/version
     actuation_bundle: tuple[ActuationMemberCandidate, ...]
-                                      # canonical order; non-empty except for a template explicitly
+                                      # canonical order; non-empty except for a descriptor explicitly
                                       # declared notification_only by Layer 5
-    required_guard_capabilities: frozenset[str]
+    required_guard_capabilities: frozenset[ReactionGuardCapabilityRef]
     operating_envelope: CanonicalEnvelope
 ```
 
-`actuation_bundle` is one policy-level, finite, ordered desired state composition, not a raw HA
+`actuation_bundle` is one Reaction-level, finite, ordered desired state composition, not a raw HA
 service sequence and not a second action protocol. Every member ultimately maps to exactly one
 Layer-5 `ApplyStep`; its canonical order is the requested execution order. The core-owned
-policy-template registry defines the legal member intents, objective/member-intent pairing, member
-count bound, duplicate-channel rule, opening/Actuator relation, minimum-practical-delta unit/range,
-parameter schema/bounds, guard requirements, predicted-effect shape, and Layer-5 translation for each
-`(policy_template_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
+`ReactionDescriptorRegistry` defines the legal member intents, objective/member-intent pairing, member
+count bound, duplicate-channel rule, opening/Actuator relation, numeric-outcome requirement applicability
+and bounds, parameter schema/bounds, guard requirements, exact registered
+profile-output compatibility, and Layer-5 translation for each
+`(reaction_descriptor_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
 `open_for_exchange`, `close_to_retain`, and `activate_extraction`. Notification content belongs to the
-subsequent Layer-5/6 template, never to learner-provided text. An empty bundle is legal only for a
-template explicitly declared `notification_only`; a template requiring an endpoint rejects it during
+subsequent Layer-5/6 notification template, never to learner-provided text. An empty bundle is legal only for a
+descriptor explicitly declared `notification_only`; a descriptor requiring an endpoint rejects it during
 Layer-5 staging.
 
-Each member's `semantic_parameters` first passes §4.2's `validate_canonical_json_object`; the
-registered template then validates the resulting immutable object against that member intent's closed
-schema and bounds. The registry separately validates the closed `objective_id`, each permitted member
-intent, and each finite positive `minimum_practical_delta` in the relation profile's outcome unit. A
+Only a member whose registered profile measures a numeric response to that
+member carries `NumericOutcomeRequirement`. Initial environmental-response
+members require it; its positive threshold is stable serving semantics and is
+checked in the profile outcome's canonical unit. Comfort-trajectory and routine
+members require `None`: a setpoint-step bucket is an action bound, not a
+minimum measured outcome, and routine frequency describes the whole bundle.
+A descriptor/profile pair that requires a numeric outcome rejects `None`;
+one that has no per-member numeric outcome rejects a fabricated requirement.
+
+Measured effects are refreshable evidence in the exact typed primary artifact
+referenced by `LearningProposalCandidate` and `ProposalEvidenceRevision`, not
+immutable member fields. Environmental response uses its registered
+numeric-interval output; comfort recovery uses the exact
+`ThermalResponseParameter` and its duration bounds; the routine profile
+must use the registered `routine.bundle_frequency.v1` whole-bundle/context
+output with conditional and baseline probabilities. The exact profile
+schema and validator check that output against the candidate and its
+review evidence, never a learner-selected member payload.
+The routine's separate support, calibration and lift gates remain required
+before proposal eligibility.
+
+`descriptor_parameters` and each member's `semantic_parameters` first pass §4.2's
+`validate_canonical_json_object`; the registered descriptor then validates each resulting immutable
+object against its closed root or member-intent schema and bounds. The registry separately validates
+the closed `objective_id`, each permitted member intent, and the presence or absence
+of each `numeric_outcome_requirement`; where required, it validates the finite
+positive `minimum_practical_delta` in the relation profile's outcome unit. A
 bundle may not repeat the same `(actuator_id, controlled_channel)`: distinct channels of one physical
 endpoint remain legal, but contradictory commands to one channel are not. Neither path admits a raw
 Home Assistant value, executable object, or an untyped extension field.
 
-The candidate concerns exactly one room-scoped policy, while its bundle may coordinate several
-registered endpoints in that room. A member that acts on an opening requires an exterior Layer-1
-Opening owned by `subject` and an endpoint whose `opening_id` matches it. A member that acts on a room
-device, such as an extraction fan or light, forbids `opening_id` and requires endpoint ownership that
-matches `subject`. It cannot smuggle a raw service, entity selector, nested policy call, unbounded
-member list, or arbitrary action graph through `semantic_parameters`. Layer 3 validates only the
-template/profile and closed payload shape available through its read-only proposal facet. Layer 5
-staging alone verifies every bound opening/topology and Actuator relation before creating a reviewable
-proposal or activating a configured policy.
+Every registered descriptor declares a root-parameter schema. A descriptor with no root-level
+parameters requires the canonical empty object; it cannot treat a missing field or arbitrary object as
+equivalent.
+Where a descriptor version permits learned timing, its closed root schema may
+carry the canonical data projection of the stable `ReactionTimingModelBinding`
+that Layer 5 §4.2 validates.
+That binding names the learning definition, sample/result contracts, exact
+typed state, qualifying values and authorized window; the condition state
+and qualifying values must exactly match the
+`FutureStateFractionOutcome` source and set. It never contains an `ArtifactRef`, analysis
+revision, predicted `q`, admin approval or live timer. A candidate that needs
+a supplemental timing artifact must identify its exact supporting revision
+in typed evidence separate from the semantic payload before Layer 5 can
+approve it. Layer 5 §4.1 owns that multi-artifact evidence shape, and
+§4.2 owns its adoption transition and later-revision path;
+an untyped field in `descriptor_parameters` or a redacted snapshot cannot
+stand in for it.
 
-Its deduplication fingerprint is the canonical combination of template id/version, subject,
-relation profile, objective id, canonical ordered member identities/channels/opening relations/intents,
-minimum practical deltas, semantic parameters and predicted-effect shapes, required guards, and
-operating envelope.
-It deliberately excludes artifact version, evidence identity, confidence, and data span: compatible
+The candidate concerns exactly one descriptor-defined scope. The initial environmental and routine
+descriptors remain room-scoped, while `environment.planned_comfort_trajectory` accepts only the staged
+`ConditioningScope.location` (`room` or `casa`). A member that acts on an opening requires an exterior
+Layer-1 Opening owned by a room subject and an endpoint whose `opening_id` matches it. A member that
+acts on a room device, such as an extraction fan or light, forbids `opening_id` and requires endpoint
+ownership that matches its room subject. The HVAC trajectory member instead requires the one endpoint
+declared by its compatible `HvacTrajectoryBinding`; it has no `opening_id` and cannot derive an endpoint
+from the scope. It cannot smuggle a raw service, entity selector, nested policy call, unbounded member
+list, or arbitrary action graph through `descriptor_parameters` or `semantic_parameters`. Layer 3 validates only the
+descriptor/profile and closed payload shape available through its read-only proposal facet. Layer 5
+staging alone verifies every bound opening/topology and Actuator relation before creating a reviewable
+proposal or activating a configured Reaction.
+
+Its deduplication fingerprint is the canonical combination of Reaction-descriptor id/version, subject,
+relation profile, objective id, descriptor parameters, canonical ordered member identities/channels/opening relations/intents,
+applicable numeric-outcome requirements, semantic parameters, required guards, and
+the operating envelope's `envelope_semantic_projection` (§6.5).
+It deliberately excludes measured artifact effects, artifact version, evidence identity,
+confidence, and data span: compatible
 retraining refreshes evidence for the same review item rather than creating duplicate proposals. Any
 change to the included semantic configuration creates a new candidate and requires the ordinary
 review/adoption rules.
+
+#### 6.4.1 `environment.planned_comfort_trajectory` candidate translation
+
+Layer 3 translates one eligible exact-cell `ThermalResponseParameter` into exactly one candidate for
+one `(conditioning_scope_id, mode)`. It may do so only against the exact staged
+`ComfortTrajectoryPrerequisiteGeneration` with the same scope and a declared endpoint for that mode.
+The candidate's `subject` is that generation's `ConditioningScope.location`; its profile is exactly
+`hvac_thermal_response@1`; its closed objective is `planned_comfort_reachability`; and it has exactly
+one `ActuationMemberCandidate` with the bound endpoint, no `opening_id`, and intent
+`follow_comfort_trajectory`.
+
+Its root `descriptor_parameters` are exactly:
+
+```json
+{
+  "prerequisite_generation_id": "<immutable generation id>",
+  "prerequisite_definition_fingerprint": "<canonical generation fingerprint>"
+}
+```
+
+Its member `semantic_parameters` are exactly `{ "mode": "heating" }` or
+`{ "mode": "cooling" }`, and its `numeric_outcome_requirement` is `None`.
+The selected parameter's `recovery_setpoint_step_min_c` is an artifact-backed
+action bound; its recovery-duration fields are artifact-backed reachability
+evidence for the exact context, thermal-delta and setpoint-step buckets.
+Neither is copied into immutable candidate member semantics. The candidate's
+required guards are the exact descriptor-required guards plus the generation's required guard
+capabilities, in canonical order; it cannot add, omit, weaken, or rename one. Its
+`CanonicalEnvelope` is the parameter's supported exact context cell and declared bucket bounds, never
+a calendar interval, a target temperature, or a command schedule.
+
+The generic `LearningProposalCandidate` and its resulting `ProposalEvidenceRevision` retain the
+selected parameter's `artifact_ref`, evidence references, validity interval, confidence and uncertainty;
+the revision's bounded redacted snapshot additionally records its canonical parameter fingerprint and
+scope/mode/cell/bucket identities. These are evidence, not descriptor configuration. Layer 5 requires
+them to match the candidate's scope, mode, profile and envelope at admission and review. A new artifact
+may refresh one pending proposal only when those semantic fields, including the prerequisite generation
+pair, mode, step bucket and envelope, are unchanged; otherwise Layer 3 constructs a new candidate for
+ordinary review. No translation may copy a bound, return target, calendar plan, actuator mapping,
+adapter constraint, consent state, absolute setpoint, arrival prediction, or `ApplyStep` into the
+candidate.
 
 ### 6.5 CanonicalEnvelope
 
 `CanonicalEnvelope` is a finite, joint coverage contract, not a collection of independent feature
 ranges. Independent ranges could admit an unobserved combination simply because each individual value
-was seen elsewhere. A core-owned policy template declares a bounded ordered set of admissible axes and
+was seen elsewhere. The already-selected core-owned Reaction descriptor declares a bounded ordered set of admissible axes and
 their versioned partitions; the learner may publish only supported, calibrated cells over those axes.
+For an `admin_direct` generation with no relation profile, the descriptor's
+versioned validator and compiler select only its exact
+`permitted_direct_envelope` axes and permitted joint cells, which may be a
+zero-axis subset of the descriptor's wider permitted axes used by a learned
+profile. This is the same envelope type and exact-cell runtime lookup;
+no Layer-3 artifact or statistical support is implied by direct authoring.
 
 ```python
 @dataclass(frozen=True)
@@ -2727,61 +3553,114 @@ class EnvelopeAxis:
 @dataclass(frozen=True)
 class CoverageCell:
     axis_values: tuple[BucketValue, ...]  # canonical axis order
-    support: int
-    calibrated: bool
+    support: int | None
+    calibrated: bool | None
 
 @dataclass(frozen=True)
 class CanonicalEnvelope:
-    template_id: str
-    template_version: str
-    profile: str
     axes: tuple[EnvelopeAxis, ...]
     supported_cells: frozenset[CoverageCell]
 ```
 
-At policy evaluation, Layer 5 discretizes the small declared set of current facts and resolved semantic
+`supported_cells` contains at most one cell per exact canonical `axis_values`
+tuple, with length and value kinds matching `axes`; every included cell is
+admitted by the selected descriptor/profile contract. For a
+`learner_proposal` cell, `support` is a positive measured count and
+`calibrated=True` is required; unsupported or uncalibrated cells remain
+artifact/review evidence outside the policy envelope. For an `admin_direct`
+cell, both fields are exactly `None`: admission comes from the immutable
+descriptor version and validated administrator configuration, never from
+fabricated samples or calibration. A mixed pair is invalid for either origin.
+An `admin_direct` envelope with no context axes has exactly one cell with
+`axis_values=()`, `support=None`, `calibrated=None`; the empty joint key
+matches every valid current context but does not override temporal,
+calendar, guard, authority or action-admission checks. The pure
+`envelope_semantic_projection` is the canonical ordered `axes` tuple plus
+the set of included `axis_values` tuples ordered by their RFC-8785 JSON
+UTF-8 bytes, not by Python value comparison. It excludes `support` and
+`calibrated` and is the only envelope component used in candidate semantic
+deduplication and approved-envelope subset checks. A changed axis/partition
+or added/removed cell key changes that projection; a compatible support
+refresh for the same cells does not. The runtime plan builds an immutable
+index keyed by `axis_values`, so lookup uses the current cell key rather than
+constructing a `CoverageCell` with unknown evidence fields.
+
+At Reaction evaluation, Layer 5 discretizes the small declared set of current facts and resolved semantic
 outputs from its immutable `DecisionSnapshot`, then checks the exact joint cell: O(d) to construct its
 key for d bounded axes, then O(1) membership. It never searches for a nearest value or substitutes a
 partial cell. A missing, stale, invalid, unpartitionable, or unsupported input makes the policy abstain
-with its diagnostic reason. The template and resource envelope bound both axes and cell count,
+with its diagnostic reason. The descriptor and resource envelope bound both axes and cell count,
 preventing a combinatorial coverage table. Layer 4 may provide a typed current semantic claim as one
-declared axis input, but it neither reads a policy template nor evaluates its envelope.
+declared axis input, but it neither reads a Reaction descriptor nor evaluates its envelope.
+Each descriptor-version axis names a typed current slot and an exact
+core-owned versioned partition whose pure mapping is total for valid values
+and has a finite bucket vocabulary. Staging resolves the slot, input
+type/unit, partition version, canonical axis order, cell keys and finite
+axis/cell limits; an administrator may select only a subset of
+descriptor-permitted direct cells when that version explicitly allows it.
+The direct registration's axes are fixed by the descriptor version; an
+administrator cannot remove a required direct axis. A direct zero-axis
+entry has only the empty-key cell and is legal only when the descriptor's
+typed trigger, conditions and guard contract already constrain the action.
+The learned path retains its exact supported cells and evidence metadata.
+An absent, stale or unpartitionable live input still abstains. Changing an
+axis or partition's meaning requires a new descriptor version and ordinary
+configuration revalidation; it cannot silently widen a current generation.
 
 `environment.solar_shading` permits incident-solar-exposure band, indoor/outdoor-temperature bands,
 and observed-cover-state, with radiation, illuminance, HVAC, and presence only where declared by the
 profile. `environment.external_exchange` permits indoor/outdoor-temperature-delta band, observed
 opening state, and either CO2 or humidity-ratio delta according to purpose, with HVAC and
-outdoor-air-quality only where declared. `environment.bathroom_extract` permits humidity-rise band,
-humidity level band, current occupancy, and observed fan state. Every registered template permits
-only the axes declared by its `relation_profile`; its validator rejects every other axis.
+outdoor-air-quality only where declared. `environment.air_extraction` permits room humidity-rise,
+humidity-rate and humidity-level bands, optionally declared current room occupancy, and observed
+fan state; no room-kind or bathroom label is an axis. Its trigger input is typed relative humidity;
+the profile's separate humidity-ratio outcome is still subject to CA4-12 registration.
+Every registered descriptor permits
+only its version-declared axes. For a `learner_proposal`, the selected
+`relation_profile` may further restrict them; its validator rejects every
+other axis. An `admin_direct` generation has no relation profile and uses
+the descriptor declaration alone.
 
 For `bounded_adaptive` adoption, a later envelope must be a subset of the administrator-approved
-envelope after canonical partition/version equality is verified. Removing cells is compatible;
+envelope by cell keys after canonical partition/version equality is verified.
+Support and calibration metadata do not enter the subset relation. Removing cells is compatible;
 adding a cell authorizes behavior in a new context and therefore creates an incompatible revision for
 ordinary review. This applies independently of an artifact's freshness or confidence.
 
-### 6.6 Policy-template hand-off
+### 6.6 Reaction-descriptor hand-off
 
-`PolicyTemplateRegistry`, `PolicyEvaluationPlan`, configured-policy persistence, evaluation, action
+`ReactionDescriptorRegistry`, `ReactionEvaluationPlan`, configured-Reaction persistence, evaluation, action
 admissibility and `ReactionProposal` translation are Layer-5 contracts, specified only in
 `layer5_action_reactions_spec.md`. Layer 3 receives a read-only proposal facet during its own staging:
-it validates that the selected `(policy_template_id, policy_template_version)`, `relation_profile`,
-objective/member-intent pairing, bounded ordered bundle, member minimum practical deltas, scope,
-parameter shape, required guards, envelope and predicted-effect shapes are legal for a candidate. It
-never compiles a plan, evaluates current state, resolves an actuator, or contains a template callable.
+it validates that the selected `(reaction_descriptor_id, reaction_descriptor_version)`, `relation_profile`,
+objective/member-intent pairing, bounded ordered bundle, applicable member numeric-outcome
+requirements, scope, parameter shape, required guards, envelope and exact
+profile-registered artifact output are legal for a candidate. It
+never compiles a plan, evaluates current state, resolves an actuator, or contains a descriptor callable.
+
+This read-only validation is advisory preflight only: it can prevent Layer 3 from emitting a candidate
+that is already incompatible with the generation it observed, but it neither reserves that generation
+nor authorizes persistence, review, or action. Layer 3 cannot treat a successful preflight result as a
+cached authorization. Layer 5 is the sole authority to validate and persist a `ReactionProposal`, and
+it repeats authoritative validation when an administrator accepts it. A descriptor, profile, topology,
+Actuator, guard, configuration generation, or canonical fingerprint that changes between those moments
+is resolved by Layer 5 under its revalidation rules; Layer 3 never reinterprets a candidate to bridge
+the mismatch.
 
 `environment.*`, `lighting.*`, `security.*`, and future namespaces are descriptors of the one Layer-5
-policy-template mechanism. They do not select a distinct Layer-3 analyzer, policy engine, persistence
+Reaction-descriptor mechanism. They do not select a distinct Layer-3 analyzer, policy engine, persistence
 path or action protocol. Layer 3 may estimate only values declared by the descriptor, such as a
 threshold, window, bounded duration, envelope or expected effect. A deterministic policy can use the
 same descriptor without any learner; Layer 3 is useful only where historical evidence must estimate
 those declared values.
 
-The candidate deduplication fingerprint remains the canonical combination of template/version,
-subject, ordered member identities/channels/opening relations/intents/deltas/parameters/effect shapes,
-relation profile, objective id, required guards and operating envelope. It excludes artifact version,
+The candidate deduplication fingerprint is the canonical combination of Reaction-descriptor id/version,
+subject, relation profile, objective id, root `descriptor_parameters`, ordered member
+identities/channels/opening relations/intents, applicable `numeric_outcome_requirement` values,
+member `semantic_parameters`, required guards and the operating envelope's
+`envelope_semantic_projection`. It excludes measured artifact effects, artifact version,
 evidence identity, confidence and data span so compatible retraining refreshes evidence for one review
-item. An incompatible template version is handled by Layer 5's selective revalidation, never
+item. An incompatible Reaction-descriptor version is handled by Layer 5's selective revalidation, never
 reinterpreted by Layer 3.
 
 ## 7. V2-derived learning families
@@ -2807,10 +3686,11 @@ or an implicit schedule.
 V2 `presence_preheat` is explicitly not ported. It learned a typical whole-house arrival time from
 rare `away -> present` transitions and coupled that estimate to arbitrary HA scene/script execution.
 This is structurally inapplicable to homes that are often occupied and cannot determine the correct
-conditioning lead time from arrival timing alone. Its V3 successor, if later justified, is the unified
-Layer-5 `environment.planned_comfort_trajectory` descriptor described in §8: it covers both heating
-and cooling and consumes observed departure/return episodes, an explicit calendar-plan binding, and a
-validated thermal response rather than preserving a heating-only arrival heuristic.
+conditioning lead time from arrival timing alone. Its V3 successor is the unified evidence-gated
+Layer-5 `environment.planned_comfort_trajectory` descriptor described in Layer 5 §7.1: it covers both heating
+and cooling and combines a current stabilized-away active planned absence, the descriptor's
+`departure`/`return` lifecycle handling, and a validated thermal response rather than preserving a
+heating-only arrival heuristic.
 
 V2 `heating_preference` is explicitly not ported as an initial V3 learner. It grouped observed
 manual setpoints by house state and emitted a second actuator-commanding reaction, so it both treated
@@ -2819,7 +3699,7 @@ same endpoint. Physical thermal response remains the separate environmental-resp
 If later justified, `ComfortSetpointPreferenceModel` is a proposal-only estimator of a bounded
 preference parameter for one explicit `conditioning_scope` and one declared conditioning `mode`
 (`heating` or `cooling`); it is never an Actuator command, an `InferenceSignal`, or a selector of an
-HA entity. The future Layer-5 HVAC descriptor owns the explicit per-mode endpoint binding, so the
+HA entity. The registered Layer-5 HVAC descriptor owns the explicit per-mode endpoint binding, so the
 same model contract supports a heat pump using one endpoint for both modes and an installation with
 separate heating and cooling endpoints. It also owns auto-mode deadband and every compatibility or
 application check. This prevents Layer 3 from silently assuming that a heating setpoint and a cooling
@@ -2828,40 +3708,39 @@ setpoint have the same actuator, scope, safety limit, or operating semantics.
 V2 `heating_eco` is explicitly not ported as a separate V3 learner. It inferred an away-time heating
 target from Heima-authored events, fell back to a fixed temperature when those events were absent,
 and applied that target through an independent reaction. V3 absorbs its potentially useful physical
-question into the `hvac_thermal_response` relation profile: any later accepted absence setback/setup
-calibration is a bounded parameter of the one future HVAC descriptor, separately for heating and
-cooling, never an autonomous reaction or a fixed fallback target.
+question into the `hvac_thermal_response` relation profile as bounded reachability evidence, separately
+for heating and cooling. Layer 5 alone combines that evidence with staged administrative bounds; it is
+never an autonomous reaction, a learned target, or a fixed fallback target.
 
 V2 `composite_room_assist` is explicitly not ported as a V3 learning family. Its historical catalog
 mixed unrelated room concerns: humidity/occupancy ventilation, CO2 ventilation, reactive cooling,
 occupancy/lux lighting, and vacancy lighting off. V3 decomposes these without a special engine:
 
-- a typed environmental policy template expresses current humidity, CO2, temperature, occupancy and
-  rate-of-change conditions together with its required physical/environmental guards;
-- `ActuationRoutinePatternModel-v1` may propose that same registered template only when it observes a
-  repeated typed trigger/context followed by a bounded resident-control `ActuationBundle`;
+- typed environmental Reaction descriptors express declared humidity level, change or rate,
+  CO2, temperature and, where required, occupancy conditions with their applicable
+  physical/environmental guards; `environment.air_extraction` is room-neutral and
+  does not require occupancy unless its configuration declares it;
+- `ActuationRoutinePatternModel-v1` may propose only its registered
+  `routine.actuation_bundle` descriptor when it observes a repeated typed
+  trigger/context followed by a bounded resident-control `ActuationBundle`;
 - lighting uses the existing routine and room-occupancy survival contracts; reactive cooling uses the
-  environmental response/policy path; planned anticipatory heating/cooling belongs only to future
+  environmental response/policy path; planned anticipatory heating/cooling belongs only to evidence-gated
   `environment.planned_comfort_trajectory`.
 
-Historical recurrence never substitutes for current guards. A ventilation/cooling candidate that lacks
-required outdoor-air-quality, weather, opening-security, manual-hold, confirmed-physical-state or
-other descriptor-declared evidence is unavailable or notification-only under the existing policy
-contract, even when a similar V2 composite pattern was frequently observed. This keeps source control,
+Historical recurrence never substitutes for current guards. A ventilation/cooling candidate without a required outdoor-air-quality, weather, opening-security
+or other descriptor-declared guard binding cannot stage. If a staged guard lacks usable
+current evidence, automatic action abstains under the existing policy contract. A current hold
+or unconfirmed physical state is instead checked by Layer 5 as a common admission gate on
+every affected Actuator channel; neither is a learner-provided guard capability or profile
+binding, even when a similar V2 composite pattern was frequently observed. This keeps source control,
 outdoor conditions and safety separate from behavioral regularity.
 
-V2 `security_presence_simulation` is not ported as a V3 learning family. V3 may later provide the
-administrator-authored `security.presence_simulation` policy template as an optional, bounded
-vacation-mode deterrence aid: it may make an empty home appear less obviously vacant, but is never
-represented as a security guarantee or substitute for locks, alarm, or other physical protections.
-Its initial plan is core-generated from staged windows and bounded variation, not learned behavior.
-It requires a future staged Layer-5 `CalendarPlanBinding` for a planned absence, confirmed current
-absence, explicit administrative enablement and resident consent, and a descriptor-declared safe
-allowlist. A calendar plan is policy context, never a trusted Layer-4 semantic claim or proof that the
-home is empty. The initial allowlist is limited to
-interior lighting endpoints; it excludes locks, alarms, openings/covers, HVAC, appliances, arbitrary
-HA scripts/scenes, and every endpoint not explicitly registered as simulation-safe. A current physical
-presence, resident manual control, or applicable hold suppresses the affected plan member immediately.
+V2 `security_presence_simulation` is not ported as a V3 learning family. Initial V3 instead registers
+the administrator-authored `security.presence_simulation` Layer-5 descriptor: a bounded deterrence aid,
+never a security guarantee or substitute for locks, alarms or physical protection. Its core-generated
+plan uses staged windows and bounded variation, not learned behavior. Its complete calendar, presence,
+endpoint, authority, scheduler, privacy and audit contract is owned by Layer 5. Layer 3 neither
+produces a candidate nor validates an operational profile for this initial path.
 
 A future `TemporalActuationProfileModel` may personalize that policy only after its independent
 contract is defined in §8. It is a generic core temporal-profile model; security-presence simulation is
@@ -2902,16 +3781,16 @@ otherwise and every cited cross-layer dependency is complete.
    be introduced without direct declared multi-occupant-count evidence and must not be inferred from
    ordinary binary-presence or routine observations.
 
-3. `environment.planned_comfort_trajectory` activation contract. This is a future Layer-5 descriptor,
-   not a Layer-3 learner family. It remains unavailable until the existing `hvac_thermal_response`
-   relation profile has a compatible validated artifact for the current indoor/outdoor, solar and HVAC
-   context; its explicit `CalendarPlanBinding` has category `planned_absence`; and its Layer-5
-   comfort/safety envelope, observed `departure`/`return` guards, compatible mode/endpoint mapping,
-   energy/cost metrics where measured, and shadow/review gates are complete. The descriptor evaluates
-   heating and cooling symmetrically under one policy contract while allowing their physical response,
-   targets and endpoints to differ. The calendar end supplies an expected return boundary, not an
-   inferred arrival forecast or a label for training data. Layer 3 supplies only the reviewed bounded
-   response parameter; it never proposes a second preconditioning policy or issues a command.
+3. `environment.planned_comfort_trajectory` is an Initial-V3 evidence-gated Layer-5 descriptor, not
+   a Layer-3 learner family. Its complete Layer-5 contract is already defined. It remains dormant for
+   an individual conditioning scope until a compatible validated `hvac_thermal_response` artifact
+   matches the current context and a compatible immutable staged prerequisite generation exists. Consent
+   is instead a gate only for later automatic action; proposal, review and notification-only shadow do
+   not require it. Heating and cooling share one descriptor contract while their physical response,
+   targets and endpoints remain independent. The calendar end supplies an expected return
+   boundary, not an inferred arrival forecast or a label for training data. Layer 3 supplies only the
+   reviewed bounded response parameter; it never proposes a second preconditioning policy or issues a
+   command.
 
 4. `TemporalActuationProfileModel`, a future generic core proposal-only learner for a bounded ordered
    distribution of future profile members and their relative timing/duration under a declared
@@ -2927,13 +3806,13 @@ otherwise and every cited cross-layer dependency is complete.
    jitter bounds, current guard evaluation, manual-control/hold suppression, no-catch-up behavior,
    privacy classification, and plausibility/operational-safety evaluation.
 
-   `security.presence_simulation` is one future constrained consumer of this generic model. Its
-   initial administrator-authored template uses only a core-generated bounded temporal plan over
-   explicitly simulation-safe interior-light Actuators and cannot require any learned profile. Its
-   later personalized artifact and generated plans remain security-sensitive local administrator data,
-   require the existing `CalendarPlanBinding(category="planned_absence")`, observed current absence,
-   consent gates and safe-endpoint contract, and never claim measured burglary prevention. A future
-   non-security consumer, such as a reviewed lighting temporal-plan descriptor,
+   `security.presence_simulation` is an Initial-V3 administrator-authored constrained consumer, but
+   requires no learned profile: Layer 5 owns its core-generated bounded plan over explicitly selected
+   interior-light Actuators. A later personalized artifact and generated plans remain
+   security-sensitive local administrator data, require the existing
+   `CalendarPlanBinding(category="planned_absence")`, observed current absence, consent gates and
+   endpoint contract, and never claim measured burglary prevention. A future non-security consumer,
+   such as a reviewed lighting temporal-plan descriptor,
    must satisfy the same common temporal model contract but declares its own scope, guards and privacy
    class; it is not implicitly enabled by the security use case.
 
@@ -2950,20 +3829,21 @@ otherwise and every cited cross-layer dependency is complete.
    explicit feedback/override treatment, and shadow/review promotion rules. It must not equate a
    setpoint history with universal or individual thermal comfort.
 
-6. `hvac_thermal_response` absence setback/setup calibration. It is a future core relation profile
-   within `EnvironmentalEpisodeLearner`, not a new learner family. Its detailed profile contract must
-   define the allowed action-state taxonomy, compatible HVAC modes, bounded horizons and passive-drift
-   reference windows, confounder/exclusion windows, uncertainty and comfort/safety validation metrics,
-   and its required observed fact bindings. It may produce only a reviewed maximum heating-setback or
-   cooling-setup parameter for a future HVAC descriptor. Its historical calibration uses complete
-   observed Layer-4 `departure`/`return` episodes; a future live descriptor may additionally use a
-   frozen Layer-0 calendar-plan binding to schedule a predicted return, but that plan never labels the
-   calibration data as absence. No fixed default target is permitted. A candidate without an explicit energy
-   measurement binding must omit energy-savings claims and energy-benefit promotion metrics.
+6. `hvac_thermal_response` thermal reachability. It is an Initial-V3 evidence-gated core relation
+   profile within `EnvironmentalEpisodeLearner`, not a new learner family. Its §4.8 contract defines
+   complete active-response/passive-drift cohorts and produces only the exact-cell
+   `ThermalResponseParameter` consumed by the registered HVAC descriptor as a reachability estimate.
+   It becomes eligible only with complete calibrated evidence, exact-context coverage and thermal
+   shadow validation; the already-defined Layer-5 prerequisite, comfort/safety, shadow/promotion and
+   automatic-action consent gates then govern its operational use. Historical `departure`/`return` episodes may
+   delimit an absence cohort but the live descriptor alone may use a frozen Layer-0 calendar-plan
+   binding to schedule against an expected return; that plan never labels calibration data as absence.
+   No fixed default target is permitted. A candidate without an explicit energy measurement binding
+   must omit energy-savings claims and energy-benefit promotion metrics.
 
 7. `ResidentPresentationPreferenceModel`, a future generic proposal-only model for non-safety
    notification-delivery parameters. Its input vocabulary and one explicit `presentation_scope` must
-   be declared by the registered policy-template descriptor; it may consume only explicit resident
+be declared by the registered Reaction descriptor; it may consume only explicit resident
    feedback, while non-response is right-censored rather than a negative label. Its output can change
    only an administrator-reviewed delivery parameter of that descriptor. It cannot alter the policy's
    semantic content, physical/environmental estimate, live guard, safety classification, action,
@@ -2979,6 +3859,46 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 
 ## 9. Initial acceptance criteria
 
+- A `TimeRange` uses two canonical `EvidenceInstant`s in ascending order;
+  equal endpoints represent one observed instant but never prove gap-free
+  coverage. A diagnostic or candidate whose evidence span is reversed is
+  rejected. An indirect occupancy learner binds the exact same-room
+  `occupancy.physical` `FactSlot` and physical producer fingerprint, rejecting
+  individual evidence and its own semantic output (§4.4/§4.4.5/§6.1.1).
+- A `ReactionDescriptorCandidate` carries a positive
+  `NumericOutcomeRequirement` exactly where its descriptor/profile declares
+  a per-member numeric outcome; comfort and routine members reject it. The
+  primary artifact's typed effect matches the registered numeric, duration
+  or whole-bundle routine-frequency output schema and conservative evidence gate.
+  A thermal duration uses `Window` bounds; a routine evidence revision reports
+  measured probabilities without treating them as lift-validation proof.
+  `routine.bundle_frequency.v1` rejects a wrong bundle/context key, invalid
+  count or exposure ratio, duplicate bundle/context records, non-finite
+  probability or interval, a diagnostic zero/absent
+  baseline presented as eligible, and member-level frequency copies. Its
+  keyed validation report proves support, calibration, temporal-block
+  intervals and holdout gates before proposal eligibility (§4.4.3).
+  Compatible evidence refresh changes no candidate semantic fingerprint.
+  The future `ContextHypothesisCandidate` remains
+  unpublishable until a closed uncertainty schema is registered (§6.4).
+- One descriptor that permits both authoring origins can register a
+  zero-axis direct `CanonicalEnvelope` and nonempty profile-restricted
+  learned axes. The direct cell has `support=None, calibrated=None` and
+  cannot satisfy a learned candidate's evidence gate; the learned cells
+  cannot be copied into a profile-free direct generation. The direct plan
+  still needs its staged typed trigger, conditions and guard contract (§6.5;
+  Layer 5 §3.2).
+- Solar-dependent environmental learners bind only the two current
+  casa-scoped radian facts from Layer 2 §3.5 and the staged per-opening
+  incidence output; a stale Sun source, changed observer location or geometry
+  proxy mislabeled as irradiance cannot enter a sample or proposal (§4.8.2).
+- Every registered Initial-V3 relation profile validates a policy-consumable
+  artifact output under its exact profile-owned schema id/version. A schema
+  mismatch or invalid payload blocks candidate production without a new
+  Layer-3-to-Layer-5 path. The thermal parameter additionally requires its
+  frozen `ThermalEvidenceGateCalibration`; the five non-HVAC environmental
+  profiles use the shared response-artifact schema (§4.8; Layer 5 §3.1),
+  separately from the per-inference `ResultEnvelope` of §4.4.
 - No Layer-3 implementation reads a V2 snapshot, model, approval store, or history record.
 - An administrative learner instance names a registered core kind/version, legal explicit scope,
   blueprint-declared binding selections, all exposed canonical parameter values, and enabled state.
@@ -2995,6 +3915,50 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   staging derives and registers the corresponding per-source retention requirements.
 - A truncated required history interval leaves the learner warm-up/degraded and produces no new usable
   model from that interval.
+- A bounded historical read with `ObservationCoverage(status="incomplete")` makes
+  a fixed-window sample unavailable even if retention is complete and matching states
+  appear on both sides of a short restart. The common `SampleBinding` builder rejects
+  an incomplete feature/anchor or point/event-count outcome window; optional missing
+  representation cannot turn a process gap into context. A time-to-event outcome
+  with a valid target event before `first_incomplete_at` retains that event; without
+  such an event it is right-censored exactly at that instant, never a zero or
+  competing risk. `PatternLearner` and `ContextRegimeNoveltyModel` receive only
+  eligible samples from the same builder (§4.2, §4.4.1).
+- A state last changed hours before `T` but remained observable through `T`
+  can satisfy an as-of feature or point outcome without a duplicate fact or
+  `max_age` calculation. A newer unavailable transition, a report-age expiry
+  or an observation gap rejects it; the resolver never skips the unavailable
+  record to recover the older value (§4.2; Layer 0 §4.4).
+- With complete observation and retention, a missing `PointOutcome` target is
+  rejected, no event in an `EventWindowOutcome` is a valid zero/false, and no
+  `TimeToEventOutcome` event by the finite horizon is right-censored there.
+  The same missing event after an observation gap cannot become zero or a
+  horizon-end censor: it is censored at `first_incomplete_at` (§4.2).
+- A `FutureStateFractionOutcome` reconstructs a complete typed state interval:
+  six qualifying minutes across a ten-minute horizon yield `0.6`, including
+  multiple separate qualifying runs. A transition exactly at the horizon end
+  adds no duration. Missing state at the anchor, a source or process gap,
+  stale/invalid value, or truncated retention excludes the sample instead of
+  producing a partial fraction; wrong-kind or unregistered qualifying values
+  fail staging. A registered delay using `occupancy=("absent",)` must match
+  the exact typed state stream and qualifying set in Layer 5's timing
+  binding; a copied boolean vacancy projection is not required. A separate
+  boolean condition can exercise the same generic type contract without
+  registering an Initial-V3 solar timing model. No post-anchor state is used as a feature
+  (§4.2, §4.4; Layer 5 §4.2/§6.0).
+- A correction window crossing process interruption is
+  `censored_by_observation_gap`; one with only required-channel unavailability is
+  `censored_by_unavailability`; either excludes a zero count. A routine assembly
+  window crossing either gap is excluded rather than a negative example.
+  `EnvironmentalEpisode` and `EnvironmentalReferenceWindow` reject any required
+  pre-anchor, post-anchor, reference, or exclusion span crossing a gap; one complete
+  unrelated channel remains eligible. A rebuild retains the full declared
+  `TrainingSpan` while excluding its gap-crossing samples; it publishes only with
+  enough eligible support and never silently shortens the span to the latest
+  inspection slice.
+  Tests include a valid event before a later gap, a target event after a gap,
+  restart shorter than freshness, one channel still unreadable, equal-time gap
+  boundary, and independent retention truncation (§4.4.1–4.4.3, §4.8.1, §5.2).
 - A count-ceiling or global-watermark eviction on one bound stream makes only reads that include that
   stream report `retention_coverage="truncated"`. A learner bound to a different `Location` of the
   same `fact_type` remains eligible when each of its own required streams is complete; a multi-stream
@@ -3005,7 +3969,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   proves that the context remains represented after a successful ordinary rebuild. A partial update is
   rejected unless the registered core learning type supplies its explicit incremental-fit contract.
 - Every learner uses one staged, versioned `SampleBinding`. Staging rejects duplicate feature names,
-  invalid state/event claim pairings, under-five-minute interval anchors, zero-horizon point outcomes
+  invalid state/event claim pairings, under-five-minute interval anchors, `PointOutcome.horizon=None`
   on transition/event anchors, unbounded sequences, impossible retention/buffer requirements, and any
   required/optional missingness contradiction.
   Tests cover as-of state, causal aggregate, bounded causal sequence, point-horizon, event-window,
@@ -3013,18 +3977,35 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   earlier sample's features; records sharing `when` are consolidated as one concurrent context and
   never become an implicit feature/outcome pair; an unavailable/stale required feature or invalid
   target discards that sample with its declared diagnostic reason.
-- `ContextTransformRef.canonical_config` and policy `semantic_parameters` pass the same RFC-8785
-  `CanonicalJsonObject` validator before their type-specific validator. Tests reject duplicate keys,
+- `ContextTransformRef.canonical_config` plus `ReactionDescriptorCandidate.descriptor_parameters` and
+  member `semantic_parameters` pass the same RFC-8785 `CanonicalJsonObject` validator before their
+  type-specific validator. Tests reject duplicate keys,
   lone surrogates, non-finite/negative-zero/out-of-range numbers, depth/size overflow, raw HA objects,
   and callables; they preserve Unicode strings and array order without Unicode normalization.
-- Layer 3 stages a `PolicyTemplateCandidate` only through the read-only Layer-5 proposal facet. It
-  rejects an unknown/incompatible template or relation-profile version, illegal scope/objective/member
-  intent/guard, an empty or over-bound bundle, repeated member channel, invalid member minimum practical
-  delta, parameter or envelope shape, and an effect shape not declared by that descriptor. The candidate
+- Layer 3 stages a `ReactionDescriptorCandidate` only through the read-only Layer-5 proposal facet. It
+  rejects an unknown/incompatible Reaction-descriptor or relation-profile version, illegal scope/objective/member
+  intent/guard, an empty or over-bound bundle, repeated member channel, a missing, forbidden or invalid
+  numeric-outcome requirement, parameter or envelope shape, and a primary
+  artifact incompatible with the exact profile-output schema or descriptor/intent
+  pairing. The candidate
   contains no callable, dynamic fact expression, current snapshot, HA service target, `ApplyStep`,
-  configured policy, or arbitrary condition graph. Tests prove that candidate construction cannot invoke
+  configured Reaction, or arbitrary condition graph. Tests prove that candidate construction cannot invoke
   policy evaluation or actuator resolution, and that the same descriptor is available to a deterministic
   Layer-5 policy without a learner.
+- Two valid candidates with the same envelope axes and cell keys, but support
+  10 versus 20 in one cell, have the same semantic deduplication identity and
+  refresh review evidence. Changing a root `descriptor_parameters` value or
+  adding a cell key changes that identity. Duplicate cell keys with different
+  evidence are rejected. Runtime exact-cell lookup and `bounded_adaptive`
+  subset checks use keys and partition versions, never equality of complete
+  `CoverageCell` records.
+- A learner proposal rejects a `CoverageCell` with absent support or
+  calibration; a profile-free direct Reaction rejects invented non-null
+  learner evidence or mixed optional fields. A direct zero-axis envelope has
+  exactly one empty-key cell and uses the same runtime exact-cell lookup; a
+  future descriptor may stage only its version-declared typed axes, pure
+  partitions and bounded joint cells. An unavailable axis input abstains,
+  while a changed partition requires a new descriptor version (§6.5).
 - Every proposal-producing core type/version has one frozen `ShadowPreviewBinding`. Staging rejects an
   unknown/dynamic preview schema name, a binding whose producer or candidate kind/version does not
   match the active core registry and read-only Layer-5 proposal facet, a preview schema absent from
@@ -3034,12 +4015,12 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   Tests prove that a preview cannot use a fallback schema/version or payload validator merely because
   its string name resembles a registered candidate kind.
 - The initial bindings are exactly `environmental_episode` version `1` to
-  `shadow_proposal_preview.policy_template.environmental.v1` and
+  `shadow_proposal_preview.reaction_descriptor.environmental.v1` and
   `actuation_routine_pattern` version `1` to
-  `shadow_proposal_preview.policy_template.routine.v1`, both through `policy.template` candidate
+  `shadow_proposal_preview.reaction_descriptor.routine.v1`, both through `reaction.descriptor` candidate
   version `1`. Tests prove that every active environmental relation profile uses only the former,
   cannot reach `proposal_eligible` without a valid preview under its required shadow gate, and cannot
-  select a schema by relation profile, template text or payload shape; an optional routine shadow uses
+  select a schema by relation profile, descriptor text or payload shape; an optional routine shadow uses
   only the latter. A removed binding/schema selectively withdraws the affected previews and makes only
   its producer artifacts unavailable for the corresponding shadow/promotion path.
 - A learner with live egress accepts only `usage="runtime_resolvable"`. Its historical sample and
@@ -3065,6 +4046,17 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   `binding_deactivated` audit only; a later restoration reaches only still-active notified bindings.
   Tests prove that owner occurrence handling never queries the publication index and that a process
   restart starts the transient tracker empty rather than replaying delivery history.
+- A Layer-5 `active_channel_unmanaged_after_restart` availability occurrence uses that same
+  tracker and `automation.availability` fact; it carries no Actuator id, HA
+  payload or resident text in the occurrence. Every process restart with a
+  fresh active channel and no usable management proof starts a new issue,
+  even when the action trigger is false; Layer 6's notification key differs
+  between process runs and is stable for retries within one run. Repeated cycles
+  while the same observed channel remains active produce one visible issue,
+  while a later fresh inactive observation produces a `restored` transition
+  whose rendering does not claim Heima switched the device off. A trigger
+  ceasing to qualify while the device remains active does not falsely restore
+  this already opened issue (§6.3.1; Layer 5 §3.2).
 - An `interval` anchor declares a sampling interval of at least five minutes. A state-transition or
   event-occurrence anchor remains attached to its actual historical timestamp and is never rounded to
   that cadence.
@@ -3111,7 +4103,9 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   none obtains operational authority merely by existing.
 - Every result uses a core-owned, versioned `ResultEnvelope` with matching artifact and
   `SampleBinding` identities. Its persisted/interprocess manifest is RFC 8785 canonical JSON with
-  finite values, UTC RFC 3339 instants, bounded millisecond durations, and no raw HA payload.
+  finite values, canonical Layer-1 `EvidenceInstant` instants and Layer-0 `Window` durations, and no raw HA payload.
+  Round-trip fixtures reject alternate `Z` instant and integer-millisecond duration encodings,
+  including a result horizon and a thermal response duration (§4.2–§4.4).
   An arbitrary pickle/callable/executable artifact is rejected before preload; its core-owned codec,
   digest, size, and definition fingerprint are all verified.
 - Every administrator diagnostic uses the frozen core `DiagnosticFindingRegistry`; tests reject an
@@ -3141,8 +4135,20 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   `return_delay` (`present -> absent -> present`) from complete resolved occupancy episodes. Tests
   prove that an unavailable observation interval and end-of-history are right-censoring; a declared
   competing event is not recoded as censoring; no post-anchor feature is read; every curve is monotone;
-  and diagnostic survival output cannot turn on/off lighting, alter a policy/hold, or emit an
-  `InferenceSignal`.
+  and no survival output directly commands an Actuator, alters a policy/hold, or emits an
+  `InferenceSignal`. `stay_duration` stays diagnostic-only. An action-serving
+  `return_delay` revision needs a validated one-minute point and the exact
+  staged maximum horizon, physical-evidence-eligible room labels, declared
+  competing-event calibration, common shadow/adoption gates and matching
+  subject/definition/result schema; a failed gate leaves the authorized
+  Layer-5 seed in use. No result is recast as a future-state fraction.
+- No Initial-V3 solar timing artifact is published merely because the
+  generic `FutureStateFractionOutcome` can represent a boolean solar
+  condition. A candidate attempting to bind `environment.solar_shading` to
+  an unregistered solar-fraction learning definition or timing path fails
+  staging; its fixed dwell remains available under Layer 5 §7. Historical
+  windows containing source gaps remain incomplete for every future
+  fraction-profile registration (§4.2, §4.4; Layer 5 §4.2).
 - `ContextRegimeNoveltyModel` scores only complete staged historical context vectors. Tests reject raw
   HA/entity/resident inputs, an unseen categorical value, an out-of-envelope continuous value, an
   unbounded feature sequence, score/probability conflation, and a model result that attempts any
@@ -3158,16 +4164,49 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   scope/Actuator/channel/context and definition fingerprint; tests reject raw HA/resident data, a
   target or parameter recommendation, notification/action authority, and treating acknowledgement or
   dismissal as a training label.
+- A correction-count sample joins one admitted target decision to its first
+  complete-observation phase and the channel's covered history, then counts
+  only deduplicated resident correction events within its complete window.
+  A complete window without such an event is one zero; a decision with no
+  full observation, a later superseding decision, revocation, unavailable
+  channel or process gap cannot become zero. A late full observation after
+  a terminal call timeout anchors without changing that call outcome
+  (§4.4.2; Layer 5 §6.1).
 - `ActuationRoutinePatternModel-v1` accepts only declared typed trigger/context bindings and verified
   resident-control outcomes. Tests prove that equal-`when` members remain one concurrent observation
   group, `AppendOrder` cannot create causal order, an unavailable/ambiguous/overlapping-policy window
-  is excluded rather than negative, a repeated member channel or over-bound bundle is rejected, and an
+  is excluded rather than negative, a complete no-control window is a typed negative denominator
+  observation without creating a candidate, a different valid bundle is negative for one candidate
+  and positive for its own, a repeated member channel or over-bound bundle is rejected, and an
   accepted candidate contains only the registered `routine.actuation_bundle` descriptor and canonical
   member targets. A learner artifact cannot activate, evaluate or execute the resulting policy; before
   its explicit `proposal_eligible` transition it may emit only the registered shadow preview.
+- Its versioned subject baseline divides eligible matching-bundle start-time
+  exposure by total eligible start-time exposure for the same assembly width,
+  independent of trigger occurrences. Tests distinguish a matching bundle,
+  another bundle, no resident control, a sequence across an arbitrary clock
+  boundary, unavailable/confounded coverage and a process gap. An interval
+  sweep agrees with direct classification of small timestamp fixtures and
+  does not need periodic device readings. A trigger-only routine still has a
+  subject baseline; a zero baseline yields unavailable lift rather than
+  infinity or an eligible proposal. For positive baseline, lift is the
+  conditional-to-baseline ratio, with 1 as no association. Baseline windows
+  create no `ActuationRoutineEpisode`, and overlapping start instants never
+  inflate independent support or temporal-block confidence. No future
+  partition may enter either denominator (§4.4.3).
+- A verified resident brightness change joins exactly one canonical
+  channel-state edge by `control_edge_id` and stages only the descriptor's
+  permitted target facets. An external/unknown change, an unproven wall
+  switch power cut that makes a bulb unavailable, or a missing/double join
+  cannot become a resident routine member or a complete no-action negative
+  (§4.4.3; Layer 0 §5.1.1).
 - `IndirectSemanticAssistModel-v1` accepts only a frozen `IndirectAssistanceContract`. The
-  `occupancy.room_present.indirect.v1` contract trains/validates only against same-room
-  `occupancy.physical` `PhysicalOccupancyReference`; tests reject individual occupancy evidence, a
+  same signal type may serve multiple resolver kinds only through distinct frozen contracts;
+  staging rejects one `(signal_type, contract_id/version)` routed to two resolver kinds, a different
+  claim-parameter tuple, or a subject outside that contract's legal scopes. The
+  `occupancy.room_present.indirect.v1` contract trains/validates only against the same-room
+  `FactSlot(fact_type="occupancy.physical", where=subject_room)` with physical producer provenance;
+  tests reject individual occupancy evidence, a
   learned/semantic-resolver-derived target, current occupancy/presence feature, raw HA identity/payload,
   `absent` assertion, stale/expired signal, a non-live artifact, non-room subject, or insufficient
   calibrated probability/PPV. The `activity.sleeping.indirect.v1` contract accepts only an immutable
@@ -3232,6 +4271,35 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   preview follows normal finding capacity/staleness/supersession rules; and prove that promotion creates
   a new candidate only after fingerprint/evidence/expiry rechecks and independent Layer-5 validation,
   never by converting an acknowledged, dismissed, stale, withdrawn, or capacity-suppressed preview.
+- A model publishing both a validated `DiagnosticFinding` and a registered
+  `InferenceSignal` exposes the current bounded finding even before an
+  artifact is adopted for the signal. Promotion after required shadow
+  atomically records the exact signal artifact and administrator-selected
+  mode. In `pinned`, a newer revision emits no signal until a current-head
+  authenticated Layer-3 adoption transition approves it; in
+  `bounded_adaptive`, only a compatible, validated revision advances through
+  one idempotent system transition. A changed signal consumer, definition or
+  unapproved envelope cannot auto-adopt or borrow a Layer-5 proposal. A
+  crash during append reveals the old or new complete head; stale or
+  withdrawn adopted evidence emits no signal and never extends an earlier
+  signal's expiry (§4.9, §6.1.1, §6.3).
+- A signal consumer switches from `pinned` to `bounded_adaptive` through
+  `set_signal_artifact_adoption_mode` only after its exact current artifact
+  and approved bounds pass validation; the same revision stays adopted.
+  Switching back fixes the current revision even when it is temporarily
+  unavailable. A stale-head retry or an automatic revision racing with the
+  switch cannot create two heads; a restart sees the old or new committed
+  transition. Neither switch retrains, extends a prior signal's expiry or
+  uses Layer-5 proposal review (§4.9).
+- Changing an environmental learner's `objective_id` or
+  `minimum_practical_delta` changes its serving-generation fingerprint and
+  candidate semantic identity, but leaves the validated response artifact's
+  definition fingerprint and analysis revision unchanged. An unreviewed old
+  candidate is withdrawn; a previously approved Reaction retains its frozen
+  objective until ordinary Layer-5 successor review. A serving-only edit of
+  a live-signal instance withdraws its old consumer adoption without
+  retraining; the new serving generation needs its own approval before
+  emitting (§4.1.2, §4.5, §4.8, §4.9).
 - Schema incompatibility immediately makes an artifact unavailable. Statistical input, target,
   residual, or calibration drift produces diagnostics and a bounded slow-path re-evaluation or
   retraining request, never an online parameter mutation or automatic promotion.
@@ -3240,12 +4308,50 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   separate learner engines. `StratifiedResponseModel` admits a cell only with complete transition and
   `EnvironmentalReferenceWindow` cohorts in that exact canonical cell; it neither interpolates nor
   presents its conditional observed response difference as causal effect.
-- The initial V3 generation rejects every `hvac_thermal_response` instance. Once its future contract
-  is activated, it accepts only an observed registered HVAC-action transition with all required
+- A profile-declared observed cover/opening Sensor transition, registered HVAC-action transition,
+  or exact registered Actuator-channel facet transition can anchor the same environmental episode
+  mechanism. An extraction-fan channel with a changed declared active/speed facet and complete
+  predecessor/continuation history may qualify; a future humidifier channel needs its own exact
+  profile and outcome before it can qualify. A command result, `already_satisfied` decision,
+  unchanged or unrelated facet, duplicate Sensor/channel projection, channel mismatch, first
+  valid post-gap state, unavailable record or incomplete predecessor never becomes an anchor.
+  A relevant competing control transition in the exclusion interval rejects the affected episode
+  without excluding an independent room's complete history (§4.8.1–4.8.2; Layer 0 §5.1.1.1).
+- An extraction fan already active at qualifying start records its observed
+  state and origin but supplies no Heima-start effect sample; no command or
+  `already_satisfied` decision is relabeled as a physical transition. When
+  an inactive fan is started and later changes speed or stops under a
+  declared program, each actual edge retains its pre/post active and speed
+  facets and may enter only its exact `transition_class_id` cohort with
+  complete coverage. Start, speed increase, speed decrease and termination
+  have separate estimates and same-class stable-state references; a profile
+  with one pooled on/speed/off cell or overlapping class matchers is rejected.
+  A resident/external speed edge retains its origin rather than becoming a
+  Heima action; a post-gap baseline is never an edge (§4.8.1–4.8.2).
+- A profile with multiple versioned observed-transition classes assigns a
+  complete physical edge to exactly one class or excludes it. Its episode,
+  matching stable-pre-state reference, output cell and validation use that
+  class id; bootstrap identity and optional quantile cohorts do too. Tests
+  reject overlapping matchers, mixed start/modification/termination samples,
+  speed increases pooled with decreases, missing reference coverage and a
+  class whose estimate lacks its own support. A valve or cover profile uses
+  the same learner and class-key rule (§4.8–4.8.2).
+- An unavailable start, modification or termination estimate affects only
+  its exact class/context/horizon cell; no other class or nearby context
+  supplies a substitute. An eligible independent cell remains usable, while
+  a deterministic step is governed by its Layer-5 descriptor and current
+  admission, never by an invented Layer-3 fallback (§4.8.2; Layer 5 §3.2).
+- Complete resident or external target changes may inform an exact physical
+  transition class only under that profile's matcher and confounder rules;
+  their origin remains resident or external. A favorable speed, cover or
+  valve modification estimate alone is not a current need or a promise of
+  whole-program success (§4.8.1–4.8.2; Layer 5 §3.2).
+- The Initial-V3 generation registers `hvac_thermal_response` but keeps it evidence-gated. It accepts
+  only an observed registered HVAC-action transition with all required
   pre-anchor facts and a complete post-anchor temperature trajectory. Tests reject a requested command,
   raw HA attribute, absent/mismatched HVAC mode, manual setpoint change or other declared thermal
-  confounder in its exclusion window. Its candidate contains only a bounded heating-setback or
-  cooling-setup parameter for a future HVAC descriptor; it cannot contain an endpoint, target
+  confounder in its exclusion window. Its candidate contains only an exact-cell bounded
+  `ThermalResponseParameter` for the registered HVAC descriptor; it cannot contain an endpoint, target
   temperature, recovery schedule, signal or action. A test proves an absent energy binding removes
   energy-savings claims and energy-benefit promotion metrics rather than substituting a default.
   Complete observed Layer-4 `departure`/`return` episodes may delimit historical absence cohorts, but
@@ -3279,13 +4385,15 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   policy authority, or Layer-5 live evaluation.
 - A thermal-topology model never claims airflow or air-quality prediction without the corresponding
   measured inputs, and reports unidentifiable parameters rather than fabricating coefficients.
-- A third-party learner has no live-signal output path; it can reach operations only through a
-  reviewed proposal.
+- A third-party learner has no live-signal, `ApplyStep`, or actuator-invocation output path; it can
+  reach operations only by submitting a candidate for an exact registered core kind and descriptor,
+  then through its reviewed proposal.
 - A learning result can affect an operational semantic claim only through an explicitly listed bounded live
   exception or after Layer-5 admin review.
 
 ## Related documents (background only, not required reading)
 
-This initial architecture derives from `v3_pattern_learner_draft.md`, `v3_architecture_recap.md`, and
-the learning entries in `v3_backlog.md`. Where those documents differ from this specification, this
-document becomes the current word for Layer 3 as its component decisions are approved.
+This design derives from the historical `v3_pattern_learner_draft.md`,
+`v3_architecture_recap.md`, and the learning entries in `v3_backlog.md`. Where those documents
+differ from this specification, this document is the current Layer-3 design contract;
+remaining corrections are tracked as CA4 items.

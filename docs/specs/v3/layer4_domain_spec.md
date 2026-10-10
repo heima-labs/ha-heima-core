@@ -1,6 +1,6 @@
 # Heima v3 - Layer 4: Semantic Resolution
 
-**Status:** Draft - semantic-resolution architecture approved; individual resolver definitions pending component-by-component approval. Not implemented.
+**Status:** Defined V3 semantic-resolution contract. Not implemented.
 
 **Layer:** 4 of 8. Builds on Layer 0's cycle/timing/persistence facilities, Layer 1's immutable `HouseFact`/`Location`/`Provenance` contracts, Layer 2's current typed facts and staged registry generation, and Layer 3's closed transient `InferenceSignal` contracts. It completes the semantic-resolution DAG before Layer 5 evaluates policy. It never reads Home Assistant objects or payloads.
 
@@ -8,7 +8,7 @@
 
 Layer 4 resolves named **semantic claims**: a current `SemanticState` such as room occupancy or casa presence, or a `SemanticEpisode` whose bounded occurrence has meaning of its own. It is the only layer between raw/fused facts and action policy that may combine typed facts, upstream semantic claims, and one authorized learning hint into a current conclusion.
 
-Layer 2 says what observations mean; Layer 3 analyzes history and may emit bounded evidence; Layer 4 resolves semantic claims; Layer 5 decides whether a configured policy may act. Learning is evidence, not authority; a semantic resolver is not a policy engine.
+Layer 2 says what observations mean; Layer 3 analyzes history and may emit bounded evidence; Layer 4 resolves semantic claims; Layer 5 decides whether a `ConfiguredReaction` may act. Learning is evidence, not authority; a semantic resolver is not a reaction engine.
 
 ## 2. Scope and Boundaries
 
@@ -23,8 +23,8 @@ Layer 4 owns:
 
 Layer 4 does not own Home Assistant reads, entity interpretation, fusion, formula registration, or
 logical Actuators (Layer 2); `Topology` and the immutable location contracts (Layer 1); historical
-learning/artifacts/signals/candidates (Layer 3); policy templates, configured policies, candidates,
-review, guards, envelopes, action results or `ApplyStep`s (Layer 5); or notification
+learning/artifacts/signals/candidates (Layer 3); ReactionDescriptors, ConfiguredReactions, review,
+guards, envelopes, action results or `ApplyStep`s (Layer 5); or notification
 delivery/publication-generation composition (Layer 6).
 
 It has no runtime dependency on policy configuration or action results. A policy being enabled, disabled, held, suppressed, accepted, or previously executed cannot change a semantic conclusion.
@@ -34,7 +34,7 @@ It has no runtime dependency on policy configuration or action results. A policy
 - **Current-cycle semantics only.** A semantic resolver reads only its frozen snapshot, never durable history, later facts, mutable HA state, or a future cycle.
 - **One durable representation.** A public semantic claim is a declared Layer-1 `HouseFact` submitted through Layer-0 Persistence. Evaluator results are local, never a parallel state store.
 - **Declared meaning.** A resolver kind fixes claim kind, vocabulary, inputs, priority, availability, scope, and pure evaluator. The administrator configures only exposed typed bindings/parameters.
-- **Closed learning ingress.** An `InferenceSignal` is admissible only when its core type names this exact resolver kind as sole consumer. Absence or expiry is absence of optional evidence, never a negative assertion.
+- **Closed learning ingress.** An `InferenceSignal` is admissible only when its core signal type and frozen contract authorize this resolver kind, claim-parameter tuple and subject scope. Each contract has one resolver kind; distinct contracts may share a signal type. Absence or expiry is absence of optional evidence, never a negative assertion.
 - **No policy leakage.** A semantic resolver never inspects templates, guards, envelopes, Actuators, command outcomes, manual holds, or review state.
 - **No hot-path I/O.** Lookup, input resolution, signal resolution, DAG traversal, and evaluators are in-memory, pure, and bounded.
 
@@ -47,8 +47,10 @@ Examples are `occupancy` for one room and `presence` for `casa`.
 A `SemanticEpisode` is not an automatic event mirror for a state transition. It is permitted only when
 its occurrence has an independently declared identity, boundary, evidence contract, and consumer use
 that would be lost by reading ordinary state history. An episode resolver emits only its declared event
-occurrences; it has no latest-value slot. No initial V3 resolver emits a `SemanticEpisode` until its
-individual lifecycle contract is approved.
+occurrences; it has no latest-value slot. Initial V3 registers exactly one core
+`StateTransitionEpisodeAdapter` on the casa `presence` state. It emits only the reviewed
+`presence.departure` and `presence.return` occurrences of §9.3; no other initial state transition
+is mirrored automatically, and another episode producer needs its own approved lifecycle contract.
 
 ```python
 @dataclass(frozen=True)
@@ -69,7 +71,7 @@ persisted `available=False` episode: no emission means no new occurrence. A stat
 “currently active” is a separate declared `SemanticState`, never a reconstruction from an episode.
 
 An output claim declares whether its values form one **exclusive axis** (for example one room is
-`present` or `absent`) or independent claims (for example `activity.work` and `activity.relax` may
+`present` or `absent`) or independent claims (for example `activity.working` and `activity.relax` may
 both be active at different explicit scopes). A resolver must not use an exclusive enum to merge
 presence, activities, operational intent, plans, or social context into a synthetic global state.
 
@@ -80,6 +82,15 @@ presence, activities, operational intent, plans, or social context into a synthe
 The core-owned `SemanticResolverRegistry` is built at bootstrap and frozen before any generation runs. It is not administrator-configurable or plugin-extensible. The persisted generation stores no callable; the active in-memory generation resolves the pure evaluator by `(resolver_kind_id, implementation_version)`.
 
 ```python
+ClaimParameterSchema = Mapping[str, frozenset[str]]
+CanonicalClaimParameters = tuple[tuple[str, str], ...]
+
+@dataclass(frozen=True)
+class SemanticAvailabilityContract:
+    output_fact_type_pattern: str
+    suppression_scope_id: str
+    allowed_reasons: frozenset[AutomationSuppressionReason]
+
 @dataclass(frozen=True)
 class RegisteredSemanticResolver:
     resolver_kind_id: str
@@ -93,8 +104,20 @@ class RegisteredSemanticResolver:
     parameter_schema: ParameterSchema
     validate_definition: PureValidator
     evaluate: PureSemanticEvaluator
-    availability_contract: SemanticAvailabilityContract
+    availability_contract: SemanticAvailabilityContract | None
 ```
+
+`ClaimParameterSchema` is a finite, closed mapping of parameter names to
+nonempty core-owned value vocabularies. `CanonicalClaimParameters` contains
+exactly one value per declared name, sorted by name for fingerprinting;
+unknown, missing, duplicate or out-of-vocabulary values fail staging.
+`SemanticAvailabilityContract=None` means the resolver owns no suppression
+episode. A present contract names the resolver's one output fact-type
+template, one stable semantic
+suppression scope and a nonempty subset of Layer-3
+`AutomationSuppressionReason`; staging rejects a mismatched output, duplicate
+scope ownership or an unregistered reason. Runtime reasons must be a subset of
+that frozen set, and the subject is the resolver's staged `Location`.
 
 `SemanticOutputTemplate` fixes claim kind (`state` or `episode`), matching emission kind, core-owned
 fact-type template, value vocabulary/unit, axis cardinality, legal `Location` scope, and output
@@ -131,6 +154,8 @@ and produces only its bounded diagnostic reason.
 ### 4.2 Definitions and Atomic Generation
 
 ```python
+ExplicitScope = Location  # exact Layer-1 value contract; resolver kind restricts legal scopes
+
 @dataclass(frozen=True)
 class SemanticResolverDefinition:
     resolver_id: str
@@ -143,7 +168,14 @@ class SemanticResolverDefinition:
     enabled: bool
 ```
 
-`ExplicitScope` is one `Location`, declared `Zone`, canonical ordered `LocationSet`, or `casa` only where the core kind permits it. Wildcards and live queries are forbidden because they could silently change input population, meaning, output claims, and downstream policy behavior.
+`ExplicitScope` is exactly one Layer-1 `Location` with a `scope` value
+permitted by the resolver kind: `room`, `zone`, `rooms`, or `casa`. A zone id
+resolves to its declared membership during staging; a set of at least two
+rooms uses `Location(scope="rooms")`, while a singleton uses `room`.
+The canonical `LocationKey` and resolved ordered membership enter the
+definition fingerprint. Wildcards and live queries are forbidden because
+they could silently change input population, meaning, output claims, and
+downstream policy behavior.
 
 Staging resolves all bindings against the candidate Layer-2 and upstream semantic generations; validates
 claim parameters and materializes each exact output claim; validates signal authorization and routing
@@ -167,12 +199,31 @@ Layer 4 evaluates enabled semantic resolvers in deterministic topological order.
 After the DAG completes, the engine creates Layer 5's immutable `DecisionSnapshot`. Its input group
 remains the Layer-2 group closed by the `CycleInputBarrier`; Layer-4 outputs are represented only by
 the resolved semantic-claim map, never retroactively inserted into that trigger group. The coordinator
-attaches Layer 0's opaque `FrozenHistoryView` and `FrozenCalendarView`, built from the active Layer-5
-generation's staged requirements, without exposing policy configuration or calendar contents to a
-semantic resolver. Layer 4 does not read, classify, resolve, or otherwise interpret this calendar
+attaches Layer 0's opaque `FrozenHistoryView`, `FrozenCalendarView`, and `HoldAdmissionView`,
+plus Layer 0's `FrozenRecoveryView` and Layer 5's `CommandOwnershipView` and
+`FrozenReactionAuthorityView`, before Layer-5 evaluation. The history/calendar requirements
+come from the active Layer-5 generation. None of these views exposes policy configuration or
+calendar contents to a semantic resolver. Layer 4 does not read, classify, resolve, or otherwise interpret this calendar
 view: it transports the already frozen Layer-0 input to its downstream policy consumer.
 
+For each staged Layer-5 `state_transition` trigger naming a Layer-2 state
+fact or Layer-4 `SemanticState`, staging declares its exact `FactIdentityKey`
+as a Layer-0 `previous_cycle` key. After the semantic DAG completes, the
+coordinator forms one typed pair from that key's sealed previous-cycle fact
+and this cycle's `current_layer2_facts` or `semantic_claims` fact, according
+to the staged producer claim. It never scans history or appends a generic episode.
+A missing predecessor after startup, an impacted semantic generation, or a
+producer-execution fingerprint mismatch is represented as `previous=None`.
+An unavailable prior or current fact remains visibly unavailable; Layer 5
+must abstain from calling it a transition.
+
 ```python
+@dataclass(frozen=True)
+class StateTransitionInput:
+    claim_key: FactIdentityKey
+    previous: HouseFact | None
+    current: HouseFact
+
 @dataclass(frozen=True)
 class DecisionSnapshot:
     snapshot_id: str
@@ -185,13 +236,20 @@ class DecisionSnapshot:
     current_layer2_facts: Mapping[FactIdentityKey, HouseFact]
     semantic_claims: Mapping[FactIdentityKey, HouseFact]
     semantic_episodes: tuple[HouseFact, ...]      # validated Layer-4 event occurrences this cycle
+    state_transition_inputs: tuple[StateTransitionInput, ...]  # declared keys only, canonical order
     history_view: FrozenHistoryView
     calendar_view: FrozenCalendarView
+    hold_admission_view: HoldAdmissionView    # frozen Layer-0 §6.1.1 projection
+    command_ownership_view: CommandOwnershipView  # frozen Layer-5 §6 projection
+    recovery_view: FrozenRecoveryView         # frozen Layer-0 §7.4 projection
+    reaction_authority_view: FrozenReactionAuthorityView  # frozen Layer-5 §4.2 projection
 ```
 
 `snapshot_id` is the SHA-256 digest of the RFC-8785 canonical JSON representation of
 `(cycle_id, when, input_barrier, layer2_generation_fingerprint, semantic_generation_fingerprint,
-calendar_view.fingerprint)`.
+calendar_view.fingerprint, hold_admission_view.fingerprint,
+command_ownership_view.fingerprint, recovery_view.fingerprint,
+reaction_authority_view.fingerprint, state_transition_inputs)`.
 It is deterministic for a retry of the same frozen cycle and distinct for a later cycle, including one
 with the same UTC `when`. A later fact, signal, generation change, or history append cannot alter the
 snapshot, its history view, trigger group, guards, or envelope result.
@@ -228,14 +286,15 @@ An edge exists only for a declared same-cycle upstream semantic claim. The gener
 
 ## 6. Inference Signal Gateway
 
-A signal is considered only when its core type names this resolver kind as sole consumer; its
-core-declared routing projection exactly matches the resolver's materialized claim parameters and scope;
+A signal is considered only when its core signal type and frozen contract authorize this resolver kind;
+the contract's claim parameters and legal scope kind, and the core-declared routing projection,
+must exactly match the resolver's materialized claim parameters and subject scope;
 `emitted_at < snapshot.when < expires_at`; its artifact/freshness/schema is valid; and the resolver's
 declared priority permits it. Otherwise it is absent for the cycle. A valid optional signal may still
 lose to stronger deterministic evidence, recorded as bounded provenance without raw learner or HA
 payload.
 
-| Signal type | Sole consumer resolver kind | Allowed use |
+| Signal type / contract id | Authorized resolver kind | Allowed use |
 |---|---|---|
 | `indirect.semantic_assist.v1` / `occupancy.room_present.indirect.v1` | `room_occupancy` | Positive optional `present` evidence only; never `absent`. |
 | `indirect.semantic_assist.v1` / `activity.sleeping.indirect.v1` | `activity` | Exact room scope routes only to the `sleeping` profile; positive `active` evidence only, never inactivity. |
@@ -265,11 +324,17 @@ After restart, the generation is rebuilt through staging. Evaluator-local state 
 
 ## 9. Initial Semantic Claims and Deferred Semantics
 
-The following resolver kinds use this kernel but require separate approval of inputs, vocabulary, priority, transition stability, availability policy, provenance, and acceptance criteria:
+The following initial resolver kinds use this kernel. Their approved inputs, vocabularies,
+priorities, transition stability, availability, provenance, and acceptance criteria are specified
+in §9.1–§9.7; any later resolver kind requires its own review:
 
 1. `room_occupancy`: room-scoped `SemanticState`, built from physical room evidence plus an authorized positive indirect hint.
 2. `presence`: deterministic casa presence only, with the closed `present | away` vocabulary.
 3. `activity`: independently scoped `activity.<activity_id>` `SemanticState`s without forcing activities into one classifier or global enum. `cooking`, `sleeping`, `relax`, and `working` are the first fully specified profiles.
+
+The casa `presence` resolver additionally has the one registered transition-episode adapter in §9.3.
+It produces the two initial episode types; it is not a fourth semantic-state resolver or a generic
+transition mirror.
 
 `house_state` is deliberately not an initial claim: its V2 vocabulary mixed presence, activity, quiet/sleep context, planned absence, and guest context. A future quiet/sleep context, planned absence, guest context, identity inference, multi-occupant counting, learned absence, HVAC control, environmental policy evaluation, and security policy each need a separate claim and authority/safety contract.
 
@@ -353,6 +418,15 @@ ActivityEvidenceRole = Literal["anchor", "context", "closure"]
 ActivityOutputMode = Literal["positive_only", "bipolar"]
 
 @dataclass(frozen=True)
+class ActivityEvidenceSlot:
+    slot_id: str
+    role: ActivityEvidenceRole
+    source: FactRef                # current typed Layer-2 or upstream semantic state
+    qualifying_values: tuple[EvidenceValue, ...]
+    max_age: Window
+    required: bool
+
+@dataclass(frozen=True)
 class ActivityProfile:
     activity_id: str                         # finite core-owned id, e.g. "cooking"
     implementation_version: int
@@ -362,6 +436,14 @@ class ActivityProfile:
     accepted_signal_type: str | None
     evaluate: PureActivityEvaluator           # core code, resolved at bootstrap; never serialized
 ```
+
+An `ActivityEvidenceSlot` is a finite, staged current-state binding, not a
+history query. Its `source.previous_cycle` is false; staging resolves its
+registered value vocabulary, exact subject-compatible `Location`, producer
+generation and positive `max_age`, and rejects empty, duplicate or wrong-type
+`qualifying_values`. An unavailable or older-than-`max_age` reading cannot
+satisfy any role. Only an explicit available `closure` match may support
+`inactive`; a missing or false `anchor` never does.
 
 An `anchor` is an explicitly normalized fact whose positive value has direct semantics for the
 activity; it may establish `active` under the profile's declared rule. `context` can qualify an
@@ -471,7 +553,7 @@ The profile accepts only `indirect.semantic_assist.v1` under the exact
 `activity.working.indirect.v1` contract, matching room scope, `assertion="active"`, and
 `confidence_kind="routine_affinity"`. It requires same-room resolved `occupancy=present`. The
 contract must have one workstation-operational evidence family and a second independent context family.
-The operational family may use only privacy-normalized Layer-2 computer facts from §3.5, such as
+The operational family may use only privacy-normalized Layer-2 computer facts from Layer 2 §3.5, such as
 active interaction, a classified work application, or a declared communication-session fusion; raw
 application/window/content data is never visible here. The second family may be a declared work-location
 calendar fact, workstation presence, communication context, or a declared learned day/time feature.
@@ -492,10 +574,22 @@ room; it cannot suppress urgent safety/security communication or establish an ac
 
 ## 10. Initial Acceptance Criteria
 
+- `ClaimParameterSchema` rejects missing, duplicate, unknown and
+  out-of-vocabulary parameter ids; the same finite parameters have one
+  canonical order. A resolver without `SemanticAvailabilityContract` cannot
+  report suppression reasons; a present contract permits only its own output,
+  scope and registered reason subset (§4.1/§7).
+- `ActivityEvidenceSlot` rejects an event or previous-cycle source, wrong
+  value type/scope, empty qualifying set or invalid age. A stale context
+  reading cannot become an anchor, and only an available matching closure
+  slot can establish an inactive bipolar activity (§9.4).
 - Every enabled semantic resolver has a registered core kind/version, legal explicit scope, valid claim parameters, one materialized unique output claim, resolved typed inputs, valid parameters, and deterministic DAG position.
 - Staging rejects wildcards, raw HA selectors, expressions/callables, Actuator/policy references, unknown/unauthorized signals, invalid/unroutable signal parameters, duplicate claims, and same-cycle cycles.
 - A resolver evaluates only its frozen snapshot; later fact/signal/policy/action changes cannot alter that cycle's result.
 - A valid signal can influence only its authorized resolver; the resolver's separate declared `HouseFact`, not the signal, enters Persistence.
+- Two distinct `IndirectAssistanceContract`s may route the same signal type to occupancy and activity,
+  respectively; staging rejects a single signal type/contract identity routed to two resolver kinds,
+  mismatched claim parameters, or an incompatible subject scope.
 - An absent/expired/invalid signal never becomes a negative assertion, stale retained state, policy action, fact of its own, or direct notification.
 - An unsupported state conclusion publishes `available=False` with undefined value, not the old available conclusion. Event outputs have no latest-value or `previous_cycle` use.
 - A resolver may report availability only through a non-empty canonical tuple of Layer-3
@@ -505,6 +599,10 @@ room; it cannot suppress urgent safety/security communication or establish an ac
 - A state-transition adapter accepts only its staged finite transition table, emits at most one event
   per observed value change, distinguishes `contiguous` from `reconciled_after_gap`, and resets with
   no retained baseline after restart or an impacted reload.
+- Initial V3 registers exactly the casa `presence` transition adapter: `present -> away` emits one
+  `presence.departure`, `away -> present` emits one `presence.return`, and an unchanged or unavailable
+  value emits none. The first post-restart available value seeds its baseline without inventing a
+  transition. Staging rejects an unregistered initial episode producer or transition table.
 - An activity definition resolves only a frozen core `ActivityProfile`; staging rejects an unknown
   profile, illegal scope, an unresolved/mis-typed role binding, a context-only positive route, an
   unauthorized signal, or a requested `inactive` result for a positive-only profile. The initial
@@ -537,3 +635,13 @@ room; it cannot suppress urgent safety/security communication or establish an ac
 - Semantic resolution, signal resolution, and DAG lookup perform no I/O, dynamic import, HA access, policy lookup, Actuator resolution, or notification delivery.
 - Layer 4 contributes only exact availability-owner declarations. Tests reject a policy binding, `automation_scope_id`, visibility state, direct availability event, or Layer-6 delivery call.
 - Layer 5 receives only the completed immutable `DecisionSnapshot` and cannot cause a semantic resolver reevaluation or make a resolver inspect policy configuration.
+- A staged `state_transition` on a Layer-4 semantic state receives the exact
+  previous/current pair after the DAG in the same `DecisionSnapshot`; the
+  current semantic fact is never inserted into the Layer-2 intake group.
+  Missing previous-cycle state after restart or a changed producer fingerprint
+  yields `previous=None`, not an invented transition (§5.1).
+- The same barrier freezes recovery state/episode/baselines and current Reaction
+  authority into separate opaque views. A retry of one barrier has one
+  `snapshot_id`; a changed recovery baseline, state or consent projection
+  changes the next snapshot identity. A post-barrier checkpoint commit or
+  revocation cannot mutate an already frozen view (§5.1).

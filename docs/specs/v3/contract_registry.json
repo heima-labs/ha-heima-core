@@ -1,0 +1,820 @@
+{
+  "schema_version": 1,
+  "scope": "Planned V3 specification; not the implemented V2 runtime",
+  "authoritative_layers": [
+    "docs/specs/v3/layer0_runtime_spec.md",
+    "docs/specs/v3/layer1_substrate_spec.md",
+    "docs/specs/v3/layer2_registries_spec.md",
+    "docs/specs/v3/layer3_learning_spec.md",
+    "docs/specs/v3/layer4_domain_spec.md",
+    "docs/specs/v3/layer5_action_reactions_spec.md"
+  ],
+  "orientation_only": [
+    "docs/specs/v3/architecture_overview_defined_layers.md",
+    "docs/v3_architecture_recap.md"
+  ],
+  "historical_only": [
+    "docs/v3_house_fact_draft.md",
+    "docs/v3_sensors_actuators_draft.md",
+    "docs/v3_template_matching_draft.md",
+    "docs/v3_pattern_learner_draft.md",
+    "docs/v3_domains_draft.md",
+    "docs/img/v3_architecture.dot"
+  ],
+  "design_constraints": [
+    {
+      "id": "V3-CLEAN-START",
+      "source": "docs/v3_architecture_recap.md",
+      "text": "V3 uses a deliberate clean-start cutover"
+    },
+    {
+      "id": "V3-GENERIC-MECHANISMS",
+      "source": "docs/v3_backlog.md",
+      "text": "The shared V3 contract must remain generic across Actuator channel kinds and Reaction descriptors"
+    },
+    {
+      "id": "V3-ONE-ACTION-PATH",
+      "source": "docs/specs/v3/architecture_overview_defined_layers.md",
+      "text": "member into one endpoint-specific `ApplyStep`"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "L1-EVIDENCE-INSTANT",
+      "owner": "docs/specs/v3/layer1_substrate_spec.md",
+      "heading": "4. `Provenance`",
+      "depends_on": []
+    },
+    {
+      "id": "L1-HOUSE-FACT-TIME",
+      "owner": "docs/specs/v3/layer1_substrate_spec.md",
+      "heading": "3. `HouseFact`",
+      "depends_on": ["L1-EVIDENCE-INSTANT"]
+    },
+    {
+      "id": "L0-WINDOW",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "3.2 Comparison: `Window` and `LearnedWindow`",
+      "depends_on": ["L1-EVIDENCE-INSTANT"]
+    },
+    {
+      "id": "L3-SAMPLE-TIME",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.2 Historical input binding and sample construction",
+      "depends_on": ["L1-EVIDENCE-INSTANT", "L0-WINDOW", "L0-OBSERVATION-COVERAGE", "L2-TYPED-STATE-INGRESS"]
+    },
+    {
+      "id": "L3-RESULT-TIME",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4 Target and result contracts",
+      "depends_on": ["L3-SAMPLE-TIME"]
+    },
+    {
+      "id": "L0-TIMING",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "3.1 Execution: `AtJob` and `CronEntry`",
+      "depends_on": ["L1-EVIDENCE-INSTANT", "L0-WINDOW"]
+    },
+    {
+      "id": "L5-STEP-SLOT",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Shared next-step scheduling slot",
+      "depends_on": ["L0-TIMING"]
+    },
+    {
+      "id": "L5-STEP-HOLD",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Hold release at a future Reaction step",
+      "depends_on": ["L5-STEP-SLOT", "L5-PROGRAM-EVALUATOR"]
+    },
+    {
+      "id": "L5-COMFORT-TRAJECTORY",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "7.1 Evidence-gated Initial-V3 descriptor",
+      "depends_on": ["L5-STEP-SLOT", "L5-STEP-HOLD"]
+    },
+    {
+      "id": "L5-PRESENCE-SIMULATION",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "7.2 Initial-V3 direct descriptor: `security.presence_simulation`",
+      "depends_on": ["L5-STEP-SLOT", "L5-STEP-HOLD"]
+    },
+    {
+      "id": "L0-RECOVERY-CLASSIFICATION",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "7.1 Cycle-level classification",
+      "depends_on": []
+    },
+    {
+      "id": "L0-CHECKPOINT",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "7.3 Checkpoint mechanics",
+      "depends_on": ["L0-RECOVERY-CLASSIFICATION"]
+    },
+    {
+      "id": "L0-FAILURE",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "8. Failure handling",
+      "depends_on": ["L0-CHECKPOINT"]
+    },
+    {
+      "id": "L0-STATE-HISTORY",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "4.0 `FactIdentityKey`",
+      "depends_on": []
+    },
+    {
+      "id": "L0-FROZEN-HISTORY",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "4.1 Two storage tiers",
+      "depends_on": ["L0-STATE-HISTORY"]
+    },
+    {
+      "id": "L0-RETENTION",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "4.3 Retention",
+      "depends_on": ["L0-STATE-HISTORY", "L0-FROZEN-HISTORY"]
+    },
+    {
+      "id": "L0-OBSERVATION-COVERAGE",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "4.4 Durable observation continuity",
+      "depends_on": ["L0-STATE-HISTORY", "L0-RETENTION"]
+    },
+    {
+      "id": "L5-HISTORY-READ",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "5.1 Closed relational vocabulary",
+      "depends_on": ["L0-FROZEN-HISTORY"]
+    },
+    {
+      "id": "L5-REACTION-GUARDS",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "3.2 Reaction guard capabilities and profiles",
+      "depends_on": []
+    },
+    {
+      "id": "L5-PROGRAM-EVALUATOR",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "3.2 Reaction guard capabilities and profiles",
+      "depends_on": ["L5-DESCRIPTOR-PLAN", "L4-DECISION-SNAPSHOT"]
+    },
+    {
+      "id": "L5-DESCRIPTOR-PLAN",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Registered output and bundle contracts",
+      "depends_on": ["L5-REACTION-GUARDS", "L3-REACTION-ENVELOPE"]
+    },
+    {
+      "id": "L5-PROGRAM-START",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "5.1 Closed relational vocabulary",
+      "depends_on": ["L5-DESCRIPTOR-PLAN", "L5-REACTION-AUTHORITY", "L5-STEP-SLOT"]
+    },
+    {
+      "id": "L3-GUARD-CANDIDATE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.8.4 Environmental safety and comfort envelope",
+      "depends_on": ["L5-REACTION-GUARDS"]
+    },
+    {
+      "id": "L2-TYPED-STATE-INGRESS",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "3. `Sensor`",
+      "depends_on": []
+    },
+    {
+      "id": "L5-RELATION-PROFILES",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "3.1 Versioned relation profiles",
+      "depends_on": ["L3-REACTION-ENVELOPE"]
+    },
+    {
+      "id": "L3-ENVIRONMENTAL-OUTPUT",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.8 Environmental episode learning: first model use cases",
+      "depends_on": ["L5-RELATION-PROFILES"]
+    },
+    {
+      "id": "L3-ENVIRONMENTAL-ANCHOR",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.8.1 EnvironmentalEpisode and outcome contract",
+      "depends_on": ["L0-CHANNEL-STATE", "L0-OBSERVATION-COVERAGE", "L2-TYPED-STATE-INGRESS"]
+    },
+    {
+      "id": "L5-REACTION-AUTHORITY",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "4.2 `ConfiguredReaction` configuration and authority lifecycle",
+      "depends_on": ["L5-REACTION-GUARDS"]
+    },
+    {
+      "id": "L3-AVAILABILITY-SUPPRESSION",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "6.3.1 Observable automation abstention",
+      "depends_on": ["L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L1-CATEGORICAL-CONFIDENCE",
+      "owner": "docs/specs/v3/layer1_substrate_spec.md",
+      "heading": "4.2 `confidence`",
+      "depends_on": []
+    },
+    {
+      "id": "L2-PHYSICAL-EVIDENCE-FORMULA",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "`physical_evidence.weighted_evidence`",
+      "depends_on": ["L1-CATEGORICAL-CONFIDENCE"]
+    },
+    {
+      "id": "L3-REACTION-ENVELOPE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "6.5 CanonicalEnvelope",
+      "depends_on": []
+    },
+    {
+      "id": "L3-REACTION-HANDOFF",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "6.6 Reaction-descriptor hand-off",
+      "depends_on": ["L3-REACTION-ENVELOPE"]
+    },
+    {
+      "id": "L1-LOCATION",
+      "owner": "docs/specs/v3/layer1_substrate_spec.md",
+      "heading": "5. `Location`",
+      "depends_on": []
+    },
+    {
+      "id": "L3-LEARNER-SCOPE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.1.1 Core learning-type registry and extension boundary",
+      "depends_on": ["L1-LOCATION"]
+    },
+    {
+      "id": "L4-RESOLVER-SCOPE",
+      "owner": "docs/specs/v3/layer4_domain_spec.md",
+      "heading": "4.2 Definitions and Atomic Generation",
+      "depends_on": ["L1-LOCATION"]
+    },
+    {
+      "id": "L2-FUSION-STABILITY",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "5.2 Stability is orthogonal to strategy",
+      "depends_on": ["L0-STATE-HISTORY"]
+    },
+    {
+      "id": "L0-FACT-SOURCE",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "5. `FactSource` / `ApplyStepSource`",
+      "depends_on": []
+    },
+    {
+      "id": "L2-QUANTITATIVE-UNITS",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "3.3 Source-shape drift diagnostic — mechanism",
+      "depends_on": ["L2-TYPED-STATE-INGRESS"]
+    },
+    {
+      "id": "L0-RECOVERY-CONFIRMATION",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "7.4.1 Runtime confirmation of a recovery target",
+      "depends_on": ["L0-CHECKPOINT", "L0-RECOVERY-CLASSIFICATION", "L5-REACTION-GUARDS"]
+    },
+    {
+      "id": "L2-ENVIRONMENTAL-FORMULAS",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "Environmental formula configurations",
+      "depends_on": ["L2-TYPED-STATE-INGRESS", "L2-SOLAR-GEOMETRY", "L1-LOCATION"]
+    },
+    {
+      "id": "L0-RECOVERY-BASELINE",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "7.4 Power-recovery reconciliation",
+      "depends_on": ["L0-CHECKPOINT", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L4-DECISION-SNAPSHOT",
+      "owner": "docs/specs/v3/layer4_domain_spec.md",
+      "heading": "5.1 Snapshot Boundary",
+      "depends_on": ["L0-RECOVERY-BASELINE", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L5-STATE-TRANSITION",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "5.1 Closed relational vocabulary",
+      "depends_on": ["L0-FROZEN-HISTORY", "L4-DECISION-SNAPSHOT"]
+    },
+    {
+      "id": "L5-SOLAR-SHADING",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "7. Initial V3 descriptors",
+      "depends_on": ["L0-TIMING", "L2-NUMERIC-HYSTERESIS"]
+    },
+    {
+      "id": "L3-FUTURE-STATE-FRACTION",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.2 Historical input binding and sample construction",
+      "depends_on": ["L0-FROZEN-HISTORY"]
+    },
+    {
+      "id": "L3-ROOM-RETURN-SURVIVAL",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.1 `RoomOccupancySurvivalModel`",
+      "depends_on": ["L0-FROZEN-HISTORY", "L4-DECISION-SNAPSHOT", "L3-EGRESS-ARTIFACT-ADOPTION"]
+    },
+    {
+      "id": "L2-NUMERIC-HYSTERESIS",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "Generic numeric hysteresis condition",
+      "depends_on": ["L0-STATE-HISTORY"]
+    },
+    {
+      "id": "L5-DELAY-GAP-SEMANTICS",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Bounded learned-delay selection",
+      "depends_on": ["L0-TIMING"]
+    },
+    {
+      "id": "L5-TRIGGER-DELAY-SLOT",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Trigger-driven delayed action slot",
+      "depends_on": ["L0-TIMING", "L5-DELAY-GAP-SEMANTICS", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L5-FRACTION-DELAY-SELECTOR",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Bounded learned-delay selection",
+      "depends_on": ["L3-FUTURE-STATE-FRACTION", "L5-DELAY-GAP-SEMANTICS"]
+    },
+    {
+      "id": "L5-ROOM-RETURN-DELAY",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Bounded learned-delay selection",
+      "depends_on": ["L3-ROOM-RETURN-SURVIVAL", "L5-DELAY-GAP-SEMANTICS", "L5-REACTION-ARTIFACT-ADOPTION"]
+    },
+    {
+      "id": "L5-TRANSLATION-DELAY-PERMISSION",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "6. Action admissibility and execution",
+      "depends_on": ["L5-ROOM-RETURN-DELAY", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L5-ROOM-VACANCY-ROUTINE",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "7. Initial V3 descriptors",
+      "depends_on": ["L5-ROOM-RETURN-DELAY", "L5-TIMING-MODEL-BINDING", "L5-TRIGGER-DELAY-SLOT", "L5-TRANSLATION-DELAY-PERMISSION"]
+    },
+    {
+      "id": "L5-TIMING-MODEL-BINDING",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "4.2 `ConfiguredReaction` configuration and authority lifecycle",
+      "depends_on": ["L3-FUTURE-STATE-FRACTION", "L5-FRACTION-DELAY-SELECTOR", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L5-PROPOSAL-SUPPORTING-EVIDENCE",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "4.1 `ReactionProposal` review lifecycle",
+      "depends_on": ["L5-TIMING-MODEL-BINDING", "L3-FUTURE-STATE-FRACTION"]
+    },
+    {
+      "id": "L5-PROPOSAL-CANDIDATE-KINDS",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "3. One Reaction-descriptor mechanism",
+      "depends_on": ["L5-PROPOSAL-SUPPORTING-EVIDENCE"]
+    },
+    {
+      "id": "L5-REACTION-ARTIFACT-ADOPTION",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "4.2 `ConfiguredReaction` configuration and authority lifecycle",
+      "depends_on": ["L5-PROPOSAL-CANDIDATE-KINDS", "L5-TIMING-MODEL-BINDING", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L3-EGRESS-ARTIFACT-ADOPTION",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.9 Context coverage and continual adaptation",
+      "depends_on": ["L5-REACTION-ARTIFACT-ADOPTION"]
+    },
+    {
+      "id": "L3-ANALYSIS-SERVING-IDENTITY",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.1.2 Administrative instance contract",
+      "depends_on": ["L3-EGRESS-ARTIFACT-ADOPTION"]
+    },
+    {
+      "id": "L2-SOLAR-GEOMETRY",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "3.5 Core solar-geometry bindings",
+      "depends_on": ["L2-QUANTITATIVE-UNITS", "L0-WINDOW", "L1-LOCATION"]
+    },
+    {
+      "id": "L3-EVIDENCE-RANGE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4 Target and result contracts",
+      "depends_on": ["L1-EVIDENCE-INSTANT", "L0-FROZEN-HISTORY"]
+    },
+    {
+      "id": "L3-INDIRECT-PHYSICAL-REFERENCE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.5 `IndirectSemanticAssistModel-v1`",
+      "depends_on": ["L1-LOCATION", "L0-STATE-HISTORY"]
+    },
+    {
+      "id": "L4-SEMANTIC-CONTRACTS",
+      "owner": "docs/specs/v3/layer4_domain_spec.md",
+      "heading": "4.1 Frozen Core Resolver Kinds",
+      "depends_on": ["L1-LOCATION", "L3-AVAILABILITY-SUPPRESSION"]
+    },
+    {
+      "id": "L4-ACTIVITY-SLOTS",
+      "owner": "docs/specs/v3/layer4_domain_spec.md",
+      "heading": "9.4 `activity` kernel and initial `cooking` profile",
+      "depends_on": ["L4-SEMANTIC-CONTRACTS", "L0-WINDOW"]
+    },
+    {
+      "id": "L5-EFFECT-BUNDLE",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Registered output and bundle contracts",
+      "depends_on": ["L0-WINDOW", "L1-LOCATION", "L5-RELATION-PROFILES"]
+    },
+    {
+      "id": "L5-AIR-EXTRACTION",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "7. Initial V3 descriptors",
+      "depends_on": ["L5-DESCRIPTOR-PLAN", "L5-PROGRAM-EVALUATOR", "L5-STEP-SLOT", "L2-ACTUATOR-CHANNEL", "L0-CHANNEL-STATE", "L0-WINDOW"]
+    },
+    {
+      "id": "L3-PROPOSAL-EFFECT",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "6.4 ReactionDescriptorCandidate",
+      "depends_on": ["L5-EFFECT-BUNDLE", "L5-RELATION-PROFILES", "L5-PROPOSAL-SUPPORTING-EVIDENCE", "L3-EVIDENCE-RANGE"]
+    },
+    {
+      "id": "L2-ACTUATOR-CHANNEL",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "6.1 Registered logical channels",
+      "depends_on": ["L1-HOUSE-FACT-TIME"]
+    },
+    {
+      "id": "L0-CHANNEL-STATE",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "5.1.1.1 Normalized observation edge and origin proof",
+      "depends_on": ["L0-STATE-HISTORY", "L0-OBSERVATION-COVERAGE", "L2-ACTUATOR-CHANNEL"]
+    },
+    {
+      "id": "L0-MANAGED-EPISODE",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "5.1.1.2 Durable managed-episode projection",
+      "depends_on": ["L0-STATE-HISTORY", "L0-RETENTION", "L0-CHANNEL-STATE", "L0-OBSERVATION-COVERAGE"]
+    },
+    {
+      "id": "L5-TARGET-EVIDENCE",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "6.1 Correction attribution evidence",
+      "depends_on": ["L0-CHANNEL-STATE", "L2-ACTUATOR-CHANNEL"]
+    },
+    {
+      "id": "L3-CORRECTION-COUNT",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.2 `CorrectionCountHurdleModel-v1`",
+      "depends_on": ["L5-TARGET-EVIDENCE", "L0-OBSERVATION-COVERAGE"]
+    },
+    {
+      "id": "L3-ROUTINE-PATTERN",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.3 `ActuationRoutinePatternModel-v1`",
+      "depends_on": ["L0-CHANNEL-STATE", "L5-TARGET-EVIDENCE", "L0-OBSERVATION-COVERAGE"]
+    },
+    {
+      "id": "L3-ROUTINE-BASELINE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.3 `ActuationRoutinePatternModel-v1`",
+      "depends_on": ["L3-ROUTINE-PATTERN", "L0-OBSERVATION-COVERAGE", "L0-WINDOW"]
+    },
+    {
+      "id": "L3-ROUTINE-OUTPUT",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.3 `ActuationRoutinePatternModel-v1`",
+      "depends_on": ["L3-ROUTINE-BASELINE", "L5-RELATION-PROFILES", "L3-REACTION-ENVELOPE"]
+    }
+  ],
+  "reviewed_slices": [
+    {
+      "issue": "CA4-18",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-18.md",
+      "contracts": [
+        "L0-TIMING",
+        "L5-STEP-SLOT",
+        "L5-STEP-HOLD",
+        "L5-COMFORT-TRAJECTORY",
+        "L5-PRESENCE-SIMULATION"
+      ],
+      "design_constraints": ["V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": [
+        "docs/specs/v3/architecture_overview_defined_layers.md",
+        "docs/v3_architecture_recap.md"
+      ],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-55",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-55.md",
+      "contracts": ["L0-RECOVERY-CLASSIFICATION", "L0-CHECKPOINT", "L0-FAILURE"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-04",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-04.md",
+      "contracts": ["L0-STATE-HISTORY", "L0-FROZEN-HISTORY", "L0-RETENTION", "L5-HISTORY-READ"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-57",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-57.md",
+      "contracts": ["L5-REACTION-GUARDS", "L3-GUARD-CANDIDATE"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "forbidden_terms": ["EnvironmentalGuard", "environmental_guard"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-50",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-50.md",
+      "contracts": ["L2-TYPED-STATE-INGRESS", "L5-REACTION-GUARDS"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-58",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-58.md",
+      "contracts": ["L5-RELATION-PROFILES", "L3-ENVIRONMENTAL-OUTPUT"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-42",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-42.md",
+      "contracts": ["L5-REACTION-GUARDS", "L5-REACTION-AUTHORITY", "L3-AVAILABILITY-SUPPRESSION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-07",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-07.md",
+      "contracts": ["L1-CATEGORICAL-CONFIDENCE", "L2-PHYSICAL-EVIDENCE-FORMULA"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-15",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-15.md",
+      "contracts": ["L3-REACTION-ENVELOPE", "L3-REACTION-HANDOFF", "L5-RELATION-PROFILES"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-08",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-08.md",
+      "contracts": ["L2-PHYSICAL-EVIDENCE-FORMULA"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-48",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-48.md",
+      "contracts": ["L1-LOCATION", "L3-LEARNER-SCOPE", "L4-RESOLVER-SCOPE"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-06",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-06.md",
+      "contracts": ["L0-STATE-HISTORY", "L0-FACT-SOURCE", "L2-FUSION-STABILITY"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-16",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-16.md",
+      "contracts": ["L2-TYPED-STATE-INGRESS", "L2-QUANTITATIVE-UNITS", "L3-ENVIRONMENTAL-OUTPUT", "L5-COMFORT-TRAJECTORY"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-43",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-43.md",
+      "contracts": ["L5-COMFORT-TRAJECTORY", "L5-REACTION-AUTHORITY"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-44",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-44.md",
+      "contracts": ["L5-REACTION-AUTHORITY", "L5-COMFORT-TRAJECTORY", "L5-PRESENCE-SIMULATION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-39",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-39.md",
+      "contracts": ["L0-RECOVERY-CONFIRMATION", "L5-REACTION-GUARDS"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-36",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-36.md",
+      "contracts": ["L2-ENVIRONMENTAL-FORMULAS", "L3-ENVIRONMENTAL-OUTPUT"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-03",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-03.md",
+      "contracts": ["L0-RECOVERY-BASELINE", "L5-REACTION-AUTHORITY"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-45",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-45.md",
+      "contracts": ["L0-RECOVERY-BASELINE", "L5-REACTION-AUTHORITY", "L4-DECISION-SNAPSHOT"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-10",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-10.md",
+      "contracts": ["L0-FROZEN-HISTORY", "L4-DECISION-SNAPSHOT", "L5-STATE-TRANSITION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-14",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-14.md",
+      "contracts": ["L3-ANALYSIS-SERVING-IDENTITY", "L3-EGRESS-ARTIFACT-ADOPTION", "L5-PROPOSAL-CANDIDATE-KINDS", "L5-PROPOSAL-SUPPORTING-EVIDENCE", "L5-REACTION-ARTIFACT-ADOPTION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-13",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-13.md",
+      "contracts": ["L0-TIMING", "L3-ROOM-RETURN-SURVIVAL", "L5-TRIGGER-DELAY-SLOT", "L5-ROOM-RETURN-DELAY", "L5-TRANSLATION-DELAY-PERMISSION", "L5-ROOM-VACANCY-ROUTINE", "L5-TIMING-MODEL-BINDING"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-54",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-54.md",
+      "contracts": ["L1-EVIDENCE-INSTANT", "L1-HOUSE-FACT-TIME", "L0-WINDOW", "L0-TIMING", "L2-FUSION-STABILITY", "L3-SAMPLE-TIME", "L3-RESULT-TIME", "L3-ENVIRONMENTAL-OUTPUT", "L5-TRIGGER-DELAY-SLOT"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-47",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-47.md",
+      "contracts": ["L0-FROZEN-HISTORY", "L1-LOCATION", "L2-SOLAR-GEOMETRY", "L2-ENVIRONMENTAL-FORMULAS", "L3-EVIDENCE-RANGE", "L3-INDIRECT-PHYSICAL-REFERENCE", "L3-PROPOSAL-EFFECT", "L4-SEMANTIC-CONTRACTS", "L4-ACTIVITY-SLOTS", "L5-EFFECT-BUNDLE", "L5-HISTORY-READ"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-12",
+      "status": "partial_review",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-12.md",
+      "contracts": ["L5-RELATION-PROFILES", "L5-REACTION-GUARDS", "L5-DESCRIPTOR-PLAN", "L5-EFFECT-BUNDLE", "L5-PROGRAM-EVALUATOR", "L5-STEP-HOLD", "L5-AIR-EXTRACTION", "L0-MANAGED-EPISODE", "L3-AVAILABILITY-SUPPRESSION", "L3-ENVIRONMENTAL-OUTPUT", "L3-ENVIRONMENTAL-ANCHOR", "L3-REACTION-ENVELOPE", "L3-PROPOSAL-EFFECT", "L3-ROUTINE-PATTERN", "L3-ROUTINE-BASELINE", "L3-ROUTINE-OUTPUT", "L5-PROPOSAL-SUPPORTING-EVIDENCE"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "forbidden_terms": ["TypedEffectSummary", "EffectShape", "effect_contract_for_intent", "effect_contract_id"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-05",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-05.md",
+      "contracts": ["L1-HOUSE-FACT-TIME", "L0-STATE-HISTORY", "L0-RETENTION", "L0-OBSERVATION-COVERAGE", "L2-TYPED-STATE-INGRESS", "L3-SAMPLE-TIME"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-09",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-09.md",
+      "contracts": ["L1-HOUSE-FACT-TIME", "L0-STATE-HISTORY", "L0-OBSERVATION-COVERAGE", "L2-ACTUATOR-CHANNEL", "L0-CHANNEL-STATE", "L5-TARGET-EVIDENCE", "L3-CORRECTION-COUNT", "L3-ROUTINE-PATTERN"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-11",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-11.md",
+      "contracts": ["L5-DESCRIPTOR-PLAN", "L5-REACTION-GUARDS", "L5-REACTION-AUTHORITY", "L5-PROGRAM-START", "L5-STEP-SLOT", "L5-PRESENCE-SIMULATION", "L3-REACTION-ENVELOPE"],
+      "design_constraints": ["V3-CLEAN-START", "V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    }
+  ]
+}

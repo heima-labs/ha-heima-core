@@ -1,6 +1,6 @@
 # Heima v3 — Layer 2: Registries
 
-**Status:** Draft — pending developer approval. Not implemented.
+**Status:** Defined V3 contract. Not implemented.
 **Layer:** 2 of 8. Builds on Layer 1 (`docs/specs/v3/layer1_substrate_spec.md` — `HouseFact`,
 `Provenance`, `Location`, `Zone`, `EvidenceValue`) and Layer 0 (`docs/specs/v3/layer0_runtime_spec.md`
 — `Window`, `FactSource`, Persistence). This document does not restate either contract; it assumes the
@@ -12,9 +12,9 @@ does without assuming the reader has read them.
 
 ## Normative precedence
 
-This document defines the intended contract for Layer 2 once approved. Until the developer confirms
-it explicitly ("ok, proceed"), it is discussion material, not an implementation target. Once approved
-and implemented: if code and spec diverge, the divergence must be resolved explicitly — code is a
+This document defines the current V3 Layer-2 design contract. Open corrections are tracked in
+the CA4 backlog; runtime implementation is a separate phase. When implemented, if code and
+spec diverge, the divergence must be resolved explicitly — code is a
 reference implementation, not the source of truth.
 
 ---
@@ -123,7 +123,7 @@ collides with an already-registered state producer's `(fact_type, Location)` is 
 composition time, loudly, never silently accepted — the same discipline §5.6 already applies to
 `FusionRule` dependency cycles. Layer 2 contributes its static state claims to Layer 0 §4's bootstrap
 `FactTypeClaim`/global producer pass; it also rejects a fact type owned by another layer's claim, such
-as Layer 0's reserved `manual_hold.*` claim family. This is a startup/configuration lookup only, never an
+as Layer 0's reserved `manual_hold.lifecycle` event claim. This is a startup/configuration lookup only, never an
 evaluation-path lookup.
 
 That pass also resolves each producer `Location` before it is admitted: `scope="room"` must name a
@@ -131,6 +131,10 @@ registered room; every id in `scope="rooms"` must name a registered room; and `s
 a registered Zone. Zone and Topology registration perform their own Room-registry reference resolution
 under Layer 1 §6/§7. Thus construction may remain free of registry ordering, but no unknown spatial
 reference can reach a running `Sensor` or `FusionRule`.
+
+`Sensor.sensor_id` is unique among Sensors and `FusionRule.fusion_id` is unique among FusionRules
+within a candidate generation. Registry-id uniqueness is checked independently of output-claim
+uniqueness: two records cannot share an id even if they claim different facts.
 
 `Sensor` and `FusionRule` produce only `state` facts. Event facts are emitted only by the owning
 subsystem declared in Layer 0 §4; they are not `FactRef` inputs and cannot be recreated through a
@@ -174,8 +178,12 @@ fact values as valid `EvidenceValue`s.
   and commanding are distinct roles. If `opening_id` is set, it resolves in the candidate `Topology`
   and `where` is exactly `Location(scope="room", room_id=<Opening.room_id>)`; when it is absent, no
   opening relation is implied or required. `device_id` is intentionally not unique.
-- Every `FusionRule.inputs` tuple is non-empty. `DirectStrategy`'s existing exact-one rule remains
-  stricter where it applies.
+- Every `FusionRule.inputs` tuple is non-empty and has no repeated logical `FactRef` key
+  `(fact_type, where, previous_cycle)`. `DirectStrategy`'s existing exact-one rule remains
+  stricter where it applies. A current-cycle self-reference and an explicitly permitted
+  `previous_cycle` self-reference are distinct observations only for a FormulaStrategy that
+  authorizes that self-memory (§5.8); repeating either exact reference is rejected. The same
+  producer may remain an input to several different FusionRules.
 - `UnanimityStrategy.min_available` is an integer (not `bool`) in `[1, len(inputs)]`.
 - For `WeightedQuorumStrategy`, every explicit weight is finite and strictly positive. Negative or
   zero weights are invalid: a weight expresses the amount of evidence a `True` vote contributes, not
@@ -188,7 +196,10 @@ fact values as valid `EvidenceValue`s.
   `[0.0, 1.0]`; the other two modes prohibit both fields. The mode-specific result validation in §5.3
   remains the runtime guard for formula-produced values.
 - `physical_evidence.weighted_evidence` requires a configuration payload that compiles to a
-  `PhysicalEvidenceWeightedConfig`; every other current formula requires `configuration=None`. Its
+  `PhysicalEvidenceWeightedConfig`. The environmental solar-incidence and
+  humidity-ratio formulas have their own closed compiled configurations in
+  §5.3; every other Initial-V3 formula requires `configuration=None`. The physical-evidence
+  formula's
   bindings contain every input index exactly once, in `[0, len(inputs))`; both weights are finite,
   `true_weight > 0`, `false_weight >= 0`, and a `required_for_false` binding has
   `false_weight > 0`. `true_threshold` is in `(0, sum(true_weight)]` and `false_threshold` is in
@@ -230,7 +241,8 @@ definition fingerprint when audit needs the complete administrative configuratio
 
 The reload computes a direct-and-transitive **impact set** from those staging-time comparisons. A
 producer is directly impacted when it is added, removed, relocated, or its execution semantic
-fingerprint differs; this includes a changed Sensor binding/interpretation/reliability, a changed
+fingerprint differs; this includes a changed Sensor binding/interpretation/unit contract/
+source-age gate/numeric bounds/reliability, a changed
 FusionRule inputs/strategy/formula configuration/stability, a Zone membership change affecting its
 scope or coverage, and a changed resolved formula `(formula_id, implementation_version)`. Every
 FusionRule dependent of an impacted producer is then impacted transitively through current-cycle
@@ -249,12 +261,14 @@ for that set:
 
 Rules outside the impact set retain their pending stability and prior-cycle memory. An Actuator with a
 changed **execution semantic** fingerprint is handled in the same transaction:
-`power_recovery_policy="never"` removes its recovery target; otherwise its target is usable only when
-the candidate Actuator semantic fingerprint matches the target's recorded fingerprint. A mismatch
-discards the target rather than reconciling an intent under changed capabilities or policy; display-only
+`power_recovery_policy="never"` removes its per-channel recovery snapshots; otherwise each is
+usable only when the candidate Actuator semantic fingerprint and recovery policy match the
+snapshot's recorded values. A mismatch
+discards that snapshot rather than reconciling an intent under changed capabilities or policy; display-only
 Actuator metadata does neither. Removal of an Actuator, or a changed `entity_id` for the same stable
-`actuator_id`, also deletes the old entity's target; it is never migrated to another HA endpoint merely
-because the logical id stayed the same. Layer 0 receives this resolved policy/fingerprint/entity delta
+`actuator_id`, also deletes the old endpoint's per-channel snapshots; they are never
+migrated to another HA endpoint merely because the logical id stayed the same.
+Layer 0 receives this resolved policy/fingerprint/entity delta
 at composition commit; it never queries Layer 2’s live registry during recovery.
 
 ---
@@ -282,6 +296,18 @@ ReadBinding = StateReadBinding | AttributeReadBinding | CalendarWindowReadBindin
 PhysicalEvidenceAdmission = Literal["immediate", "corroborating"]
 
 @dataclass(frozen=True)
+class UnitConversionRef:
+    conversion_id: str
+    version: str
+
+@dataclass(frozen=True)
+class QuantitativeUnitContract:
+    source_unit: str
+    canonical_unit: str
+    source_unit_authority: Literal["ha_state_metadata", "declared_attribute_contract"]
+    conversion_ref: UnitConversionRef | None  # None only for exact source==canonical identity
+
+@dataclass(frozen=True)
 class Sensor:
     sensor_id: str             # stable Heima logical-reading id, not an HA entity_id; non-empty and
                                # one dotted-name segment when used in a per-sensor fact namespace
@@ -302,7 +328,10 @@ class Sensor:
                                             # whose room is the owning room of this Opening (§2.4).
     unit: str | None = None         # HA's unit_of_measurement expected at registration time. Together
                                      # with expected_device_class/state_class, this is a source-shape
-                                     # expectation, never a conversion or a semantic inference (§3.3).
+                                     # expectation; quantitative use is governed by unit_contract (§3.3).
+    unit_contract: QuantitativeUnitContract | None = None  # required for numeric/bucket interpretation
+    max_source_age: Window | None = None  # optional HA report-age gate on state/attribute reads
+    numeric_bounds: tuple[float, float] | None = None  # inclusive canonical-unit range, numeric only
     expected_device_class: str | None = None  # expected HA device_class for this read path when the
                                               # entity metadata actually describes that path (§3.3).
     expected_state_class: str | None = None
@@ -391,7 +420,8 @@ prevents a multi-window room from being silently treated as one physical apertur
 **Source-shape expectation.** `unit`, `expected_device_class`, and `expected_state_class` are the
 frozen metadata expectation of the specific HA read path. They make staging validation and later
 configuration-drift diagnostics possible; they do not turn Home Assistant metadata into a Heima fact
-semantic, do not convert values, and do not select an `Interpretation`. A path whose enclosing entity
+semantic or select an `Interpretation`. Quantitative unit validation/conversion
+is the separate explicit `QuantitativeUnitContract` below. A path whose enclosing entity
 does not describe the value it exposes (for example `weather.*` or an attribute of `climate.*`) leaves
 the inapplicable expectation unset. The explicit binding and `Interpretation` remain authoritative.
 
@@ -412,9 +442,12 @@ Three binding shapes are enough for the concrete HA surfaces Heima already uses:
 - **`CalendarWindowReadBinding`** reads only the raw windows active **now** for one `calendar.*`
   entity through Layer 0's `active_now` view (§3.4.1 of the Layer 0 spec). It passes raw event
   summary/start/end data to `CalendarInterpretation` (§4); category classification still happens here
-  in Layer 2, never in Layer 0. A predictive Layer 4/5 consumer does not route future events through a
-  `Sensor`: it asks Layer 0 directly for `upcoming_starts_within(entity_id, now, horizon)`, retaining
-  each event's start/end/summary for a decision such as notifying today about tomorrow's event.
+  in Layer 2, never in Layer 0. A predictive Layer-5 consumer does not route future events through a
+  `Sensor`: its plan stages a finite `CalendarViewRequirement` and reads the matching
+  `FrozenCalendarView` from its `DecisionSnapshot` (Layer 0 §4.1, Layer 4 §5.1), retaining each
+  event's start/end/summary for a decision such as notifying today about tomorrow's event. It never
+  calls Layer 0's live `upcoming_starts_within` method during policy evaluation; Layer 4 only
+  transports the frozen view.
 
 The binding output is a small raw value or small sequence of raw values already available in Home
 Assistant's in-memory state/context for the current cycle. It is never a network fetch, disk read, or
@@ -436,8 +469,7 @@ more `Actuator` records (§6); this is expected, not a modeling conflict.
 ### 3.2 `available` when the producer cannot form a usable fact assertion
 
 A `Sensor` is what actually sets `Provenance.available` (Layer 1 §4.1) — this is where a usable fact
-assertion is first decided, by a concrete rule with two distinct triggers, not by each producer's
-discretion:
+assertion is first decided, by a concrete rule, not by each producer's discretion:
 
 - **The binding cannot produce raw input**: the entity does not exist; a state binding reads
   `unavailable` or `unknown`; an attribute binding targets a missing attribute or an entity whose
@@ -474,6 +506,35 @@ discretion:
     §5.1, actually work: it falls through to the raw entity specifically because the calendar
     `Sensor` reports `available=False` here, never because it reports some "none" value
     `PrecedenceStrategy` would have to special-case.)
+- **A declared source freshness or numeric range gate fails**: for a state/attribute binding with
+  `max_source_age`, the HA state's `last_reported` must be timezone-aware, no later than the current
+  cycle instant, and no older than that positive `Window`. HA `last_updated` means that state or
+  attributes changed, so it cannot reject an identical value that HA reported again. This gate
+  proves an HA entity report, not necessarily a new physical device measurement: an integration
+  that does not publish identical device readings cannot use it to prove those readings occurred.
+  Setting `max_source_age` is the registration's explicit assertion that the HA entity reports
+  within that maximum silent interval while healthy; an event-driven binding that only
+  publishes changes leaves it `None` unless its integration separately guarantees reports.
+  This is validated for shape at staging, but the physical reporting promise cannot be
+  inferred or proved merely from an HA timestamp.
+  A staged binding with this gate arms one ordinary Layer-0 `AtJob` for the first
+  representable instant strictly after `last_reported + max_source_age`.
+  A newer report re-arms the same job id; cancellation/replacement uses the
+  shared scheduler, never a Sensor-specific timer loop. At due, a fresh
+  frozen HA intake rechecks `last_reported` before declaring unavailable;
+  it neither invents a report nor writes a same-value fact. Startup does not
+  replay missed expiry callbacks: its first fresh intake checks the current
+  age and Layer-0 process coverage already marks the interrupted interval.
+  For a numeric binding with
+  `numeric_bounds`, the converted canonical-unit number must be finite and within its inclusive
+  ordered bounds. Otherwise the fact is `available=False`, `confidence=None` with a diagnostic;
+  no previous valid value is substituted. If a report-age limit expires between cycles, the
+  expiry instant is passed as a required-stream observation-gap start to Layer 0 §4.4;
+  the unavailable `HouseFact` itself is emitted at the detecting cycle's instant and is
+  never backdated. Staging rejects either field on an inapplicable binding,
+  a nonpositive `max_source_age`, bounds other than two finite non-boolean
+  numbers with lower <= upper, or a missing unit contract. Both gates enter
+  the Sensor's execution fingerprint.
 - **Otherwise**: the `Interpretation` produces `available=True` with a real `value` and
   `confidence=Sensor.reliability` — resolved 2026-09-05, replacing an earlier, hardcoded
   `confidence=1.0`. `reliability` defaults to `1.0`, so this is unchanged for the common case; it is
@@ -488,13 +549,46 @@ discretion:
 input (§3.1/§4) — the bound entity's live `unit_of_measurement`, `device_class`, and `state_class`
 are already available there for state/attribute bindings, so this costs nothing beyond binding
 extraction and §2.2's no-blocking-I/O contract holds unchanged. If a live, applicable metadata value
-differs from its registered expectation, a diagnostic event is raised (Layer 0 §9-style, the same
-mechanism Layer 1 §4.3 uses for an `evidence` shape violation) — never an automated correction, and
-never a change to `available`/`confidence`/`value` for that cycle. A stale registered source shape is
-a configuration problem worth human attention (for example, a `BucketInterpretation` threshold may no
-longer have the intended unit), not a reason to discard an otherwise-valid reading. The explicit
-`Interpretation` still rejects an invalid raw shape under §3.2/§4; metadata drift is only its
-side-channel diagnostic, never hidden replacement semantics.
+differs from its registered expectation, a diagnostic event is raised (Layer 0 §10, the same
+mechanism Layer 1 §4.3 uses for an `evidence` shape violation). Device/state-class drift and
+unit metadata that does not describe the bound read path remain diagnostic-only;
+there is no automated correction. Quantitative unit drift is different because
+it changes the meaning of a number, so the following gate also makes that
+reading unavailable before `NumericInterpretation` or `BucketInterpretation`
+can emit a value.
+
+Every quantitative `Sensor` using `NumericInterpretation` or
+`BucketInterpretation` has one immutable `QuantitativeUnitContract`. It names
+the exact source unit, canonical Heima unit and, when these differ, one
+core-registered `UnitConversionRef` whose frozen pure converter declares that
+exact input/output unit pair. An exact same-unit binding uses identity with
+`conversion_ref=None`. There is no implicit scaling, offset or UI-dependent
+unit selection. The converted finite number is the only value passed to
+numeric output or bucket thresholds, and downstream typed bindings validate
+the declared canonical unit. The core unit-conversion registry is
+bootstrap-frozen, versioned and pure; a changed conversion semantic version
+invalidates dependent staged generations/artifacts under ordinary selective
+invalidation. It never receives a raw HA object or executes on a learning or
+action path.
+
+Staging rejects a quantitative Sensor with no unit contract, empty/unknown
+core unit tokens, a missing or wrong conversion for a differing unit pair,
+or a mismatch between its declared canonical unit and any staged typed
+consumer of that fact. The canonical unit enters the Sensor's definition
+fingerprint; a change invalidates dependent consumers. With
+`source_unit_authority="ha_state_metadata"`, the bound state
+must expose applicable HA `unit_of_measurement` equal to `source_unit` at
+staging and at every valid read; `Sensor.unit` must equal it. Missing or
+changed live unit makes the reading `available=False`, `confidence=None`
+and raises the drift diagnostic. With
+`source_unit_authority="declared_attribute_contract"`, only an explicit
+`AttributeReadBinding` may use the developer-declared attribute source unit;
+the enclosing entity's unrelated unit metadata is never treated as that
+attribute's unit. Staging fingerprints the attribute path and declared unit;
+changing either requires a new generation. Runtime still rejects invalid,
+non-finite raw or converted numbers. No automatic conversion is selected
+solely because a new HA unit string happens to match another registered
+converter; that change needs staging under a new source-unit contract.
 
 ### 3.4 HA-assisted environmental discovery — staging only
 
@@ -579,6 +673,54 @@ there is no desktop telemetry default. These normalized facts can be current Lay
 working-context contract, while a direct Layer-5 interruption policy may independently consume a
 declared communication-session fact without waiting for learning.
 
+### 3.5 Core solar-geometry bindings
+
+Initial V3 obtains solar position through the existing Layer-2 `Sensor`
+mechanism. When a staged environmental formula or learning definition needs
+solar geometry, the core contributes exactly two reserved, casa-scoped Sensor
+registrations: `solar_elevation` claims `external.solar_elevation` and
+`solar_azimuth` claims `external.solar_azimuth`. Their respective
+`AttributeReadBinding`s read `sun.sun` attributes `elevation` and `azimuth`
+from the **same frozen HA state snapshot**. The Home Assistant Sun integration
+publishes those attributes in degrees with azimuth clockwise from north
+([Sun integration](https://www.home-assistant.io/integrations/sun/)); it is
+the input source, not a second Heima solar-position calculation.
+
+Both registrations use `NumericInterpretation`,
+`QuantitativeUnitContract(source_unit="deg", canonical_unit="rad",
+source_unit_authority="declared_attribute_contract",
+conversion_ref=UnitConversionRef("angle.degrees_to_radians.v1", "1"))`,
+`reliability=1.0`, and `max_source_age=Window(seconds=1800)`.
+The frozen core converter is the pure finite `degrees * π / 180` operation;
+its id/version and exact unit pair are registered under §3.3. The converted
+elevation is bounded inclusively by `[-π/2, π/2]`, the clockwise-from-north
+azimuth by `[0, 2π]`; `2π` is the same north bearing as zero for the
+downstream cosine. These are `numeric_bounds` on the two Sensor registrations.
+The 30-minute source-age limit permits the Sun integration's documented
+day/night update cadence while preventing an old HA value from masquerading
+as current geometry ([core Sun entity implementation](https://github.com/home-assistant/core/blob/dev/homeassistant/components/sun/entity.py)).
+
+The two core-generated Sensors contribute the exact exclusive state
+`FactTypeClaim`s through Layer 0's normal claim collision check. No administrator Sensor,
+plugin or formula may publish either claim concurrently, and another Sensor
+cannot register either reserved `sun.sun` attribute path under a second fact
+type because one HA readable signal path has one registered owner. Both facts carry
+ordinary Layer-2 `FactSource` identity and the canonical radian unit; neither
+contains raw HA attributes. A missing, unavailable, stale, nonnumeric or
+out-of-range source makes the affected fact `available=False`; the
+solar-incidence formula needs both available facts and therefore abstains if
+either fails. Startup never reuses a pre-restart solar reading. The staged
+source entity/attribute paths, converter version, bounds, age limit and HA
+observer-location fingerprint enter the two Sensor execution fingerprints.
+A changed HA home location is a staged source-definition update, as are a
+source binding or converter version change. Until that new generation is
+committed, solar geometry is unavailable; the ordinary selective generation
+revalidation then invalidates dependent solar
+formula plans and learning artifacts; evaluation never queries HA location
+or calculates an ephemeris on the policy path. Installations without a
+usable Sun source may keep unrelated automations active, while a solar
+dependent plan remains unavailable until fresh geometry arrives.
+
 ---
 
 ## 4. `Interpretation` — how raw binding input becomes a `HouseFact` value
@@ -614,8 +756,9 @@ class MappingInterpretation:
 @dataclass(frozen=True)
 class NumericInterpretation:
     pass
-    # A valid finite numeric input becomes its normalized float value. There is deliberately no unit
-    # conversion, range policy, rounding, or fallback here: those are explicit downstream concerns.
+    # A valid finite numeric input is first converted through the Sensor's staged
+    # QuantitativeUnitContract, then becomes its canonical-unit float value.
+    # There is no implicit range policy, rounding, or fallback here.
 
 @dataclass(frozen=True)
 class Bucket:
@@ -627,7 +770,8 @@ class BucketInterpretation:
     buckets: tuple[Bucket, ...]         # ordered lowest to highest, e.g. dark/dim/ok/bright — at
                                           # least one entry; the ordered chain of upper_bounds plus
                                           # the open-ended top bucket makes this total over the
-                                          # entire real line by construction, given a non-empty tuple
+                                          # entire real line by construction, given a non-empty tuple;
+                                          # thresholds use the Sensor contract's canonical unit
 
 @dataclass(frozen=True)
 class KeywordClassifier:
@@ -653,8 +797,8 @@ raw HA state string; `AttributeReadBinding` supplies its valid raw attribute val
 only `MappingInterpretation`, `NumericInterpretation`, or `BucketInterpretation`. Mapping is an exact
 string lookup: an attribute value must therefore already be a `str`, with no `str(...)` conversion.
 Numeric and bucket interpretations share one strict numeric parser: accept a non-boolean `int` or
-finite `float`, or an ASCII decimal string matching
-`[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?`; normalize it to a finite `float`.
+finite `float`, or an ASCII decimal string whose entire content matches the regex
+`[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`; normalize it to a finite `float`.
 Whitespace, locale formatting, booleans, `NaN`, infinity, malformed strings, and every other value are
 type failures, producing `available=False`/`confidence=None` and a diagnostic. They never throw into
 the cycle, silently coerce, convert units, or select a bucket. `CalendarWindowReadBinding` supplies
@@ -667,8 +811,10 @@ applies Unicode NFKC normalization, `casefold()`, and whitespace collapsing to t
 each supplied text and configured keyword. A keyword matches when its normalized text is a substring
 of the normalized input. It gathers every matching category across the supplied texts, then returns the
 category occurring earliest in `priority_order`, or `None`. Registration rejects a `priority_order`
-that does not list every key in `keywords` exactly once and no other category, or a category with no
-non-empty normalized keyword. `CalendarInterpretation` passes only the raw summaries of its active
+that does not list every key in `keywords` exactly once and no other category, any category with an
+empty keyword list, or any individual keyword whose normalized text is empty. This includes an empty
+or whitespace-only keyword beside valid keywords; no empty substring reaches matching.
+`CalendarInterpretation` passes only the raw summaries of its active
 windows to that classifier; stored `CalendarWindow.summary` remains unmodified. Thus overlap within one
 calendar is deterministic without Layer 0 assigning a category. `None` means this Sensor has no signal
 (`available=False`). Conflicts between separate `calendar.*` entities remain explicit consumer policy.
@@ -885,7 +1031,7 @@ Both strategies always produce a boolean value when they produce a value at all.
 
 An `available=True` input whose value is not an exact `bool` is a configuration/type mismatch at
 evaluation time. The fusion produces `available=False`/`confidence=None` for that cycle and raises a
-Layer 0 §9-style diagnostic identifying the fusion and offending `FactRef`. It is deliberately not
+Layer 0 §10 diagnostic identifying the fusion and offending `FactRef`. It is deliberately not
 coerced to `False` and not silently excluded: either would convert an invalid producer contract into
 a plausible but wrong vote. This check is necessarily at evaluation time because `FactRef` addresses
 the generic `HouseFact` contract, whose value shape can depend on the source's current interpretation
@@ -956,9 +1102,11 @@ may begin with `30s`); a security-critical rule leaves it unset. A plain symmetr
 availability grace.
 
 **The mechanism, concretely — not just "debounce happens," but how.** Every cycle, a `FusionRule`
-computes its raw candidate value from its current `inputs` per its strategy, exactly as if
-`stability` were absent. This candidate is compared against the value of the last derived `HouseFact`
-this `FusionRule` actually **committed** (wrote):
+computes its raw candidate from its current `inputs` per its strategy, exactly as if
+`stability` were absent. Value dwell compares only two **available** values;
+publication compares the candidate's complete Layer-0
+`FactChangeFingerprint` with the last derived `HouseFact` this `FusionRule`
+actually committed. An unavailable fact has no value to compare:
 
 The associated control state is a Layer-2-owned, O(1)-indexed `FusionRuleRuntimeState` keyed by
 `fusion_id`: pending value/since/due, availability-grace since/due, and the generation/token of each
@@ -981,17 +1129,23 @@ latter does so only for its §2.5 impact set.
   available committed output, commit that unavailable fact immediately. Grace records are ephemeral:
   reload impact invalidation and every restart cancel them rather than extending stale output.
 
-- If the candidate matches the last committed value: cancel any pending directional transition and
-  invalidate its deadline token, then emit no new fact. Returning to the committed value withdraws
-  the candidate that justified the dwell; a callback already queued with the old token is harmless
-  and cannot commit. With no pending transition, there is simply nothing to do (Layer 0's
-  write-on-change policy already covers the absence of a new fact).
+- If the candidate and last committed output are both available and their
+  values match, cancel any pending directional transition and invalidate its
+  deadline token. Returning to the committed value withdraws the candidate
+  that justified the dwell. Then compare their complete
+  `FactChangeFingerprint`s: if confidence or stable source/route changed,
+  commit the current candidate in this cycle without a new value dwell;
+  otherwise emit no new fact. A callback already queued with the old token is
+  harmless. If the last committed output is unavailable, do not compare its
+  undefined value: the available candidate follows its ordinary directional
+  window below, including a fresh dwell where configured.
 
 For an available candidate, determine its applicable directional window *before* creating pending
 state. The two cases are deliberately different:
 
-- **No dwell (`None`) is a same-cycle fast path.** If the candidate differs from the last committed
-  value and its applicable window is `None` (including `FusionRule.stability=None`), cancel any stale
+- **No dwell (`None`) is a same-cycle fast path.** If the available candidate differs from the last
+  available committed value, or reacquires availability, and its applicable window is `None`
+  (including `FusionRule.stability=None`), cancel any stale
   pending deadline and commit it in this same evaluation. `None` means no required stability time, not
   "wait until a later evaluation". This is what makes `Stability(to_true=None, ... )` genuinely
   instant-on for occupancy/presence and avoids an artificial extra-cycle latency.
@@ -1007,7 +1161,9 @@ At its deadline, a dwell `AtJob` triggers a generation- and token-checked, targe
 fusion and its current-cycle dependents against the latest in-memory input facts. It performs no HA,
 network, or Persistence read and never commits the candidate captured at arm time blindly. Only if the
 freshly recomputed candidate is still available, equal to `pending_value`, and the token/generation
-still match may it commit the fresh value/confidence and clear pending state. Thus the transition
+still match may it commit the fresh complete value/confidence/source route and clear pending state.
+An epistemic change while the same value is pending does not restart its
+dwell; the deadline publishes the then-current fingerprint. Thus the transition
 occurs as soon as the configured dwell elapses even without an unrelated HA event or periodic fallback,
 while a stale callback cannot write a value that later evidence has withdrawn. Pending state is
 ephemeral and deliberately not restart-safe: a fresh restart begins a full dwell period before any
@@ -1126,7 +1282,7 @@ return type:
 `scale` and `floor` are required for `continuous` and prohibited for the other two modes. A result
 whose variant does not match `confidence_mode`, an out-of-range categorical population, a non-finite
 continuous value/dispersion, or an invalid inherited-input index is a formula-contract violation: the
-fusion returns `available=False`/`confidence=None` for that cycle and emits a Layer 0 §9-style
+fusion returns `available=False`/`confidence=None` for that cycle and emits a Layer 0 §10
 diagnostic. Every result value remains subject to Layer 1's ordinary `EvidenceValue` validation; a
 formula never gets an `Any` escape hatch. These are constant-time in-memory validations, so they do
 not change §2.2's hot-path I/O contract.
@@ -1147,6 +1303,106 @@ input sequence it was given — for example, enough inputs are available by coun
 combination remains contradictory or insufficient for the formula's own safety rule. Either path —
 the `min_inputs` gate or `compute` returning `None` — ends the same way: `available=False`, with no
 confidence function called.
+
+#### Generic numeric hysteresis condition
+
+The core registers `numeric.hysteresis_condition.v1` with separate
+`implementation_version="1"` as a closed, reusable `FormulaStrategy`
+configuration. It takes exactly two ordered inputs: one
+current-cycle canonical numeric state `FactRef`, then its own boolean output
+with `previous_cycle=True`; it produces a boolean state at the numeric input's
+`Location`. Its configuration has exactly `source_unit`, `direction` (`above`
+or `below`), `entry_threshold`, and `exit_threshold`. The compiler requires
+finite, non-boolean thresholds and rejects extra fields. The binding validator
+requires the declared canonical unit to equal the numeric source claim's unit,
+one exact boolean output claim, the same Location, and the permitted self-memory
+position. For `above`, entry must exceed exit; for `below`, entry must be less
+than exit. All parameters and the formula implementation version enter the
+ordinary fusion fingerprint. There is no resident-supplied expression or
+runtime registry lookup.
+
+For `above`, a current value `>= entry_threshold` yields `True`, a value
+`<= exit_threshold` yields `False`, and a value strictly between them retains
+the available previous boolean output. For `below`, reverse the inequalities:
+`<= entry_threshold` yields `True`, `>= exit_threshold` yields `False`, and
+the middle retains the previous boolean. An unavailable, stale, invalid or
+wrong-unit current value yields `available=False`, never a remembered value.
+When previous-cycle memory is unavailable or invalid and the current value is
+between thresholds, the output is unavailable until an entry or exit boundary
+establishes it. This includes first startup and unclean recovery; a clean
+restart may use only the matching pre-hydrated previous-cycle snapshot (§5.8).
+The entry uses `min_inputs=1` and `confidence_mode="inherit_input"`.
+At an entry or exit boundary it inherits the numeric source's confidence;
+inside the band, with valid memory, it chooses the lower confidence of the
+current numeric source and previous boolean output, breaking a tie toward
+the numeric source. This uses the existing `InheritedFormulaResult` input
+index and cannot increase confidence by remembering a less certain state. Its
+`FusionRule.stability` is `None` when used as a Reaction trigger: any action
+dwell belongs to Layer 5 and must not be counted again here.
+
+For irradiance-triggered `environment.solar_shading`, staging binds one such
+boolean output to the `environment.incident_solar_exposure.<solar_binding_id>`
+fact from `environment.solar_incidence.v1` in `incident_irradiance` mode for
+the subject opening. Layer 5 consumes this exact output as its qualifying
+condition; Layer 3 binds its episode and `FutureStateFractionOutcome` to the
+same boolean state stream. Entry/exit thresholds therefore have one staged
+owner in the Layer-2 formula, rather than two independent copies in the
+Reaction and learner. The geometry-only proxy is rejected for this binding.
+
+#### Environmental formula configurations
+
+The core registers `environment.solar_incidence.v1` with one closed
+configuration object: `opening_id`, `solar_binding_id`, and `mode` equal to
+`geometry_proxy` or `incident_irradiance`. Its pure compiler rejects extra
+fields; its binding validator resolves the registered opening and its
+orientation from the staged Topology. The frozen core compass-azimuth mapping
+accepts exact `north`, `northeast`, `east`, `southeast`, `south`,
+`southwest`, `west`, or `northwest`, maps them to 0, π/4, π/2, 3π/4,
+π, 5π/4, 3π/2, or 7π/4 radians clockwise from north, and rejects an
+unsupported string. Its version and the exact opening/topology fingerprint
+enter the compiled configuration. The first mode requires current
+`external.solar_elevation` and
+`external.solar_azimuth` inputs at `casa` and produces a dimensionless
+`environment.solar_incidence_proxy.<solar_binding_id>` at the opening's room.
+The second additionally requires typed direct-normal and diffuse irradiance
+inputs and produces W/m²
+`environment.incident_solar_exposure.<solar_binding_id>`. The stable output
+suffix resolves to exactly that opening; an unknown opening, incompatible
+room, duplicate binding/output claim, missing orientation or wrong input
+unit/shape rejects staging. Both solar-angle facts use canonical radians
+with the same north/clockwise azimuth convention (§3.5). A Topology change invalidates the compiled
+formula and dependent learning definitions. Evaluation uses only the frozen
+orientation and current typed inputs, never a Topology lookup or HA metadata.
+The geometry/irradiance interpretation is exactly Layer 3 §4.8.2; no proxy
+is mislabeled irradiance. The geometric direct component is exactly zero
+when the current solar elevation is at or below the horizon; the descriptor
+cannot infer daylight from an opening's azimuth alone.
+
+The core registers `environment.humidity_ratio.v1` with one closed pressure
+source choice. `pressure_source="fact"` requires a staged pressure `FactRef`
+as the third input, in canonical pascals; it forbids a reference-pressure
+value. `pressure_source="reference"` instead requires one developer-declared
+finite positive `reference_pressure_pa` and forbids a pressure input. Both
+forms require temperature and relative-humidity inputs in their canonical
+units, exactly one output
+`environment.humidity_ratio.<humidity_binding_id>` in kg water/kg dry air,
+and a registered stable `humidity_binding_id` in the closed configuration.
+The compiler/validator reject unknown fields, invalid source combinations,
+unresolved refs, wrong location/unit, non-positive pressure or duplicate
+claims. At runtime a required unavailable input, a pressure not greater
+than computed vapor pressure, or a non-finite result returns `None`; no
+reference-pressure fallback is taken in `fact` mode. The formula uses the
+Layer-3 §4.8.3 psychrometric equation, not relative humidity as a substitute.
+
+Both entries use `confidence_mode="inherit_input"`: after all required
+inputs are available, the result inherits the lowest current input
+confidence, with fixed input-order tie-breaking. Their `min_inputs` is two;
+the compiled mode validator requires the additional inputs where declared,
+and `compute` returns `None` if a required input is absent. Their compiled
+configurations and exact formula implementation versions enter the ordinary
+FusionRule execution fingerprint. The other Initial-V3 formulas keep
+`configuration=None` unless their own core registration explicitly declares
+another closed compiled type.
 
 #### `physical_evidence.weighted_evidence`
 
@@ -1190,21 +1446,42 @@ allowed to do: a `corroborating` source may be a weighted supporting vote but ca
 immediate-primary shortcut. Staging additionally prevents a single corroborating group from meeting
 an instant true threshold; it must have either an independent quorum or the rule's positive true
 confirmation dwell. For a `True` result, categorical `support` is `true_score`; for `False`, it is
-`false_score`. In both cases categorical `total` is the sum of the selected group votes, never the
-number of raw inputs. An unavailable input contributes neither fabricated evidence nor a fake
-`False`. The formula has no dwell or retained state: `FusionRule.stability` remains the sole owner of
+`false_score`. In both cases categorical `total` is the sum of the configured
+directional weights of every retained, non-conflicted group vote **before**
+multiplication by that group's selected fact confidence: use `true_weight` for
+a `True` vote and `false_weight` for a `False` vote. The selected group's
+confidence must be finite and in `[0, 1]`, so `0 <= support <= total` even
+when weights exceed 1. A produced `True` always has `total > 0`, including
+the immediate-primary case with confidence zero; a produced `False` reaches
+a positive `false_threshold` and therefore also has `total > 0`. The formula
+calls Layer 1's categorical confidence only after these conditions hold.
+For example, a sole immediate primary with `true_weight=2` and confidence
+`0.2` produces `True` with `support=0.4`, `total=2`, confidence `0.2`;
+confidence zero produces `support=0`, `total=2`, confidence zero. An
+independent `False` vote with `false_weight=1`, confidence 1 changes the
+first case to `support=0.4`, `total=3`, confidence `0.4/3` when the immediate
+primary still selects `True`. Two correlated same-direction inputs yield
+only the selected group's one weight in `total`; contradictory observations
+in one group yield no vote. An unavailable input contributes neither
+fabricated evidence nor a fake `False`. The formula has no dwell or retained state: `FusionRule.stability` remains the sole owner of
 delayed exit and of the separate cross-strategy unavailable-grace policy (§5.2).
 
-**Fast/confirmed composition is a declared use of existing primitives, not a camera-specific
-subsystem.** When a physical conclusion has both high-specificity and potentially noisy evidence,
-staging may compose: (1) a fast intermediate fusion over explicitly `immediate` sources with
-`Stability(to_true=None, ...)`; (2) a confirmed intermediate fusion over `corroborating` sources,
-with its explicitly chosen short positive dwell or independent quorum; and (3) a final physical fact
-that accepts either intermediate conclusion and has its own declared false stability. The fast path is
-same-cycle; the confirmation path arms only one verified Layer-0 `AtJob` deadline and never polls.
-All intermediate facts, inputs, weights, correlation groups, and timing remain ordinary declared
-registry entries, visible to staging and diagnostics. This composition applies equally to occupancy,
-presence, or a future physical boolean family.
+**Fast/confirmed use of one fusion.** When a physical conclusion has both
+high-specificity and potentially noisy evidence, Initial V3 stages one
+`physical_evidence.weighted_evidence` fusion over normalized Sensor evidence,
+with one physical output. A true `primary` source explicitly admitted as
+`immediate` takes the formula's same-cycle shortcut. Corroborating sources
+have no shortcut: with `Stability(to_true=None, ...)`, no single
+corroborating group may meet `true_threshold`; two or more independent
+groups must jointly reach it. A setup has both routes only if at least two
+staged, distinct corroborating groups can jointly reach the threshold
+without any immediate source. Otherwise it has only the immediate route.
+The one fusion owns the ordinary declared false stability. No intermediate
+physical fact, FusionRule input to this formula, separate true dwell, or
+special deadline is needed. This recipe applies equally to occupancy,
+presence, or another registered physical boolean family. Other legal
+formula configurations may still use an explicitly positive true dwell;
+they are not this two-route recipe.
 
 Core-team-curated, not admin-authored and not open to third parties — same governance as
 `PatternLearnerConfig` (Layer 3: "declared in code only... no learning family is admin-authored
@@ -1382,14 +1659,15 @@ delay and one deterministic input path that realizes it, separately for the two 
 ```python
 @dataclass(frozen=True)
 class StabilityPathSummary:
-    to_true_seconds: float
+    to_true_delay: Window | None
     to_true_path: tuple[str, ...]    # upstream fusion_ids, then this fusion_id
-    to_false_seconds: float
+    to_false_delay: Window | None
     to_false_path: tuple[str, ...]
 ```
 
 For a plain symmetric `Window(seconds=s)`, both directions add `s`; for `Stability`, `to_true=None`
-or `to_false=None` adds zero in its respective direction. The summary adds the rule's own delay to the
+or `to_false=None` adds zero in its respective direction. A summary delay of `None` means exactly
+zero elapsed time; every positive summary delay is a `Window`. The summary adds the rule's own delay to the
 largest matching-direction summary of any current-cycle upstream Fusion input; a Sensor input starts
 at zero. A `previous_cycle=True` input is not a same-cycle propagation path and contributes no delay.
 Tied paths are selected by stable `fusion_id` order, making the diagnostic reproducible.
@@ -1397,7 +1675,7 @@ Tied paths are selected by stable `fusion_id` order, making the diagnostic repro
 The summary is immutable active-generation metadata, exposed to diagnostics and the future panel. It
 does not alter candidate evaluation, arm a job, enter a semantic fingerprint, or impose a warning
 threshold. Thus a room-level 120-second false dwell followed by a zone-level 60-second false dwell
-reports `to_false=180s` and the responsible chain, while both independent debounces remain valid.
+reports `to_false_delay=Window(seconds=180)` and the responsible chain, while both independent debounces remain valid.
 This makes end-to-end latency reviewable without inventing an arbitrary limit or forbidding a useful
 semantic separation.
 
@@ -1510,6 +1788,16 @@ new completed cycle, it again supplies the prior value normally.
 
 ```python
 @dataclass(frozen=True)
+class ActuatorChannel:
+    controlled_channel: str            # stable canonical id, unique within its Actuator
+    channel_kind: str                  # one closed core semantic channel kind
+    observable_state_contract_id: str  # closed core contract for valid physical control edges
+    actuation_adapter_id: str          # closed core adapter binding; never an HA service/feature snapshot
+    hold_scope: Literal["channel", "changed_facets"] = "channel"
+                                          # optional administrator choice; only staged when the
+                                          # versioned adapter proves complete affected-facet sets
+
+@dataclass(frozen=True)
 class Actuator:
     actuator_id: str
     entity_id: str
@@ -1529,32 +1817,24 @@ class Actuator:
                                           # so closing this here would mean a new HA device class
                                           # cannot be represented until a core-team code release,
                                           # exactly the risk the naming convention exists to avoid.
-                                          # Role is a coarse, non-exhaustive hint used for two
-                                          # purposes only: a Reaction looking up "the light/hvac_unit
-                                          # in this room" by convention, and sibling-role discovery
-                                          # (below) — not a capability model. HA's own richer
+                                          # Role is a coarse, non-exhaustive hint for Layer-8
+                                          # candidate suggestions and sibling-role discovery
+                                          # (below) — not a runtime capability or admission model.
+                                          # A Reaction binds staged channel contracts, never a
+                                          # role-string lookup. HA's own richer
                                           # per-entity data (domain, device_class, supported
-                                          # features) is queried directly when a Reaction needs more
-                                          # than this coarse hint, never duplicated into this field.
+                                          # features) remains authoritative only at the application
+                                          # boundary; it is never duplicated into this field or used
+                                          # as an unstaged Reaction admission vocabulary.
+    channels: tuple[ActuatorChannel, ...] = ()
+                                          # zero or more registered logical control dimensions. An
+                                          # unsupported/observation-only HA endpoint remains a valid
+                                          # Actuator with no Heima-actuable channel.
     device_id: str | None = None        # same HA device_registry reference as Sensor.device_id
                                           # (§3), for panel grouping + sibling-role discovery
-    implicit_hold_restore_class: Literal["eligible", "never"] = "never"   # conservative default;
-                                          # only explicit per-Actuator opt-in exists: no role-level or
-                                          # global default/inheritance may change this value.
-                                          # Resolved 2026-09-06 — restores a decision already made in
-                                          # Layer 0 §6.3 (Manual Hold Manager, conditional implicit-
-                                          # hold restoration after a restart) that was dropped when
-                                          # this dataclass was first written: whichever logic detects
-                                          # an implicit hold's triggering divergence reads this field,
-                                          # once, at hold-creation time, and freezes the result into
-                                          # the hold's own evidence — Layer 0 itself never queries
-                                          # this registry directly (Layer 0 §6.3's own dependency
-                                          # rule). Lives on `Actuator` only, not `Sensor`: an implicit
-                                          # hold is by definition triggered by a commanded entity
-                                          # diverging from its expected state (Layer 0 §6) — the
-                                          # eligibility check always happens against the entity's
-                                          # `Actuator` record, so a duplicate `Sensor`-side copy would
-                                          # have no call site that ever reads it.
+    hold_duration: Window | None = None   # one positive administrator setting shared by all
+                                          # fixed-duration channels of this Actuator; omitted
+                                          # when every channel uses next-step release
     power_recovery_policy: Literal["reconcile", "never", "require_confirmation"] = "never"
                                           # resolved 2026-09-09: per-actuator policy for Layer 0 §7.4's
                                           # baseline-plus-current-evaluation recovery. "reconcile"
@@ -1562,10 +1842,61 @@ class Actuator:
                                           # "require_confirmation" proposes it; "never" records no
                                           # recovery target and never applies one automatically. This
                                           # policy is handed to the ApplyStep-owning layer during
-                                          # composition, which records a coalesced Layer-0 snapshot on
+                                          # composition, which records coalesced per-channel Layer-0 snapshots on
                                           # accepted target changes; Layer 0 never queries this live
                                           # registry at recovery time.
 ```
+
+### 6.1 Registered logical channels
+
+An `Actuator` owns one HA command endpoint; an `ActuatorChannel` identifies one logical, observable
+control dimension of that endpoint. `controlled_channel` is stable across cycles and unique within the
+owning `actuator_id`; it is the identity used by Layer 0 resident-control evidence, Layer 3 candidate
+membership, and Layer 5 correction attribution. It is neither an HA entity attribute name nor a free
+policy label. Staging rejects duplicate channel ids, an unknown `channel_kind`, state contract, or
+adapter id, and any channel whose core contracts cannot bind to the Actuator's registered endpoint.
+
+`channel_kind`, `observable_state_contract_id`, and `actuation_adapter_id` name closed core-owned
+registries. Their vocabulary is deliberately smaller than Home Assistant's device-domain and supported-
+feature universe: it represents only control dimensions Heima can observe, reason about, and address
+safely. A new or otherwise valid HA endpoint therefore does not require a new core release merely to
+be represented as an `Actuator`; it gains a registered channel only when a reviewed core contract
+exists for it.
+
+The observable-state contract defines the valid physical state and edge shapes for that channel. At
+composition it supplies Layer 0 the frozen ingress binding used to recognize a resident control edge;
+Layer 0 never performs a live Layer-2 lookup or infers a channel from an arbitrary HA attribute. The
+adapter binding identifies a core translation family available to Layer 5. It does not store an HA
+service name, service parameters, or a copy of supported features, and this Layer does not issue a
+command.
+
+The same staged binding declares its finite canonical facet set, each facet's
+nonempty `[a-z][a-z0-9_]*` key (at most 64 UTF-8 bytes), and an enforceable
+maximum canonical JSON byte length for each normalized facet value. Registry
+identities that enter these projections likewise have enforceable maximum
+RFC-8785 escaped JSON byte lengths, including any Unicode escaping. Layer 5
+uses those declared bounds for the lossless scalar audit/follow-up projection;
+Layer 0 §6.1 uses them with bounded identities to prove that every possible
+complete channel hold-audit fact remains within Layer 1's depth-two and
+8 KiB limits. Staging rejects a binding with an unprovable bound, a colliding
+facet key, or a combination whose worst case fails that proof. This is a
+storage-shape admission rule for Heima's own projections, not an HA feature
+catalog or a restriction on the endpoint's unrelated attributes.
+The same proof covers Layer 0 §5.1.1.1's one change-only
+`ChannelStateValue` per channel: the adapter must produce a complete valid
+canonical facet snapshot and exact changed-facet set for every physical
+edge, with each facet encoded as bounded canonical JSON text. If the
+complete state cannot fit Layer 1's depth-two/8 KiB limit, staging rejects
+that channel contract before action or learning uses it. The resulting
+fact type is unique per `(actuator_id, controlled_channel)`; no
+administrator-supplied fact name or HA attribute becomes its identity.
+
+Layer 5 selects a closed semantic action intent from its Reaction descriptor, then admits an Actuator member only
+when that descriptor permits the member's registered `channel_kind` and adapter binding. The subsequent
+intent-to-`ApplyStep` translation is Layer-5 behavior; Home Assistant remains the sole authority for
+the concrete service schema and whether the current endpoint supports the resulting operation at
+application time. Thus channels are a bounded Heima semantic admission contract, not a duplicate HA
+capability catalog.
 
 Two concrete changes from today's model, both already decided, restated here for completeness:
 `light` is added as a role in active use (today lights bypass the registry entirely, duplicated as
@@ -1584,31 +1915,50 @@ miswired shutter without inventing a false opening relation for ordinary room eq
 One HA command endpoint has one `Actuator` record (§2.4). This is a command-ownership invariant, not
 a restriction on observation: the same `entity_id` can still back Sensor registrations, and one
 physical `device_id` can expose several separately commanded entities. It makes divergence detection,
-implicit-hold eligibility, accepted target ownership, and recovery checkpointing unambiguous.
+channel divergence detection, accepted target ownership, and recovery checkpointing unambiguous.
 
 Commands live only in whichever Reaction (Layer 5) decides to send them — `Actuator` never issues
 one itself, and nothing in Layer 2 reads or writes actuator state beyond this inventory record.
 
-**One `ApplyStep`, one owned endpoint.** The future Layer-5 `ApplyStep` envelope references exactly
-one `actuator_id`, one HA service, and that service's non-target parameters. It contains no caller-
-selectable `entity_id`, `device_id`, area, label, or other HA target selector. At execution, the
-runtime resolves the current Actuator record, constructs the sole HA target from its `entity_id`, and
-rejects a request that tries to supply or override a target selector. A Reaction that needs four
-commands emits four ordered `ApplyStep`s; two commands for one thermostat and two for another are four
-separately traceable operations, not a multi-target command hidden in one payload.
+**One `ApplyStep`, one owned endpoint and channel target.** The future Layer-5 `ApplyStep` envelope
+references exactly one `actuator_id`, one registered `controlled_channel`, and one typed semantic target.
+It may compile to a finite ordered sequence of one-service `ApplyCall`s when an endpoint requires
+separate HA services to express one logical state, such as HVAC mode, setpoint, fan speed and swing
+mode. Each call contains no caller-selectable `entity_id`, `device_id`, area, label, or other HA target
+selector. At execution, the runtime resolves the current Actuator record and constructs the sole HA
+target from its `entity_id`; it rejects a call that tries to supply or override a target selector. A
+Reaction that needs four independent endpoint/channel targets emits four ordered `ApplyStep`s; a bounded
+call sequence is never a multi-target command hidden in one payload.
 
-This is endpoint ownership, not a Heima capability catalog. The service name, parameter schema, and
-whether the current HA entity supports that operation remain Home Assistant's source of truth and are
-validated by HA when the step is applied. Heima neither persists a duplicate supported-feature model
-nor reimplements service validation. The initial Layer-5 execution contract preserves the Reaction's
-declared step order; any future concurrency must be an explicit Layer-5 scheduling policy and cannot
-weaken the one-endpoint-per-step or per-step provenance rule.
+This is endpoint ownership plus bounded semantic-channel admission, not a Heima capability catalog.
+The service name, parameter schema, and whether the current HA entity supports that operation remain
+Home Assistant's source of truth and are validated by HA when the step is applied. Heima neither
+persists a duplicate supported-feature model nor reimplements service validation. The initial Layer-5
+execution contract preserves the Reaction's declared step order; any future concurrency must be an
+explicit Layer-5 scheduling policy and cannot weaken the one-endpoint-per-step or per-step provenance
+rule.
 
-`implicit_hold_restore_class` is the one field on this record that Layer 0 directly depends on being
-present — see Layer 0 §6.3 for the full restoration mechanism it feeds. This is not a violation of
-"nothing depends on Layer 2 from below": Layer 0 itself never reads this registry at runtime, only
-the semantic-resolver/policy logic that detects a divergence and creates the hold does, once, freezing the
-result into the hold's own `Provenance.evidence` before Layer 0 ever sees it (Layer 0 §6.3).
+Descriptor-specific target schemas are defined at their Layer-5 owner, not in this device-agnostic
+registry. Layer 2 stages only the registered channel kind, observable-state contract, adapter and
+bounded facet vocabulary; Layer 5 checks the target contract against that binding (§6.1 and Layer 5
+§6/§7). The adapter's translation row remains responsible for the actual HA service call(s), and HA
+remains authoritative for current endpoint support.
+
+`hold_scope="channel"` is the default and needs no administrator input. `changed_facets` is an
+optional administrator choice on an individual registered channel, exposed only when the versioned
+core adapter can identify every facet affected by every admitted HA call, including predictable
+side effects. The administrator never enumerates actions or facet dependencies. If the mapping is
+unknown or incomplete, staging refuses the selective scope and uses channel scope; it never
+assumes that on/off, position, mode, or intensity has a universal hierarchy.
+
+`hold_duration` is required and positive when any channel of this Actuator is staged for a
+fixed-duration Reaction. That one Actuator setting applies to every fixed-duration channel; it
+does not cause holds on distinct channels to share an activation time or deadline. The Actuator
+may omit it only when none of its channels uses fixed-duration release. The core descriptor, not
+an observation source or resident, declares fixed-duration versus next-Reaction-step release.
+Staging rejects a next-step mode whose versioned descriptor cannot supply a stable timed step identity and target
+change for the same Reaction/channel (Layer 5 §6.0). There is no implicit fallback from
+next-step release to `hold_duration`. Holds never survive restart (Layer 0 §6.3).
 
 `power_recovery_policy` similarly does not create a live Layer-0-to-Layer-2 dependency. At
 composition, the policy is supplied to the layer that owns accepted actuator targets; that owner
@@ -1644,36 +1994,79 @@ command itself.
   resolved 2026-09-03, `v3_backlog.md`). `source_id` is the `sensor_id`/`fusion_id`, unchanged by a
   `FusionRule` chaining onto another `FusionRule`'s output (§5.6) — that's still just a fact read by
   `fact_type`/`Location` like any other input.
+  The fusion also sets Layer-0 `FactSource.route_fingerprint` to a SHA-256
+  digest of RFC-8785 canonical JSON over its stable evaluated input route.
+  `DirectStrategy` and `PrecedenceStrategy` include the one selected `FactRef`
+  and that fact's `FactSourceFingerprint`; `UnanimityStrategy` and
+  `WeightedQuorumStrategy` include the canonically ordered considered input
+  refs and their source fingerprints. A `FormulaStrategy` includes its
+  canonically ordered available input refs and source fingerprints; the
+  formula registry may further narrow that list only through a versioned
+  declared selection rule. The route excludes input values, confidences,
+  timestamps, correlation ids and evidence; those first two are separately
+  compared by `FactChangeFingerprint` or affect the output calculation.
+  An unavailable or newly selected input therefore changes the route only
+  when it changes the evaluated set. The finite registered input list bounds
+  this calculation, and the Fusion DAG prevents recursive source cycles.
 - **Evaluation ordering**: the topological sort that lets a `FusionRule` consume another
   `FusionRule`'s output (§5.6) is Layer 2's own registration-time mechanism, not something Layer 0's
   Timing owns — Layer 0's `AtJob`/`CronEntry` schedule *when* a cycle runs, not the *order* in which
   Layer 2 evaluates its own registrations within one.
-- **Manual Hold Manager**: `Actuator.implicit_hold_restore_class` (§6) is a field Layer 0 §6.3's
-  restoration mechanism is defined in terms of — the one point of contact in the other direction.
-  This is not a violation of Layer 0's "depends on nothing above it" rule: Layer 0's own runtime code
-  never queries this registry: whichever semantic-resolver/policy logic detects the triggering divergence
-  reads the field once, at hold-creation time, and freezes the result into the hold's evidence: Layer
-  0 only ever reads that already-resolved, frozen copy afterward, never the live registry.
+- **Divergence Hold Manager**: Layer 5 passes the validated Actuator channel key, observed
+  divergent facets, staged scope, release mode and any fixed `hold_duration` after its own
+  physical-confirmation checks (Layer 0 §6). Layer 0 never looks up this registry.
 - **`FactRef.previous_cycle` (§5.8)**: supplies only the validated FormulaStrategy self-memory case.
   Resolution reads Layer 0's sealed `PreviousCycleSnapshot` (§4), never the live registry, history
   buffer, formula-side durable query, or bespoke Layer-2 cache. Layer 0 pre-hydrates that snapshot
   before the DAG only after a clean restart; first-ever and unclean-restart cycles resolve
   `available=False`.
 
-Layer 2 depends on both Layer 0 and Layer 1; the reverse holds only in the one documented sense
-above — a Layer 0 *mechanism definition* referencing a Layer 2 field, never a live Layer 0 query
-against Layer 2 at runtime.
+Layer 2 depends on both Layer 0 and Layer 1. Layer 0 accepts validated channel keys,
+release contracts and configuration deltas supplied at composition; it never queries the Layer 2
+registry at runtime.
 
 ---
 
 ## 8. Not yet decided
 
-No unresolved Layer-2 registry parameter remains.
+Open cross-layer contracts affecting these registries are tracked in the CA4 backlog, including
+CA4-26 (recurrence authority), CA4-27 (configuration commit), and
+CA4-28 (immutable values).
 
 ---
 
 ## 9. Acceptance criteria (for the eventual implementation phase)
 
+- A registered Actuator channel has a unique bounded normalized
+  `ChannelStateValue` projection under Layer 0 §5.1.1.1; its full facet
+  snapshot and exact changed-facet set fit Layer 1's depth-two/8 KiB value
+  bound. Staging rejects a missing observable facet, noncanonical value,
+  duplicate channel identity or unprovable size, while unrelated Actuators
+  remain registerable (§6.1).
+- A staged state/attribute Sensor with `max_source_age` becomes unavailable
+  when the HA source timestamp is missing, future-dated or older than its
+  positive `Window`; an unchanged but newly reported value uses `last_reported`,
+  not `last_updated`, and an expired report opens stream coverage at the known
+  expiry instant without backdating the emitted fact. The ordinary `AtJob`
+  checks expiry even when no HA edge arrives, and a newer report re-arms
+  that one job without creating an extra fact. A numeric Sensor with bounds rejects a converted value
+  outside its finite canonical-unit interval. Neither gate reuses its previous
+  value or blocks an unrelated Sensor (§3.2–§3.3).
+- When solar geometry is required, the two core-generated `sun.sun` attribute
+  Sensors alone claim casa `external.solar_elevation` and
+  `external.solar_azimuth`. One snapshot yields both in radians through the
+  registered degree converter. A duplicate claim, wrong unit/converter,
+  impossible angle, missing attribute, stale/unavailable Sun state or changed
+  observer location cannot yield an available solar-incidence input; unrelated
+  automations continue. A north- and south-facing opening consume the same
+  geometry pair through distinct staged formula configurations (§3.5/§5.3).
+- A configured HA `schedule.*` helper can feed the casa-scoped
+  `quiet_hours.active` state claim through the ordinary `StateReadBinding` and
+  `MappingInterpretation`: active becomes exact boolean `True`, inactive exact
+  `False`, and unavailable, unknown or unmapped helper state produces
+  `available=False`. Registration rejects a non-boolean output contract or a
+  competing producer for that same `(fact_type, Location)`; no Layer-2 guard
+  evaluator or recurrence is created (Layer 5 §3.2).
 - A third-party producer may pass ordinary producer-claim/fact-contract staging when Layer 7 invokes
   it, but an attempt to register an `Interpretation`, `FusionStrategy`, or `RegisteredFormula` outside
   the core-owned frozen registries is rejected before an active generation exists. No dynamic import,
@@ -1702,15 +2095,18 @@ No unresolved Layer-2 registry parameter remains.
 - Registration rejects every incompatible binding/interpretation pair: calendar bindings are paired
   only with `CalendarInterpretation`, and state/attribute bindings only with mapping, numeric, or
   bucket interpretation. Numeric and bucket tests accept finite non-boolean numeric values and strict
-  ASCII decimal state strings, normalize valid values to `float`, and reject booleans, whitespace or
+  ASCII decimal state strings (including `12.5`, `.5`, `1e-3`, and signed forms), normalize valid
+  values to `float`, and reject booleans, whitespace or
   locale-formatted strings, malformed values, `NaN`, and infinities as an unavailable Sensor with a
   diagnostic rather than a coercion, exception, or selected bucket (§4).
 - A `CalendarWindowReadBinding` passes only `active_now` windows to `CalendarInterpretation`: a future
   event matching a higher-priority category cannot change the current Sensor value. Tests verify NFKC/
   casefold/whitespace-normalized `KeywordClassifier` matching, deterministic selection across multiple
   matching active events by its `priority_order`, no-match as `available=False`, and registration
-  rejection for an incomplete, duplicate, or extraneous `priority_order` or an empty normalized
-  keyword (§3.1/§4). The classifier is also tested as a pure text-sequence function independently of
+  rejection for an incomplete, duplicate, or extraneous `priority_order`, an empty category list, or
+  any empty normalized keyword, including whitespace-only and mixed empty/non-empty lists (§3.1/§4).
+  A rejected mixed list cannot classify an unrelated summary through an empty substring. The
+  classifier is also tested as a pure text-sequence function independently of
   calendar reads, proving the calendar wrapper does not duplicate matching logic.
 - A single HA entity can back multiple `Sensor`s through distinct `ReadBinding`s without violating
   the registry model — verified with one `climate.*` fixture producing separate facts from its primary
@@ -1727,6 +2123,11 @@ No unresolved Layer-2 registry parameter remains.
   failing on a later sensor cycle. A valid unit-weight quorum configuration and a valid occupancy
   configuration are accepted, proving
   validation does not reject ordinary registrations.
+- Staging rejects duplicate `Sensor.sensor_id` or `FusionRule.fusion_id` even with distinct output
+  claims. It rejects `FusionRule.inputs=(A, A)` before any strategy can count one observation twice:
+  a unit-weight quorum cannot reach threshold 2 or an availability floor from that duplicate.
+  Two separate fusions may still depend on A; a permitted FormulaStrategy may distinguish current A
+  from its declared `previous_cycle` self-memory, but may not repeat either exact reference.
 - `UnanimityStrategy` configuration must provide `min_available`: staging rejects an omitted value as
   well as values outside `[1, len(inputs)]`. With one unavailable input, a strict
   `min_available=len(inputs)` result is unavailable, while a deliberately lower floor evaluates only
@@ -1764,6 +2165,19 @@ No unresolved Layer-2 registry parameter remains.
   true dwell, that same explicit confirmation path is legal.
   A new evidence sensor is added through a binding with no formula-code change. A low-confidence sole
   immediate primary source produces `True` with correspondingly low categorical confidence (§5.3).
+  Numerical fixtures prove `true_weight=2, confidence=0.2` yields `0.2`,
+  zero confidence yields zero without a zero denominator, an independent
+  opposing `false_weight=1` yields `0.4/3` when immediate admission still
+  selects `True`, and two correlated votes or a conflicted group are counted
+  at most once or not at all. A weight greater than one never yields
+  confidence above one.
+  A fast/confirmed Initial-V3 fixture stages exactly one physical-output
+  fusion with one immediate primary and two independent corroborating groups
+  whose combined maximum reaches `true_threshold`, while each group alone
+  cannot. It produces a same-cycle `True` from the immediate primary or the
+  independent quorum, and prevents same-group duplicates from forging a
+  true quorum; no
+  intermediate `FusionRule` input or extra physical output is staged.
 - Each `FormulaConfidenceMode` is verified independently: a continuous result calls only
   `continuous_confidence` and rejects missing `scale`/`floor` or a non-finite numeric value/dispersion;
   a categorical result calls only `categorical_confidence` and rejects invalid `support`/`total`; and
@@ -1777,9 +2191,20 @@ No unresolved Layer-2 registry parameter remains.
   from its own one `AtJob` deadline even when no unrelated HA event or periodic fallback occurs; the
   deadline callback re-evaluates current in-memory inputs and cannot commit its arm-time candidate
   after a newer input, token, or generation invalidated it (§5.2).
+- A same-value available fusion output with confidence `0.9` then `0.2`
+  publishes the second fingerprint without a new dwell. A precedence
+  handoff between two available inputs with identical value/confidence
+  publishes a changed stable route fingerprint, while repeated evaluation
+  of the same route does not. `available=False` then `True` never reads the
+  unavailable fact's value; it follows the candidate's ordinary `to_true`
+  dwell. A changed source route while a different value is pending does not
+  extend its timer; the deadline commits the fresh full fingerprint only if
+  the pending value remains valid.
 - Staging computes `StabilityPathSummary` without adding runtime work: a 120-second room false dwell
-  feeding a 60-second zone false dwell reports a deterministic `to_false=180s` path, while the
-  all-`None` true path reports zero. A `previous_cycle=True` input does not add to either same-cycle
+  feeding a 60-second zone false dwell reports a deterministic
+  `to_false_delay=Window(seconds=180)` path, while the
+  all-`None` true path reports `None` for zero elapsed time. Every positive summary delay
+  is a `Window`, never a scalar-seconds field. A `previous_cycle=True` input does not add to either same-cycle
   cumulative delay, and equal candidate paths use stable `fusion_id` tie-breaking (§5.6).
 - A candidate becoming unavailable cancels a pending true/false transition, so it can never commit
   from interrupted evidence. With `unavailable_grace=Window(seconds=30)`, the last committed available
@@ -1812,6 +2237,30 @@ No unresolved Layer-2 registry parameter remains.
 - `FormulaStrategy` additions (a new `RegisteredFormula` entry) require no change to `FusionStrategy`
   or to any code that pattern-matches on it, verified by adding a second formula in a test without
   touching the union type.
+- `environment.solar_incidence.v1` stages separately for a north-facing and south-facing
+  opening, freezing each resolved orientation and topology fingerprint. An unsupported
+  orientation, duplicate binding, wrong room, missing angle fact, or irradiance-mode
+  input without the declared canonical W/m² unit fails staging. Geometry mode yields a
+  dimensionless proxy and cannot claim W/m² exposure. At or below zero solar
+  elevation, the geometric direct component is zero even for a matching
+  opening azimuth (§3.5/§5.3; Layer 3 §4.8.2).
+- `numeric.hysteresis_condition.v1` rejects wrong source kind/unit, wrong
+  output kind/Location, missing or misplaced previous-cycle self-reference,
+  equal/reversed thresholds for its direction, non-finite thresholds and extra
+  configuration. For `above` with entry 400 and exit 300, 400 establishes
+  `True`, 350 retains a valid previous boolean, and 300 establishes `False`;
+  `below` reverses the inequalities. An unavailable numeric input publishes
+  unavailable even with remembered `True`; an unknown previous value at 350
+  stays unavailable on first startup or unclean recovery. A clean matching
+  snapshot may preserve 350's previous state. Boundary results inherit the
+  current numeric confidence; middle-band results inherit the lower of that
+  confidence and valid previous-output confidence. No Layer-2 dwell is added
+  when this fact triggers a delayed Reaction (§5.3, §5.8).
+- `environment.humidity_ratio.v1` stages with either a bound pressure fact or a finite
+  positive reference pressure, never both or neither. A missing required live pressure
+  makes fact mode unavailable without falling back to the reference form; incorrect
+  units, duplicate binding, non-finite output and impossible vapor/total pressure fail
+  admission or evaluation as specified in §5.3.
 - Every light entity a reaction commands is registered as an `Actuator` with `actuator_role="light"`,
   with no reaction's `entity_steps` duplicating a raw light `entity_id` outside the registry —
   `actuator_role` itself is never validated against a closed set (§6), so this checks usage, not
@@ -1830,7 +2279,8 @@ No unresolved Layer-2 registry parameter remains.
   `Sensor`-vs-`Sensor`, `Sensor`-vs-`FusionRule`, and `FusionRule`-vs-`FusionRule` collision.
 - A candidate registry generation that changes a Zone and thereby invalidates a Fusion coverage check
   is rejected without changing the active generation. A valid semantic change to a Zone, Sensor
-  binding/interpretation/reliability, FusionRule inputs/strategy/stability, or formula version swaps
+  binding/interpretation/unit contract/source-age gate/numeric bounds/reliability,
+  FusionRule inputs/strategy/stability, or formula version swaps
   only between cycles, resets `Stability` and prior-cycle output memory only for its full
   direct/transitive current-cycle impact set, force-emits retained
   impacted facts with their new semantic configuration fingerprint, and emits `available=False` for a
@@ -1838,14 +2288,23 @@ No unresolved Layer-2 registry parameter remains.
   A display-name-only change preserves that unrelated runtime state and produces no forced fact write
   (§2.5).
 - A Layer-2 registration attempting to use a fact type claimed by another layer — specifically
-  `manual_hold.<domain>` or `manual_hold.<domain>.lifecycle` — is rejected before evaluation; a
+  `manual_hold.lifecycle` — is rejected before evaluation; a
   `FactRef` to an event fact is rejected for both current-cycle and `previous_cycle` use (§2.3/§5).
 - A `WeightedQuorumStrategy` whose `weights` contains a `FactRef` absent from its own `FusionRule`'s
   `inputs` is rejected at registration time (§5.1); an input present in `inputs` but absent from
   `weights` is confirmed to default to weight 1.0.
-- A `Sensor` whose entity's live `unit_of_measurement` diverges from its registered `unit` raises a
-  diagnostic event on the next read (§3.3), without changing that cycle's `available`/`confidence`/
-  `value`.
+- Staging rejects a numeric/bucket `Sensor` without a
+  `QuantitativeUnitContract`, with an unregistered conversion for differing
+  source/canonical units, or with a canonical unit incompatible with a
+  staged typed consumer. A state binding staged for `°C` that later reads
+  `°F` or no unit reports `available=False`/`confidence=None` and a drift
+  diagnostic; it never publishes raw `68` as canonical Celsius. A binding
+  explicitly staged with a registered `°F`→`°C` converter publishes
+  canonical `20` from `68 °F`. The same rule covers `0.5` fraction versus
+  `50` percent and converts before bucket thresholds. An attribute without
+  applicable HA unit metadata needs its own developer-declared source unit
+  and attribute binding; unrelated entity metadata cannot supply it.
+  A nonquantitative metadata mismatch remains diagnostic-only (§3.3).
 - A `DirectStrategy` `FusionRule` registered with anything other than exactly one `FactRef` in
   `inputs` is rejected at registration time (§5.7); one registered validly produces output at the
   same `Location` as its single input, verified by a test. A `DirectStrategy` `FusionRule` with
@@ -1877,12 +2336,20 @@ No unresolved Layer-2 registry parameter remains.
   produces independent attribute-binding candidates, and an AQI or helper candidate is rejected for
   an `outdoor_air_quality` guard until an explicit scale/normalizer or accepted helper output defines
   the required meaning (§3.4).
-- An `Actuator`'s `implicit_hold_restore_class` defaults to `"never"` when not set; a divergence
-  detected on an entity registered `"eligible"` is confirmed to reach Layer 0 §6.3's restoration
-  algorithm with that classification frozen into the resulting hold's evidence, verified end-to-end
-  through a simulated restart (§6).
-- An `Actuator` whose `power_recovery_policy` is `"reconcile"` contributes a coalesced desired-target
-  checkpoint only after an accepted target change; `"never"` contributes none and
+- An actuable channel with fixed-duration holds requires a positive configured `hold_duration`;
+  two fixed-duration channels on one Actuator read that same Window but arm
+  independent deadlines from their own hold activation instants (Layer 0 §13).
+  Next-step release requires a descriptor with stable future step identity and
+  a versioned Layer-5 normal-exit contract for canceled or exhausted programs;
+  staging rejects either missing contract. A light or HVAC Actuator staged only for the Initial-V3
+  presence-simulation or comfort-trajectory descriptor, respectively, may omit `hold_duration` because
+  both declare next-step release; staging requires the positive Window if any fixed-duration Reaction
+  also uses that Actuator. An unsupported selective
+  scope rejects staging. Restart clears all live holds and the first returned observation cannot
+  create one (Layer 0 §6).
+- An `Actuator` whose `power_recovery_policy` is `"reconcile"` contributes a coalesced
+  per-channel, per-facet desired-target checkpoint only after an accepted target change;
+  `"never"` contributes none and
   `"require_confirmation"` reaches Layer 0 recovery as a proposal, not an automatic `ApplyStep`
   (Layer 0 §7.4).
 - Registration rejects duplicate `actuator_id`, two Actuators claiming one `entity_id`, and an unknown

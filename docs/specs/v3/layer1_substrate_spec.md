@@ -1,6 +1,6 @@
 # Heima v3 — Layer 1: Substrate Primitive
 
-**Status:** Draft — pending developer approval. Not implemented.
+**Status:** Defined V3 contract. Not implemented.
 **Layer:** 1 of 8. Builds directly on Layer 0 (`docs/specs/v3/layer0_runtime_spec.md`) — every
 `HouseFact` is stored through Layer 0's Persistence facility, timestamped per Layer 0's Timing rules
 (UTC, timezone-aware), and carries a Layer 0 `FactSource` inside its `Provenance`. This document
@@ -14,9 +14,9 @@ at the end, background only.
 
 ## Normative precedence
 
-This document defines the intended contract for Layer 1 once approved. Until the developer confirms
-it explicitly ("ok, proceed"), it is discussion material, not an implementation target. Once approved
-and implemented: if code and spec diverge, the divergence must be resolved explicitly — code is a
+This document defines the current V3 Layer-1 design contract. Open corrections are tracked in
+the CA4 backlog; runtime implementation is a separate phase. When implemented, if code and
+spec diverge, the divergence must be resolved explicitly — code is a
 reference implementation, not the source of truth.
 
 ---
@@ -24,7 +24,7 @@ reference implementation, not the source of truth.
 ## 1. Purpose
 
 Layer 1 defines the one durable assertion shape for Heima's house history: a sensor reading, a
-fused derived state, a manual hold, or an operational occurrence that must remain auditable. Anything
+fused derived state, or an operational occurrence such as a hold lifecycle event that must remain auditable. Anything
 that asserts something is or happened in the house, somewhere and at a time, is a `HouseFact`; there
 is no second, parallel representation for that same persistent assertion. This does **not** make
 `HouseFact` a universal envelope for artifacts, transient inter-layer hand-offs, commands, or
@@ -101,21 +101,21 @@ implementation and transaction lifecycle differ even when both carry domain-rele
 ## 3. `HouseFact`
 
 ```python
+EvidenceInstant = str  # one canonical UTC instant: YYYY-MM-DDTHH:MM:SS.ffffff+00:00 (§4)
+
 @dataclass(frozen=True)
 class HouseFact:
     fact_type: str        # namespaced, dot-separated identifier — see naming convention below
     value: Any             # interpreted payload: a bucket label, an enum member's own primitive
                             # value (its `.value`, e.g. a str/int — never the Enum member object
                             # itself, which isn't EvidenceValue-shaped, see below), a bool, a
-                            # structured dict, or a small frozen dataclass (e.g. ManualHoldValue,
+                            # structured dict, or a small frozen dataclass (e.g. HoldLifecycleValue,
                             # Layer 0 §6.1) — semantically untyped (one universal shape must
                             # accommodate every kind of fact, and a closed *value* type would just
                             # push the same variability into a wrapper type one level up), but not
                             # unconstrained in shape — see below
     where: Location         # WHERE — §5
-    when: datetime          # WHEN — a plain, UTC, timezone-aware timestamp (Layer 0 §3); no
-                            # wrapper type, matches the existing ISO-timestamp convention used
-                            # across the codebase today
+    when: EvidenceInstant  # WHEN — the same canonical instant used by every V3 contract (§4)
     how: Provenance         # HOW — §4
 ```
 
@@ -125,9 +125,8 @@ Layer 0's Persistence facility exactly like `evidence` is, so the same class of 
 applies: a raw Home Assistant `State` object, a binary blob, an arbitrary custom object would break
 serialization or dump a raw payload wholesale into durable storage. `value` must be either
 `EvidenceValue`-shaped (§4 — JSON primitives or shallow collections of them), **or** a frozen
-dataclass instance whose own fields are themselves, recursively, `EvidenceValue`-shaped — the second
-form is what lets a producer report a small, named structured value (`ManualHoldValue`: `hold_id: str`
-+ `active: bool` + `kind: str` + `held_state: dict[str, EvidenceValue] | None`) without collapsing it
+dataclass instance whose own fields normalize recursively to `EvidenceValue` — the second
+form is what lets a producer report a small, named structured value (`HoldLifecycleValue` as defined by Layer 0 §6.1) without collapsing it
 into a bare dict and losing its type identity. Python's type system cannot express "any frozen dataclass
 with JSON-primitive fields"
 as a static union, so this is a **normative construction rule, validated procedurally** — the same
@@ -135,10 +134,22 @@ discipline already applied to `Location` (§5) — not something the `Any` annot
 Same nesting-depth and size limits as `evidence` apply, for consistency, not because the two fields
 are interchangeable.
 
+For `manual_hold.lifecycle`, the fact value is always the complete
+`HoldLifecycleValue` defined by Layer 0 §6.1. Staging must prove that every
+permitted transition fits this value contract (Layer 0 §6.1 staging proof and §6.4 runtime validation); construction still
+validates the actual value. No detail reference or alternate fact shape exists.
+
 `validate_house_fact_value(value) -> None` is Layer 1's pure, side-effect-free enforcement point for
 that complete contract: it accepts an `EvidenceValue` or qualifying frozen dataclass only, recursively
 checks finite floats and maximum depth 2, normalizes a permitted dataclass to its field payload for
-canonical UTF-8 size measurement, and rejects a result over 8 KiB. `HouseFact` construction calls it;
+both depth counting and canonical UTF-8 size measurement, and rejects a result over 8 KiB.
+Within a qualifying frozen dataclass, an immutable tuple of permitted values
+normalizes to a JSON list before validation; an ordinary `EvidenceValue`
+outside that dataclass still does not admit tuples. The normalized list
+counts as a collection and meets the same depth and size limits.
+The normalized dataclass field object is depth 1; its mapping/list fields are depth 2;
+a collection inside one of those fields is depth 3 and invalid. Scalars do not add
+collection depth. `HouseFact` construction calls it;
 Layer 2 also calls it during staging for every static value that one of its interpretations can emit.
 This is one value contract with two entry points, not a second interpretation-specific validator.
 
@@ -181,7 +192,7 @@ without checking `available` first, full stop.
 **Naming convention for `fact_type`**: dot-separated, namespaced, stable identifiers — `presence`,
 `occupancy`, `activity.<activity_id>`, `presence.planned_absence`, `room_signal.bucket`,
 `heating.temperature_rate`,
-`manual_hold.<domain>` (Layer 0 §6), `external.<slot>` (`slot` names one externally-sourced context
+`manual_hold.lifecycle` (Layer 0 §6), `external.<slot>` (`slot` names one externally-sourced context
 value — e.g. outdoor temperature or a weather-safety flag from an adapter like OWM or Protezione
 Civile, Layer 2's own worked example for `Sensor`). This reuses the same convention Heima's
 existing event catalog already establishes for its `type` field (`people.arrive`,
@@ -204,8 +215,7 @@ meaning is `occupancy.physical`, while Layer 4 alone resolves the unsuffixed sem
 
 **A `HouseFact` is an atomic persistent assertion, not a generic message, command, or state
 machine.** Its producing contract (Layer 0 §4) declares whether that assertion is a state that holds
-now (for example, `occupancy=true`) or an occurrence that happened at `when` (for example, a manual
-hold was cleared). Both use this one immutable shape; neither encodes a multi-step transition
+now (for example, `occupancy=true`) or an occurrence that happened at `when` (for example, a channel hold was released). Both use this one immutable shape; neither encodes a multi-step transition
 protocol, an intent to act, an ML artifact/result, a transient `InferenceSignal`, or a proposal/review
 workflow record. A duration is still read by comparing facts' `when`, or via a `Window` (Layer 0
 §3.2). An `ApplyStep` (Layer 5) is the corresponding command shape; a `HouseFact` never is one.
@@ -247,19 +257,47 @@ still useful, is derived from this event fact and cannot be an independently per
 channel. Historical V2 events remain outside V3 as archive/rollback material: V3 has no legacy-event
 adapter, type map, or runtime fallback, and every V3 producer must emit an approved V3 fact type.
 
-Persistence appends every event fact: it never deduplicates two otherwise equal occurrences.
-`notification_key` is instead consumed exclusively by Layer 6's delivery policy for its configured
-deduplication and rate-limiting window. Thus a suppressed repeat delivery remains visible in the audit
+Persistence appends every distinct event occurrence, including otherwise equal payloads. Narrow
+producer-owned operation-id protocols are exceptions: `manual_hold.lifecycle` retries are
+idempotent under Layer 0 §6.4, `reaction.follow_up` retries under §4.5,
+and `actuator.target_lifecycle`, `actuator.correction` and
+`actuator.resident_control` deduplicate by their own stable event/edge ids
+under Layer 0 §4.2. None uses
+`notification_key` as fact identity. That key is consumed by Layer 6's delivery policy for its
+configured deduplication and rate-limiting window. Thus a suppressed repeat delivery remains visible in the audit
 trail, while `severity` may affect rendering, route selection, escalation, and diagnostics but never
 the fact's identity, ownership, retention semantics, or causal correlation. Event consumers must not
 derive a live state from this value; a current claim needs a separate `state` fact by Layer 0 §4.
 
+`actuator.resident_control` and `actuator.correction` are also reserved V3 `event` fact types,
+but are audit/learning evidence, not rendered `HeimaEvent`s. Their sole producers and closed
+values are Layer 0 §5.1.1 and Layer 5 §6.1 respectively, under Layer 0 §4's exclusive
+`FactTypeClaim`s. Neither uses `OperationalEventValue` or creates a resident notification by
+itself; both still follow the ordinary `HouseFact` envelope and event-history rules.
+`actuator.target_lifecycle` is another non-rendered event fact, owned only
+by Layer 5 §6.1 for admitted decision/complete-observation/close history.
+`actuator.channel_state.<digest>` is the distinct Layer-0-owned **state**
+fact for one registered channel (Layer 0 §5.1.1.1); its bounded facet
+projection changes only on physical state/availability changes and the
+first valid post-restart observation. Neither record is an operational
+notification or a new live command authority.
+
+`reaction.follow_up` is an approved V3 event fact type. Its sole persistent producer is the
+Layer-6 adapter: it validates Layer 5's typed `ReactionFollowUpOccurrence`, renders the
+resident title/message and maps the occurrence's fixed scalar fields to `context` as defined
+by Layer 5 §6.0. Its `expected_facets` and `observed_facets` maps become
+`expected.<facet>` and `observed.<facet>` canonical JSON-text scalar entries, not nested
+context objects. `subject` becomes `where` and `occurred_at` becomes `when`, never duplicate
+context fields. Layer 6 applies Layer 5's closed facet grammar, projection and size bounds,
+rejecting unexpected, missing or noncanonical entries before the atomic event/outbox
+transaction (Layer 5 §6.0; Layer 0 §4.5). The durable intent is a `PersistedProjection`,
+never a second event fact.
 `automation.availability` is one approved V3 event fact type. Its sole producer is Layer 6's
 core-owned availability-event adapter. Layer 6's transient `AvailabilityEpisodeTracker` receives the
 typed suppression occurrence from its owner, reconciles the current episode against the staged
 publication generation, and invokes this adapter only for a resident-visible delivery. The adapter
 renders the event's title/message and constructs the canonical notification key, severity and bounded
-context before appending the event fact; neither Layer 3 nor Layer 5 may pre-render or persist that
+context before appending the event fact; neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
 event. Layer 0 reserves its exclusive event claim.
 
 ---
@@ -268,7 +306,6 @@ event. Layer 0 reserves its exclusive event claim.
 
 ```python
 EvidenceValue = str | int | float | bool | None | dict[str, "EvidenceValue"] | list["EvidenceValue"]
-EvidenceInstant = str  # canonical UTC ISO-8601 instant: YYYY-MM-DDTHH:MM:SS.ffffff+00:00
 PersistedProjection = dict[str, EvidenceValue]
 
 @dataclass(frozen=True)
@@ -280,7 +317,9 @@ class Provenance:
 ```
 
 `EvidenceInstant` is a semantic subtype of `str`, not a new runtime object admitted to
-`EvidenceValue`. Every evidence field declared as an instant is serialized in this one canonical form:
+`EvidenceValue`. Every V3 contract field declared as an instant, including
+`HouseFact.when`, job due times, calendar windows, model artifacts and
+Reaction records, uses this one canonical form:
 a timezone-aware UTC ISO-8601 value with exactly six fractional-second digits and the literal
 `+00:00` offset (for example, `2026-09-08T14:30:00.000000+00:00`). Producers normalize before
 constructing the fact; consumers that make a decision from such a field parse and validate that exact
@@ -288,12 +327,14 @@ form. A naive `datetime`, a non-UTC offset, or a merely arbitrary string is neve
 `EvidenceInstant`.
 
 `PersistedProjection` is the deliberately narrow contract for a named structured value retained by a
-Layer-0 durable facility without making it a `HouseFact` (for example, one recovery target or one
-manual-hold checkpoint record). Its keys and values are copied and normalized, not retained from an
+Layer-0 durable facility without making it a `HouseFact` (for example, one recovery target). Its keys and values are copied and normalized, not retained from an
 HA object. It admits no frozen dataclass or arbitrary object: it is a JSON mapping whose values obey
 the ordinary `EvidenceValue` rule, have maximum nesting depth 2, contain only finite floats, and have
 canonical UTF-8 serialization of at most **8 KiB**. It is a persistence boundary, not a general
 configuration type: registry configuration has its own contracts and limits.
+The hold-audit queue retains an already validated complete `HouseFact`; it
+does not introduce a non-fact projection or an exception to this contract
+(Layer 0 §6.4).
 
 ### 4.1 `available`
 
@@ -309,14 +350,14 @@ only in local diagnostics or non-load-bearing `evidence`, never in a new shared 
 keeps every consumer on one stable binary contract while allowing each producing layer to state its own
 precise failure conditions.
 
-**Staleness (`when` too old to trust right now) is not a `Provenance` field at all — it was
+**Staleness is not a `Provenance` field at all — it was
 considered and rejected.** An earlier draft of this section had a tri-state `Freshness`
 (`FRESH`/`STALE`/`UNAVAILABLE`) computed from elapsed time against a stored maximum-age threshold.
 Two problems, found while working through it, not just a naming issue:
 
 - "Is this fact still trustworthy" is a question relative to **whoever is asking, right now** — a
-  dwell timer might tolerate a `HouseFact` hours old if nothing else has changed since; a
-  security-relevant check might want one no more than seconds old. There is no single "freshness"
+  dwell timer might tolerate a stable state for hours if observation remains continuous; a
+  report-driven source might require a new report within seconds. There is no single "freshness"
   value that serves every consumer, so baking one shared answer into `Provenance` would be
   presumptuous regardless of how it's computed.
 - Even setting that aside, a *stored* staleness classification cannot stay correct on an immutable,
@@ -324,8 +365,13 @@ Two problems, found while working through it, not just a naming issue:
   would silently become wrong hours later with nothing rewriting it. This is exactly why `Window`
   (Layer 0 §3.2) is explicitly a **live, read-time** comparison, never a stored value — the same rule
   applies here. Any consumer that cares whether a fact is too old for its purposes computes
-  `now() - fact.when` against its own tolerance, the same way every dwell timer already does; no new
-  mechanism is needed, `when` alone is sufficient.
+  its declared source-validity and observation-coverage gates at read time.
+  For a state fact, `when` is the last accepted state-change instant; it is
+  **not** the last time an identical value was reported or the end of an
+  observation period. An old `when` alone cannot make an otherwise continuously
+  observed state stale. Layer 2 §3.2 owns optional source-report age; Layer 0
+  §4.4 owns interruption coverage. Occurrence facts retain their own event
+  instant and are never extended as current state.
 
 `available`, by contrast, is genuinely different in kind and earns its place as a stored field: it is
 not a question of elapsed time at all, and it cannot be derived from absence of a recent fact —
@@ -507,15 +553,14 @@ for a pattern that is really just "seen a lot," which is not the same claim.
 ### 4.3 `evidence`
 
 Supporting detail: a raw sensor state before interpretation, which `FusionRule` strategy produced a
-derived fact and from which inputs, why a `PatternLearner` tier matched. Layer 0's Manual Hold
-Manager already uses this field concretely — `restore_eligible`, `trigger_entity_id`, `trigger_state`
-(Layer 0 §6.3) — as one example of what belongs here: small, specific, load-bearing detail, not a
-dumping ground for large payloads.
+derived fact and from which inputs, why a `PatternLearner` tier matched. A producer may use it
+for small, specific diagnostic detail, not as a dumping ground for large payloads. Hold lifecycle transition fields belong in their typed event value
+(Layer 0 §6.1), not in an old restoration-evidence map.
 
 **Constrained to a JSON-compatible shape, not `dict[str, Any]`.** `evidence: dict[str, EvidenceValue]`
 (§4, `EvidenceValue` defined there) — values are limited to JSON primitives (`str`/`int`/`float`/
 `bool`/`None`) or shallow collections of them, **maximum nesting depth 2** (a value, or a dict/list of
-values — `trigger_state` above is exactly this: one level of nested attributes, not deeper). This is
+values — one level of nested attributes, not deeper). This is
 mechanically enforceable and catches, at construction time, an entire class of accidental leak that a
 content-based rule cannot: a raw Home Assistant `State` object, a binary blob, an arbitrary custom
 object — none of these fit `EvidenceValue`, so a producer cannot accidentally dump one into `evidence`
@@ -531,7 +576,7 @@ fact construction; it adds no I/O or retained raw HA object to the evaluation pa
 **Violation policy: fail soft, not hard — this is a fixed, deliberate choice, not an unspecified
 detail left to whoever implements it.** `evidence` is explicitly supporting detail, not essential to
 what a `HouseFact` means (§4 intro) — a shape or size violation drops `evidence` back to `{}` for
-that specific fact and raises a diagnostic event (Layer 0 §9-style), but the `HouseFact` itself is
+that specific fact and raises a diagnostic event (Layer 0 §10), but the `HouseFact` itself is
 still created with its `fact_type`/`value`/`where`/`when`/`confidence`/`source`/`available` intact.
 Aborting the entire fact over a malformed `evidence` payload would be disproportionate — it would
 mean a bug in optional diagnostic detail can silently blind a semantic resolver to a real observation. This is
@@ -565,14 +610,20 @@ Two things that could plausibly be mistaken for epistemic trust, and are not:
 ## 5. `Location`
 
 ```python
+ScopeKind = Literal["casa", "room", "zone", "rooms"]
+
 @dataclass(frozen=True)
 class Location:
-    scope: Literal["casa", "room", "zone", "rooms"]
+    scope: ScopeKind
     room_id: str | None = None               # populated iff scope == "room"
     zone_id: str | None = None               # populated iff scope == "zone"
     room_ids: frozenset[str] | None = None   # populated iff scope == "rooms"; at least 2 entries —
                                                # a single-room set should use scope="room" instead
 ```
+
+`ScopeKind` is only the closed vocabulary of Layer-1 `Location.scope`; it is
+not a second scope object. A registry's `legal_scopes` restricts this
+vocabulary, while the actual subject is always one validated `Location`.
 
 **`Location` is always present on a `HouseFact`, never absent.** A whole-house fact belongs to
 `casa` by definition — there is no "no location" case.
@@ -798,18 +849,18 @@ facts and actions already have a home entirely independent of `Topology` — `Lo
 (§5) — so nothing here was actually missing.
 
 **`Topology` is not a fact producer and not a `FusionRule` input by itself.** It is queried, not
-consumed as a stream — by `FusionRule`s, by Reactions, and by template requirements, when deciding
+consumed as a stream — by `FusionRule`s, by Reactions, and by Reaction-descriptor requirements, when deciding
 whether and how to act (e.g. "does this room have an operable opening to the outside", "what's
 adjacent to it"). This is why it has no `where`/`when`/`how` of its own: it is not a `HouseFact`, it
 is standing structural context `HouseFact`-producing and `HouseFact`-consuming logic can read.
 
 **The shape of a topological precondition (`TopologyRequirement`) is not defined here.** It belongs
-to Layer 5's template-matching concern, alongside its siblings `SensorRequirement`/
+to Layer 5's Reaction-descriptor-matching concern, alongside its siblings `SensorRequirement`/
 `ActuatorRequirement` — all three are Layer 5 predicates that reference lower-layer types (`Sensor`,
 `Actuator`, `Topology`), not lower-layer concepts themselves. An earlier version of this spec defined
 `TopologyRequirement` here, inconsistently with how it correctly left `SensorRequirement`/
 `ActuatorRequirement` to Layer 5 — corrected 2026-09-02, `v3_backlog.md`. `Topology`'s job ends at
-being queryable; what a template requires of it is Layer 5's to define.
+being queryable; what a Reaction descriptor requires of it is Layer 5's to define.
 
 ### 7.1 `Zone` suggestions derive from `Topology`
 
@@ -841,7 +892,7 @@ Layer 1 consumes Layer-0 services and the `FactSource` contract; Layer 0 consume
 reference is intentionally limited to data contracts.
 
 It never permits a behavioral cycle: Layer 1 does not execute Timing, Persistence, Recovery, or
-Manual Hold behavior while constructing its value objects, and Layer 0 does not query or invoke Layer-1
+Divergence Hold Manager behavior while constructing its value objects, and Layer 0 does not query or invoke Layer-1
 registries, topology, zone resolution, sensor/fusion logic, semantic resolution, or policy logic. Bootstrap composes the
 two contracts before evaluation; the hot path has no Layer-0 -> Layer-1 -> Layer-0 call chain. An
 implementation may use a neutral contracts module or type-only references to avoid a language-level
@@ -851,12 +902,16 @@ import cycle without creating a new architectural layer or moving ownership.
 
 ## 9. Not yet decided
 
-No unresolved Layer-1 substrate parameter remains.
+Open cross-layer contracts affecting this substrate are tracked in the CA4 backlog, including
+CA4-28 (recursive immutability and invalid evidence).
 
 ---
 
 ## 10. Acceptance criteria (for the eventual implementation phase)
 
+- `ScopeKind` accepts exactly the four `Location.scope` values; a registry's
+  legal-scope set cannot introduce a fifth spelling or replace a concrete
+  `Location` with an unvalidated list of rooms (§5).
 - Every existing "a thing that's true, somewhere, at some time, with some confidence" shape in the
   codebase today (`NormalizedObservation`, `DerivedObservation`, room-signal buckets, per-room
   occupancy booleans, independent activity claims and semantic context states) is expressible as a `HouseFact` with no residual
@@ -902,26 +957,61 @@ No unresolved Layer-1 substrate parameter remains.
   selected fields into a copied normalized projection, mutates the original HA fixture afterward, and
   confirms the fact is unchanged and remains within its 8 KiB payload cap.
 - A `PersistedProjection` accepts only copied JSON-compatible mappings within depth 2 and 8 KiB,
-  rejects raw HA objects, non-finite numbers, excessive depth, and excessive size. Layer 0 rejects an
-  invalid manual-hold checkpoint update before journaling it, omits an invalid recovery target without
-  cancelling its accepted command, and omits only an invalid critical-entity checkpoint projection;
+  rejects raw HA objects, non-finite numbers, excessive depth, and excessive size. Layer 0
+  omits an invalid recovery target without cancelling its accepted command and omits only an
+  invalid critical-entity checkpoint projection;
   each outcome emits a diagnostic and never retains the original HA object.
+- A persisted `ReactionFollowUpIntent` serializes its typed `subject` as one
+  scalar canonical `LocationKey` JSON text, including for `rooms`; recovery
+  validates and reconstructs the `Location`. Directly nesting `room_ids`
+  inside the intent fails the depth-two projection check (Layer 5 §6.0).
+- A hold lifecycle event enters the ordinary queue only as a complete
+  `HouseFact` whose inline `HoldLifecycleValue` passes the depth-two and
+  8 KiB fact-value validator. An arbitrary oversized non-fact projection
+  still fails the `PersistedProjection` validator. No raw HA object enters
+  either form (§3; Layer 0 §6.4).
 - An operational `HeimaEvent` maps to exactly one append-only event fact with its approved V3
   `fact_type`, a mandatory `Location`, and `OperationalEventValue` preserving its non-empty delivery
   key, allowed severity, non-empty title/message, and JSON-compatible context. It rejects a V2/legacy
-  event at the V3 boundary rather than translating it. Two equal event facts are both retained,
-  while a Layer-6 delivery suppression based on their shared `notification_key` never removes either
-  audit record (§3.1).
+  event at the V3 boundary rather than translating it. Two distinct equal event occurrences are both retained, while exact operation-id retries of
+  `manual_hold.lifecycle` and `reaction.follow_up` retain one fact and conflicting retries fail.
+  A Layer-6 delivery suppression based on a shared `notification_key` never removes an audit
+  record (§3.1; Layer 0 §4.5/§6.4).
+- A `HoldLifecycleValue` carrying two facet expectation sources is copied and
+  validated against its producer-owned full audit schema and the ordinary
+  fact-value validator. Composite colour is retained as canonical JSON text
+  in a depth-two scalar facet map; a nested source object, raw HA state,
+  noncanonical text or partial map is rejected. Its canonical facet tuple
+  normalizes to a depth-two JSON list; a raw tuple outside a qualifying frozen
+  dataclass remains invalid. Staging rejects any
+  adapter/scope/Reaction combination whose worst-case complete inline value
+  would exceed depth two or 8 KiB; runtime validation is a backstop and
+  never truncates an audit (§3; Layer 0 §6.1–6.4;
+  [complete serialized examples](ca4_01_serialization_examples.md)).
+- For `reaction.follow_up`, Layer 6 accepts only the closed typed occurrence and
+  serializes exactly its declared fixed context keys plus scalar
+  `expected.<facet>`/`observed.<facet>` keys; nested facet maps fail the
+  depth-two validator. `subject` maps to `where` and
+  `occurred_at` to `when`. A fixture rejects an extra key, an invalid path/outcome,
+  a mismatched prepared identity or activation id, an oversized facet projection, and resident text
+  claiming an interrupted command completed. The resulting fact has a nonempty
+  rendered title/message, `warning` severity, and
+  `notification_key="reaction.follow_up:" + operation_id` (§3.1; Layer 5 §6.0).
 - A shape/size violation on `evidence` never prevents `HouseFact` construction — the fact is still
   created with `evidence={}` and a diagnostic event, verified by a test that triggers each violation
   and checks the fact still exists.
-- An evidence field declared as `EvidenceInstant` is serialized only as canonical UTC ISO-8601 text
-  with six fractional-second digits and `+00:00`; a raw `datetime`, a non-UTC timestamp, or a
-  malformed string is rejected by the producer-side validation, verified for the manual-hold `expiry`
-  field.
+- `HouseFact.when` and every field declared as `EvidenceInstant`, whether in a `HouseFact.value` contract or
+  `Provenance.evidence`, is serialized only as canonical UTC ISO-8601 text with six
+  fractional-second digits and `+00:00`; a raw `datetime`, a non-UTC timestamp, or a
+  malformed string is rejected by producer-side validation. The fixture checks
+  `HoldLifecycleValue.expires_at` in `value` (Layer 0 §6.1), not in `evidence`.
 - `available=False` is set only when the producer explicitly cannot form a usable assertion (including
   read failure, interpretation failure, or insufficient derived evidence), never inferred from the
   absence of a recent fact for an unchanged value.
+- A state unchanged across valid observations retains its original `when` and
+  creates no duplicate fact; a historical consumer checks Layer-0 observation
+  continuity and any staged source-age gate rather than subtracting that old
+  change instant from its query time (§4.1; Layer 0 §4.4).
 - `Location` construction rejects any instance where the populated optional field doesn't match
   `scope`, in a test that tries each mismatched combination; a `scope="rooms"` instance with fewer
   than 2 entries in `room_ids` is rejected the same way.
@@ -941,7 +1031,7 @@ No unresolved Layer-1 substrate parameter remains.
 - Permuting a valid Topology's openings/connections produces the same canonical fingerprint; duplicate
   opening ids, duplicate connection opening ids, an unknown room, a connection whose `room_a` is not
   its opening's owner, or a serialized derived view that disagrees with recomputation is rejected.
-- `Topology` has no `TopologyRequirement`-shaped type or template-matching logic defined anywhere in
+- `Topology` has no `TopologyRequirement`-shaped type or Reaction-descriptor-matching logic defined anywhere in
   Layer 1's own implementation — that stays entirely Layer 5's, consuming `Topology` only by query.
 - A `Topology` instance, including its `openings`/`connections` (`Opening`/`ResolvedConnection`), is
   fully constructible from this document alone — a test builds one directly from the dataclasses in

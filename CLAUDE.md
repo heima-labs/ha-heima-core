@@ -114,21 +114,16 @@ developer.
 
 ## v3 planning
 
-This worktree (branch `feat/v3-planning`, isolated from `main`) holds architecture-exploration work
-for a prospective v3 — not yet a spec, not yet approved by the developer, not merged into any v2
-phase. **Every session working on v3 planning must start by reading `docs/v3_architecture_recap.md`**
-(the up-to-date, self-contained synthesis of the architecture as currently decided — read this first
-for the big picture) **and `docs/v3_backlog.md`** (the full chronological reasoning/decision log
-behind it, for the evidence trail behind any specific point). Concrete draft shapes live in
-`docs/v3_house_fact_draft.md`, `docs/v3_sensors_actuators_draft.md`,
-`docs/v3_template_matching_draft.md`, `docs/v3_pattern_learner_draft.md`, `docs/v3_domains_draft.md`.
-A rendered architecture diagram lives in `docs/img/v3_architecture.png` (source:
-`docs/img/v3_architecture.dot`, Graphviz). Do not make architectural decisions not already present in
-these documents — if something isn't covered, stop and ask the developer, same discipline as v2
-phases below. `v3_backlog.md`'s "Spec-readiness assessment" section (2026-09-02) tracks what's
-already promoted to concrete/spec-ready shape versus what's still backlog prose, and the
-dependency-ordered phase breakdown (`Phase V3-1` through `V3-8`, numeric — deliberately distinct
-from v2's lettered phases) for whichever slice gets spec'd and built first.
+This worktree (branch `feat/v3-planning`, isolated from `main`) contains authoritative planned-V3
+contracts in `docs/specs/v3/layer0_runtime_spec.md` through `layer5_action_reactions_spec.md`.
+They are design specifications, not implemented V2 behavior or an approval to implement V3.
+Start with `docs/specs/v3/contract_registry.json` and `docs/specs/v3/spec_workflow.md`, then read
+the owning contract and its dependency closure for the current issue. `docs/v3_backlog.md` is the
+chronological issue and decision record. `docs/v3_architecture_recap.md` and the V3 architecture
+overview are orientation only. The root-level V3 drafts and `docs/img/v3_architecture.dot/png`
+are historical and do not override the layer specifications. Keep V2-to-V3 design constraints,
+approved choices, cross-layer dependencies and scenario evidence explicit as described in the
+workflow; present a genuinely unresolved product decision before making it definitive.
 
 ## Key specs
 - Current architecture: `docs/specs/heima_v2_spec.md` (v2.1.0-draft — spec active on `main`)

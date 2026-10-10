@@ -1,3 +1,7 @@
+// Historical whole-architecture illustration. Current diagrams:
+// docs/specs/v3/architecture_runtime_authority.puml and
+// docs/specs/v3/architecture_support_governance.puml.
+// This graph retains superseded V3 concepts and is not the current reading path.
 digraph HeimaV3 {
   rankdir=TB;
   bgcolor="white";
@@ -13,9 +17,9 @@ digraph HeimaV3 {
   subgraph cluster_L0 {
     label="Layer 0 — Cross-cutting runtime"; fontsize=13; margin=20; style="filled"; color="#999999"; fillcolor="#f2f2f2";
     Timing   [label="Timing\nWindow / LearnedWindow / WarmupGate\nAtJob / CronEntry / CalendarWindow", fillcolor="#eeeeee"];
-    Persist  [label="Persistence\nEventStore (disk) + SnapshotBuffer (memory)", fillcolor="#eeeeee"];
+    Persist  [label="Persistence\nEventStore + follow-up outbox (disk)\nSnapshotBuffer (memory)", fillcolor="#eeeeee"];
     FactSrc  [label="FactSource / ApplyStepSource\ncorrelation_id chain", fillcolor="#eeeeee"];
-    Hold     [label="Manual Hold Manager\nHouseFact-based, restart-unsafe", fillcolor="#eeeeee"];
+    Hold     [label="Divergence Hold Manager\nprocess-local channel hold; audit events", fillcolor="#eeeeee"];
     Recovery [label="Recovery / Checkpoint\nminimal, restart-unsafe", fillcolor="#eeeeee"];
     {rank=same; Timing; Persist; FactSrc; Hold; Recovery}
   }

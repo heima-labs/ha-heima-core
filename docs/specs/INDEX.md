@@ -5,6 +5,7 @@
 
 This folder is organized by maturity and scope:
 
+- `v3/` → defined V3 design contracts under specification correction; not implemented on `main`
 - `core/` → implemented contracts used by runtime and UI
 - `domains/` → per-domain specs
 - `learning/` → learning/inference pipeline specs
@@ -18,6 +19,8 @@ Interpretation notes:
   v1 architecture, replaced on `main` by the v2 merge; historical reference only
 - other documents under `rfc/` are not the source of truth for current runtime behavior unless
   they explicitly say `Implemented on main`
+- `v3/` is the source of truth for the planned V3 architecture; open corrections are tracked in
+  [`docs/v3_backlog.md`](../v3_backlog.md), and it does not describe current `main` behavior
 - legacy root-level `docs/specs/heima_*` redirect stubs have been removed; use only the canonical
   paths listed below
 
@@ -33,6 +36,18 @@ Related reference docs also live outside this tree, under `docs/`:
 - `docs/PLUGIN_AND_EXTENSION_API_REFERENCE.md` — implemented vs. spec-only plugin/extension APIs
 - `docs/LEARNING_PLUGIN_STATUS.md` — current-state reference for the plugin-oriented learning/reaction model
 - `docs/PROJECT_DECISIONS.md` — log of temporary or transitional product/architecture decisions
+
+## Planned V3 architecture
+
+- [Contract registry](v3/contract_registry.json) and [specification workflow](v3/spec_workflow.md)
+  — current authority map, bounded dependency reading and review evidence. Start here for V3
+  specification corrections; the backlog is the chronological decision and issue record.
+- [Architecture overview](v3/architecture_overview_defined_layers.md) — layer responsibilities and
+  reading order; [architecture recap](../v3_architecture_recap.md) summarizes the V2-to-V3 rationale.
+- [Layer 0 runtime](v3/layer0_runtime_spec.md), [Layer 1 substrate](v3/layer1_substrate_spec.md),
+  [Layer 2 registries](v3/layer2_registries_spec.md), [Layer 3 learning](v3/layer3_learning_spec.md),
+  [Layer 4 semantics](v3/layer4_domain_spec.md), [Layer 5 Reactions](v3/layer5_action_reactions_spec.md)
+  — authoritative defined contracts, with unresolved CA4 corrections tracked in the backlog.
 
 ## Core
 

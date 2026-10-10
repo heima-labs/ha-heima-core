@@ -1,6 +1,10 @@
 # Heima v3 — Domain-specific redesigns (draft shapes)
 
-Status: **draft for discussion, not approved, not implemented.** Promotes the Lighting, Heating, and
+> **Historical draft.** The current V3 semantic and Reaction contracts are
+> [Layer 4](specs/v3/layer4_domain_spec.md) and
+> [Layer 5](specs/v3/layer5_action_reactions_spec.md); this file preserves earlier reasoning only.
+
+Status: **historical draft, superseded by Layers 4–5, not implemented as written.** Promotes the Lighting, Heating, and
 Security redesign decisions out of backlog prose (`v3_backlog.md`, "Lighting redesign", "Heating
 redesign", "Security" sections, and AR-4) into concrete shapes — the recap's own "still open" item 9
 flagged this as missing. Builds on `v3_house_fact_draft.md` (`Window`/`LearnedWindow`, `HouseFact`),

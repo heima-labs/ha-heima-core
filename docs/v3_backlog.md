@@ -1943,7 +1943,7 @@ two-tier `HouseFact` persistence model, the `FactSource`/`ApplyStepSource` unifi
 during the promotion is a genuine new decision, not just formalization:
 
 **Manual Hold Manager — conditional restoration after a clean restart, amending AR-3's blanket
-rule.** AR-3 (2026-09-01) and the Phase AQ non-goal it cites both state, unconditionally: an implicit
+rule.** **Historical hold model — Superseded by CA4-01 (2026-09-29).** This restoration decision is retained only as historical rationale; the current Layer 0 §6 restores no hold. AR-3 (2026-09-01) and the Phase AQ non-goal it cites both state, unconditionally: an implicit
 hold is never restored from a checkpoint after a restart. Developer pushback while reviewing the
 Layer 0 spec: is that valid for *every* sensor/actuator regardless of context, or only where the
 signal that detects an implicit hold is actually unreliable right after a restart (the
@@ -3318,6 +3318,8 @@ old-generation prior-cycle memory, and force-write under the new configuration f
 
 ## Manual-hold provenance boundary, resolved (2026-09-09)
 
+**Historical hold model — Superseded by CA4-01 (2026-09-29).** The following decision text is preserved as a historical record; Layer 0 §6 and the current CA4-01 decision govern Initial V3.
+
 The lifecycle contract still left `FactSource.source_id` implicit, used the invalid actor value
 `"admin"`, and treated a helper merely being active as proof of a resident action. It also split one
 replacement operation into two causal chains.
@@ -3333,6 +3335,8 @@ id of the action that caused both.
 ---
 
 ## Manual-hold lifecycle facts, resolved (2026-09-09)
+
+**Historical hold model — Superseded by CA4-01 (2026-09-29).** The following decision text is preserved as a historical record; Layer 0 §6 and the current CA4-01 decision govern Initial V3.
 
 Closed the final architecture intervention from the full v3 docs reread. The previous manual-hold
 contract declared an active fact and mentioned restoration, but made closing facts optional and left
@@ -3355,6 +3359,8 @@ transition-driven and introduces no synchronous I/O or extra polling on the eval
 ---
 
 ## Explicit manual-hold identity after restart, resolved (2026-09-09)
+
+**Historical hold model — Superseded by CA4-01 (2026-09-29).** The following decision text is preserved as a historical record; Layer 0 §6 and the current CA4-01 decision govern Initial V3.
 
 The helper entity is authoritative for the live state of an explicit hold, but cannot itself retain
 the immutable `hold_id` required by the state/lifecycle contract. Treating the helper as wholly
@@ -3389,6 +3395,8 @@ registry or sends a command.
 ---
 
 ## Manual-hold journal and crash consistency, resolved (2026-09-09)
+
+**Historical hold model — Superseded by CA4-01 (2026-09-29).** The following decision text is preserved as a historical record; Layer 0 §6 and the current CA4-01 decision govern Initial V3.
 
 The immediate checkpoint for a hold and the end-of-cycle facts batch are separate durable writes. A
 crash between them could leave a `hold_id`, its state fact, and its lifecycle audit disagreeing.
@@ -3856,3 +3864,2371 @@ future window, right-censored time-to-event, or absent for unsupervised anomaly/
 Training may observe a later outcome, but never a feature newer than `T`; this prevents leakage into a
 model intended to make a live prediction. Observational correlation is not permission to claim causal
 action effect: counterfactual or reinforcement-learning use needs a separate contract.
+
+---
+
+## Cross-layer reread — Layer 5 closure backlog (2026-09-22)
+
+**Status:** closed. All findings from the complete reread of the Layer 0--5 v3 specs and architecture
+recap at commit `0063da4` are resolved below and promoted into their owning documents. The later
+2026-09-23 scope amendment makes `environment.planned_comfort_trajectory` an evidence-gated
+Initial-V3 descriptor rather than a future-only one; it remains dormant until its defined gates pass.
+
+### Critical
+
+#### L5-1 — `ReactionProposal` ontology, resolved (2026-09-22)
+
+**Evidence.** The architecture recap describes a `ReactionProposal` as `HouseFact + Provenance`
+wrapped with review status and an identity/fingerprint. Layer 1 explicitly says it is **not** a
+`HouseFact`, but a Layer-5 review-workflow record with its own persistence contract. Layer 5 still
+leaves its complete schema to define.
+
+**Why it matters.** This decides its persistence identity, audit trail, provenance relationship,
+deduplication, lifecycle transitions, and whether proposal evidence is a fact reference or embedded
+fact-shaped data.
+
+**Decision.** `ReactionProposal` is a persisted Layer-5 governance record, never a `HouseFact`.
+It contains the admitted canonical proposal payload and its candidate/template contract identity;
+references the source facts, result/artifact, finding and evidence span; and retains a bounded,
+redacted immutable evidence snapshot sufficient to audit a later review even after normal evidence
+retention or compatible retraining. The snapshot is an audit attachment, not a fact assertion. Review
+status, actor and lifecycle belong exclusively to this record. Layer 3 keeps producing only transient
+candidates; Layer 0/1 retain the actual house history and any separate operational audit facts.
+
+**Consequence.** The recap was outdated and has been aligned. The exact record fields remain open;
+the review state machine was subsequently resolved under `L5-5`.
+
+**Sources.** `docs/v3_architecture_recap.md` (ReactionProposal section); Layer 1 "What is not a
+HouseFact"; Layer 5 "Decisions still to refine".
+
+#### L5-2 — `controlled_channel` registration, resolved (2026-09-22)
+
+**Evidence.** Layer 0 requires an actuator's registered `controlled_channel` for
+`actuator.resident_control`. Layer 3 carries it on `ActuationMemberCandidate`; Layer 5 uses it for
+`CorrectionAttributionEvent` and matching. Layer 2's `Actuator` record has no such field and says
+that `actuator_role` is not a capability model.
+
+**Why it matters.** Resident control, correction attribution, learned actuation membership, and the
+eventual `Actuator -> ApplyStep` binding do not have a common, registered semantic target.
+
+**Decision.** `controlled_channel` is a stable, canonical identity unique within one Layer-2
+`Actuator`, expressed by a finite `ActuatorChannel` collection. Each channel has a closed core
+`channel_kind`, observable-state contract, and core actuation-adapter binding. An Actuator may own zero
+channels, so unsupported or observation-only HA endpoints remain representable without becoming
+automatically actuatable. Staging validates uniqueness and all closed contract references; composition
+supplies Layer 0 a frozen ingress binding rather than creating a live Layer-0-to-Layer-2 lookup.
+
+**Consequence.** Resident control, candidate membership, correction attribution, and later
+`ApplyStep` mapping share one registered identity. Exact channel vocabulary and intent translation are
+deferred to the remaining mapping decision.
+
+### High
+
+#### L5-3 — Semantic admission versus HA service validation, resolved (2026-09-22)
+
+**Evidence.** Layer 2 rejects a Heima capability catalog and delegates service-schema/support
+validation to HA. Layer 5 nevertheless requires compatible logical capability/admission, a member
+capability vocabulary, and an exact `Actuator -> ApplyStep` mapping that remains open.
+
+**Why it matters.** Without a boundary, two incompatible capability systems can emerge: a semantic
+one for policy selection and a transport one for execution.
+
+**Decision.** The closed channel-kind, observable-state-contract, and adapter registries are a narrow
+Heima semantic admission vocabulary: they identify only control dimensions that core policy templates
+can reason about and translate. They are not an inventory of HA domains, device classes, or supported
+features. Layer 5 admits a member only when its template permits the registered channel kind and
+adapter binding. It alone performs the later intent-to-`ApplyStep` translation; Home Assistant remains
+the sole authority for the resulting service schema and current endpoint support when applying that
+step. No HA feature snapshot or service-parameter schema is persisted in Layer 2.
+
+**Consequence.** A new HA endpoint may be inventoried immediately but cannot enter automatic policy
+execution until a core-owned channel contract exists. The exact intent/channel/adapter mapping remains
+the separate Layer-5 mapping task.
+
+#### L5-4 — Shared versioned `relation_profile`, resolved (2026-09-22)
+
+**Evidence.** Layer 3 requires each environmental learner declaration to select exactly one
+validated `relation_profile`, with support gates, shadow requirements, preview bindings, and
+candidate payload. Layer 5 lists its schema as still to refine.
+
+**Why it matters.** The learner cannot safely construct, validate, version, or explain a candidate
+whose semantic relation is not normative.
+
+**Decision.** `RelationProfileRegistry` is a core-owned, bootstrap-frozen Layer-5 registry exposed to
+Layer 3 solely through its read-only proposal facet. A `RelationProfileRef(profile_id, version)` is one
+shared artifact, never parallel learner/policy profiles. Its evidence facet defines the observed
+relation, typed slots, outcomes/horizons/units, confounders, evidence gates and shadow requirement;
+its policy facet defines permitted template versions, runtime slots, objective/intent compatibility,
+guard structure and effect shape. Layer 3 consumes only the former; Layer 5 consumes the latter.
+
+Profiles exclude admin guard values, Actuators, adapter mappings, HA services/payloads and arbitrary
+expressions. `EnvironmentalGuardProfile` remains the separate administrative safety configuration, and
+the intent/channel/adapter translation remains the subsequent Layer-5 mapping decision. The exact
+profile ref is persisted in candidate, proposal and configured policy records; it is immutable and a
+new version never silently alters a learner, pending proposal or policy.
+
+**Consequence.** A changed evidence facet produces a new learner fingerprint/artifact/shadow path; a
+changed policy facet produces a new candidate and review path. The existing environmental profile names
+are profile ids whose exact version is now explicit.
+
+#### L5-5 — Proposal review lifecycle, resolved (2026-09-22)
+
+**Evidence.** Layer 5 specifies pending invalidation (`proposal_incompatible`), acceptance into a
+`notification_only` configured policy, and a distinct auto-action promotion. Layer 3 may refresh
+evidence but may not overwrite status/mode/scope/guard. The record schema and transition rules are
+still open.
+
+**Why it matters.** UI, notifications, idempotency, ownership, audit, retry, stale evidence, and
+deduplication cannot align without explicit states, actors, and transition guards.
+
+**Decision.** The sole review dispositions are `pending`, `accepted`, `rejected`, and
+`proposal_incompatible`. The latter three are terminal. Only a compatible Layer-3 refresh may update
+a `pending` proposal's evidence references and bounded redacted audit snapshot; it cannot alter the
+canonical admitted payload or any review/configuration authority. Evidence outside its validity
+interval makes the proposal temporarily non-approvable but keeps it `pending` awaiting refresh, rather
+than introducing an expiry disposition.
+
+Acceptance is an authenticated, atomic Layer-5 transaction: current revalidation, creation of the
+linked `ConfiguredPolicy` in `notification_only`, then recording actor/time/reason/policy identity and
+transition to `accepted`. A recoverable current staging failure leaves it pending with a typed
+diagnostic; candidate-kind/version incompatibility reaches terminal `proposal_incompatible`.
+Rejection records actor/time/typed reason and is terminal. A candidate with the same canonical
+fingerprint cannot automatically reopen a rejected proposal; changed semantics yield a new fingerprint
+and a new proposal. There is no in-place reopen transition. The configured policy's later lifecycle,
+including automatic-action promotion, is separate and never rewrites the accepted proposal.
+
+**Consequence.** Layer 5 defines the review state machine; its exact immutable root and append-only
+record layout are resolved separately in `L5-15`.
+
+#### L5-15 — `ReactionProposal` persisted schema, resolved (2026-09-23)
+
+**Decision.** The immutable `ReactionProposal` root contains only its identity, admitted candidate and
+descriptor/profile identities, canonical admitted payload, deduplication fingerprint, admission time,
+and first evidence-revision id. It has no mutable review fields, raw HA object, or executable command.
+
+Three append-only record types supply the workflow history: `ProposalEvidenceRevision` for compatible
+evidence refreshes; `ProposalReviewTransition` for actual terminal moves from `pending`; and
+`ProposalReadinessAssessment` for stale evidence or a failed current revalidation that leaves the
+proposal pending. Current disposition and evidence are deterministic projections rather than opaque
+mutable columns. Every evidence revision binds the original admitted-payload fingerprint; a mismatch is
+a new candidate, never a refresh. Snapshots and diagnostic detail are individually bounded and redacted.
+
+**Consequence.** Acceptance atomically creates `ConfiguredReaction` and appends the accepted
+transition. Rejection and terminal incompatibility each append their own transition. Failed acceptance
+or expiry remains an auditable readiness assessment without inventing a lifecycle state.
+
+#### L5-6 — One Reaction execution pipeline, resolved (2026-09-22)
+
+**Evidence.** Layer 3 distinguishes deterministic direct typed ECA Reactions from generic
+action-bearing policy templates that a learner may propose. Layer 5 mainly defines
+`PolicyTemplateRegistry` and leaves the general non-policy Reaction contract open.
+
+**Why it matters.** A policy accepted from a proposal could accidentally bypass or duplicate the
+same admission, guard, apply, and audit pipeline used by deterministic Reactions.
+
+**Decision.** A core `ReactionDescriptor` is the sole contract from which a `ConfiguredReaction` may
+be staged. It declares one or both authoring modes: `admin_direct` and `learner_proposal`. An admin may
+create a typed deterministic ECA Reaction only through `admin_direct` staging; Layer 3 may create only
+a `ReactionDescriptorCandidate` under `learner_proposal`, followed by proposal review. Both origins
+then use the same descriptor validators, `ReactionEvaluationPlan`, immutable `DecisionSnapshot`, action
+admissibility, ordered one-endpoint `ApplyStep` protocol, and audit path. The immutable origin is
+provenance only, never a runtime engine selector.
+
+**Consequence.** `ReactionProposal` is governance for learned configuration, not a third runtime
+shape. A descriptor may deliberately be direct-only, proposal-only, or support both; neither authoring
+path may install an arbitrary predicate or command graph. The exact intent/channel/adapter translation
+is defined in `L5-13` and has one execution destination.
+
+#### L5-13 — Semantic target to `ApplyStep` mapping, resolved (2026-09-23)
+
+**Evidence.** `L5-2/3` now establish registered `ActuatorChannel`, closed `channel_kind`, and a core
+adapter binding, while Layer 5 still explicitly leaves the exact semantic-intent to
+channel-kind/adapter to `ApplyStep` translation open.
+
+**Why it matters.** The system has a safe admission boundary but not yet a complete, testable command
+contract: the same intent must not translate differently for equivalent channels, and no template may
+bypass the one-endpoint, HA-validated `ApplyStep` path.
+
+**Decision.** A closed core translation table is indexed by `(action_intent, channel_kind,
+actuation_adapter_id)`. It validates semantic parameters, builds one typed `ChannelTarget`, constructs
+its partial expected-state matcher, and encodes a finite ordered sequence of `ApplyCall`s. The target is
+a canonical patch: explicitly targeted facets are verified and attributable; omitted facets preserve
+current state and receive no implicit default. A light may therefore target power, intensity and colour
+in one `light_state`; a valve may target a canonical position; an HVAC state may target mode, setpoint,
+fan speed and swing mode.
+
+One `ApplyStep` owns exactly one Actuator/channel semantic target, but may contain multiple one-service
+`ApplyCall`s when HA requires separate services. Calls contain no target selector; runtime resolves the
+sole entity from the Actuator. They are audited individually as `completed`, `failed`, or
+`not_attempted`. A failed call stops remaining calls and later bundle members; a step succeeds only when
+all calls complete. There is no automatic compensation and no arbitrary command graph.
+
+**Consequence.** The member-to-step invariant remains one-to-one while preserving composite user
+intent. Home Assistant still authoritatively validates each concrete service operation; Layer 2 stores
+only the core semantic channel/adapter contract, never an HA feature snapshot.
+
+### Medium
+
+#### L5-7 — Architecture overview stale Layer-4 status, resolved (2026-09-23)
+
+**Decision.** The overview no longer presents initial Layer-4 semantic resolvers as deferred. It now
+states that Layers 0--5 are defined and confines the deferred section to genuinely future ownership,
+including `security.presence_simulation`; `environment.planned_comfort_trajectory` is instead an
+evidence-gated Initial-V3 descriptor.
+
+**Consequence.** The overview remains a maintained explanatory map; it neither reopens settled Layer-4
+scope nor turns reserved product directions into initial V3 obligations, while showing the comfort
+trajectory's defined Initial-V3 implementation obligation accurately.
+
+#### L5-8 — `relation_profile` terminology, resolved (2026-09-22)
+
+**Evidence.** Layer 3 uses it for learner environmental relations; Layer 5 uses it in policy
+template slots.
+
+**Why it matters.** A shared spelling suggests interchangeability even if the artifacts have
+different owners, validation, and lifecycles.
+
+**Decision.** The shared `RelationProfileRef` deliberately denotes one versioned artifact with
+evidence and policy facets. The term is no longer overloaded: Layer 3 references the evidence facet;
+Layer 5 references the policy facet. Candidate contracts use the typed ref, rather than an unversioned
+string whose meaning could be inferred from its consumer.
+
+#### L5-9 — Action-side availability reason ownership, resolved (2026-09-23)
+
+**Decision.** `ReactionDescriptor` declares only applicable gates from a closed core table: manual
+hold -> `manual_hold_active`; command ownership -> `command_ownership_unavailable`; absent or
+incompatible channel/target contract/adapter -> `actuator_capability_unavailable`; unavailable or
+unverifiable channel state -> `actuator_state_unconfirmed`; dwell/cooldown -> `cooldown_active`; and
+any required guard -> `action_guard_active`. Layer 5 canonicalizes concurrent causes through Layer 3's
+existing helper and cannot add, rename, suppress, or prioritize reason codes.
+
+Semantic input, artifact and envelope failures remain pre-admission Layer-3 causes. Staging/review
+incompatibility is a typed configuration diagnostic, not a runtime availability occurrence. Once an
+action has been admitted, a failed `ApplyCall` is recorded through Layer 5's separate closed execution
+audit taxonomy (`service_rejected`, `transport_failed`, `timeout`, `invalid_response`) and never emits
+`automation.availability`.
+
+#### L5-10 — Candidate validation authority, resolved (2026-09-23)
+
+**Decision.** Layer 3's read-only proposal facet is advisory preflight only: it may reject a candidate
+that is incompatible with the generation it observed, but it neither reserves that generation nor
+authorizes persistence, review, or action. A successful preflight result cannot be cached as an
+authorization.
+
+Layer 5 is authoritative both when it creates the `ReactionProposal` and when an authenticated actor
+accepts it. At each boundary it validates the then-current descriptor/profile versions, canonical
+payload/fingerprint, Topology, Actuator inventory, guards and staging configuration. A changed or
+incompatible dependency follows Layer 5's typed rejection, pending non-approvability, or terminal
+`proposal_incompatible` rule; Layer 3 never silently reinterprets the candidate.
+
+### Low
+
+#### L5-11 — Recap authority and maintenance, resolved (2026-09-23)
+
+**Decision.** The recap and overview are manually maintained orientation documents. Both identify the
+authoritative Layer 0--5 specifications as prevailing on any discrepancy, carry a reviewed-through
+date, and are updated when confirmed decisions are promoted into a specification. They summarize
+ownership and stable contracts, rather than duplicating complete schemas or lifecycle tables.
+
+**Consequence.** The recap now reflects the one `ReactionDescriptor` mechanism, Layer-5 authority over
+candidate persistence/review, `ConfiguredReaction`, pre-admission suppression versus execution audit,
+and the distinction between active/evidence-gated Initial-V3 and reserved future descriptors.
+
+#### L5-12 — Initial versus reserved-future descriptors, resolved (2026-09-23)
+
+**Original decision (superseded in part on 2026-09-23).** Layer 5 separated active Initial V3
+descriptors from a non-normative reserved-future section. The active registry included
+`environment.solar_shading`, `environment.external_exchange`, `environment.bathroom_extract`, and
+`routine.actuation_bundle`; both `environment.planned_comfort_trajectory` and
+`security.presence_simulation` were initially reserved.
+The `environment.bathroom_extract` name in this dated decision is historical;
+CA4-12 renamed the current Initial-V3 descriptor to `environment.air_extraction`.
+
+**Consequence.** A reserved descriptor can be promoted only through a future core change that defines
+its complete owner contracts and acceptance criteria while retaining the one common descriptor/runtime
+mechanism. The Layer-0 calendar substrate and `FrozenCalendarView` are already defined and are not a
+promotion blocker.
+
+**Scope amendment (2026-09-23).** `environment.planned_comfort_trajectory` is no longer reserved.
+It is an Initial-V3 registered descriptor with a stable identifier, evidence-gated `learner_proposal`
+path, and Initial-V3 acceptance obligation. It remains dormant, emits neither proposal nor action, and
+has no fallback until compatible thermal evidence plus staged HVAC/calendar/comfort prerequisites pass.
+`security.presence_simulation` alone remains reserved-future under the preceding consequence.
+
+#### L5-14 — `planned_comfort_trajectory` promotion contract, resolved (2026-09-23)
+
+**Status amendment (2026-09-23):** the contract is complete and
+`environment.planned_comfort_trajectory` is a registered, evidence-gated Initial-V3 descriptor. Its
+stable identity may be relied upon, but it is dormant for a scope until eligible exact-cell evidence
+and its staged prerequisites exist. No future feature development is required when data later becomes
+sufficient; the existing candidate, review, shadow and promotion lifecycle applies.
+
+**Contract.**
+
+- **Thermal-response artifact and relation profile (Layers 3 and 5), resolved (2026-09-23):** one
+  explicit conditioning scope and one mode (`heating` or `cooling`) produce a bounded, exact-context
+  `ThermalResponseParameter`: passive-drift interval, recovery-duration interval and conservative
+  recovery time for one thermal-delta bucket. It is derived from separate complete passive-drift and
+  active-response cohorts, is shadow-validated against later observed trajectories, and cannot contain
+  a target, calendar, command, entity, arrival forecast or unmeasured energy-benefit claim. Layer 5
+  uses it only to decide the latest start that conservatively reaches the explicit target by the
+  calendar boundary, under its independent bounds and guards;
+  missing/expired/non-matching context abstains without fallback or extrapolation.
+- **HVAC semantic target contract (Layers 2 and 5), resolved (2026-09-23):** one
+  `HvacTrajectoryBinding` declares a unique registered endpoint per heating/cooling mode; the same
+  channel may serve both only when its adapter admits each explicit binding. The closed
+  `hvac_state.trajectory_setpoint.v1` target contains exactly `mode` (`heating` or `cooling`) and
+  `setpoint_c`. `auto`, power, fan speed, swing, preset and humidity are excluded. Layer 5 admits a
+  step only with compatible channel/adapter, confirmed current state and an administratively bounded
+  setpoint; the Layer-5 translation table alone compiles the resulting target into HA-validated calls.
+- **Comfort, safety and consent contract (Layer 5), resolved (2026-09-23):** an administrator stages
+  one `ComfortTrajectoryGuardProfile` per conditioning scope. Its heating/cooling absence and return
+  targets are each an absolute or current-`FactRef` relative `ThermalBoundRule`, always clamped within
+  explicit hard bounds; missing/stale reference means no step, never a fallback. The profile is never
+  learned. It permits a direct absence target and a core-generated recovery-only ramp; adapter
+  constraints, not admin settings, govern every recovery-knot granularity and cadence. Administrative
+  action enablement and household consent are
+  separate mandatory gates for automatic action, initially disabled; they do not block proposal or
+  notification-only shadow. Revocation while automatic, or any hold/plan/presence/guard failure,
+  cancels the corresponding future action work without compensating a command already sent. Layer 5 schedules a future
+  re-evaluation, not a frozen command, and may record `late_recovery` only when it safely selects the
+  next recovery knot after its calculated start is already past.
+- **Descriptor lifecycle gates (Layers 3--5), resolved (2026-09-23):** complete/coherent artifact
+  cohorts, exact-context coverage, calibrated intervals and thermal shadow plus atomic cross-layer
+  staging admit a reviewable candidate. Acceptance creates only a `notification_only` configured
+  Reaction, which completes a bounded operational shadow without `ApplyStep`s while exercising plans,
+  dynamic bounds, rescheduling and cancellation. Only a subsequent authenticated administrative
+  promotion plus current household consent may enable automatic action.
+  End-to-end tests cover departure, targets, recovery timing, edits/cancellations, early return, hold,
+  safety, revocation, restart, `late_recovery`, and no compensation of a sent call.
+
+**Already defined, therefore not open here.** Calendar extraction, normalization, bounded staged
+requirements, `FrozenCalendarView`, Layer-2 keyword classification, `CalendarPlanBinding`, ambiguity,
+and the distinction between an explicit plan and `presence=away` are existing Layer-0/2/5 contracts.
+
+---
+
+## Cross-layer coherence audit follow-up (2026-09-23)
+
+**Status:** closed (2026-09-23). Findings from a read-only re-review of the current Layer 0--5
+specifications, architecture overview, diagrams, and recap after the Layer-5 closure work are resolved
+below and promoted into their owning documents. The separate CT readiness follow-up remains open as
+implementation-detail work, not an unresolved cross-layer contradiction.
+
+### Critical
+
+#### CA-1 — Plugin action authority and the sole Layer-5 path (resolved 2026-09-23)
+
+**Evidence.** The recap's Layer-7 section allows an `apply` plugin to return an `ApplyStep` and command
+Actuators, while Layer 5 says `ReactionDescriptorRegistry` is not plugin-extensible and is the sole
+contract from which `ConfiguredReaction` and its common action protocol may be staged.
+
+**Why it matters.** A plugin-owned apply path can bypass descriptor staging, current snapshot,
+admissibility, suppression, audit and correction-attribution rules, recreating the parallel action
+engine V3 explicitly prohibits.
+
+**Decision.** Plugins have no `apply` capability and cannot create `ApplyStep`s, invoke Actuators,
+register candidate kinds/descriptors, or establish a private action protocol. They may provide
+registered ordinary facts and diagnostics. A plugin may submit a `LearningProposalCandidate` only
+under an exact existing core candidate kind and `ReactionDescriptor`; normal Layer-5 validation,
+review, staging, admissibility, and audit then decide whether it can ever produce an action.
+
+**Consequence.** A plugin-owned Actuator remains a Layer-2 inventory entry and is commandable only by
+the common core Layer-5 pipeline. Plugin-related `ApplyStepSource` data is provenance, not authority.
+This supersedes the historical two-capability-tier (`read_only`/`apply`) proposal in the older
+`Third-party plugin API` backlog notes; the recap, overview, and Layers 3/5 now state the closed
+boundary consistently.
+
+### High
+
+#### CA-2 — One canonical `ReactionDescriptor` identity (resolved 2026-09-23)
+
+**Evidence.** `ReactionDescriptorCandidate` carried `reaction_descriptor_id` and version, while its
+embedded `CanonicalEnvelope` also carried `template_id`, `template_version`, and string `profile`.
+That exposed two unaliased identities for one logical configuration.
+
+**Why it matters.** Candidate construction, fingerprinting and Layer-5 validation can bind different
+identities to one logical configuration, defeating exact-version revalidation and deduplication.
+
+**Decision.** The candidate root is the sole identity owner:
+`reaction_descriptor_id`, `reaction_descriptor_version`, and `RelationProfileRef`. `CanonicalEnvelope`
+is now only its finite axes, versioned partitions, and supported cells; it carries no descriptor or
+profile identity. Layer 5 validates that envelope as part of the root-selected descriptor/profile
+contract. Candidate fingerprints include the root identities once and then the canonical envelope value.
+
+**Consequence.** There is no template-to-descriptor alias or double identity to reconcile. Candidate,
+proposal, and `ConfiguredReaction` references use descriptor id/version and `RelationProfileRef`.
+The associated Layer 0--2 boundaries, overview, governance diagram, and recap now use
+`ReactionDescriptor` terminology when they mean this contract; independent Layer-4 semantic templates
+and Layer-6 notification templates retain their own meaning.
+
+#### CA-3 — Comfort trajectory is evidence-gated, not a future undefined feature (resolved 2026-09-23)
+
+**Evidence.** Layer 3's future-component items for `planned_comfort_trajectory` and
+`hvac_thermal_response` still require Layer-5 mapping, comfort/safety/consent and acceptance contracts
+to be completed, although `L5-14` now defines them.
+
+**Why it matters.** Treating the profile/descriptor as a future release item would mean a household
+with sufficient later data still needs new product development before Heima can propose its use. That
+contradicts the Initial-V3 capability decision and obscures the difference between a defined dormant
+contract and missing empirical/configuration prerequisites.
+
+**Decision.** `hvac_thermal_response` and `environment.planned_comfort_trajectory` are registered
+Initial-V3, evidence-gated capabilities. Their complete cross-layer contracts are already specified;
+the remaining gates are exact-context calibrated thermal evidence, staged HVAC/calendar/comfort
+prerequisites, reviewable candidate validation, `notification_only` shadow, authenticated promotion,
+and current household consent. Layer 3 supplies only `ThermalResponseParameter`; it never chooses a
+target/endpoint, schedules recovery, or commands an Actuator.
+
+**Consequence.** When a household later accumulates sufficient data and the administrator has staged
+the required configuration, Heima can create the ordinary proposal without a new descriptor, contract,
+or feature implementation. `security.presence_simulation` remains the separately reserved future
+descriptor.
+
+### Comfort-trajectory implementation readiness follow-up (2026-09-23)
+
+**Status:** implementation-gated. CT-1, CT-2, CT-3, CT-5 and CT-6 are resolved as specification
+contracts. CT-4's contract is also resolved, but its frozen numerical calibration and reproducible
+release evidence must be completed before the capability can be released for automatic action. No new
+feature design should be required when a household later accumulates sufficient data.
+
+#### CT-1 — Concrete descriptor and evaluation-plan contract (resolved 2026-09-24)
+
+Define the registered `environment.planned_comfort_trajectory` payload, trigger, current guards,
+canonical parameters, action bundle shape, and exact `ReactionEvaluationPlan` behavior for absence,
+recovery, rescheduling, and cancellation.
+
+**Decision recorded.** Absence is one direct semantic target at observed departure. Recovery is a
+core-generated adaptive ramp only: heating steps upward and cooling steps downward toward the return
+target. Its sole semantic trigger is `departure`; calendar/dependency changes and one next `AtJob`
+cause fresh re-evaluation, not a second trigger or prebuilt command schedule. Every knot reads a fresh
+snapshot, emits at most one supported `ApplyStep`, and arms at most one successor job. Late operation
+never replays missed knots, bursts calls, violates adapter limits, or jumps to the return target; it
+continues only with the next safe step and records `late_recovery`.
+
+**Scope decision (2026-09-23).** A trajectory uses one explicit `ConditioningScope`, shared by its
+artifact, HVAC binding, guard profile, and configured Reaction. Initial V3 permits only one `room` or
+`casa`; casa requires one administrator-staged canonical temperature `FactRef` and never averages or
+infers from room sensors. `zone` and ad-hoc multi-room scopes are rejected until a future contract can
+model their heterogeneous thermal dynamics.
+
+**Closure (2026-09-24).** CT-2 fixes the immutable prerequisites, CT-3 fixes candidate identity and
+payload, and CT-6 makes each evaluation rule executable. No unresolved descriptor or evaluation-plan
+behavior remains.
+
+#### CT-2 — Staged prerequisite aggregate and candidate binding (resolved 2026-09-23)
+
+**Decision.** `ConditioningScope`, `HvacTrajectoryBinding`, `ComfortTrajectoryGuardProfile`, and the
+`planned_absence` `CalendarPlanBinding` are staged only as one immutable, append-only
+`ComfortTrajectoryPrerequisiteGeneration`, with a contiguous per-scope generation index, complete
+canonical fingerprint, authenticated author and timestamp. Cross-contract scope, endpoint, fact,
+bound, guard and adapter-constraint validation is atomic: a failed staging request persists no partial
+generation.
+
+**Binding and authority.** A candidate, its proposal and its configured Reaction retain the exact
+generation id/fingerprint. The learner may bind only an eligible exact-cell thermal artifact; it cannot
+choose or mutate any staged administrative value. Consent and administrative action enablement are
+current runtime authority, initially disabled on the configured Reaction, and are required only for
+automatic `ApplyStep`s, never to propose, review or conduct notification-only shadow.
+
+**Change behavior.** An edit creates a new generation. Pending proposals on an old generation become
+`not_approvable` with `staged_prerequisite_incompatible`; a previously automatic reaction cancels future
+action jobs and becomes `notification_only`. Nothing is reinterpreted under the new generation: a new
+candidate, review, shadow and authenticated promotion are required before automatic action resumes.
+
+#### CT-3 — Thermal artifact to proposal translation (resolved 2026-09-23)
+
+**Decision.** One eligible exact-cell `ThermalResponseParameter` produces one candidate for exactly one
+`(conditioning_scope, mode)`, with a single `follow_comfort_trajectory` member bound to the staged
+endpoint. The root payload carries only the immutable prerequisite-generation id/fingerprint; member
+parameters carry only the selected mode and the member has
+`numeric_outcome_requirement=None`. The parameter's step bucket is an action
+bound and its recovery-duration estimate remains typed artifact evidence;
+neither is copied into immutable member fields. Guards and envelope must
+exactly agree with the generation and artifact. This field-placement correction
+was made under CA4-12 on 2026-10-07.
+
+**Identity and refresh.** The prerequisite pair, mode, step bucket and envelope are semantic identity
+and enter deduplication, so any such change needs a new proposal. Artifact/parameter identity, evidence
+references, validity, confidence and uncertainty stay in the evidence revision. They may refresh a
+pending proposal only while all semantic fields remain compatible. No learned payload may contain a
+comfort bound/target, calendar plan, endpoint mapping, adapter constraint, consent, absolute setpoint,
+arrival prediction or command schedule.
+
+#### CT-4 — Initial thermal evidence gates and recovery-step evidence (implementation-gated 2026-09-23)
+
+**Decision.** Initial-V3 threshold values will not be invented in the specification or made
+administrator-configurable. A core-owned, versioned `ThermalEvidenceGateCalibration` must be frozen
+from a documented BOPTEST matrix, provenance-recorded replay fixtures, and a documented opt-in field
+pilot before `hvac_thermal_response@1` can publish an operational artifact. It records support and
+temporal-diversity floors for passive and active cohorts, bootstrap quality, response-interval width,
+per-horizon trajectory error, interval coverage, independent thermal-shadow episodes, and the maximum
+conservative-recovery underprediction rate.
+
+**Exact-bucket rule.** Passive support is qualified per cell/delta cohort; active support and thermal
+shadow are qualified per exact cell/delta/recovery-step bucket. No bucket borrows evidence, a threshold
+result or a neighbouring parameter. The calibration matrix must exercise supported modes, context/delta/
+step partitions, forecast/sensor uncertainty, thermal-mass regimes and actuator responses.
+
+**Implementation gate.** The contract is defined, but concrete frozen values and their reproducible
+calibration evidence remain a release-acceptance obligation. Until they exist, the profile is
+diagnostic-only and cannot emit a candidate. A changed gate/protocol/fixture/metric is a new
+profile-calibration version and never silently changes a pending proposal or configured Reaction.
+The field pilot is `notification_only`, requires per-household opt-in, exports only protocol-bounded
+redacted aggregate outcomes, and never supplies cross-home runtime data or action authority.
+
+#### CT-5 — Staging and administration surface (resolved; amended 2026-09-24)
+
+**Decision.** The comfort trajectory belongs entirely to the admin panel, not config flow. Layer 8
+authenticates/authorizes and renders bounded redacted state; Layer 5 owns validation and every durable
+mutation. A typed, version-checked aggregate staging command is the only way to create a prerequisite
+generation. Generic `review_proposal` accepts/rejects the learner proposal and acceptance creates only
+`notification_only`; no direct reaction creation exists.
+
+**Authority.** An admin may promote or disable automatic action against an exact configuration
+generation. Promotion may leave the reaction `authorized_awaiting_household_consent`; it never emits a
+command. An explicitly resident-authorized actor, not an admin actor by role alone, separately grants
+or revokes household consent for that exact reaction/generation. Revocation cancels future jobs;
+successors never inherit consent. Removing a resident authority is version-checked and requires the
+admin to explicitly retain or revoke every current consent that removed actor granted; retention is
+audited as an admin decision over the resident's pre-existing consent, never as a new admin grant. All
+commands carry actor, correlation, target identity and optimistic-concurrency precondition, and failures
+persist no partial mutation.
+
+**Visibility.** Shadow is read-only and redacted: generation/artifact/profile identity, readiness,
+summarized targets/knots, suppressions, cancellations and `late_recovery` are visible; calendar text,
+raw facts, raw HA payloads and unredacted artifacts are not.
+
+#### CT-6 — Executable acceptance scenarios (resolved 2026-09-24)
+
+**Decision.** Comfort trajectory requirements are versioned `Given / When / Then` executable fixtures,
+not illustrative prose. They assert an observable trace only: durable records, exact job
+replacement/cancellation, `ApplyStep`/`ApplyCall`, and typed diagnostics/audit. A deterministic suite
+uses fake clock/calendar/facts/adapter/scheduler and covers candidate/governance identity, direct
+absence, adaptive heating/cooling knots, edits/cancellations, safety interruptions, restart,
+`late_recovery`, no compensation, shadow, promotion, consent and resident-authority removal with
+retain/revoke disposition.
+
+**Separation.** BOPTEST, replay and opt-in field-pilot analysis remain a distinct release-calibration
+suite for `ThermalEvidenceGateCalibration`; they establish the frozen model gates and do not replace
+ordinary deterministic regression acceptance.
+
+**Dependency.** CA-4 is a direct safety prerequisite because every dynamic thermal bound must be
+strictly current-snapshot based. CA-5 and CA-6 are generic governance/persistence work and may proceed
+independently, though their resulting contracts will be consumed by CT-2/CT-3.
+
+### Medium
+
+#### CA-4 — Dynamic thermal bounds are strictly current-snapshot based (resolved 2026-09-23)
+
+**Evidence.** `ThermalBoundRule` says its reference must be current, but it uses Layer 2's `FactRef`,
+whose `previous_cycle` flag is part of its public shape. The Layer-5 staging rules do not explicitly
+require `previous_cycle=False`.
+
+**Why it matters.** A stale outside-temperature bound could produce a valid-looking but obsolete HVAC
+target despite the stated current-snapshot safety model.
+
+**Decision.** Every `ThermalBoundRule(kind="relative_to_fact")` requires
+`reference.previous_cycle=False`. Staging rejects `True`, including the otherwise legal Layer-2
+FormulaStrategy self-memory form. The reference must also be a descriptor/profile-declared current
+runtime slot with compatible temperature unit.
+
+**Consequence.** Resolution reads only the current immutable `DecisionSnapshot`. A missing, stale,
+invalid, unavailable, or non-temperature current value leaves the rule unresolved and prevents the
+step; no previous-cycle, prior-value, default, expression, or HA fallback is permitted.
+
+#### CA-5 — Layer-5 governance and execution diagnostics are closed (resolved 2026-09-23)
+
+**Evidence.** `ProposalReviewTransition.reason_code` and
+`ProposalReadinessAssessment.reason_codes` are `str` values described as closed typed diagnostics, but
+no Layer-5 registry/enum, ownership, versioning or canonicalization rule exists. `late_recovery` is
+also introduced only as prose audit text.
+
+**Why it matters.** Implementations can mint incompatible strings, fragment UI/audit behaviour, and
+silently weaken the closed-vocabulary rule used everywhere else.
+
+**Decision.** A core-owned, bootstrap-frozen, versioned `Layer5DiagnosticRegistry` owns separate
+closed namespaces: proposal transition reasons (`accepted_by_admin`, `rejected_by_admin`,
+`candidate_kind_incompatible`), proposal readiness reasons (expired evidence and descriptor/profile/
+topology/Actuator/guard/staged-prerequisite incompatibility), ordinary evaluation reasons
+(`trigger_not_matched`, `semantic_guard_unsatisfied`), and execution audit
+(`late_recovery`). Proposal readiness tuples are duplicate-free and canonicalized by the registry;
+transition codes are constrained to their legal dispositions.
+
+**Consequence.** `ApplyCallFailureReason` remains its separate existing closed execution-failure
+taxonomy, and Layer-3 `AutomationSuppressionReason` remains the sole reason tuple for an abstained
+evaluation. `ReactionEvaluationResult` no longer permits arbitrary strings. Detail remains bounded
+and redacted, never a source of new code semantics.
+
+#### CA-6 — `ReactionProposal` creation and evidence revisions are atomic (resolved 2026-09-23)
+
+**Evidence.** The immutable root requires `initial_evidence_revision_id`, but the schema does not state
+that creation atomically appends revision index `0`, that revision ids are unique/contiguous per
+proposal, or that no proposal projection may exist without its initial evidence revision.
+
+**Why it matters.** A partial write makes the proposal non-reviewable and undermines the audit identity
+the aggregate design was introduced to protect.
+
+**Decision.** Proposal creation is one idempotent aggregate transaction: it persists the immutable
+root and exactly one initial evidence revision together, or persists neither. Revision zero must carry
+the root's proposal id, `initial_evidence_revision_id`, and admitted-payload fingerprint. No projection,
+transition, readiness assessment, or review may observe/reference a root before that revision commits.
+
+Evidence revisions are immutable and append-only with unique contiguous per-proposal indexes `0..n`; a
+compatible refresh appends only `n + 1` and keeps the same admitted-payload fingerprint. A repeated
+creation attempt returns the complete existing aggregate, never a second root or index-zero revision.
+Transition/readiness records can reference only a committed revision belonging to their proposal.
+
+**Consequence.** The storage technology remains open, but it must provide the stated crash-safe
+atomicity, ordering, uniqueness, and retry-idempotency behavior. A changed payload remains a new
+candidate/proposal rather than a revision refresh.
+
+---
+
+## Post-CT cross-spec coherence audit (2026-09-24) — resolved findings
+
+**Status:** resolved as specification findings. This line-by-line reread of the authoritative Layer
+0–5 specifications, architecture overview and recap after CT-1–6 retains the decision history;
+the current layer specifications own the normative contracts.
+
+### Critical
+
+#### RC-1 — `ConfiguredReaction` and `ReactionEvaluationPlan` have no persisted contract (resolved 2026-09-24)
+
+**Decision.** `ConfiguredReaction` is a stable Layer-5 policy aggregate with immutable append-only
+`ReactionConfigurationGeneration`s. Every generation persists the exact descriptor/profile identities,
+subject, descriptor-validated canonical configuration and a canonical callable-free
+`ReactionEvaluationPlan`; its fingerprint is the semantic identity for evaluation, jobs, actions and
+audit. Root creation atomically creates generation zero; edits append a contiguous successor and never
+rewrite prior meaning.
+
+**Authority separation.** Administrative enablement and resident consent are append-only
+`ReactionAuthorityTransition`s, not configuration fields. Each configuration successor begins
+`notification_only` with automatic authority and consent disabled; its effective mode is derived as
+`notification_only`, `authorized_awaiting_household_consent`, or `automatic`. It cancels predecessor
+jobs and requires fresh authenticated promotion/evaluation.
+
+**Consequence.** Evaluation/bundle idempotency is
+`(reaction_id, configuration_generation_id, snapshot_id)`. `AtJob`, evaluation result, `ApplyStep`,
+execution audit and correction attribution retain the exact configuration generation, preventing stale
+callbacks, retries or audit from crossing a semantic edit. Direct and learner-proposal origins now use
+the same configuration, authority and action path.
+
+### High
+
+#### RC-2 — Generic environmental guard contract is missing and its cited decision does not exist (resolved 2026-09-24)
+
+**Decision.** `EnvironmentalGuardCapabilityRegistry` is assembled only from reviewed core capability
+implementations at bootstrap, then versioned and frozen for the active generation. It replaces the
+prose/string capability vocabulary without becoming a global hard-coded enum: every entry owns a typed
+binding schema, pure current-snapshot evaluator and redaction contract. Admins, learners and plugins
+cannot register entries, evaluators or free expressions.
+
+**Profile contract.** An append-only `EnvironmentalGuardProfileGeneration` contains one validated
+canonical binding per required capability. A relation profile's exact `EnvironmentalGuardContractRef`
+defines permitted entries and the required subset per intent. Candidate and descriptor references are
+versioned capability refs only; they cannot carry thresholds. A reaction plan pins the exact profile
+generation/fingerprint and required refs. Changing a binding creates a new profile generation and thus
+requires a new `ReactionConfigurationGeneration`, fresh promotion and evaluation.
+
+**Consequence.** Every required guard is evaluated only against the immutable `DecisionSnapshot`.
+Missing, stale, invalid, unconfirmed or failing input blocks automatic action through the existing
+`action_guard_active` reason; no fallback or new notification reason is introduced. The comfort
+trajectory pins the same environmental guard-profile generation beside its thermal bounds, so HVAC,
+openings, extraction and shading share one guard mechanism.
+
+#### RC-3 — Initial environmental shadow-preview identifier is internally inconsistent (resolved 2026-09-24)
+
+**Decision.** The single canonical schema identity is
+`shadow_proposal_preview.reaction_descriptor.environmental.v1`, matching the frozen
+`ShadowPreviewBinding` and its `reaction.descriptor@1` candidate contract. The acceptance criteria use
+that same exact identity.
+
+**Consequence.** `policy_template` is retired terminology, not an alias or migration path. V3's clean
+start rejects it rather than selecting a similarly named preview schema.
+
+### Medium
+
+#### RC-4 — Layer 3 attributes automatic action to a `ReactionProposal` (resolved 2026-09-24)
+
+**Decision.** An `EnvironmentalGuardProfile` complete against the descriptor's guard contract permits
+Layer 5 to admit an environmental `ReactionProposal` for review. It never makes the proposal
+automatically applicable. Acceptance creates only a `notification_only` `ConfiguredReaction`; automatic
+actuation belongs exclusively to that reaction after its separate authenticated promotion and any
+required current household consent.
+
+**Consequence.** Layer 3 §4.8.4 now names the correct lifecycle subject while retaining the existing
+rule that explicit configured guard limits are evaluated against current facts and resolved semantic
+claims for every proposed execution.
+
+#### RC-5 — Calendar-conflict ownership points to Layer 4, which is forbidden to interpret calendars (resolved 2026-09-24)
+
+**Decision.** Layer 0 only extracts and freezes raw per-entity calendar windows; Layer 4 only
+transports `FrozenCalendarView` and never interprets it. `CalendarPlanBinding` is the sole V3
+predictive-plan consumer: it names a non-empty canonical set of single-entity Layer-0 requirements and
+one shared Layer-2 classifier. All sources must be ready. For Initial-V3 `planned_absence`, matching
+intervals form a source-neutral union: duplicates collapse and overlapping/adjacent intervals coalesce.
+
+**Consequence.** A classifier's `priority_order` resolves multiple category matches within one window;
+it is not an arbitrary ordering or source-precedence mechanism. Differently categorized windows from a
+second calendar do not cancel a matching absence plan. Source priority, veto categories, or other merge
+semantics remain unavailable until a future descriptor defines and tests them explicitly.
+
+#### RC-6 — Architecture overview omits Layer 4 as a dedicated section and misstates power recovery (resolved 2026-09-24)
+
+**Decision.** The overview now gives Layer 4 its dedicated section between learning and action:
+the staged semantic DAG resolves only declared inputs and creates the immutable `DecisionSnapshot`;
+it transports, but never interprets, frozen history and calendar views. Recovery exposes the prior
+target only as a read-only baseline. Current policy, facts, holds and safety determine one final target,
+and at most the delta from freshly read actual state may become an `ApplyStep`.
+
+**Consequence.** The overview's section numbering is realigned from Layer 4 onward. It no longer
+describes an unsafe two-command restore-then-correct sequence; no authoritative runtime contract
+changed.
+
+#### RC-7 — Recap reintroduces forbidden `HouseFact` ownership and obsolete active-family language (resolved 2026-09-24)
+
+**Decision.** The recap now limits `HouseFact` to persistent house assertions and auditable operational
+occurrences, explicitly excluding transient signals/candidates, Layer-5 proposal workflow records, and
+commands. Its Layer-3 candidate summary names no stale family inventory: only active analyzers under an
+exact registered core candidate kind may emit a candidate. `security.presence_simulation` remains
+reserved until the PS-1..PS-5 contract sequence closes.
+
+**Consequence.** The recap agrees with Layer 1 and Layer 5 today, while the presence-simulation
+follow-up can promote the descriptor later without retrospectively making it an active learner.
+
+---
+
+## Presence-simulation definition follow-up (2026-09-24) — resolved 2026-09-25
+
+**Status:** resolved. `security.presence_simulation` now has a complete Initial-V3 cross-layer
+definition without a descriptor-specific execution path. Its promotion is applied to the authoritative
+Layer-5 and Layer-3 specifications and summarized in the architecture overview and recap.
+
+#### PS-1 — Initial-V3 product direction and authoring origin (decided 2026-09-24)
+
+**Decision.** On contract completion, promote `security.presence_simulation` to an Initial-V3 core
+`ReactionDescriptor` with `admin_direct` as its initial sole authoring mode. Its first plan is
+core-generated from administratively staged bounded parameters, never replayed historical commands and
+never learned. Direct staging still creates only a `notification_only` `ConfiguredReaction`; operational
+shadow, authenticated promotion and current required resident consent remain ordinary shared gates.
+
+**Future compatibility.** A later generic `TemporalActuationProfileModel` may add a reviewed
+learner-proposal route for the same descriptor, after its own profile/artifact, privacy, scheduling and
+acceptance contracts are defined. A Twilight-like third-party integration may at most supply a bounded,
+versioned profile/artifact through that future core contract. It may not evaluate live policy, schedule
+work, generate `ApplyStep`s, or command an endpoint while Heima owns the same reaction path.
+
+**Next point.** PS-5 will define shadow operation, authority promotion and executable acceptance.
+
+#### PS-2 — Atomic configuration and core-generated activity episodes (decided 2026-09-24)
+
+**Decision.** Presence simulation adds no `PrerequisiteGeneration` parallel to the generic
+`ReactionConfigurationGeneration`: unlike comfort trajectory, no learner artifact must bind to
+pre-staged administrative prerequisites. The authenticated direct-staging command persists one complete
+immutable configuration generation, or nothing, with the casa-scoped calendar-plan binding, canonical
+eligible light endpoint set, closed temporal/activity profile, and the guard reference completed in
+PS-4. Any semantic edit creates a successor configuration generation, cancels predecessor jobs, and
+returns to `notification_only` under the ordinary authority lifecycle.
+
+**Authoring surface.** The administrator selects individual registered interior-light endpoints and/or
+one or more rooms. At staging each room expands to its then-current eligible interior-light Actuators;
+the resulting deduplicated endpoint set is persisted in canonical order. A room is never a mutable
+runtime group: a later endpoint addition, removal, relocation, incompatibility, or capability change
+cannot silently alter the configured simulation. Empty room expansion and duplicate/unknown/ineligible
+endpoint selection are rejected.
+
+**Plan shape.** The initial core generator creates a deterministic but day-varying sequence of bounded
+activity episodes, not independent random toggles or replayed historic commands. An episode may contain
+a finite ordered bundle of concurrent lights across the selected rooms, with bounded stable periods,
+overlap and handoff. The administrator supplies only calendar binding, selected lights/rooms, typed
+light targets, one local-civil weekly session start, session duration, and closed activity density
+(`quiet`, `ordinary`, `active`). Core implementation constants derive episode count, bundle size,
+continuity, durations and variation; a reproducible seed from the configuration generation, local
+session and episode index makes shadow, restart and audit explainable. Initial V3 permits no arbitrary
+jitter/frequency tuning, raw HA scene/script, history replay, or concurrent external scheduler.
+
+**Episode execution (clarified 2026-10-02).** The Reaction follows its
+generated sequence, including planned switch-off after the last activity for
+each light it turns on, while the current
+session, planned-absence, presence and common action criteria hold. The
+generator starts only activity whose planned switch-off fits those session
+and absence boundaries. A
+committed early return removes the absence prerequisite and cancels unsent
+steps, even if the next one would have switched off a light. No restore or
+switch-off command is added on cancellation or completion. A sent command is
+not compensated. Blocked or unconfirmed planned steps use the common outcome
+and follow-up path; no physical result is claimed without observation. The
+earlier draft that mandated a closing off step in every episode is withdrawn;
+the planned end of the generated sequence still switches off its lights.
+
+**Future compatibility.** A later learned or third-party temporal profile may replace only this
+core-generated episode selector through the PS-1 bounded artifact contract. It cannot change the
+configured endpoint set, calendar/presence/guard authority, common scheduler, or `ApplyStep` path.
+
+#### PS-3 — Plan, absence continuity, cancellation and rescheduling (decided 2026-09-24)
+
+**Historical clause — Superseded by CA4-01 (2026-09-29):** references below to a `global hold` do not describe Initial-V3 admission. Current holds are per Actuator channel and follow Layer 5 §6.0's endpoint-level rules. The other PS-3 decisions remain historical evidence for the presence-simulation descriptor.
+
+**Eligibility.** An activity episode may be selected only inside the configured local-civil session
+window, with an active (never merely upcoming) `planned_absence` interval from the bound calendars and
+current confirmed `presence=away`. A calendar plan is context, never proof of absence. During a running
+process, a `presence.departure` requests an immediate fresh evaluation; at bootstrap the same current
+conditions establish the effective absence directly. A departure during an already-open session selects
+only the next still-future episode; there is no backfill. The former departure-as-restart-precondition
+wording is superseded by CA2-3.
+
+**Presence continuity.** Layer 5 neither reads a raw camera result nor invents a second
+simulation-specific return timeout. It stages only against casa presence whose Layer-2 `FusionRule`
+declares non-null `Stability.to_true`; Layer 4's resulting committed `presence.return` is the sole
+presence-based terminal cancellation. A transient contradictory or unavailable current presence result
+does not close the simulation: the affected episode abstains conservatively, while the session remains
+eligible for a later fresh snapshot. The global presence fusion owns source quorum, correlation and the
+administrator-staged return-confirmation dwell, so a brief false camera/person classification cannot
+interrupt the simulation.
+
+**Scheduling.** The descriptor derives only its next `AtJob`, keyed by reaction/configuration
+generation, selected calendar-plan fingerprint, local session and episode index. On firing Layer 5
+reads a fresh snapshot, revalidates every gate and derives at most one still-future bundle plus its next
+job. Calendar edit/removal/failure/end, committed return, global hold, configuration successor or an
+applicable global guard cancels future work. A calendar change that remains eligible replaces the old
+job from the fresh plan. Missed work after restart or delay is skipped, never replayed, burst, or
+compensated.
+
+**Endpoint-level interruption.** A resident control or applicable hold on one selected light suppresses
+that member immediately. The core may emit a reduced or alternate bundle only when the remaining result
+is still a complete plausible episode and all members pass ordinary current-snapshot admissibility;
+otherwise it skips that episode and considers only the next scheduled one. Loss of eligibility never
+issues a cleanup command: already sent calls are not compensated and already-lit endpoints remain under
+ordinary current policy or resident control.
+
+#### PS-4 — Endpoint allowlist, common guards, privacy and audit (decided 2026-09-24)
+
+**Endpoint eligibility.** Direct staging admits only an explicitly administrator-selected registered
+`Actuator` at `where: room`, with `actuator_role="light"`, a registered channel compatible with the
+descriptor's closed `light_state` intent, an observable physical-state contract and a compatible core
+adapter. The explicit selection is also the administrator's declaration that the endpoint is an
+appropriate interior light for this deterrence use. A room location alone must not be treated as proof
+of that fact. No global `simulation_safe` field is added to Layer 2: that would make a
+descriptor-specific policy appear to be intrinsic endpoint metadata. Every other endpoint is excluded
+by construction, including unselected/outdoor lights, generic switches, openings, locks, alarms, HVAC,
+appliances, scripts and scenes.
+
+**Common admission contract.** The descriptor uses the ordinary Layer-5 admission path, with the
+stabilized `presence=away` condition from PS-3 as its required `presence` guard, and ordinary current
+resident consent, enablement, manual-hold, command-ownership, confirmed-state, cooldown and idempotency
+checks. It does not require weather, opening, thermal or an unspecified `privacy` guard merely because
+those capabilities exist: interior lighting has no corresponding safety predicate here. No
+descriptor-specific guard evaluator or security runtime is introduced.
+
+**Data minimization.** Initial V3 reads and persists neither historical presence nor historic commands,
+calendar titles/descriptions or other raw calendar content, HA scenes/scripts, a whole future programme,
+or the generator seed. Layer 0 supplies only the already-normalized active `planned_absence` interval.
+The core-generated plan is represented durably only by its configuration and a non-reconstructive
+fingerprint where correlation requires one.
+
+**Audit.** The ordinary trace/audit path records the reaction and configuration generation identity,
+plan fingerprint, session occurrence and episode index, admitted or excluded logical members, each
+`ApplyStep` outcome, and closed suppression/cancellation reasons. It contains no resident identity,
+calendar text, raw HA payload, historic presence data or generator seed. This makes an administrative
+decision explainable without creating a household-behaviour log.
+
+#### PS-5 — Shadow, authority and executable acceptance (decided 2026-09-25)
+
+**Shadow scope.** For the Initial-V3 `admin_direct`, core-generated profile, shadow is an optional,
+read-only operational preview, not an evidence gate or a prerequisite for promotion. It can show an
+administrator how current calendar, stabilized presence, guards and scheduler would derive an episode,
+bundle, suppression or next job, but it emits no `ApplyStep` and cannot validate an uncommanded
+physical lighting effect. Staging validation, closed adapter contracts and the executable acceptance
+suite own that validation instead.
+
+After valid staging an administrator may authorize automatic action, and an authorized resident may
+then grant current consent, without first waiting for a planned absence or shadow occurrence. Leaving a
+reaction in `notification_only` for preview remains available by choice. Shadow never self-promotes,
+grants consent, or sends a resident-visible notification by default. A future learned or imported
+`TemporalActuationProfileModel` must define its own evidence/shadow promotion gate before it can replace
+the core generator; this Initial-V3 decision does not weaken that future requirement.
+
+**Still to decide.** Exact promotion/revocation command semantics and the release-blocking executable
+acceptance scenarios.
+
+**Authority and consent.** The descriptor uses the common `ConfiguredReaction` authority lifecycle
+without a parallel security-specific state machine. An authenticated administrator may promote one exact
+current configuration generation only after Layer 5 revalidates its staged configuration, endpoint
+inventory, adapter contracts, `presence` guard profile and calendar binding. Promotion does not require
+an active absence and sends no command; it records administrative authorization and yields
+`authorized_awaiting_household_consent` until current consent exists. An explicitly authorized resident
+may grant or revoke consent only for that exact generation. A grant requests a fresh evaluation but
+never replays an episode missed while disabled; revocation cancels future jobs immediately.
+
+Administrative disablement likewise cancels future jobs and restores effective `notification_only`
+without deleting configuration, audit or preview data. A configuration successor cancels predecessor
+jobs and inherits neither administrative authorization nor consent. The shared resident-authority
+removal rule applies unchanged: when an admin removes a resident who granted current consent, the admin
+must explicitly retain or revoke every affected consent; this records the ordinary audit and cannot
+grant a new consent. No alternate command, state machine or authority exception exists for presence
+simulation.
+
+**Executable acceptance.** The following release-blocking, versioned `Given / When / Then` fixtures
+use a fake monotonic clock, frozen calendar/fact snapshots, registered Actuator/adapter doubles and a
+Layer-0 scheduler double. They assert only durable configuration/authority state, exact job
+creation/cancellation/replacement, `ApplyStep`/`ApplyCall` traces and closed audit/diagnostic reasons:
+
+1. Atomic staging rejects an empty room expansion, duplicate/unknown/ineligible endpoint, incompatible
+   light target or incomplete required guard profile without persisting a partial configuration.
+2. In optional `notification_only` preview, active planned absence plus stabilized `away` derives only
+   the hypothetical episode/bundle and next job, never an `ApplyStep` or resident-visible notification.
+3. Departure during an open session, calendar edit/removal, committed return, transient contradictory
+   presence, global/endpoint hold, unconfirmed state, late job and restart respectively produce only
+   the PS-3 defined selection, abstention, cancellation or replacement behavior: no raw-camera
+   cancellation, catch-up, replay, burst or compensation.
+4. A known-invalid original bundle may be replaced only by a freshly derived, complete plausible
+   alternate bundle whose every member passes common admission. Otherwise no member is commanded. A
+   failure after a sent `ApplyCall` records its partial outcome, stops later work and never compensates
+   a completed call.
+5. Staging begins disabled; promotion without consent is
+   `authorized_awaiting_household_consent`; a current grant enables only fresh evaluation; resident
+   revocation, administrative disablement and a configuration successor cancel future jobs and do not
+   inherit authority. Resident-authority removal exercises each explicit retain/revoke disposition.
+6. Audit/trace fixtures prove that no seed, future programme, calendar text, resident identity,
+   historical-presence data or raw HA payload enters the descriptor's stored preview, job or audit
+   projections.
+
+These fixtures validate contract orchestration, not learned behavioural plausibility or an uncommanded
+lighting effect. A future learned/imported temporal profile needs its own evidence and shadow-promotion
+acceptance before it may replace the initial core generator.
+
+### Low
+
+#### RC-8 — Approval/status and cross-reference metadata were not promoted with the closure (resolved 2026-09-25)
+
+**Decision.** Layers 0, 1, 2, 4 and 5 now state their defined V3 contract status while retaining the
+accurate `Not implemented` qualifier. Layer 3 distinguishes its defined core contract from explicitly
+deferred future components. Layer 3 points to the authoritative Layer-5 §7.1 comfort descriptor;
+Layer 2 and recap no longer call Initial-V3 thermal contracts reserved. Overview and recap have current
+reviewed-through dates, and the overview separates defined-but-gated Initial-V3 descriptors from truly
+deferred Layer 6--8 ownership.
+
+**Consequence.** Documentation now signals the actual boundary: the contracts are settled, while
+implementation and explicitly marked future ownership remain open. No runtime contract changed.
+
+---
+
+## Post-PS cross-spec coherence audit (2026-09-25) — closed
+
+**Status:** closed 2026-09-25. Fresh reread of the authoritative Layer 0--5 specifications plus
+overview and recap after promotion of `security.presence_simulation`. Every finding below was discussed,
+confirmed and promoted into its owning specification; no unresolved CA2 item remains.
+
+### Critical
+
+#### CA2-1 — `security.presence_simulation` cannot satisfy the mandatory `RelationProfileRef` contract (resolved 2026-09-25)
+
+`ReactionConfigurationGeneration` and every `RegisteredReactionDescriptor` require one exact
+`RelationProfileRef`, while relation profiles are defined exclusively as the shared evidence/policy
+contract of a learner and a policy. The new descriptor is explicitly `admin_direct`, has no Layer-3
+candidate or learner profile, and declares no registered profile or guard contract of its own. Its
+staging therefore has no legal value for `relation_profile`, `supported_profile_refs`, or the required
+presence guard profile. This blocks a conforming implementation and must be resolved without creating a
+parallel policy mechanism.
+
+**Decision.** `RelationProfileRef` is required only for a learner-origin configuration: it remains the
+one immutable shared evidence/policy contract for `learner_proposal`, candidate and proposal paths.
+An `admin_direct` configuration may carry no relation profile, but then its core
+`ReactionDescriptor` must declare one exact descriptor-level `EnvironmentalGuardContractRef`; staging
+selects exactly one of these two policy sources and rejects every other origin/profile/contract
+combination. This is a generic authoring-origin rule, not a presence-simulation exception.
+
+`security.presence_simulation` is direct-only with empty `supported_profile_refs` and declares
+`security.presence_simulation.interior_lighting@1`. Its `light_state` intent permits and requires only
+the stabilized `presence` capability; manual hold, ownership and confirmed state remain common action
+admission checks. The shared `ConfiguredReaction`, plan, scheduler and `ApplyStep` pipeline are
+unchanged.
+
+### High
+
+#### CA2-2 — Presence-simulation local-civil session is prose, not a typed Layer-0 temporal contract (resolved 2026-09-25)
+
+The descriptor requires one “local-civil weekly session start and duration” but omits weekdays, exact
+type, validation, local-time/DST semantics and canonical fingerprinting. Layer 0 already owns
+`WeeklyRecurrence` and `Window`, and expressly forbids bespoke duration/schedule fields in Reaction
+configuration. The descriptor must bind its session to those shared types or explicitly define an
+equivalent core-owned composed contract.
+
+**Decision.** No new Layer-0 feature is needed. The descriptor's
+`PresenceSimulationActivitySession` configuration contains only the existing Layer-0
+`WeeklyRecurrence` and `Window` types. Their existing weekday, local-time/DST and duration validation
+is authoritative. The pair is not a `CronEntry` and does not create another scheduler: Layer 5 uses it
+only to identify a session occurrence while an eligible absence exists and to derive the one ordinary
+next `AtJob`.
+
+#### CA2-3 — Restart eligibility conflicted with the no-historical-presence rule (resolved 2026-09-25)
+
+The former wording required the `presence.departure` that began the effective absence. Layer 4 resets
+its transition adapter after restart, so its first `away` seeds a baseline and emits no departure;
+Layer 5 also cannot query durable presence history. Treating the historical departure as a restart
+precondition would therefore disable a valid ongoing absence, or require an unnecessary new durable
+policy archive.
+
+**Decision.** A running process uses `presence.departure` only to request an immediate fresh
+evaluation. At bootstrap, an active matching planned-absence interval plus current stabilized
+`presence=away` establishes the effective absence directly. Layer 5 then derives only the next still
+pertinent job from that current snapshot and configuration. It neither persists nor recovers a
+pre-restart departure, replays missed work, catches up, or bursts calls. This common rule applies to
+both comfort trajectory and presence simulation; a calendar remains context rather than proof because
+the current stabilized presence state is independently required.
+
+#### CA2-4 — Descriptor audit minimization conflicted with common consent authority audit (resolved 2026-09-25)
+
+The former presence-simulation wording forbade resident identity in every record/audit projection, but
+the common `ReactionAuthorityTransition` stores `actor_ref`; consent and the required retain/revoke
+decision on resident-authority removal necessarily need attributable governance records. The same
+boundary applies to every descriptor, not only presence simulation.
+
+**Decision.** `actor_ref`, `created_by` and `staged_by` remain only in the common Layer-5 governance
+ledger: proposal review, reaction/configuration creation or staging, and authority transitions. No
+descriptor operational projection -- plan, preview, job, evaluation result, `ApplyStep`, execution audit
+or diagnostic -- may duplicate them. Descriptor data-minimization clauses constrain their operational
+records, never the shared governance ledger. Presence simulation now states this boundary explicitly;
+comfort trajectory and every future descriptor inherit it from Layer 5 §4.2.
+
+### Medium
+
+#### CA2-5 — Initial descriptor roster incorrectly claimed singleton bundles (resolved 2026-09-25)
+
+Layer 5 said all Initial-V3 descriptors declared singleton bundles and that multi-member bundles were
+future-only. This was already contradicted by `routine.actuation_bundle` and is additionally contradicted
+by presence simulation's finite concurrent light bundles.
+
+**Decision.** Bundle cardinality is declared by each core descriptor: singleton or a finite ordered
+multi-member bundle within its core-owned bound. It never selects another execution path. All shapes use
+the same staging, evaluation, complete-bundle admissibility and one-endpoint `ApplyStep` contract. An
+alternate bundle may be freshly derived only before admission; a known-invalid original bundle is never
+partially executed.
+
+### Low
+
+#### CA2-6 — `ReactionProposal` was incorrectly described as defined by Layer 1 (resolved 2026-09-25)
+
+Layer 5 called `ReactionProposal` a governance record “defined by Layer 1”, while Layer 1 explicitly
+classifies it as a Layer-5 workflow record, persisted by its own contract and not a `HouseFact`.
+
+**Decision.** Layer 5 owns and persists `ReactionProposal`; Layer 1 defines only its ontological
+distinction from the fact substrate. This is an ownership wording correction with no behavioral or
+schema impact.
+
+---
+
+## Post-CA2 full cross-spec coherence audit (2026-09-25) — resolved findings
+
+**Status:** resolved as specification findings. This reread of the authoritative Layer 0–5
+specifications, overview and recap after CA2 retains the decision history; the current layer
+specifications own the normative contracts.
+
+### High
+
+#### CA3-1 — Layer 0 and recap retained an obsolete prior-cycle-only Layer-4 DAG model (resolved 2026-09-25)
+
+Layer 0 §11 says a Layer-4 semantic resolver can read only prior-cycle outputs of other semantic
+resolvers. The recap repeats that claim in its Layer-4 and Layer-5 summaries. Layer 4's authoritative
+contract instead stages a deterministic topological DAG in which an edge reads one declared *same-cycle*
+upstream semantic claim; only explicitly declared `previous_cycle` values use Layer 0's prior-cycle
+snapshot. The stale model can add a cycle of latency or make a valid same-cycle resolver dependency seem
+illegal.
+
+**Decision.** Layer 4 owns its same-cycle semantic DAG and deterministic topological evaluation order.
+Layer 0 supplies only separately declared `previous_cycle` snapshot values and fresh engine context; it
+does not redefine semantic-edge timing. Layer 0 §11 and both recap summaries now state this model.
+`activity.sleeping` consuming same-cycle `occupancy=present` remains a concrete contract witness.
+
+### Medium
+
+#### CA3-2 — Obsolete `PolicyTemplate` / `ConfiguredPolicy` ontology remained outside Layer 5 (resolved 2026-09-25)
+
+Layer 5's authoritative mechanism is `ReactionDescriptor` -> `ConfiguredReaction`, but Layer 3, Layer
+4, the overview and one Layer-5 prose sentence still use the superseded `PolicyTemplate` /
+`ConfiguredPolicy` vocabulary. This is more than cosmetic because Layer 3 still contrasts a direct ECA
+Reaction with learner-proposed “policy templates”, although authoring origin is now a property of one
+Reaction-descriptor mechanism. The terminology must be normalized without reintroducing two action
+paths.
+
+**Decision.** `ReactionDescriptor` -> `ConfiguredReaction` is the sole generic action-bearing
+mechanism. `admin_direct` and `learner_proposal` are authoring origins of that one descriptor, never
+separate evaluators or execution paths; Layer 3 may submit only candidates for compatible
+`learner_proposal` descriptors. The remaining normative old vocabulary in Layer 3, Layer 4, Layer 5
+and overview is normalized accordingly. Historical backlog entries retain their original terminology.
+
+#### CA3-3 — Comfort-trajectory absence semantics drifted between Layer 3 and Layer 5 (resolved 2026-09-25)
+
+Layer 5 now establishes an effective absence at bootstrap from current stabilized `presence=away` plus
+an active planned-absence interval; `presence.departure` requests an immediate fresh evaluation only
+during a running process, while `presence.return` is terminal cancellation. Layer 3 still says the
+descriptor “consumes observed departure/return episodes” without this bootstrap distinction. The latter
+wording can be read as retaining an observed departure as a mandatory eligibility condition, the rule
+CA2-3 intentionally removed.
+
+**Decision.** `presence.departure`/`presence.return` remain generic Layer-4 semantic episodes, while
+current-absence eligibility is declared by each absence-based descriptor rather than every Reaction.
+For both currently defined planned-absence descriptors, comfort trajectory and presence simulation,
+the effective absence requires an active matching plan plus current stabilized casa `presence=away`.
+Comfort trajectory now stages the same non-null casa `Stability.to_true` prerequisite already explicit
+for presence simulation. During a running process departure requests a fresh evaluation; bootstrap
+uses only fresh current conditions and committed return cancels future work. Layer 3's two comfort
+summaries now refer to this Layer-5 contract without redefining it. Historical departure/return cohorts
+remain a distinct and correct learning concern.
+
+#### CA3-4 — Common governance-identity restriction omitted required Layer-5 configuration records (resolved 2026-09-26)
+
+Layer 5 §4.2 says `staged_by` is restricted to proposal review, reaction/configuration creation or
+staging, and authority transitions. Its own schemas also require `staged_by` on
+`EnvironmentalGuardProfileGeneration` and `ComfortTrajectoryPrerequisiteGeneration`. Those are valid
+common Layer-5 configuration/governance records but are not named by the restrictive enumeration. The
+rule should state the intended complete class rather than inadvertently prohibiting fields its schemas
+require.
+
+**Decision.** `actor_ref`, `created_by` and `staged_by` are permitted only in common Layer-5
+governance or immutable administrator-configuration records: proposal review, Reaction
+creation/configuration generations, authority transitions, `EnvironmentalGuardProfileGeneration` and
+`ComfortTrajectoryPrerequisiteGeneration`. A future type may retain one only when it belongs to that
+same common class. Operational plans, preview, jobs, evaluation results, `ApplyStep`s, execution audits
+and diagnostics remain identity-free.
+
+---
+
+## Full V3 specification audit — CA4 (2026-09-26; revalidated 2026-09-27)
+
+**Audit status:** complete. **Correction status:** corrections are in progress. This audit records specification changes, not runtime implementation.
+
+**Scope and method.** A line-by-line reread covered all six Layer 0–5 specifications in `docs/specs/v3/`, the architecture overview, both PlantUML diagrams, `v3_architecture_recap.md`, its Graphviz diagram, all five `v3_*_draft.md` documents, and `specs/INDEX.md`. The review used the current local files, including uncommitted changes, and cross-checked the relevant decisions and previous audit closures in this backlog. Each retained finding below identifies a concrete contradiction, a missing contract, or a documentation defect and includes a closure criterion. Historical drafts are subordinate to the layer specifications: an obsolete historical decision is not itself a new normative defect.
+
+This is an internal specification-coherence audit, not a V2 implementation audit or independent verification of external scientific sources. The original completed reread found CA4-31–38; the later CA4-01 closure audit records separately verified CA4-39–50 below, and the 2026-10-04 post-CA4-01 full reread records CA4-51–60. It cannot prove that no further defect exists; no additional confirmed issue from this pass is intentionally omitted.
+
+**Revalidation of the original appendix.** CA4-01–30 retain their identifiers for tracking. Their English descriptions replace the original Italian text. Claims were narrowed where the earlier wording exceeded the evidence: CA4-01 was subsequently reopened for the 2026-09-28 internal-divergence product decision; freshness in persisted history is distinct from freshness of newly evaluated live facts (CA4-05); successful service completion is not inherently a false claim of physical success (CA4-19); and nested checkpoint data is not proven unrepresentable merely because it must satisfy a depth bound (CA4-28). These narrowed items remain open for the specific residual defects stated below. Already resolved CA/RC/CA2/CA3 decisions are not reopened wholesale. CT-4 remains the existing calibration/release gate and is not duplicated here.
+
+**Severity.** `P0 / Critical`: contradictory authorization rules. `P1 / High`: potentially incorrect action/data behavior or a missing contract required to implement an Initial-V3 capability consistently. `P2 / Medium`: an ambiguous algorithm, lifecycle, schema, or validation requirement. `P3 / Low`: documentation maintenance. Risks describe possible implementations of the written contracts, not observed production failures. The original entries are grouped by severity; later appendices retain discovery order and state each finding's priority explicitly. Stable IDs are deliberately not renumbered.
+
+| Severity | IDs | TODO | IN_PROGRESS | DONE | NOT_APPLICABLE |
+|---|---|---:|---:|---:|---:|
+| P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
+| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 2 | 0 | 31 | 0 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 8 | 0 | 13 | 1 |
+| P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
+| **Total** | **60 findings** | **10** | **0** | **49** | **1** |
+
+**Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
+
+### P0 — Critical
+
+#### CA4-01 — Hold authority and observed divergence
+
+**Status:** DONE (2026-10-04; specification readiness). Reopened 2026-10-03 after the earlier closure missed depth-two serialization and multi-channel follow-up identity. The user approved A1/B1/C2; all three are applied. This does not claim runtime implementation or testing.
+
+| Decision | Current contract |
+|---|---|
+| A1 — scalar facet projection | Target facet values are lossless bounded canonical JSON text; the follow-up event uses flat `expected.<facet>` and `observed.<facet>` keys. |
+| B1 — per-channel follow-up identity | Core hashes Reaction/generation/activation, boundary and Actuator/channel into one stable operation id per channel; outbox, retry, recovery and notification keys use it. |
+| C2 — complete inline hold audit | Staging proves the maximum complete `HoldLifecycleValue` fits Layer 1's depth-two/8 KiB limits, or rejects the composition. No detail store or special queue path remains. |
+
+**Closure evidence:** [Nine serialized value/projection examples](specs/v3/ca4_01_serialization_examples.md) validate shape, canonical facets, depth/size, source maps and operation ids. Light and HVAC use Initial-V3 descriptors; the valve case is marked as a future-descriptor serialization example, not an executable Initial-V3 outcome. T10/T11/T17/T18 and new T20/T21 pass their document-level counterexample review; the field matrix covers all 90 fields of nine named types. After aligning the current diagrams and recap, the expanded regex gate classified 243 matching lines as 238 coherent, five marked historical (including the retired Graphviz source) and zero normative residues; `git diff --check` passed. The [full review record](ca4_01_review_record.md) retains every decision, trace, matrix row and historical note.
+
+**Owners and boundaries:** [Layer 0 §4/§6/§13](specs/v3/layer0_runtime_spec.md), [Layer 1 §3–4/§10](specs/v3/layer1_substrate_spec.md), [Layer 2 §6](specs/v3/layer2_registries_spec.md), [Layer 5 §3.2/§6/§7.2/§8](specs/v3/layer5_action_reactions_spec.md), [overview](specs/v3/architecture_overview_defined_layers.md), [recap](v3_architecture_recap.md). Layer 6 must declare bounded renderer output for the follow-up fact. CA4-02 and CA4-17 have separately closed shared admission and dispatch fencing; CA4-18, CA4-38 and CA4-39 retain their separate open scopes.
+
+#### CA4-02 — Shared hold admission and command ownership contract
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** shared interface/arbitration contract. **References:** [Layer 0 §6](specs/v3/layer0_runtime_spec.md), [Layer 4 §5.1](specs/v3/layer4_domain_spec.md), [Layer 5 §3.2, §6](specs/v3/layer5_action_reactions_spec.md). This does not claim runtime implementation or testing.
+
+**Original gap, now closed:** Layer 5 needed live hold and in-flight ownership inputs plus order-independent arbitration for two Reactions targeting the same channel. Persisted hold facts remain audit, not authority. The Initial-V3 precedence-exception table is explicitly empty; no implicit safety/security winner exists.
+
+**Decision and rationale:** Layer 0 §6.1.1 owns a frozen, scope-aware hold projection; Layer 5 §6.0 owns the frozen in-flight ownership projection and whole-cycle single-writer arbitration. Layer 4 transports both in `DecisionSnapshot` and includes their fingerprints in snapshot identity. After individual non-ownership admission, two bundles contending for any one channel both abstain from action, including conflicting targets, disjoint facets, and identical values. The user confirmed all three cases on 2026-09-28. Initial V3 has no implicit safety/security preemption. This follows the product decision of 2026-09-27: conflicts block both unless a future explicit versioned core exception is approved. Hold matching uses the exact registered Actuator channel and staged whole-channel or changed-facet scope in Layer 0 §6, not a functional domain or descriptor namespace.
+
+**Specification verification:** Layer 0 §6.1.1 owns the frozen `HoldAdmissionView`; Layer 5 §6.0 owns the frozen `CommandOwnershipView` and whole-cycle arbitration; Layer 4 §5.1 transports both and includes their fingerprints in `snapshot_id`. A default whole-channel hold blocks all automatic calls on that channel. Under staged changed-facet scope, a held power facet blocks a direct power command and a brightness command whose declared HA effects also turn power on, while a genuinely disjoint facet remains eligible. Two eligible bundles claiming one channel both receive `command_ownership_unavailable` regardless of evaluation order, including opposing targets, disjoint facets and identical values. A bundle that fails a non-ownership guard claims nothing; a multi-member bundle with one contested key reserves none. Atomic reservation, same-bundle retry, lease lifetime and fresh-read handling after restart are specified in Layer 5 §6.0 and §6.0.1. These are document-level counterexamples, not runtime tests. **Separate scopes:** CA4-17 has closed the asynchronous dispatch fence; CA4-27 remains open for cross-layer generation activation. CA4-19 already closed uncertain physical-outcome reconciliation.
+
+#### CA4-03 — Recovery baselines lose channel, partial-target, and authority information
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** cross-layer mismatch. **References:** [Layer 0 §7.4](specs/v3/layer0_runtime_spec.md), [Layer 2 §6.1](specs/v3/layer2_registries_spec.md), [Layer 5 §4.2, §6](specs/v3/layer5_action_reactions_spec.md). This does not claim V3 runtime implementation.
+
+`RecoveryTargetSnapshot` is last-write-wins per `entity_id`, although an Actuator can have multiple channels and a target can specify only some facets. Successive independent commands can overwrite information needed for reconstruction. The baseline records an Actuator fingerprint but no originating Reaction/configuration generation. Current policy remains the action gate, but the mapping from an old baseline to its current authorizing policy after removal, edit, or revocation is unspecified.
+
+**Correction:** define baseline granularity, partial-target merge, and association with current authority, including `require_confirmation`. **Closure:** recover two channels and successive partial targets after one originating policy is revoked; retain only the intent admitted by the explicitly defined current-policy rules.
+
+**Approved resolution and verification:** the developer chose to discard target facets from a removed or consent-revoked Reaction. Layer 0 now coalesces one bounded snapshot per `(actuator_id, controlled_channel)`, replacing only targeted facets and retaining their trusted Reaction-generation or direct-command anchor. Layer 5 filters every Reaction facet against current automatic authority and runs the merged target through normal admission; direct facets still need the current Actuator recovery policy and safety checks. Layer 2 cutover discards changed endpoint, execution fingerprint or recovery policy. CA4-39 uses the resulting baseline identity in confirmation proposals. The [CA4-03 review](specs/v3/reviews/CA4-03.md) covers mixed channels, partial targets, revocation and incompatible merges. CA4-45 separately adds this frozen input to `DecisionSnapshot`.
+
+#### CA4-04 — Retention can report completeness after deleting the boundary state
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** algorithmic defect. **References:** [Layer 0 §4.0–4.3](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md), [Layer 5 §5.1](specs/v3/layer5_action_reactions_spec.md).
+
+Protecting only the latest state record does not preserve the predecessor needed at a historical window's left boundary. With `A` at day 0, `B` at day 20, a 14-day retention window, and a query for days 10–21, ordinary pruning may delete `A`. The query is inside retention but cannot reconstruct days 10–20. The meaning of `last_early_pruning_at` also needs to distinguish discarded-record time from maintenance time.
+
+**Correction:** retain the necessary boundary predecessor or report the missing reconstruction coverage; apply equivalent rules to the memory buffer. **Closure:** both ordinary time pruning and count pruning return the correct initial state or an explicit truncated result, never an apparently complete unseeded interval.
+
+**Approved resolution:** report incomplete/truncated history when the predecessor or
+buffer observation coverage cannot be established; do not retain an additional
+predecessor solely for the query. [CA4-04 impact and scenario review](specs/v3/reviews/CA4-04.md)
+records the durable, short-term, event and consumer cases. This is specification
+review, not a V3 runtime result.
+
+#### CA4-05 — Change timestamps and observation freshness are conflated
+
+**Status:** DONE (2026-10-07; specification readiness). **Type:** temporal-semantic mismatch. **References:** [Layer 0 §4.0–4.4](specs/v3/layer0_runtime_spec.md), [Layer 1 §4.1](specs/v3/layer1_substrate_spec.md), [Layer 2 §3.2](specs/v3/layer2_registries_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md).
+
+Write-on-change leaves persisted records and the current index unchanged for identical fingerprints. Layer 1 nevertheless describes `now - fact.when` as sufficient freshness, and Layer 3 uses historical `max_age` gates. Repeated confirmations of an unchanged temperature are indistinguishable in that history from an old unconfirmed observation. This does not establish that a freshly evaluated live fact is necessarily stale. Separately, the historical phrase “latest available state” can skip a newer unavailable record, contrary to unavailable-state semantics.
+
+**Correction:** distinguish transition time, observation freshness, and continuity; resolve the latest record before testing availability. **Closure:** stable refreshed readings, abandoned sources, and unavailable intervals have distinct historical behavior without requiring redundant full-fact writes every cycle. See CA4-33 for process downtime.
+
+**Approved resolution:** `HouseFact.when` is the accepted transition instant;
+identical observations append no fact or per-cycle confirmation row. Layer 0
+uses durable stream-gap boundaries only for known breaks, in addition to its
+existing process interruption and retention coverage. A staged report-age
+gate uses HA `last_reported`, not `last_updated`; expiry starts the required
+stream's gap at the known expiry even if noticed later. Sources with no
+declared report-age gate keep their HA current-state semantics until an
+observable failure; Heima does not claim to detect a silent physical fault.
+Layer 3 removes transition-age `max_age` from state as-of features and point
+outcomes, resolves the latest state before checking availability, and excludes
+intervals with source/process gaps. The [CA4-05 impact and scenario review](specs/v3/reviews/CA4-05.md)
+records temperature, change-only source, unavailable/recovery and solar cases.
+This is specification review, not a V3 runtime test.
+
+#### CA4-06 — Value-only stabilization suppresses required epistemic changes
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** normative contradiction. **References:** [Layer 2 §5.2](specs/v3/layer2_registries_spec.md), [Layer 0 §4.0, §4.2](specs/v3/layer0_runtime_spec.md).
+
+The stability algorithm suppresses a new fact when the candidate value equals the committed value. Persistence instead requires changes in confidence, availability, or source fingerprint to remain observable at an unchanged value. Comparing against the value of an unavailable fact is also invalid because that value is undefined. There is a related provenance gap: a precedence fusion's `source_id` remains its `fusion_id`, and its configuration fingerprint remains unchanged when it selects a different input. With equal value/confidence, recording the selected input only in evidence does not preserve the source handoff, because evidence is excluded from write-on-change.
+
+**Correction:** value dwell compares only available values; publication compares the full `FactChangeFingerprint`. A stable `FactSource.route_fingerprint` records the evaluated input route of each fusion separately from configuration identity. **Closure:** `True/.9 -> True/.2`, a same-value precedence handoff, and `unavailable -> True` produce the required updates without reading undefined values or incorrectly restarting dwell. [CA4-06 impact and scenario review](specs/v3/reviews/CA4-06.md) records the cases; no V3 runtime test was run.
+
+#### CA4-07 — Physical-evidence confidence contradicts its acceptance example
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** mathematical ambiguity with a contradictory test. **References:** [Layer 2 §5.3, §9](specs/v3/layer2_registries_spec.md).
+
+The formula sets support to the confidence-weighted true score and total to the sum of selected group votes. If total means those weighted votes, a sole immediate primary with weight 1 and confidence .2 gives `.2/.2 = 1`, whereas acceptance requires correspondingly low confidence. Treating total as a count of groups instead can give support greater than total with weights above 1. A zero-confidence immediate-primary case also needs an explicit zero-total rule.
+
+**Correction:** the numerator remains the winning confidence-weighted group score; the denominator is the sum of configured directional weights of retained, non-conflicted groups before their confidence multipliers. **Closure:** numerical examples for low/zero-confidence primaries, weights above 1, correlated groups, and conflicting evidence satisfy both the declared meaning and `[0,1]` bounds. [CA4-07 impact and scenario review](specs/v3/reviews/CA4-07.md) records the check; no V3 runtime test was run.
+
+#### CA4-08 — The prescribed fast/confirmed composition cannot satisfy formula staging
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** non-composable contract. **References:** [Layer 2 §2.3, §5.3](specs/v3/layer2_registries_spec.md).
+
+The composition requires two intermediate fusions and a final fusion. `physical_evidence.weighted_evidence` permits only the final room/casa physical output names and Sensor evidence inputs. Two intermediate physical outputs at the same scope collide; distinct intermediate names or Fusion inputs fail its validator. A generic quorum is not specified as preserving the same admission/correlation guarantees.
+
+**Correction:** the developer chose one existing physical-evidence fusion: `immediate` primary for the fast route and independent corroborating-group quorum for confirmation. **Closure:** a complete two-route fixture passes staging with one physical output and no illegal intermediate inputs, while one correlated group cannot forge quorum. [CA4-08 impact and scenario review](specs/v3/reviews/CA4-08.md) records the cases; no V3 runtime test was run.
+
+#### CA4-09 — Routine and correction learning lack the required historical actuation data
+
+**Status:** DONE (2026-10-07; specification readiness; owner: Codex). **Type:** incomplete data interface. **References:** [Layer 0 §4/§5.1.1](specs/v3/layer0_runtime_spec.md), [Layer 2 §6.1](specs/v3/layer2_registries_spec.md), [Layer 3 §4.4.2–4.4.3](specs/v3/layer3_learning_spec.md), [Layer 5 §6–6.1](specs/v3/layer5_action_reactions_spec.md).
+
+`actuator.resident_control` contains actuator/channel/edge identity but no observed target or facet values, and no specified historical join supplies the complete routine member target. Correction counts require every completed ApplyStep, including zero-correction and superseding actions; execution audit has no declared HouseFact history contract supplying those anchors. Targeted-facet attribution and exclusion of Heima-originated observations need the same normalized linkage. The correction section also restricts input to resident-control events while allowing an external/unknown classification without declaring its input route.
+
+**Correction:** define minimal privacy-preserving historical action, observed-target, completion, and attribution projections, including configuration identity, joins, deduplication, and censoring. **Closure:** reconstruct a brightness routine and correction samples with zero, one, multiple, external/unknown, and superseding controls solely through the permitted historical interface.
+
+**Approved resolution and verification:** Layer 0 projects one bounded
+write-on-change `actuator.channel_state.<digest>` state per registered
+Actuator channel, with canonical post-edge facets, exact changed facets,
+edge id and verified origin. The existing three-field
+`actuator.resident_control` event remains unchanged and joins by edge id;
+the routine descriptor's versioned observed-member projection must produce
+one semantic target and pass the normal forward translation round trip.
+Layer 5 publishes only admitted target lifecycle phases (`decision`, first
+`complete_observation`, `closed`) under one `apply_step_id`; the existing
+`actuator.correction` event alone supplies resident counts. External/unknown
+edges can yield diagnostics but never resident learning evidence. Layer 3
+joins these typed histories, retention and `ObservationCoverage`; no
+observation, an unavailable bulb after a wall-switch power cut, process
+gap, revocation or superseding decision cannot become a zero sample.
+The [CA4-09 impact and scenario review](specs/v3/reviews/CA4-09.md)
+checks same-value reads, already-satisfied/late targets, 0/1/2+ counts,
+routine target projection, external controls and recovery. V3 runtime has
+not been implemented or tested.
+
+#### CA4-10 — Semantic transition triggers have no declared current-cycle before/after input
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** snapshot-barrier mismatch. **References:** [Layer 0 §4.1](specs/v3/layer0_runtime_spec.md), [Layer 4 §5.1](specs/v3/layer4_domain_spec.md), [Layer 3 §4.4.3](specs/v3/layer3_learning_spec.md), [Layer 5 §5.1–5.2, §7](specs/v3/layer5_action_reactions_spec.md). This does not claim V3 runtime implementation.
+
+A routine may trigger on a completed Layer-4 output transition. The intake group, however, contains Layer-2 changes; the frozen history precedes Layer-4 output, and the semantic map supplies current conclusions. No generic semantic before/after pair is declared for the Layer-5 `state_transition` primitive. Explicit episode adapters cover only their registered transitions and do not create a generic mirror of every semantic state.
+
+**Correction:** define the permitted semantic transition input at the barrier or restrict such triggers to explicitly registered episodes. **Closure:** a routine triggered by a Layer-4 state change fires once in the intended cycle using only the completed snapshot, including unchanged and unavailable cases.
+
+**Approved resolution and verification:** the developer chose one typed previous/current pair. Layer-5 staging declares the exact state key for Layer 0's in-memory `previous_cycle`; after Layer 4 completes, the coordinator places its current state and sealed predecessor in `DecisionSnapshot.state_transition_inputs`. Layer 5 compares canonical typed values within that snapshot, fires on one net transition, treats unchanged values as `not_triggered`, and abstains on unavailable, missing, restarted or changed-producer predecessors. Explicit episode adapters remain for individual event meanings. The [CA4-10 review](specs/v3/reviews/CA4-10.md) covers same-cycle, unchanged, unavailable and restart cases.
+
+#### CA4-11 — Profile-free admin-direct descriptors lack part of the generic plan contract
+
+**Status:** DONE (2026-10-07; specification readiness). **Type:** residual gap after CA2-1. **References:** [Layer 5 §3.1–3.2, §4.2, §5.1, §7.2](specs/v3/layer5_action_reactions_spec.md), [Layer 3 §6.5](specs/v3/layer3_learning_spec.md). This does not claim V3 runtime implementation.
+
+CA2-1 correctly permits `relation_profile=None` with a descriptor-level direct guard contract. Generic runtime slots, comparisons, and temporal shape still refer to the relation-profile policy facet, and the envelope rule refers to its axes. The alternative guard contract supplies capabilities, not a complete alternative source for all those declarations.
+
+**Correction:** specify the direct descriptor's source of slots, temporal primitives, parameters, and applicable envelope axes without inventing a learner relation profile. **Closure:** fully compile and validate presence simulation with no relation profile, through the ordinary shared plan pipeline.
+
+**Approved resolution and specification verification:** the frozen descriptor
+version supplies the base typed slot, temporal-plan, comparison, parameter,
+bundle and envelope-axis grammar. A learner relation profile narrows that
+grammar; a profile-free direct generation uses it with the exact
+descriptor-level guard contract. Both compile to the same plan and action
+path. `CanonicalEnvelope` remains mandatory: learned cells retain positive
+measured support and calibration, while direct cells have both evidence
+fields absent. Presence simulation declares zero axes and one empty-key
+direct cell, with active calendar, stabilized presence, session, guards,
+authority and admission checked separately. Future direct descriptor
+versions declare typed slots, pure versioned partitions and bounded joint
+cells. A step-programmed Reaction reuses its descriptor-version activation
+start criteria in the existing plan trigger field; departure, calendar
+refresh and due jobs request re-evaluation, including a fresh bootstrap
+start without a fabricated departure. The [CA4-11 impact and scenario
+review](specs/v3/reviews/CA4-11.md) covers normal, unavailable, restart,
+concurrent-request, cancellation and authority cases. V3 runtime has not
+been implemented or tested.
+
+#### CA4-12 — The initial catalog and candidate schema are not mutually complete
+
+**Status:** TODO. **Type:** incompatible vocabulary and missing schema variants. **References:** [Layer 3 §4.8, §6.4–6.6](specs/v3/layer3_learning_spec.md), [Layer 5 §3, §7](specs/v3/layer5_action_reactions_spec.md).
+
+The earlier mismatch between Layer 3's `reduce_solar_gain` and Layer 5's `limit_solar_gain` was resolved by using the latter exact ID in both contracts. The earlier omission of `thermal_shading` from the initial profile enumeration has also been corrected. The room-neutral `humidity_extraction` and routine relation profiles still lack corresponding complete evidence/policy entries. The earlier common candidate imposed positive numeric deltas and predicted effects on every member, including routines; the partial correction below removes that false requirement but does not close the catalog gap.
+
+**Correction:** publish one versioned descriptor/origin/profile/objective/intent/schema matrix and a typed routine variant where environmental fields do not apply. **Closure:** every initial descriptor has a complete valid example; no placeholder outcome unit or fictitious effect is needed to satisfy mandatory fields.
+
+**Candidate-schema decision (2026-10-07; partial):** keep the outer
+`ReactionDescriptorCandidate` unchanged. Its member has an optional typed
+`NumericOutcomeRequirement`, required only when the exact descriptor/profile
+defines a per-member numeric response. Environmental response thresholds
+remain stable candidate semantics; comfort trajectory and routine members
+carry no fabricated numeric delta. Measured response, thermal reachability
+and whole-bundle routine frequency remain in the exact typed artifact and
+refreshable proposal evidence, so compatible retraining does not create a
+new candidate. See [the CA4-12 impact and scenario record](specs/v3/reviews/CA4-12.md).
+The solar objective ID and the older §6.6 fingerprint wording were aligned
+in the same review; neither is an outstanding CA4-12 gap.
+CA4-12 remains TODO until the profile/catalog matrix, the routine artifact's
+closed keyed validation-report schema and exact relation-profile/validator
+registration, and one valid example for every Initial-V3
+descriptor are complete. The routine output schema and duplicate-effect
+consolidation below are partial corrections, not catalog closure.
+The [Initial-V3 registration audit](specs/v3/reviews/CA4-12.md) now lists
+the six descriptor paths and distinguishes established joins from missing
+concrete entries. It is a verification inventory, not a second runtime
+catalog or authority source; unresolved cells still block closure.
+The developer has approved both `admin_direct` and `learner_proposal` for
+Initial-V3 `environment.solar_shading` and `environment.external_exchange`.
+This resolves those two origin sets only. Their profile-free direct guard
+contracts and finite direct envelope cells still need exact registration
+before either direct path can stage; the extraction origin set remains open.
+The approved common-contract correction now keys required guards by
+descriptor-validated `(action_intent, semantic_variant_id)` and lets a
+descriptor's direct envelope use its own fixed axis subset, including the
+one empty-key cell when its typed trigger and guards already constrain the
+action. The same descriptor may retain richer supported learned cells.
+For external exchange, `thermal`, `air_quality` and `hygrometric` are
+validated purpose variants; their exact required capability sets and direct
+guard contract IDs remain open. This avoids both a union of unrelated guards
+and a second evaluator. The direct envelope shape is resolved, but complete
+direct registrations/examples still block CA4-12 closure.
+
+**Extraction entry and subsequent control (approved clarification; program open):**
+for one `environment.air_extraction` activation, a fan already active at the
+qualifying start is untouched, including speed and eventual stop, regardless
+of origin or target match. An initially inactive fan may subsequently be
+started, changed in speed and stopped by steps actually declared for that
+Reaction and passing ordinary admission. Layer 5 §7 now makes the fresh
+inactive entry state a pre-target condition; the active case creates no
+`already_satisfied` Heima target anchor. Layer 3 §4.8 retains observed entry
+state, physical active/speed/stop transitions and verified origin as separate
+learning evidence; an active-at-entry no-op is not a Heima-start effect
+sample. This choice does not change generic hold or other descriptors.
+The earlier Layer-5 one-shot draft specifies only an `activate_extraction`
+target, with no modification/terminal step or normal exit. The approved
+Initial-V3 descriptor requires a developer-registered step-programmed
+specialization; that draft cannot stage as a complete extraction program.
+Its implementation must declare typed start, target-modification and end
+rules, including the target bounds appropriate to its Actuator channel.
+No universal speed or on/off branch is added to Layer 5. See the
+[CA4-12 scenario review](specs/v3/reviews/CA4-12.md); no V3 runtime test ran.
+
+**One registered program interface (approved direction, generic contract aligned):**
+the descriptor version registers its pure `program_evaluator` specialization;
+its compiler persists only canonical parameters and typed bindings in the
+existing `ReactionEvaluationPlan`. Layer 5 resolves that exact version and
+calls `evaluate_program` with the frozen snapshot and activation state. The
+specialization selects start, target change, wait, verified normal end or
+abstention and supplies each proposed step's typed target/parameters. Relevant typed
+events and the one timed next-step slot request that same evaluation; they
+do not create a second trigger or action path. A simultaneous event and due
+timer resolve to one descriptor-defined effective target and stable step id
+per channel, with ambiguous output abstaining. `normal_exit_contract` is the
+terminal rule inside this evaluator. A step selected by an event can release
+a `next_reaction_step` hold only with a staged current-state continuation
+that survives the mandatory fresh snapshot; Layer 5 retains only a bounded
+process-local pending boundary token, never a frozen command or replayable
+event. The extraction implementation must specialize this interface for its
+start/change/end decisions; its concrete conditions and bounds remain open
+CA4-12 work. There is no fan-specific Layer-5 executor or V3 runtime test.
+
+**Managed episode after restart (approved, partial contract):** a descriptor
+with a declared ongoing program may opt into resumption only after a fresh
+inactive entry and a physically confirmed Heima inactive-to-active edge.
+Layer 5 records a compact open/closed per-channel state through Layer 0's
+ordinary end-of-cycle batch at episode opening and closure; there is no
+per-command flush, periodic write or speed-step update. A committed open
+state survives ordinary retention, but a crash before the opening batch
+commits leaves no proof. After restart, current Reaction authority, fresh
+physical state and current continuation/end rules determine whether a new
+activation may act. No hold, old timer, missed step or unobserved learning
+interval is restored. At every restart, a channel active on its first fresh valid reading
+without usable proof is left untouched regardless of its current trigger and
+Layer 5 emits `active_channel_unmanaged_after_restart` through the existing
+availability occurrence; Layer 6 owns the resident notice and uses a new
+process-run delivery key. Once reported,
+the issue persists while the channel remains actively unmanaged, even if
+the initiating Sensor ceases to qualify; only a fresh inactive reading or
+valid proof resolves it, without a false claim that Heima switched it off.
+Heima never infers ownership
+from an `already_satisfied` target, a matching external action or a recovery
+checkpoint. The earlier one-shot extraction draft had
+`managed_episode_resumption=False`; the required Initial-V3 ongoing
+specialization declares `managed_episode_resumption=True` and fixed-duration
+hold release. Its concrete start/change/end rules remain open CA4-12 work. See the
+[CA4-12 restart scenarios](specs/v3/reviews/CA4-12.md); no V3 runtime test ran.
+
+**Room-neutral humidity trigger (approved, partial contract):** the current
+descriptor ID is `environment.air_extraction`; its proposed
+`humidity_extraction` relation profile is not registered as complete evidence
+and policy output yet. The descriptor applies to any registered room with a
+compatible extraction fan. It selects exactly one typed relative-humidity
+trigger: `level_crossing`, `delta_over_window`, or `rate_over_window` with a
+staged positive bounded window for the latter two. Occupancy is a declared
+current-room condition only where the configuration requires it. Layer 5 §7
+and Layer 3 §6.5 now carry that grammar and its context axes; the profile's
+full schema, objective/intent matrix, observed outcome and example remain
+open CA4-12 work. The former bathroom/occupied names in the dated L5-12
+history above are historical, not aliases for a current descriptor.
+
+**Common environmental transition anchor (approved, partial contract):**
+Layer 3 §4.8.1–4.8.2 now permits one profile-declared observed transition on
+a staged registered Sensor state or Actuator channel, using Layer 0's
+`actuator.channel_state.<digest>` history for the latter. The exact logical
+channel, observable-state contract and changed facets are validated; the
+first valid post-gap state, a command result and an unrelated facet are not
+anchors. Existing cover/opening/HVAC profiles retain their declared physical
+meaning. The required Initial-V3 extraction profile and later humidifier or
+dehumidifier profiles use the same learner mechanism but must register their
+own outcomes, confounders and policies. The
+`humidity_extraction` registration remains open; the generic anchor alone
+does not authorize a new proposal or action. See the [CA4-12 scenario review](specs/v3/reviews/CA4-12.md).
+
+**Separate estimates for every program phase (approved, partial contract):**
+Initial-V3 learning must estimate observed response for physical start,
+bounded target modification and termination, not merely retain those edges
+as history. The versioned relation profile declares finite, disjoint
+`transition_class_id`s with typed pre/post and comparable stable-reference
+matchers; `EnvironmentalEpisodeLearner` uses its existing episode, cohort,
+artifact and validation paths separately for each class. The
+`environmental_response.v1` cell key includes class, profile, context and
+horizon. A modification class distinguishes direction and bounded
+pre/post target range; no on/speed/off pooling, generic speed branch or
+device-specific learner is introduced. Estimates remain conditional
+observed contrasts, not automatic command authority. An estimate-dependent
+step is suppressed if its exact class/context/horizon cell is ineligible; an
+independently declared deterministic step can still pass current admission.
+Verified normal exit can close the activation even when its
+estimate-dependent terminal target is skipped and reported. This is the
+approved general missing-estimate rule; no generic terminal target or
+cross-class fallback is inferred. Exact extraction matchers, horizons and
+objective/intent registration remain open CA4-12 work. The current candidate's
+single objective and member-level numeric threshold do not yet bind a
+specific class to each programmed step; a learned multi-step proposal stays
+ineligible until that mapping is registered and validated. The
+[CA4-12 review](specs/v3/reviews/CA4-12.md) records the residue audit and
+cross-kind scenarios; no V3 runtime test ran.
+
+**Learned program decision (approved clarification; partial):** the
+developer declares finite legal targets, typed current conditions and
+step-to-class mapping. Heima learns the observed response of the exact
+physical transition from eligible local histories, including correctly
+attributed resident or external actions only where the profile's cohort and
+confounder rules allow them. A modification requires both a currently
+qualifying need and an eligible conservative response under the reviewed
+objective and practical threshold; a favorable historic contrast alone
+cannot select a step. The developer does not preassign a speed's extraction
+rate or mark later targets indispensable. Current adequacy suppresses an
+unneeded modification without changing an independently declared normal
+exit. This uses the existing candidate, artifact, program evaluator and
+admission path. The exact `humidity_extraction` conditions, matchers,
+horizons and objective/intent mapping remain open; this clarification does
+not mark CA4-12 DONE. See the [review](specs/v3/reviews/CA4-12.md).
+
+**Whole-bundle frequency decision (2026-10-07; partial):** one routine
+output record represents one canonical bundle/context cell, not one member.
+Layer 3 now defines the previously missing subject baseline as the fraction
+of eligible sliding-window start-time exposure whose full assembly window
+contains the complete bundle. The initially written UTC-epoch grid was
+rejected because it could split a pattern at an arbitrary boundary; no such
+grid remains in the normative routine contract. An offline interval sweep
+uses existing event and coverage boundaries, without periodic device
+readings. Standard lift is conditional frequency divided by subject baseline
+frequency; 1 is no association. An empty or zero baseline gives no finite
+lift and cannot qualify a proposal. Overlapping starts are correlated time
+exposure, not independent episode support; validation resamples complete
+temporal blocks. A baseline window does not create a trigger episode or a
+candidate. The same coverage, resident attribution, confounding and
+time-partition rules apply to both cohorts. The
+[CA4-12 review](specs/v3/reviews/CA4-12.md) records cross-kind and boundary
+cases. This resolves the baseline/lift semantics; the output-schema change
+below followed, while the catalog remains open.
+
+**Registered-output consolidation (2026-10-07; partial):** the profile's
+exact `policy_output_schema_id/version` and validator are the sole measured
+effect contract. The descriptor's duplicate `EffectShape`/
+`effect_contract_for_intent`, the unused `TypedEffectSummary` union and
+profile `effect_contract_id` are retired. No information is dropped:
+environmental numeric point/interval/unit/horizon remain in
+`environmental_response.v1`; thermal duration bounds remain in
+`ThermalResponseParameter`; the new `routine.bundle_frequency.v1` record
+retains whole-bundle/context probabilities, `Window` assembly/exposure
+durations, trigger counts, calendar diversity and precision/lift intervals,
+with a keyed artifact
+validation report. Intent compatibility remains in the profile's
+`objective_intent_contract_id` and descriptor validators; stable numeric
+thresholds remain in `NumericOutcomeRequirement`. A missing routine profile
+registration still blocks learned candidate staging. The CA4-12 review has
+the exact information mapping and scenarios. CA4-47's old type-definition
+record is preserved as history; its current-consumer statement is aligned.
+
+#### CA4-13 — LearnedWindow calibration bypasses the declared learning lifecycle
+
+**Status:** DONE (2026-10-07; specification readiness). **Type:** architectural duplication. **References:** [Layer 0 §3.2](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.4.1, §4.9](specs/v3/layer3_learning_spec.md), [Layer 5 §§3.2, 4.2, 6.0, 7](specs/v3/layer5_action_reactions_spec.md).
+
+**Room-return timing closure (2026-10-07):** `RoomOccupancySurvivalModel.return_delay`
+is the first reviewed operational timing target. Layer 3 now permits a
+validated action-serving survival artifact with a one-minute first horizon;
+Layer 5 binds its typed room `present -> absent` anchor, reads return
+cumulative incidence at the staged maximum, and selects a continuous
+bounded delay with seed fallback. The generic `routine.actuation_bundle`
+descriptor registers an optional one-member vacancy path. It uses the common
+Reaction timer, admission and ApplyStep. Each versioned Layer-5 core
+intent/channel/adapter translation may declare an exact
+`TranslationDelayPermission` with a typed target validator and maximum;
+the descriptor stages only a member whose permission matches its path.
+This is never inferred from an Actuator role such as `light` and requires
+no per-Actuator delay setting. Layer-2 vacancy debounce precedes and adds
+to the Layer-5 delay. The [impact and scenario review](specs/v3/reviews/CA4-13.md)
+records normal, gap, competing-event, cancellation, fallback and restart
+cases; no V3 runtime test ran. Layer 5 §6.0 defines the trigger-driven
+replacement job, one-shot admission identity and the translation-permission
+check at staging and due time. Bootstrap rejects the Initial-V3 descriptor
+if no core translation declares a matching permission; the concrete target
+catalog belongs to that versioned core registry, not a device-kind list in
+the general specification.
+
+**Current scope (2026-10-06):** the previously selected solar-fraction
+forecast `q` is removed from CA4-13's closure requirements and is not an
+Initial-V3 timing profile. Sparse local irradiance observations do not
+justify treating the next minutes' cloud/exposure fraction as a validated
+operational forecast; including post-exit returns in `q` also mismatches a
+Reaction whose current occurrence ends on an observed exit. This does not
+remove `environment.solar_shading`: its Layer-2 hysteresis and one staged
+fixed Layer-5 dwell remain, with the approved in-process gap semantics and
+ordinary fresh admission. A movement cooldown remains separate. Historical
+solar-`q` exploration and its training-episode proposal are retained only
+in [the CA4-13 review](specs/v3/reviews/CA4-13.md), not as a current
+registration or required acceptance scenario. CA4-47 subsequently closed the
+staged solar-geometry producer for the environmental contracts that actually use it.
+
+The generic `FutureStateFractionOutcome` and bounded selector remain reusable
+contracts, but their existence registers no solar timing learner or descriptor
+binding. CA4-13 now has a coherent Initial-V3 learned-delay profile, its
+eligible model-publication rule, common delayed-trigger job contract and
+versioned target-permission rule.
+CA4-14 already specifies artifact adoption across egress classes; it is not
+reopened by the solar-scope correction.
+The Layer-3 validation/shadow, candidate/review, notification-only staging,
+common admin promotion and descriptor-required consent sequence already
+governs automatic Reactions. Layer 5 §4.2 now defines
+`ReactionTimingModelBinding` in the immutable configuration/plan fingerprint;
+the artifact revision is excluded. Layer 5 §§4.1–4.2 now define typed
+supplemental evidence, initial action-bearing selection and compatible
+revision adoption separate from semantic configuration changes.
+Layer 5's timing binding now shares the exact typed state and qualifying
+values with Layer 3's `FutureStateFractionOutcome`, so a registered
+descriptor may use a typed value such as `occupancy=absent` without an extra
+projection. The developer approved this generalization; the room-return
+path and shared trigger-driven job contract are now specified.
+Every delayed Reaction now declares typed timer-gap semantics in its plan:
+reset observed dwell, pause verified elapsed time, or count elapsed time after
+fresh requalification. The solar path uses the last mode. This removes the
+earlier universal reset-on-gap rule. After a process restart the existing
+ephemeral-activation/`AtJob` rule applies: no old anchor or job is restored;
+a fresh qualifying sustained state starts a full new wait without fabricating
+an event edge. The room-return path now uses the common trigger-driven
+replacement job and one-shot admission identity.
+
+**Original gap (historical):** Layer 0 allowed `LearnedWindow` wherever a Window is accepted but left history-based calibration to pure FusionRule/SemanticResolver consumers that cannot read history. Layer 3 kept occupancy survival diagnostic-only. CA4-14 has since supplied the artifact-adoption contract; the room-return slice now supplies the operational delayed-trigger path and eligible model publication without historical work on the evaluation path.
+
+**Correction:** any learned delay uses the existing Layer-3 validation/adoption
+lifecycle and the common Layer-5 timer; the solar path stays fixed until a
+separately reviewed profile/version exists. **Closure:** the room-return
+use case has exact versioned translation-owned target permissions, model evidence,
+authority, fingerprint, invalidation and the specified trigger-job contract
+without historical work on the evaluation path. Solar-`q` publication and
+CA4-47 are not CA4-13 gates.
+
+#### CA4-14 — Adaptive adoption conflicts with immutable generations and broad fingerprints
+
+**Status:** DONE (2026-10-06; specification readiness). **Type:** lifecycle mismatch. **References:** [Layer 3 §4.1.2, §4.5, §4.8–4.9](specs/v3/layer3_learning_spec.md), [Layer 5 §4.1–4.2](specs/v3/layer5_action_reactions_spec.md). No V3 runtime test was run.
+
+**Progress:** Layer 5 §4.1 records exact role-tagged supplemental artifact
+references in proposal evidence; Layer 3 §6.2 maps them from the candidate.
+Layer 5 §4.2 now records action-bearing adopted revisions separately from the
+immutable Reaction configuration. A later `pinned` revision gets a distinct
+`ReactionArtifactAdoptionProposal` under the same `review_proposal` command;
+compatible `bounded_adaptive` revisions append only within the approved
+binding/bounds. Layer 3 §4.9 now distinguishes validated diagnostics (no
+adoption) and registered live signals (Layer-3 pinned approval or bounded
+compatible adoption). Layer 3 §§4.1.2/4.5 now separate the analysis
+`definition_fingerprint` from a serving-generation fingerprint, so an
+objective/materiality edit preserves the response artifact but changes the
+candidate proposal identity. Layer 3 §4.9 and Layer 5 §4.2 now define
+authenticated adoption-mode changes that retain the exact current artifact;
+entering `bounded_adaptive` revalidates approved bounds, while returning to
+`pinned` freezes the current revision. The closed
+`("reaction.artifact_adoption", 1)` candidate kind is now registered, so
+the Layer-5 review path can admit it. The diagnostic/signal/policy matrix,
+serving-only edit, compatible refresh, mode switch, concurrency, crash and
+fallback scenarios are reviewed in the
+[CA4-14 review](specs/v3/reviews/CA4-14.md).
+
+**Original gap (historical):** Layer 3 permitted automatic bounded parameter/envelope adoption under existing authority while Layer 5 froze plan data and removed authority/consent from successor configurations. The old `pinned` rule incorrectly required Layer-5 proposal handling even for diagnostic/signal-only revisions. Objective/minimum-delta changes were described as serving-only and not requiring artifact invalidation, while the broader definition-fingerprint rule appeared to invalidate artifacts on every definition change.
+
+**Correction:** distinguish training identity, serving identity, and authority; define revision/adoption for each egress. **Closure:** a pinned/adaptive × diagnostic/signal/policy matrix specifies deterministic transitions, including a serving-objective edit and a compatible refresh of an already configured Reaction.
+
+#### CA4-15 — Envelope evidence leaks into semantic deduplication identity
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** identity inconsistency. **References:** [Layer 3 §6.4–6.6](specs/v3/layer3_learning_spec.md), [Layer 5 §4.1](specs/v3/layer5_action_reactions_spec.md).
+
+`CoverageCell` includes `support` and `calibrated`, and the whole `CanonicalEnvelope` enters the candidate fingerprint. Literal serialization therefore changes semantic identity when support changes, despite the compatible-evidence-refresh rule. Subset checks also need semantic cell keys rather than equality of evidence-bearing records. The §6.6 fingerprint list omits `descriptor_parameters`, which §6.4 includes.
+
+**Correction:** one canonical envelope projection contains ordered axes and exact cell keys while excluding support/calibration evidence; all candidate fingerprint lists include root parameters. **Closure:** support 10→20 preserves proposal identity; a new semantic cell or changed root parameter changes it. Runtime lookup and adaptive subset checks use the same keys. [CA4-15 impact and scenario review](specs/v3/reviews/CA4-15.md) records the cases; no V3 runtime test was run.
+
+#### CA4-16 — Unit drift leaves incorrectly typed quantitative data available to consumers
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** physical-unit boundary defect. **References:** [Layer 2 §3.3, §4](specs/v3/layer2_registries_spec.md), [Layer 3 §4.8.2](specs/v3/layer3_learning_spec.md), [Layer 5 §7.1](specs/v3/layer5_action_reactions_spec.md).
+
+`NumericInterpretation` does not convert units. A mismatch against the expected unit changes neither availability nor confidence nor value. Thus a source changing from Celsius to Fahrenheit can publish finite `68` through a binding staged as Celsius. Thermal guards and training consume the canonical quantitative contract, without a mandatory mismatch gate in that interface.
+
+**Correction:** a quantitative Sensor stages an exact source/canonical unit contract and a core-registered conversion when needed; missing conversion rejects staging. A later changed/missing applicable HA unit makes the reading unavailable and diagnostic, while unrelated metadata drift remains diagnostic-only. **Closure:** Celsius/Fahrenheit, percentage/fraction, and missing-unit cases cannot generate actions or samples under an incorrect unit interpretation. Attribute paths without applicable HA unit metadata rely on the developer's explicit staged source-unit contract; an unannounced source-scale change is not observable. [CA4-16 impact and scenario review](specs/v3/reviews/CA4-16.md) records the cases; no V3 runtime test was run.
+
+#### CA4-17 — Revocation and rebinding have no common asynchronous dispatch fence
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** execution lifecycle. **References:** [Layer 2 §2.5, §6.1](specs/v3/layer2_registries_spec.md), [Layer 5 §4.2, §6–6.1, §7.1.2, §8](specs/v3/layer5_action_reactions_spec.md). This does not claim runtime implementation or testing.
+
+**Original gap, now closed:** admission uses a frozen snapshot, while service calls can be submitted after authority or registry changes. The contract needed a generation-aware fence for every HA call, including calls within one `ApplyStep`, and an explicit rule for uncertain outcomes.
+
+**Specification verification:** Layer 5 §6.0 now checks current authority, activation, hold and affected-facet state, and the committed Actuator generation at an in-memory fence immediately before every HA call. The coordinator orders accepted ingress against submission. A changed endpoint cannot receive a call admitted under the old generation; an accepted targeted external edge stops unsent calls, while unrelated changes do not. Layer 5 §6.0.1 keeps uncertain physical outcome separate from call completion and requires a fresh valid read plus current authority before another command; a timeout gives no blind retry or exactly-once claim. Layer 5 §8 now includes a two-call counterexample for revocation, cancellation, rebinding, external edge and timeout. Layer 2 §6 resolves only the registered endpoint at execution. CA4-27 separately retains the cross-layer composition commit/rollback gap.
+
+#### CA4-18 — Programmed Reactions need one stable next-job slot and re-arm rules
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** scheduling/lifecycle acceptance gap. **References:** [Layer 0 §3.1](specs/v3/layer0_runtime_spec.md), [Layer 5 §3.2, §6.0, §7.1–7.2, §8](specs/v3/layer5_action_reactions_spec.md), [overview](specs/v3/architecture_overview_defined_layers.md), [recap](v3_architecture_recap.md). This does not claim runtime implementation or testing.
+
+**Original gap, now closed.** The former claim that every failed required guard cancels the activation was already superseded: §3.2 returns `not_ended` for temporary input loss or guard veto, and §7.2 distinguishes committed return, valid calendar removal/replacement, valid interval completion, calendar outage and guard veto. The remaining gap was a stable job identity/re-arm rule for a still-active activation when required input went unavailable and later returned. Repeated fresh evaluation could otherwise install duplicate jobs or omit the next eligible step. Presence simulation exposed the gap, but the same scheduling contract applies to comfort trajectory and future step-programmed descriptors; this was a specification risk, not observed runtime duplication.
+
+**Correction:** retain the already defined terminal/nonterminal distinction and add only the missing stable job identity and re-arm/replace rule for a still-active activation after temporary input loss or guard veto. **Closure:** a fake-clock trace with temporary unavailability followed by restored `away` yields exactly one appropriate next job and no missed or duplicated step; committed return terminates that activation; valid calendar replacement, calendar outage and a hold retain their distinct outcomes. Verify §3.2, §7.2 and §7.2.1 together before marking this separate item DONE.
+
+**Approved scope and specification verification.** The developer rejected a light-specific late-off
+exception and confirmed that this is a common scheduling problem. Layer 5 §6.0 now gives every
+Initial-V3 step-programmed Reaction one activation-stable next-`AtJob` replacement slot, distinct
+from the bounded per-channel planned-step identities of one due bundle. An unchanged pending selection keeps its timer;
+replacement/cancellation advances a process-local arm revision; a stale or duplicate callback
+cannot execute or release a hold. Serialized member admission prevents duplicate commands
+even when two evaluations race. Temporary input loss or guard veto keeps the activation,
+while a known due hold-release boundary remains available for its non-command evaluation.
+Fresh restoration selects at most one descriptor-valid next step; existing missed-step,
+normal-exit, hold and follow-up behavior is unchanged. Layer 0 §3.1 defines idempotent owner
+cancellation and the callback race boundary. Both Initial-V3 descriptor keys were aligned to
+the common slot, with separate presence-simulation and comfort-trajectory fake-clock acceptance
+traces; overview and recap summarize the common mechanism.
+
+**Bounded review record:** [CA4-18 impact and scenario review](specs/v3/reviews/CA4-18.md)
+traces the approved choice across Layer 0, the common Layer-5 slot, both Initial-V3 descriptors,
+hold release and the summaries. Its evidence is textual specification review; the eventual
+executable fake-clock suite remains implementation-phase work.
+
+#### CA4-19 — Pending-apply reconciliation has no complete observation contract
+
+**Status:** DONE (2026-09-28). **Review:** the Layer-5 §6.0.1 pending contract and its Layer-0/Layer-3 handoffs were reviewed against the agreed runtime and learning scenarios. **Type:** missing shared execution/observation contract. **References:** [Layer 0 §6, §7.4](specs/v3/layer0_runtime_spec.md), [Layer 5 §6–6.1](specs/v3/layer5_action_reactions_spec.md), [Layer 3 §4.4.2](specs/v3/layer3_learning_spec.md).
+
+Layer 5 explicitly defines successful ApplyStep completion as completion of all service calls. That definition is valid in itself and does not promise physical confirmation. Layer 0 separately relies on pending expected-state matching within a Window to avoid false implicit holds. The shared contract does not close the owner, duration, targeted-facet matcher, partial confirmation, or timeout/unavailability lifecycle of that pending state, nor clearly distinguish it from the completion anchor used by correction learning.
+
+**Correction:** name service completion and observed confirmation separately and define their interaction with hold inference, recovery, and attribution. The provisional contract distinguishes per-facet physical confirmation from HA service completion, skips all calls when a recorded target decision is already fully satisfied, otherwise dispatches the complete core call plan and requires post-dispatch observation for every targeted facet. Failed or timed-out calls remain separate from observed physical state. Partial confirmation can establish a per-facet expectation while the channel lease stays unresolved; full confirmation requires one coherent channel state in which all targeted facets match simultaneously. After a terminal uncertain outcome, a fresh valid read and current-policy decision are required before another command. Correction learning uses a recorded admitted decision and an observed complete target, regardless of call outcome or the verified origin of the matching state; a late matching read may establish a current per-facet expectation for a later hold and a late full-target read may anchor learning, both without revising an `unconfirmed` execution outcome, while merely hypothetical or partial targets are excluded, and repeated evaluations while the complete target remains observed share one learning episode; divergence or observation loss ends it, and a new decision after hold release passes current admission. CA4-09 must provide complete normalized facet history and decision outcomes for this learning contract. **Closure verification (specification, not runtime):** (1) all target facets already match before dispatch: one recorded `already_satisfied` decision, no HA call, later repeated matching evaluations reuse its learning episode; (2) only some facets match: the full core plan runs, each targeted facet needs a post-dispatch read, and a confirmed facet can hold after a later edge while the channel lease remains unresolved; (3) separate facet matches that never coexist remain partial with `target_never_coherent`; (4) service completion/failure/timeout and physical observations remain separate, with no blind replay; (5) after terminal timeout a fresh valid read is required before another command, and a late matching read may establish a current expectation and learning anchor without rewriting the terminal execution result; (6) an unknown or externally produced exact full target may anchor a verified resident correction, while an incomplete target cannot; (7) observation loss and restart invalidate live pending/hold state and require current-policy reconciliation. Layer 3 uses the complete observed target for the count-model window; CA4-09 still owns the durable historical projection needed to implement that model. `git diff --check` passed. CA4-01 is closed by its final cross-layer specification audit; CA4-09 retains the separate durable denominator contract.
+
+**Subsequent closure (2026-10-07):** CA4-09 now defines the normalized channel-state history and target-decision/complete-observation lifecycle required above. The references to CA4-09 as open record the state of this item when it closed on 2026-09-28.
+
+#### CA4-31 — Hold lifecycle events need per-transition idempotency
+
+**Status:** DONE (2026-09-29). **Review:** event-queue identity verified against the channel-hold contract; CA4-38 separately owns bounded queue/degraded behavior. **Type:** identity and retry defect. **References:** [Layer 0 §5.2, §6.4](specs/v3/layer0_runtime_spec.md).
+
+The original finding concerned a hold-specific journal whose `(correlation_id, fact_role)` key could collide for two same-cycle transitions. CA4-01 supersedes that journal and its checkpoint mutation, but the same underlying risk remains for asynchronous lifecycle-event retries: one correlation id may belong to several distinct hold transitions on different channels or successive updates; one multi-facet observation on one channel creates only one transition. A retry must not duplicate an event, and a reused id with different content must not silently erase one.
+
+**Provisional correction:** each `HoldLifecycleValue` has a unique operation id minted per transition, independent of causal `correlation_id`. The queued/in-flight in-memory index compares canonical payloads with no disk I/O and is cleared after durable acknowledgement; the background writer enforces a durable `(fact_type, operation_id)` unique key and compares the payload on collision. A crash before write may lose the final event under the user-approved asynchronous audit contract; no hold is restored from audit.
+
+**Closure verification (specification, not runtime):** one multi-facet observation on one channel yields one hold transition and one operation id; two channel transitions may share a causal correlation but mint distinct operation ids. An exact retry before acknowledgement is coalesced only after canonical payload comparison; after acknowledgement the durable unique key provides the same check. Reuse with different payload is an error. A crash before durable commit may lose the audit event under the approved asynchronous-audit contract; a crash after commit leaves one event, and neither case restores a live hold. Layer 0 §6.1/§6.4 and Layer 5 §6.0 agree on these traces; `git diff --check` passed. CA4-38 retains the separate queue-bound/degraded-retry obligation.
+
+#### CA4-33 — Historical consumers cannot identify observation gaps caused by downtime
+
+**Status:** DONE (2026-10-02; specification closure by Codex after the user authorized parallel CA4-33 work). The 2026-09-30 DONE was premature and omitted shared sample, survival, and environmental consumers; this closure includes them. **Type:** newly identified continuity gap. **References:** [Layer 0 §4.4, §6.4, §13](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.2, §4.4.1–4.4.3, §4.8.1, §5.2, §9](specs/v3/layer3_learning_spec.md), [architecture overview](specs/v3/architecture_overview_defined_layers.md), [recap](v3_architecture_recap.md).
+
+Retention coverage explicitly describes pruning, not whether observations occurred. Restart rules invalidate live prior-cycle state, but no historical process-gap contract tells duration, outcome, and correction-window consumers where observation stopped and resumed. Persisted state before shutdown and after restart can otherwise be joined across an unobserved interval. A gap shorter than a freshness bound is still unobserved; complete retention alone cannot establish a zero-correction or continuous-state window.
+
+**Historical provisional draft, superseded by P1/P2 below:** Layer 0 §4.4 defines one durable process-continuity timeline and a 60-second watermark that advances only after all accepted fact and audit records through its barrier are acknowledged. An orderly stop starts a known gap; after a crash the gap begins no later than the last durable watermark. Startup durably opens the gap, and a fresh valid HA observation closes it. Write failure leaves historical completeness unknown while current-state automation follows ordinary admission. `retention_coverage` remains independent. Layer 3 censors correction and routine assembly windows crossing the gap, including restarts shorter than a freshness bound; matching pre/post states cannot yield a zero or negative sample. Channel-specific `available=False` affects only its dependent windows; unreadable channels are not commanded while readable channels may resume. **Required closure verification, not yet complete:** clean stop, crash with a queued unwritten hold event, repeated failed startup, and a short restart must make every affected duration, outcome, correction, routine, and environmental window incomplete without censoring unrelated later windows. The following P1/P2 decisions supply the type, closed reasons, closure barrier and omitted consumers; the expanded gate and construct matrix still prevent DONE.
+
+**Structural decision CA4-33/P1 — typed historical observation coverage and restart boundary (APPROVED and applied 2026-10-01; consumer-wide verification pending).** Owners: Layer 0 §4.4 defines the historical-read contract and durable process interruption; Layer 3 §4.2 owns shared sample eligibility, with each model owning its event/duration-specific censoring. The present `observation_coverage` string has no type or closed reasons. "First fresh, valid HA observation barrier" could mean one entity has reported, every critical entity has reported, or a completed cycle barrier. Example: Heima restarts at 10:00; at 10:01 HA returns valid light A and an explicit unavailable valve B; a 10:02 learning cycle reads both. Closing the global gap on A's first edge lets one implementation treat B as continuously observed, while waiting for B to recover freezes unrelated light learning indefinitely.
+
+- **Option 1 (recommended):** define one typed `ObservationCoverage` result on every declared historical read, with status `complete|incomplete` and a closed nonempty reason set for incomplete reads: `process_interruption`, `required_stream_unavailable`, `continuity_metadata_unknown`. Keep `retention_coverage` separate. Close the process gap at the first post-restart `CycleInputBarrier` built from a fresh completed HA intake snapshot that exposes valid source health and explicit availability for the staged bindings; the barrier alone is insufficient if it contains only startup timers or cached state. It need not wait for every channel to become readable. A still-unreadable channel is `available=False` and makes only reads requiring it incomplete. For a hard crash, the interruption starts no later than the last all-queue-acknowledged watermark; for clean stop it starts at the final acknowledged observation stop. The closure barrier identity and UTC instant are durable before a historical read may return complete.
+- **Option 2:** wait until all registered critical entities are readable. This simplifies one global boundary but prevents unrelated learning for as long as one valve or sensor is broken and contradicts the agreed channel-scoped unavailability behavior.
+- **Option 3:** close on the first valid entity edge. This is superficially cheapest but leaves the rest of the HA snapshot indeterminate and cannot prove coverage for other streams.
+
+Option 1 reuses `CycleInputBarrier`, state `available=False`, and the existing stream-scoped history-read idea. It adds one typed return value and no per-Actuator gap journal. Tests must cover clean stop, hard crash after an unacknowledged audit event, failed metadata write, repeated failed startup, short restart, first cycle with only cached state, a fresh intake with one unavailable channel, later channel recovery, retention truncation independently, and equal-time barrier ordering. **Overlap check:** `retention_coverage` measures pruning only; `available=False` measures individual streams; `CycleInputBarrier` already freezes one intake cycle. None alone records a process interruption, so the typed coverage result is necessary but must not duplicate those meanings.
+
+**Structural decision CA4-33/P2 — first incomplete instant (APPROVED and applied,
+2026-10-01).** The approved typed `ObservationCoverage` needs a boundary for duration
+consumers: status and reasons alone say that a window is incomplete, but cannot tell
+`RoomOccupancySurvivalModel` when to right-censor. Example: a room visit starts 09:00,
+Heima loses observation at 09:20 and returns 09:25, and the requested horizon ends
+10:00. Censoring at 10:00 would falsely count 40 unobserved minutes at risk; dropping
+the whole visit loses 20 valid minutes. Layer 0 §4.4 owns the historical-read result;
+Layer 3 §4.2/§4.4.1 owns sample/censoring use.
+
+- **Option 1 (recommended):** add `first_incomplete_at: EvidenceInstant | None` to the
+  typed coverage result. It is None exactly when complete; otherwise it is the earliest
+  process or required-stream gap intersecting the requested interval, clipped to
+  the request start when the gap was already open. If metadata is unknown, use
+  the request start as a conservative lower bound. A time-to-event
+  outcome right-censors at this boundary; point/count outcomes requiring the later
+  span reject it. A gap exactly at the requested end is included only under that
+  outcome's interval semantics.
+- **Option 2:** return every gap interval. This supports more elaborate analysis but
+  adds an unbounded collection and overlap rules the initial consumers do not need.
+- **Option 3:** return only status/reasons and let each learner query continuity
+  metadata independently. This duplicates Layer-0 logic and risks different censor
+  boundaries for the same frozen read.
+
+Option 1 solves the earliest-gap problem with one bounded field and no new timeline.
+Tests: process gap, unavailable required stream, unknown metadata, equal-time boundary,
+retention truncation, and a gap after a valid target event. **Overlap:** the durable
+continuity timeline already owns the timestamps but does not expose the first one
+through the history-read result; `retention_coverage` cannot supply it. No threshold
+or new per-channel journal is introduced.
+
+**Consumer census, read-only review (2026-10-01).** Layer 3 §4.2's shared `SampleBinding` builder must reject an incomplete required feature/outcome window or explicitly right-censor a time-to-event outcome at the first coverage break; a partial event window cannot become a zero event count. §4.4.1 `RoomOccupancySurvivalModel` must right-censor at the first gap rather than treat it as no departure/return or as a competing event. §4.4.2 `CorrectionCountHurdleModel-v1` and §4.4.3 `ActuationRoutinePatternModel-v1` already name process gaps but need the typed read result. §4.8.1 `EnvironmentalEpisode` and its `EnvironmentalReferenceWindow` must reject any required pre-anchor, post-anchor, or exclusion span intersecting the gap; §5.2's training-span inspection must retain the full declared span, exclude gap-crossing samples, and rebuild only when remaining eligible support passes existing gates. Layer 3 §9 and Layer 0 §13 need fixtures for each. No normative consumer changes have been applied pending P1.
+
+**CA4-33 approved application and counterexample review (2026-10-01).** Layer 0
+§4.4 now defines `ObservationCoverageStatus`, closed `ObservationGapReason`,
+`ObservationCoverage(first_incomplete_at)` and `HistoricalReadResult`; its §13
+fixtures check clean/hard restart, metadata failure, fresh-cycle closure,
+unavailable channel and endpoint validity. Layer 3 §4.2 consumes coverage in
+the shared sample builder; §4.4.1 censors survival at the first gap; §4.4.2
+classifies correction censoring; §4.4.3 excludes incomplete routine negatives;
+§4.8.1 excludes incomplete transition and reference spans; §5.2 keeps the full
+TrainingSpan but excludes affected samples. §9 tests each consumer. Overview and
+recap describe the same boundary.
+
+Counterexample T15: a matching occupancy state before and after a two-minute
+restart could otherwise add two unobserved minutes to `stay_duration`, produce a
+zero correction count or a no-routine negative. The typed gap begins at the last
+durable watermark and `first_incomplete_at` censors or excludes each affected
+window, even if both states match. A valid target event before the gap remains
+observed; a later target event cannot bridge it. Counterexample T19: waiting for
+every Actuator would freeze an unrelated light indefinitely, while closing on
+light A's first entity edge could falsely certify valve B. The fresh completed
+cycle barrier closes only the global gap, and B's explicit unavailability makes
+only B-dependent reads incomplete. A cached startup cycle or failed metadata
+write cannot certify continuity. These are document traces, not runtime tests.
+**Closure verification (specification, not runtime; 2026-10-02).** The expanded
+residue gate classified 174 matched lines with zero current-rule residues
+(table above). The complete field-level matrix covers all three
+`ObservationCoverage` and all three `HistoricalReadResult` fields with producer,
+consumer and acceptance fixtures. A touched-section reread cross-checked Layer 0
+§4.4/§13, Layer 3 §4.2/§4.4.1–4.4.3/§4.8.1/§5.1–5.2/§9, the overview and recap.
+The read found and corrected a shared-builder ambiguity: an absent event means
+zero only for a complete event window; with a coverage break, the sample is
+excluded or right-censored at `first_incomplete_at`. T15 and T19 now pass their
+counterexample traces, including a short restart, unreadable valve, readable
+light, valid target before a later gap, and a cached cycle that cannot close it.
+`git diff --check` passes. This closes the downtime-observation contract; the
+the 2026-10-02 oversized hold-audit detail-reference path was superseded by
+CA4-01's approved 2026-10-03 bounded inline fact rule;
+the historical continuity contract remains independent of audit representation.
+
+#### CA4-34 — Fusion input validation permits repeated votes from one fact
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** staging omission. **References:** [Layer 2 §2.3–2.4, §5.1, §5.5, §9](specs/v3/layer2_registries_spec.md). This does not claim runtime implementation or testing.
+
+**Original gap, now closed:** `FusionRule.inputs` had to be non-empty but was not required to contain distinct references. A weighted quorum with inputs `(A, A)`, default weight 1, and threshold 2 satisfied the former numeric checks and could count the same True observation twice. Repetition similarly inflated availability populations. The physical formula's correlation-group protection does not apply to generic quorum/unanimity strategies.
+
+**Specification verification:** Layer 2 §2.3 makes Sensor/Fusion registry ids unique independently of output claims. §2.4 rejects repeated `(fact_type, where, previous_cycle)` keys in one FusionRule, while permitting shared dependencies across different fusions and the already-authorized current/prior self-memory pair of a FormulaStrategy. §9 accepts that legitimate pair and rejects `(A, A)` before a quorum or availability floor can count it twice.
+
+#### CA4-36 — Environmental formulas require configuration that Layer 2 prohibits
+
+**Status:** DONE (2026-10-05; specification readiness). **Type:** cross-layer contradiction. **References:** [Layer 2 §2.4, §5.3](specs/v3/layer2_registries_spec.md), [Layer 3 §4.8.2–4.8.3](specs/v3/layer3_learning_spec.md). This does not claim V3 runtime implementation.
+
+Layer 2 says every current formula except `physical_evidence.weighted_evidence` requires `configuration=None`. Layer 3 requires a core FormulaStrategy with staged immutable opening identity/orientation for solar exposure, and permits explicit installation reference pressure for humidity-ratio derivation. At least the specified per-opening solar formula cannot carry its required configuration through the written staging rule.
+
+**Correction:** register the required typed configuration contracts or model those values as explicitly typed inputs; align the closed formula catalog and validation rules. **Closure:** a per-opening solar calculation and both supported pressure-source forms stage with complete reproducible inputs and no undeclared configuration escape hatch. This is a configuration-contract defect, not a claim that the illustrative solar equation is physically incorrect.
+
+**Specification verification:** Layer 2 registers closed `environment.solar_incidence.v1` and `environment.humidity_ratio.v1` configurations with staging checks for topology orientation, binding identity, typed inputs and exclusive pressure-source choice. Layer 3 references the same contracts. Layer 2 §9 exercises two opening orientations, invalid bindings and both pressure forms. The scenario matrix and implementation boundary are in [CA4-36](specs/v3/reviews/CA4-36.md); the solar-geometry fact producer was completed in CA4-47.
+
+### P2 — Medium
+
+#### CA4-20 — Monotonic deadlines and UTC history ordering have unresolved edge cases
+
+**Status:** TODO. **Type:** undefined temporal behavior. **References:** [Layer 0 §3.1, §4.0–4.1, §9](specs/v3/layer0_runtime_spec.md), [Layer 4 §9.3](specs/v3/layer4_domain_spec.md).
+
+A monotonic countdown cannot unconditionally preserve an absolute UTC deadline across wall-clock correction, despite the “cannot fire early, late” wording. Layer 0 permits distinct cycles with equal `when`, while the presence adapter requires `last_available_when < observed_at`; telemetry also describes equal-time facts as one cycle. Clock rollback needs an explicit relationship between append order, current state, and historical event time.
+
+**Correction:** distinguish elapsed and civil deadlines and specify equal-time/rollback semantics. **Closure:** a fake clock exercising forward/backward adjustment and equal-time cycles preserves one-shot firing, valid episode identity, and the declared historical ordering.
+
+#### CA4-21 — Historical aggregates and tier-specific requiredness are underspecified
+
+**Status:** TODO. **Type:** incomplete shared algorithm. **References:** [Layer 3 §4.2–4.3](specs/v3/layer3_learning_spec.md), [Layer 0 §4](specs/v3/layer0_runtime_spec.md).
+
+The shared `mean`, `rate`, `true_duration`, and sequence resolvers do not fully define duration weighting, interpolation, boundaries, and gap handling on write-on-change history. Separately, rejecting a sample when any required feature is missing can prevent the promised coarser-tier fallback when a rich-tier dimension is absent. Requiredness is not clearly scoped to the entire sample or the selected tier.
+
+**Correction:** define canonical resolver semantics and requiredness per applicable tier. **Closure:** a trace with unequal state durations and a missing rich-only feature has one reproducible training/serving result and an explicit fallback decision.
+
+#### CA4-22 — Signal timestamp admission and expiry wakeups are incomplete
+
+**Status:** TODO. **Type:** timing/routing gap. **References:** [Layer 3 §6.3](specs/v3/layer3_learning_spec.md), [Layer 4 §5.1, §6](specs/v3/layer4_domain_spec.md).
+
+`emitted_at < snapshot.when < expires_at` rejects a signal stamped at the receiving cycle's timestamp. The order of serving publication relative to that barrier is not closed. Although expired signals must be rejected on evaluation, no owner is assigned to wake evaluation when an admitted signal expires; a materialized assisted claim can otherwise remain visible until another event/fallback cycle.
+
+**Correction:** define boundary inclusivity, publication ordering, and expiry-triggered reevaluation. **Closure:** same-time emission has a declared admission result, and expiry retracts the assisted conclusion under an explicit timing guarantee without depending on incidental external activity.
+
+#### CA4-23 — The literal numeric parser regex is double-escaped
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** executable documentation error. **References:** [Layer 2 §4](specs/v3/layer2_registries_spec.md).
+
+The inline regex had written the decimal separator as `\\.` rather than `\.`. Inline Markdown does not decode string-literal escaping, so compiling the old printed regex literally did not accept `12.5` as intended.
+
+**Correction and verification:** Layer 2 §4 now prints the directly usable regex and specifies a full-string match; its acceptance text names decimal, exponent and signed cases. A read-only Python check copied the expression from the Markdown and verified `12.5`, `.5`, `1e-3`, `+2`, `-0.25`, and `1.` match, while empty, `.`, `1,2`, surrounding whitespace, incomplete exponent, `NaN`, and a literal backslash do not. This is a specification check, not a runtime implementation test.
+
+#### CA4-24 — ApplyStepSource actor identity contradicts operational minimization
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** residual schema conflict after CA2-4/CA3-4. **References:** [Layer 0 §5](specs/v3/layer0_runtime_spec.md), [Layer 5 §4.2, §6](specs/v3/layer5_action_reactions_spec.md).
+
+Layer 0 explicitly gives `ApplyStepSource.actor_id` the identity of the person/service authorizing the action. Layer 5 includes that source but forbids actor/resident identity in ApplySteps and execution audit, restricting it to governance/configuration records.
+
+**Correction:** remove/prohibit that operational identity field for V3 or define an allowed non-identity governance reference, consistently across both layers. **Closure:** resident/admin attribution remains auditable in the ledger without copying identity into operational projections.
+
+**Verification.** Layer 0 §5 no longer defines `ApplyStepSource.actor_id`; fact and action provenance
+retain only actor category, source and correlation identity. Layer-5 governance transitions retain
+authenticated actor attribution. Layer 0 §13 acceptance rejects actor identity in an `ApplyStep`
+or execution audit while permitting correlation with the governance decision.
+
+#### CA4-25 — Closed diagnostic namespaces do not cover all required outcomes
+
+**Status:** TODO. **Type:** incomplete vocabulary. **References:** [Layer 3 §6.3.1](specs/v3/layer3_learning_spec.md), [Layer 5 §4.0, §5.2, §7.1.1, §7.2](specs/v3/layer5_action_reactions_spec.md).
+
+The Layer-5 registry declares two evaluation codes and only `late_recovery` for execution audit. Other requirements call for closed outcomes for stale administrative preconditions, unauthorized actors, late simulation jobs, cancellation, and alternative selection without fully assigning those codes and schemas to an owning namespace. Existing ApplyCall failures and automation-suppression reasons do not automatically define administrative and descriptor audit outcomes.
+
+**Correction:** map each required outcome to its actual registry/code/schema, including first-use states with no artifact. **Closure:** every acceptance scenario can emit a declared typed result without inventing a string or an ArtifactRef; diagnostics remain distinct from resident notification.
+
+#### CA4-26 — Admin-authored simulation recurrence conflicts with HA schedule authority
+
+**Status:** TODO. **Type:** undeclared exception. **References:** [Layer 0 §3.1](specs/v3/layer0_runtime_spec.md), [Layer 3 §8.4](specs/v3/layer3_learning_spec.md), [Layer 5 §7.2](specs/v3/layer5_action_reactions_spec.md).
+
+Layer 0 assigns administrator-authored recurrence to HA `schedule.*` and prohibits duplicated authoring/DST evaluation. Presence simulation instead takes an administrator-authored `WeeklyRecurrence` and derives sessions from it. CA2-2 establishes that this is not a CronEntry, but does not reconcile the broader schedule-authority rule.
+
+**Correction:** use the HA authority or explicitly scope the core session exception, including overlapping sessions. **Closure:** recurrence has one declared authority and deterministic behavior across DST, timezone edits, midnight, and overlapping occurrences.
+
+#### CA4-27 — Per-layer atomic reloads do not define a cross-layer commit
+
+**Status:** TODO. **Type:** incomplete configuration lifecycle. **References:** [Layer 2 §2.5](specs/v3/layer2_registries_spec.md), [Layer 3 §4.1.2, §5.2](specs/v3/layer3_learning_spec.md), [Layer 4 §4.2, §8](specs/v3/layer4_domain_spec.md), [Layer 5 §4.2](specs/v3/layer5_action_reactions_spec.md).
+
+Each layer specifies an atomic swap, but the composition lacks a common commit/rollback rule when a valid producer edit invalidates downstream consumers. Removed/disabled semantic claims have no explicit terminal historical publication, and transitive impact propagation is not fully specified. Persisted `effective_at` also needs a clear relationship to activation completed before a crash.
+
+**Correction:** define the composition barrier, invalidation/terminal outputs, and restart from a committed generation. **Closure:** removing or relocating a producer used by a resolver and Reaction leaves neither mixed generations nor an orphaned available historical claim.
+
+#### CA4-28 — Recursive immutability and invalid-evidence handling are inconsistent
+
+**Status:** TODO. **Type:** data-boundary ambiguity. **References:** [Layer 1 §3–4.3 and acceptance](specs/v3/layer1_substrate_spec.md), [Layer 0 §4.1, §6.2–6.4](specs/v3/layer0_runtime_spec.md).
+
+A frozen dataclass plus copied nested dicts/lists prevents neither nested mutation by a consumer nor alteration of a shared snapshot. The recursive freeze requirement is explicit for canonical JSON elsewhere but not equivalently closed for HouseFact payloads. Layer-1 acceptance also requires rejection of NaN in evidence while the fail-soft evidence rule replaces invalid evidence with `{}`; the rejected object must be identified. A canonical checkpoint layout would make depth compliance verifiable, but the earlier assertion that the bound itself makes those records impossible is not retained.
+
+**Correction:** specify deep immutability, depth counting, and whether invalid evidence rejects only evidence or the whole fact. **Closure:** consumer mutation cannot change shared data; admitted hold checkpoints round-trip within bounds; NaN evidence has one specified outcome.
+
+#### CA4-32 — Successful hold journaling conflicts with the no-I/O evaluation path
+
+**Status:** NOT_APPLICABLE (2026-09-29; owner: Codex). **Review sequence:** CA4-01 was set to TODO/awaiting while CA4-32 alone was IN_PROGRESS; this item was revalidated, then CA4-01 resumed as the only IN_PROGRESS item. CA4-01 removes the hold-specific journal; the user approved asynchronous lifecycle audit with an explicit crash gap. The original finding was revalidated against the current queue and no narrower CA4-32 ordering defect remained. **Type:** newly identified protocol-ordering conflict. **References:** [Layer 0 §4, §6.4, §8](specs/v3/layer0_runtime_spec.md).
+
+The mandatory journal protocol orders append/`fsync` before live-state update and end-of-cycle enqueue. Hold inference occurs on the evaluation path, which elsewhere must not perform disk I/O. Only the write-failure branch explicitly moves retry to the background and keeps suppression live. The successful path lacks an equally explicit asynchronous handoff and ordering contract.
+
+**Disposition (updated 2026-10-03):** the premise no longer exists. Layer 0 §4.1–4.2 accepts a complete validated changed event into the memory buffer and ordinary ordered durable queue without disk I/O on evaluation; CA4-01's bounded inline hold audit follows that rule. §6.2 updates live admission before durable audit completion, and §6.4 puts the lifecycle fact through the ordinary queue without a hold checkpoint or hold-specific `fsync`. A slow successful or failed background write cannot delay the live hold update; a crash before write may lose the event by the approved audit-gap rule. The original required journal ordering is historical and superseded by CA4-01. The still-unbounded retry queue is CA4-38, not a residual CA4-32 journal protocol. This is a document-level verification, not a runtime test.
+
+#### CA4-35 — Empty routine outcomes are both rejected and needed as negative samples
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** newly identified sampling contradiction. **References:** [Layer 3 §4.4.3](specs/v3/layer3_learning_spec.md).
+
+Episode construction rejects an empty resulting bundle. The estimator then requires a complete observable trigger window with no matching resident bundle to be a negative observation. A fully observed window with no resident control is such a negative, but its empty episode has already been rejected. The text does not separate invalid positive-candidate bundles from valid no-action denominator observations.
+
+**Correction:** retain complete empty outcomes as explicitly typed negative observations while continuing to prohibit empty actionable candidates. **Closure:** no-action, different valid bundle, ambiguous control, and unobserved window affect precision/lift denominators according to one declared rule, without conditioning the denominator on some action having occurred.
+
+**Verification.** Layer 3 §4.4.3 now retains a complete no-control window under the closed
+`no_resident_control` training tag, while only a non-empty `resident_bundle` can become a positive
+episode/candidate. Exact matches are positive; other valid bundles and no-control windows are
+negative for an eligible candidate. Incomplete, ambiguous, confounded or unavailable candidate
+windows are excluded. Acceptance covers all four outcomes and prevents a no-action candidate.
+
+#### CA4-37 — Mixed empty/non-empty keyword lists admit an always-matching category
+
+**Status:** DONE (2026-10-04; specification readiness). **Type:** validation contradiction. **References:** [Layer 2 §4, §9](specs/v3/layer2_registries_spec.md). This does not claim runtime implementation or testing.
+
+**Original gap, now closed:** staging rejected a category with no non-empty normalized keyword, while matching applied substring membership to each normalized keyword. A category containing `["", "vacation"]` therefore passed the old written category check and the empty substring matched every supplied summary. Acceptance already required an empty normalized keyword to be rejected.
+
+**Specification verification:** Layer 2 §4 now rejects an empty category list and every individually empty normalized keyword, including whitespace-only entries mixed with valid entries, before matching. Layer 2 §9 acceptance names those cases and verifies that no rejected mixed list can classify an unrelated summary. The existing matching rule and priority order are unchanged.
+
+#### CA4-38 — The durable retry queue has no resource bound or overflow policy
+
+**Status:** TODO. **Type:** newly identified degraded-mode resource gap. **References:** [Layer 0 §4.0–4.3, §8](specs/v3/layer0_runtime_spec.md).
+
+Failed durable batches retain their ordered facts for retry while new in-process facts continue to advance. Memory-buffer and durable-store limits do not specify a limit for this separate pending queue. During a prolonged storage outage, continuing non-coalescible events can therefore grow it without a declared bound. The contract cannot simultaneously guarantee unlimited retention of failed writes, finite memory, and uninterrupted admission without specifying a degradation choice.
+
+**Correction:** declare the queue budget, retry ordering, overflow/degradation policy, and corresponding lost-history coverage reporting. **Closure:** a prolonged failed-store scenario stays within the declared resource policy and never reports dropped events or gaps as durably complete history.
+
+
+### Later P1/P2 findings — priority stated on each entry
+
+#### CA4-39 — Runtime confirmation lacks a lifecycle contract
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P1. **Origin:** R5. This does not claim V3 runtime implementation. **Original gap:** Layer 0 referred to an active runtime confirmation request and checkpointed its transitions without defining identity, expiry, response races or restart authority. **Specification verification:** Layer 0 §7.4.1 defines one typed request per recovery episode/channel, a 24-hour core ceiling, current-proposal invalidation, serialized response recheck, terminal outcomes, immediate checkpoint acknowledgement, and rejection of every pre-restart id. Layer 5 §8, overview and recap use the same boundary. The scenario review is [CA4-39](specs/v3/reviews/CA4-39.md); it separates request authority from physical command confirmation and hold restoration.
+
+#### CA4-40 — Calendar consumer bypasses the frozen view
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P1. **Origin:** B1. This does not claim runtime implementation or testing. **Original gap:** Layer 2 §3.1 told a predictive Layer-4/5 consumer to query `upcoming_starts_within` directly, while Layer 0 §4.1 and Layer 4 §5.1 require Layer 5's staged `FrozenCalendarView`. **Specification verification:** Layer 2 §3.1 now sends only the Layer-5 policy through its staged `CalendarViewRequirement` and frozen `DecisionSnapshot`; Layer 4 transports the view without classifying it. Layer 0 §3.4/§4.1 already owns cache prefetch, freeze and immutable requirement reads. Layer 5 §8 now rejects a mid-cycle direct query or horizon expansion after the barrier and checks a later cache refresh cannot alter that cycle's decision.
+
+#### CA4-41 — Initial semantic episodes are both absent and required
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P1. **Origin:** B2. This does not claim runtime implementation or testing. **Original gap:** Layer 4 §3.1 said no initial resolver emits `SemanticEpisode`, while §9.3 defined `presence.departure`/`presence.return` as occurrences consumed by Layer 5. **Specification verification:** Layer 4 §3.1 and §9 now register exactly one initial casa `presence` transition adapter producing those two types under §9.3's identity, continuity and restart rules. Layer 4 §10 acceptance tests both transitions, unchanged/unavailable input, startup seeding and rejection of unregistered initial episode producers. No generic state-to-event mirror was introduced.
+
+#### CA4-42 — Descriptor consent requirement is not declared
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P1. **Origin:** B3. **Original evidence:** Layer 5 §4.2 permitted `ReactionAuthorityTransition.household_consent=None` only without a descriptor consent gate, but `RegisteredReactionDescriptor` did not declare that gate. Layer 5 §3.2 mapped consent to `action_guard_active` while Layer 3 §6.3.1 excluded authority decisions from availability occurrences. **Decision:** the registry declares frozen `requires_household_consent` per descriptor version; the developer requires consent for the three environmental descriptors, both programmed descriptors and the generic routine, all six Initial-V3 descriptors. **Closure:** the exact descriptor property controls consent-field shape and common authority projection; missing/revoked consent and admin disablement block action without an availability occurrence or false guard-failure code. [CA4-42 impact and scenario review](specs/v3/reviews/CA4-42.md) records all six; no V3 runtime test was run.
+
+#### CA4-43 — Comfort trajectory mode selection is incomplete
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P1. **Origin:** narrower B4. **Original evidence:** Layer 5 §7.1 permitted one `HvacTrajectoryBinding` to declare both heating and cooling, possibly on one channel, without a mode selector. **Developer decision:** one explicit desired mode from a fixed admin selection or staged typed current fact; observed `off` must not prevent a permitted recovery start. **Closure:** each `(scope, mode)` Reaction is eligible only when its mode equals the one desired mode in the frozen snapshot; unavailable/ambiguous desired mode abstains, and conflicting active physical modes block safely. Shared-channel and separate-endpoint scenarios are in [CA4-43 impact and scenario review](specs/v3/reviews/CA4-43.md). No V3 runtime test was run.
+
+#### CA4-44 — Common Reaction authority lacks common Layer-8 commands
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P1. **Origin:** B5. **Original evidence:** Layer 5 §7.1.1 named staging, promotion, consent and disablement commands only for comfort trajectory; other descriptors claimed the common authority lifecycle without callable operations. **Closure:** Layer 5 §4.2 now defines one typed Layer-8 command surface for all six descriptors, with exact generation/authority preconditions, authenticated actor, operation-id retry, atomic failure, and shared promotion/consent/disablement. Comfort prerequisite staging remains its sole descriptor-specific preparation command; §7.1.1 no longer registers duplicate aliases. Exact diagnostic-result vocabulary remains CA4-25. [CA4-44 impact and scenario review](specs/v3/reviews/CA4-44.md) records the cases; no V3 runtime test was run.
+
+#### CA4-45 — DecisionSnapshot omits frozen recovery authority input
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P1. **Origin:** B6. This does not claim V3 runtime implementation. **Original evidence:** Layer 0 §7.4 required current recovery state and target baseline, but Layer 4 §5.1's `DecisionSnapshot` carried neither. **Specification verification:** Layer 0 now freezes a `FrozenRecoveryView` with state, episode and CA4-03 per-channel baselines; Layer 5 freezes current `FrozenReactionAuthorityView`; the coordinator attaches both to `DecisionSnapshot` at the common barrier and includes their fingerprints in `snapshot_id`. Layer 4 transports them opaquely, Layer 5 uses them without a later mutable read, and the dispatch fence still rejects post-barrier revocation. The [CA4-45 review](specs/v3/reviews/CA4-45.md) covers retry, unreadable input and post-barrier changes.
+
+#### CA4-46 — Resident-control and correction events lack reserved claims
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P1. **Origin:** B7. **Original evidence:** Layer 0 §4 reserved three other event types but omitted `actuator.resident_control` and `actuator.correction`; Layer 1 §3.1 did not identify them. **Verification:** Layer 0 §4 now reserves exclusive event claims for the Layer-0 ingress and Layer-5 attribution producers, with their exact value contracts owned by Layer 0 §5.1.1 and Layer 5 §6.1. Layer 1 §3.1 identifies both as audit/learning event facts, not rendered `HeimaEvent`s. Layer 0 §13 rejects another owner's overlapping claim at staging. This closes claim ownership and event shape; CA4-09 retains its separate correction-evidence semantics. **Closure:** one exclusive producer and event/value claim per fact type; collisions rejected at staging.
+
+**Subsequent closure (2026-10-07):** CA4-09 now defines the correction-evidence semantics separately owned by that item. The resident-control event retains the exact three-field value contract established here.
+
+#### CA4-47 — Referenced contract types and solar producer are missing
+
+**Status:** DONE (2026-10-07; specification readiness). **Severity:** P1. **Origin:** B8. This does not claim V3 runtime implementation or testing.
+
+**Original gap.** Layers 0/3/4/5 used `HistoryViewRequirement`, `ScopeKind`, `TimeRange`, `UncertaintySummary`, `OperatingEnvelopeRef`, `TypedEffectSummary`, `PhysicalOccupancyReference`, `EffectShape`, `ActuationBundle`, `LocationSet`, `SemanticAvailabilityContract`, `ClaimParameterSchema`, and `ActivityEvidenceSlot` without complete owner definitions. Layer 3 required `external.solar_elevation`/`external.solar_azimuth` from an unnamed core Layer-2 producer.
+
+**Correction.** The owner contracts now define the current names; `PhysicalOccupancyReference` reuses the same-room `occupancy.physical` `FactSlot` and physical provenance, while CA4-48 already replaced `LocationSet` with `Location`. The two future-only hypothesis fields reuse a bounded JSON object and `CanonicalEnvelope`, with publication still gated on a future registered uncertainty schema. Two core-generated Layer-2 Sensors read one `sun.sun` snapshot, convert its degree attributes to canonical radians, gate freshness and range, and exclusively claim the casa solar facts. The per-opening formula retains its separate orientation; its direct component is zero below the horizon. The [CA4-47 impact and scenario review](specs/v3/reviews/CA4-47.md) records normal, unavailable, recovery, concurrence and authority cases. Verification is specification-only; no V3 runtime test has run.
+
+#### CA4-48 — Scope forms duplicate Location semantics
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P2. **Origin:** B9. **Original evidence:** Layer 3 §4.1.1 and Layer 4 §4.2 used `LocationSet` and `house` beside Layer 1's `Location(scope="rooms")` and `casa`. **Closure:** both staging paths now use the one Layer-1 `Location`/`LocationKey` contract and fingerprint resolved zone membership; equal explicit physical scopes cannot acquire a second spelling. [CA4-48 impact and scenario review](specs/v3/reviews/CA4-48.md) records the cases; no V3 runtime test was run.
+
+#### CA4-49 — Activity and version identifiers lack one canonical vocabulary
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P2. **Origin:** B10. **Original evidence:** Layer 4 §3.1 illustrated `activity.work` while the defined profile is `working`; Layer 3 §4.4.4 used `sleep` beside Layer-4 `activity.sleeping`. Those two phrases now use `activity.working` and current `presence=away`, respectively, without inferring a house-wide sleep claim from room activity. Layer 5 §3/§3.1 now owns exact, distinct wire forms: the outer candidate kind version is JSON integer `1`, while the Initial-V3 relation-profile version is JSON string `"1"` in an exact `RelationProfileRef` object. Layer 3 §6.4 and Layer 5 §8 use those forms and reject coercion or `profile_id@version` as wire input. **Closure:** exact version serialization is declared at the owning contracts with no alternate accepted spelling.
+
+#### CA4-50 — Quiet-hours guard is referenced without a registered capability
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P2. **Origin:** B11 narrowed. **Evidence:** Layer 5 §3.2/§6 includes quiet-hours among guard/admission causes but its bootstrap capability inventory had no quiet-hours entry or other declared owner. **Closure:** identify the typed owner, current input and applicable suppression behavior or remove the unsupported guard reference. Other B11/B12 editorial drift remains within CA4-29/30 and is not duplicated here.
+
+**Approved resolution:** the shared `ReactionGuard` registry now includes
+`quiet_hours.v1` with separate version field `"1"`. It reads only the exact
+casa-scoped Layer-2 boolean state `quiet_hours.active` from the frozen snapshot;
+an HA `schedule.*` helper can supply that state through the existing binding and
+interpretation path. Only descriptor intents that declare the capability are
+blocked by active or unverifiable quiet hours. Layer-6 notification quiet hours
+remain a separate future routing contract. The current presence-simulation
+guard contract id also uses the approved `.v1` form, while earlier `@1` mentions
+above remain historical decision text. [CA4-50 impact and scenario review](specs/v3/reviews/CA4-50.md)
+records the evidence; no V3 runtime test has run.
+
+**Appendix B triage:** B1–B3, B5–B10 are confirmed as the findings above. B4 is narrowed to mode selection; its asserted unavoidable two-Reaction conflict is rejected because one binding can contain both modes. B11's quiet-hours contract becomes CA4-50; its stale references/headings belong to CA4-30. B12 belongs to CA4-29/30. No other Appendix-B claim is treated as a CA4-01 correction.
+
+#### Post-CA4-01 full reread findings (2026-10-04)
+
+A complete line-by-line reread of Layer 0–5, the overview, both PlantUML diagrams, the CA4-01
+serialization examples and the recap after CA4-01 closure found CA4-51–60. Each item is new: it is
+not covered by an open CA4 entry, except where an entry explicitly says it extends one. Four of them
+(CA4-52, CA4-56–58) come from one cross-cutting check: **V3 generalizes what V2 specialized per device
+domain.** The shared mechanism is `Actuator` + `ActuatorChannel` (`channel_kind`, observable-state
+contract, actuation adapter), one `ApplyStep` protocol, one channel hold, one `ReactionDescriptor`
+mechanism and generic learners. A descriptor may legitimately specialize *behavior* (presence
+simulation and comfort trajectory are different policies); it must not reintroduce specialization by
+*device type* or turn a common mechanism into a descriptor-private one.
+
+**Working rules for these items.** Read the cited lines in full before editing. For an item marked
+**Decision required**, first show the developer the problem with the concrete example given, then the
+listed options weighed for simplicity, effectiveness and real resolution, and wait for an explicit
+choice; do not pick silently. Prefer the smallest correction that removes the contradiction; do not
+introduce a new subsystem, registry or type when an existing one can express the rule. Every change
+updates the owning acceptance criteria and every dependent reference (overview, recap, examples).
+
+#### CA4-51 — Release mode is undeclared for the two step-programmed descriptors
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P1. **Origin:** 2026-10-04 reread. The developer explicitly chose `next_reaction_step` for both Initial-V3 step-programmed descriptors. This does not claim runtime implementation or testing.
+
+**Original problem, now closed.** A channel hold is released either after `fixed_duration` or at the owning activation's
+`next_reaction_step` (Layer 0 §6.1–6.2, Layer 5 §6.0). Layer 5 previously fixed the mode only for the four
+trigger-driven descriptors ([Layer 5:1533–1537](specs/v3/layer5_action_reactions_spec.md)). The two
+remaining Initial-V3 descriptors, `security.presence_simulation` (§7.2) and
+`environment.planned_comfort_trajectory` (§7.1), have both prerequisites for `next_reaction_step`
+(stable future step identity and a versioned `normal_exit_contract`) and both mention an "active
+next-step hold" (Layer 5:1725, Layer 5:1992–1994), yet neither declared which release mode it used.
+
+**Former consequences.** (a) Layer 2 requires `Actuator.hold_duration` only when a channel is staged for a
+fixed-duration Reaction (Layer 2:1670–1677), so staging could not decide whether a light or HVAC
+Actuator used only by these descriptors needed `hold_duration`. (b) The old light and HVAC fixtures in
+[CA4-01 serialization examples](specs/v3/ca4_01_serialization_examples.md) used
+`release_mode="fixed_duration"` with `expires_at`; the approved mode requires `expires_at=null` and
+a non-null `anchor_step_id`, now applied in those fixtures.
+
+**Example.** Presence simulation turns the living-room light on at 20:00 (episode 3, step 1) and
+plans a switch-off at 21:10 (step 2). At 20:20 the resident dims it. Under `next_reaction_step` the
+hold lasts until step 2 at 21:10, which then releases it and switches the light off. Under
+`fixed_duration` with a 30-minute `hold_duration` the hold expires at 20:50 and the 21:10 step is an
+ordinary step.
+
+**Approved decision.** Both descriptors declare `next_reaction_step`. Lights/HVAC used only by them
+need no `hold_duration`; a fixed-duration Reaction on the same Actuator still requires one. The
+other considered options were fixed duration for both, or different modes per descriptor.
+
+**Specification verification.** Layer 5 §3.2 declares one descriptor-version-fixed
+`hold_release_mode` and validates the existing plan compiler's bounded timed-step identities plus
+`normal_exit_contract`. Its §7.1/§7.2 descriptor entries declare the approved mode and stable step
+identity rules; §8 exercises different/repeated target steps, guard veto, normal exit, anchor and no
+expiry. Layer 2 §6 acceptance confirms the `hold_duration` condition. The
+[serialization examples](specs/v3/ca4_01_serialization_examples.md) now have non-null prior scheduled
+anchor ids, per-facet step ids and null expiry for light/HVAC. A JSON round-trip/byte-length check
+recomputed all nine payloads: light 1827/707/909 bytes, hypothetical valve 1289/638/804 and HVAC
+1345/681/862, each depth two. Hold transition operation ids are distinct from hold ids. CA4-18
+remains open for the separate next-job re-arm behavior after temporary presence loss.
+
+#### CA4-52 — Presence simulation admits endpoints by `actuator_role`, which Layer 2 forbids
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P1. **Origin:** 2026-10-04 generalization check. This does not claim runtime implementation or testing.
+
+**Original problem, now closed.** Layer 2 says `actuator_role` is a coarse, open-string hint for lookup convention and
+sibling discovery only, and is "never ... used as an unstaged Reaction admission vocabulary"
+([Layer 2:1542–1549](specs/v3/layer2_registries_spec.md)); admission is by registered
+`channel_kind` and adapter (Layer 2 §6.1). Layer 5 §7.2 nevertheless requires each presence-simulation
+endpoint to have `actuator_role="light"` ([Layer 5:1938–1940](specs/v3/layer5_action_reactions_spec.md)).
+This reintroduces device-type specialization through a free string.
+
+**Example.** A smart plug driving a floor lamp exposes a registered `light_state`-compatible channel
+but carries `actuator_role="switch"`; it is rejected although its channel contract qualifies. A
+mistyped role `"Light"` silently excludes a real light; a wrong role `"light"` on a non-light switch
+passes the role check.
+
+**Correction.** Admit an endpoint by its registered `channel_kind`, observable-state contract and
+adapter compatible with the descriptor's `light_state` intent, plus the administrator's explicit
+selection (already required). `actuator_role` may only suggest candidates in the Layer-8 picker.
+
+**Specification verification.** Layer 2 §6 describes role as a discovery/UI hint, not a Reaction
+lookup or admission key. Layer 5 §7.2 stages only an explicitly selected compatible channel and
+adapter; §7.2.1 accepts a qualifying room lamp with role `switch` and rejects role `light` without a
+compatible channel. A search across Layer 3/5 found no other role-based admission. Overview and
+recap carry the same summary. Descriptor-specific deterrence behavior remains, while the generic
+Actuator capability boundary stays device-agnostic.
+
+#### CA4-53 — "One consumer per signal type" contradicts the shared assist signal type
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P2. **Origin:** 2026-10-04 reread. This does not claim runtime implementation or testing.
+
+**Original problem.** Layer 3 §6.3 said an `InferenceSignal` type "identifies exactly one allowed semantic
+resolver" ([Layer 3:2602](specs/v3/layer3_learning_spec.md)); Layer 4 §3 and §6 repeat "sole
+consumer" for the type ([Layer 4:37, 235](specs/v3/layer4_domain_spec.md)). The one initial type
+`indirect.semantic_assist.v1` is routed to two resolver kinds, `room_occupancy` and `activity`
+(Layer 4 §6 table), through distinct `IndirectAssistanceContract`s.
+
+**Correction.** Uniqueness belongs to each frozen `(signal_type, contract_id/version)` and its one
+resolver kind, claim-parameter tuple and legal scope kinds; an instance's exact subject scope is
+checked by the existing routing index. The shared signal type remains unchanged.
+
+**Specification verification.** Layer 3 §6.3 and Layer 4 §3/§6 now state the same contract-level
+rule. Layer 3 §9 and Layer 4 §10 acceptance reject routing one contract to two resolver kinds,
+wrong claim parameters or an incompatible subject scope, while distinct contracts may reuse the
+one signal type for `room_occupancy` and `activity`.
+
+#### CA4-54 — Two canonical encodings for instants and durations
+
+**Status:** DONE (2026-10-07; specification readiness). **Severity:** P2. **Origin:** 2026-10-04 reread.
+This does not claim runtime implementation or testing.
+
+**Original problem.** Layer 1 defines `EvidenceInstant` as UTC with six fractional digits and the literal
+`+00:00` offset ([Layer 1:302, 313–319](specs/v3/layer1_substrate_spec.md)); Layer 0 uses `Window`
+(float seconds) for durations and its acceptance requires `Window` wherever a duration field exists
+([Layer 0:1912–1914](specs/v3/layer0_runtime_spec.md)). Layer 3 serializes artifacts with RFC 3339
+`Z` instants and integer-millisecond durations ([Layer 3:632–633](specs/v3/layer3_learning_spec.md)),
+types its dataclasses with `datetime`/`timedelta` (for example Layer 3:183, 226, 613, 2625) and uses
+`Window` in the same layer for `max_ttl` (Layer 3:1165).
+
+**Original counterexample.** The same instant serialized as `2026-10-04T08:00:00.000000+00:00` in a fact and
+`2026-10-04T08:00:00Z` in an artifact manifest: two canonical byte forms for one value, so a
+fingerprint that crosses the boundary (evidence span, `valid_until`, `evidence_through`) is
+implementation-dependent.
+
+**Approved rule, reaffirmed.** Solution A was already the project rule: every declared V3 instant
+uses Layer-1 `EvidenceInstant`, including artifact manifests, and every positive elapsed duration
+uses Layer-0 `Window` with canonical seconds. The former A/B options reopened an approved decision
+in error. Layer-3 `Z` instants and integer-millisecond durations are removed as contract encodings;
+millisecond calculations inside a selector are temporary arithmetic. A zero point-outcome horizon
+uses `None`; civil weekday/hour/minute coordinates remain local calendar components.
+
+**Closure and verification.** The Layer-1 and Layer-0 owners state the single encodings; affected
+Layer-0–5 fields, Layer-3 artifact/result contracts, acceptance, overview and recap use them.
+The [CA4-54 impact and scenario review](specs/v3/reviews/CA4-54.md) checks fact/artifact identity,
+model horizon, zero horizon, calendar/DST and selector arithmetic. This is textual contract and
+scenario evidence; the V3 runtime is not implemented.
+
+#### CA4-55 — A checkpoint write failure is mapped onto `degraded_recovery`
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P2. **Origin:** 2026-10-04 reread.
+
+**Problem.** Layer 0 §7.1 defines `degraded_recovery` as "many entities are currently unavailable"
+([Layer 0:1650](specs/v3/layer0_runtime_spec.md)); §7.3 says a failed checkpoint replacement keeps
+the dirty flag for retry and emits a diagnostic (Layer 0:1681–1684). §8 instead says Recovery treats
+the next cycle "as if still `degraded_recovery`" after a checkpoint write failure (Layer 0:1812–1814).
+One classification therefore has two unrelated meanings, and consumers of `RecoveryState` cannot tell
+an outage from a storage problem.
+
+**Correction.** Choose one rule: a checkpoint write failure is a persistence diagnostic with retry
+(the §7.3 rule) and leaves `RecoveryState` untouched, or, if a conservative signal is really needed,
+it uses an explicit separate diagnostic/capability rather than `degraded_recovery`. Align §8 with §7.
+
+**Closure.** `degraded_recovery` has the single §7.1 meaning; §7.3, §8, §10 and acceptance agree on
+checkpoint-failure behavior.
+
+**Verification:** [CA4-55 impact and scenario review](specs/v3/reviews/CA4-55.md) checks
+the normal-input/write-failure and unavailable-input cases against Layer 0 §7.1, §7.3,
+§8, §10 and acceptance. This is specification review, not V3 runtime testing.
+
+#### CA4-56 — A concrete HVAC target contract is defined inside the registry specification
+
+**Status:** DONE (2026-10-04; specification readiness). **Severity:** P2. **Origin:** 2026-10-04 generalization check. This does not claim runtime implementation or testing.
+
+**Original problem, now closed.** Layer 2 is the device-agnostic registry. Its §6.1 defined the concrete
+`hvac_state.trajectory_setpoint.v1` facet set, value domain and exclusions
+([Layer 2:1654–1661](specs/v3/layer2_registries_spec.md)), which is Layer-5 target-contract content
+for one descriptor. Each future descriptor would then add its own device paragraph to Layer 2,
+recreating per-device specialization in the generic layer.
+
+**Correction.** Layer 2 retains only the generic registered-channel, observable-state, adapter and
+bounded-facet contract. Layer 5 §7.1 is the sole owner of the concrete HVAC target schema.
+
+**Specification verification.** Layer 2 §6 no longer names the HVAC target id or defines its facets.
+Layer 5 §7.1 defines exactly `mode`/`setpoint_c`, permitted heating/cooling modes, finite bounded
+Celsius setpoint and excluded facets; its deterministic acceptance rejects incompatible channel or
+adapter bindings and malformed targets. No second device-specific action path was introduced.
+
+#### CA4-57 — The common guard mechanism is named and framed as environmental
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P2. **Origin:** 2026-10-04 generalization check. **Decision approved:** rename to `ReactionGuard*`.
+
+**Problem.** `EnvironmentalGuardCapability`, `EnvironmentalGuardContract`,
+`EnvironmentalGuardProfile(Generation)` and `EnvironmentalGuardCapabilityRef` (Layer 5 §3.2) are the
+guard mechanism for every descriptor, including the security/lighting
+`security.presence_simulation.interior_lighting@1` contract (Layer 5:218–221) and its `presence`
+capability. The name ties a common mechanism to one domain and invites a second, parallel guard
+mechanism for non-environmental descriptors.
+
+**Options.** (A) Rename to a neutral `ReactionGuard*` family across Layer 3, Layer 5, overview and
+recap (no backward compatibility constraint). (B) Keep the names but state explicitly in Layer 5 §3.2
+that they are the sole common guard mechanism for all descriptors. Recommendation to present: A.
+
+**Closure.** One guard mechanism with a name and definition that do not imply a domain; no
+descriptor needs or defines a second guard mechanism.
+
+**Verification:** [CA4-57 impact and scenario review](specs/v3/reviews/CA4-57.md)
+checks the single registry across environmental, security and routine descriptors.
+Historical decision quotations above retain the former names; current Layer 3/5
+contracts use `ReactionGuard*`. No V3 runtime test was run.
+
+#### CA4-58 — Profile-specific learned outputs become cross-layer types
+
+**Status:** DONE (2026-10-05; specification readiness). **Severity:** P2. **Origin:** 2026-10-04 generalization check. **Decision approved:** one profile-registered output schema.
+
+**Problem.** The thermal profile introduces its own cross-layer dataclasses,
+`ThermalResponseParameter` and `ThermalEvidenceGateCalibration` (Layer 3 §4.8), consumed by Layer 5
+§7.1. That is acceptable for one profile, but the specs give no rule for the next one: each new
+relation profile could add its own Layer-3→Layer-5 type, gate type and validator, which is the V2
+pattern of one bespoke pipeline per feature.
+
+**Options.** (A) Keep typed per-profile outputs, but require each to be a schema registered by its
+`RelationProfileRef` (output schema id/version in the relation-profile registry) and consumed only
+through that registration, so adding a profile adds a registered schema, not a new contract path.
+(B) Leave as is and record the rule only as guidance. Recommendation to present: A, applied to the
+existing thermal types without changing their fields.
+
+**Closure.** The relation-profile contract states how a profile publishes a policy-consumable output;
+the thermal types are expressed through that rule; no Layer-5 code path is specific to one profile's
+output type beyond the descriptor that declares it.
+
+**Verification:** [CA4-58 impact and scenario review](specs/v3/reviews/CA4-58.md)
+checks the exact profile/schema/artifact hand-off and distinguishes the thermal
+release calibration from a learner-produced output. Layer 3 and Layer 5 acceptance
+name the shared path. No V3 runtime test was run.
+
+**Related extensions (no new ID).** CA4-44 is extended: promotion, household consent, consent
+authority and disablement are common `ConfiguredReaction` authority (Layer 5 §4.2), but Layer 5
+§7.1.1 defines them as comfort-trajectory commands. The closure of CA4-44 must define one common
+command set reused by every descriptor, keeping only `stage_comfort_trajectory_prerequisite_generation`
+descriptor-specific. CA4-12 covers the original environment-shaped candidate
+gap; its per-member numeric/effect fields were partially corrected on
+2026-10-07, while the profile/objective catalog remains open.
+
+### P3 — Low
+
+#### CA4-29 — Current reading paths still lead to superseded models and diagrams
+
+**Status:** DONE (2026-10-04; current reading path). **Type:** documentation drift/duplication. **References:** [recap](v3_architecture_recap.md), [Graphviz](img/v3_architecture.dot), [overview](specs/v3/architecture_overview_defined_layers.md), [support diagram](specs/v3/architecture_support_governance.puml), [HouseFact draft](v3_house_fact_draft.md), [registry draft](v3_sensors_actuators_draft.md), [learning draft](v3_pattern_learner_draft.md), [domain draft](v3_domains_draft.md), [matching draft](v3_template_matching_draft.md).
+
+Historical drafts contain superseded Freshness, proposal-as-HouseFact, registry/strategy, global-house-state, and plugin-action models. Their historical existence is legitimate. The 2026-10-04 architecture alignment removed the obsolete Graphviz diagram from the recap's current reading path and marked its source historical; it corrected the overview's trajectory gate order, the support diagram's Layer-3 serving description and Layer-4 availability route, and the recap's current analyzer-to-candidate path. The remaining CA4-29 work is to audit and mark the older draft links and other current reading paths so they cannot reintroduce retired models. This partial correction does not close the item.
+
+**Correction:** clearly mark historical documents and link their successors; align the current overview/recap/diagrams with authoritative contracts. **Closure:** the current reading path cannot reasonably reintroduce a retired authority or data model; historical rationale remains preserved.
+
+**Verification.** All five older drafts now carry prominent historical banners and links to their
+owning layer contracts. The recap's current reading pointers use Layers 0, 1 and 3; its old Graphviz
+source and rendered image are identified as historical, while the two PlantUML diagrams and overview
+remain the current path. Layer 3's related-documents note also gives its defined spec precedence.
+The drafts and old diagram remain available solely as decision history.
+
+#### CA4-30 — Approval metadata, references, and audit headings remain stale
+
+**Status:** DONE (2026-10-04; specification navigation). **Type:** register/reference maintenance. **References:** [index](specs/INDEX.md), [Layer 0](specs/v3/layer0_runtime_spec.md), [Layer 1](specs/v3/layer1_substrate_spec.md), [Layer 2](specs/v3/layer2_registries_spec.md), [Layer 4 §3.1, §9](specs/v3/layer4_domain_spec.md), [Layer 5 §7](specs/v3/layer5_action_reactions_spec.md), RC/CA3 sections above.
+
+Layers 0–2 are marked Defined but retain approval/discussion caveats; Layer 4 retains separate-approval wording beside defined profiles. Layer 5's broad statement that active descriptors may be deterministic/direct conflicts with its learner-only trajectory restriction. Some Layer-0 diagnostics references still point to §9, now telemetry rather than §10 diagnostics; an acceptance identity remains `(policy_id, snapshot_id)` without generation. The index omits V3, and the RC/CA3 headings remain open although their individual findings are resolved. A CT-3 backlink should also point clearly to the current normative mapping.
+
+**Correction:** reconcile status, applicability, vocabulary, and links without rewriting historical decisions. **Closure:** V3 is navigable from the index, section references resolve to their intended contract, and completed audit groups have accurate aggregate status.
+
+**Verification.** The index links the six defined V3 layer specs and separates them from runtime
+V2. Layers 0–2 no longer demand an obsolete document-wide approval, Layer 4 names its defined
+initial profiles, and Layer 5 limits admin-direct authoring to descriptors that admit it. Current
+diagnostic cross-references point to Layer 0 §10, the Layer-5 CT-3 backlink points to Layer 3
+§6.4.1, and resolved RC/CA3 group headings say so. The alleged old `(policy_id, snapshot_id)`
+acceptance identity was already absent on recheck; Layer 5's current keys include reaction,
+configuration generation, activation and snapshot (§4.2/§8). Historical backlog quotations keep
+their original wording as dated decision records.
+
+#### CA4-59 — Wrong cross-references and stale statements in the layer specifications
+
+**Status:** DONE (2026-10-04; specification consistency). **Severity:** P3. **Origin:** 2026-10-04 reread. Complements CA4-30 (which keeps the
+Layer-0 §9→§10 diagnostics references and the CT-3 backlink); each line below is a separate fix.
+
+1. [Layer 1:139](specs/v3/layer1_substrate_spec.md) cites "(§6.4)"; Layer 1 has no §6.4. Intended:
+   Layer 0 §6.1 (staging proof) and §6.4 (runtime check).
+2. [Layer 3:1786](specs/v3/layer3_learning_spec.md) cites "item 6's eligibility gates" with no
+   resolvable target. Intended: the evidence-gated `hvac_thermal_response` gates of Layer 3 §4.8 /
+   §8 item 6; write the explicit section reference.
+3. [Layer 4:478](specs/v3/layer4_domain_spec.md) cites "§3.5"; Layer 4 has no §3.5. Intended:
+   Layer 2 §3.5.
+4. [Layer 3:83](specs/v3/layer3_learning_spec.md) lists "presence simulation" as an example learning
+   family, contradicting Layer 3 §7 and the overview (it is an admin-direct Layer-5 descriptor, not a
+   learning family). Remove it from the example list.
+5. Layer 0 §6.1 uses `FactSource(kind="timeout", actor_type="scheduler")` for hold expiry
+   ([Layer 0:1446](specs/v3/layer0_runtime_spec.md)), while `timeout` is defined as an elapsed
+   response/confirmation window (Layer 0:1117–1118). Either widen the `timeout` definition to cover
+   owner-scheduled deadline expiry or use `system`; keep one meaning.
+6. [Layer 1:129](specs/v3/layer1_substrate_spec.md) still describes `HoldLifecycleValue` as "bounded
+   hold key, event and origin fields"; it now also carries value and expectation-source maps. Use a
+   neutral description that refers to Layer 0 §6.1.
+7. [Layer 1:290–293](specs/v3/layer1_substrate_spec.md) says "neither Layer 3 nor Layer 5" may
+   pre-render or persist `automation.availability`; Layer 4 is also a suppression owner. Name all
+   three.
+8. [Layer 0:87–88](specs/v3/layer0_runtime_spec.md) calls configured policies "Layer 4/5 concerns";
+   Layer 4 has no policies. Say Layer 5. In the same file, the `AtJob.owner` example "manual_hold"
+   (Layer 0:111) should use the divergence-hold owner name.
+9. "Not yet decided: none remains" in Layer 0 §12, Layer 1 §9 and Layer 2 §8 contradicts open CA4
+   items against those layers (and Layer 0 §8 itself cites CA4-38). Replace with a short pointer to
+   the open CA4 IDs that affect the layer, or remove the claim.
+10. **Already addressed (2026-10-04):** the [CA4-01 serialization examples](specs/v3/ca4_01_serialization_examples.md)
+    now use distinct 64-hex `HoldLifecycleValue.operation_id` values and `hold_id` values for all
+    three cases; their byte sizes were recomputed after the CA4-51 fixture alignment.
+
+**Closure.** Every listed reference resolves to the intended contract and every listed statement
+agrees with its owning section.
+
+**Verification.** Layer 1 now points to Layer 0's hold proof and runtime validation; Layers 3/4
+use the owning profile and computer-fact sections; Layer 0 uses `system`/`scheduler` for a scheduled
+hold expiry while `timeout` retains its response-window meaning. The learning-family list, hold-value
+description, availability owners, configured-policy owner, and open-issues sections were corrected.
+The three hold serialization examples use distinct transition operation ids. This closes the listed
+documentation defects, not the separate CA4-30 cross-references.
+
+#### CA4-60 — Recap/overview drift and duplicated normative prose
+
+**Status:** DONE (2026-10-04; specification consistency). **Severity:** P3. **Origin:** 2026-10-04 reread. Complements CA4-29.
+
+1. The recap's Layer-6 section says quiet hours are active on "an active `sleeping` `HouseFact`"
+   ([recap:486](v3_architecture_recap.md)). Layer 4 §9.5 makes `activity.sleeping` room-scoped and
+   requires a separately reviewed claim for any casa quiet/sleep context. Rephrase as a future
+   Layer-6 input to be defined (link CA4-50), without naming `sleeping` as the trigger.
+2. The recap's "What's still genuinely open" list is partly obsolete
+   ([recap:567, 573–574](v3_architecture_recap.md)): `TemplateRequirement`, `proposal_type`/
+   `reaction_type` and `v3_domains_draft.md` belong to retired models. Replace them with current
+   terms (`ReactionDescriptor`, `candidate_kind`, `reaction_descriptor_id`) or drop resolved items.
+3. Duplication: the channel-hold paragraph in overview §4 (overview lines 93–126) and the recap's
+   Divergence Hold Manager bullet restate Layer 0 §6 and Layer 5 §6.0 in dense normative prose, so
+   every hold change needs four edits. Reduce each to a 3–5 line summary that links the owning
+   sections.
+4. Duplication: Layer 1 §3.1 lists the complete `reaction.follow_up` context field set
+   ([Layer 1:269–287](specs/v3/layer1_substrate_spec.md)), which Layer 5 §6.0
+   (`ReactionFollowUpOccurrence`) already defines. Keep in Layer 1 only the mapping rule (fixed
+   occurrence fields plus flattened `expected.<facet>`/`observed.<facet>`, `subject`→`where`,
+   `occurred_at`→`when`) and reference Layer 5 for the field list.
+5. **Already addressed (2026-10-04):** the CA4-01 entry is compact. Its status, approved A1/B1/C2
+   decisions and closure evidence are at the top; the full decision trail is preserved in
+   [the CA4-01 review record](ca4_01_review_record.md). This subitem is no longer a CA4-60 closure blocker.
+
+**Closure.** The recap and overview contain no statement contradicting Layer 0–5 and no normative
+restatement longer than a summary with links; each follow-up field is defined once.
+
+**Verification.** The recap no longer infers casa quiet hours from room-scoped sleeping, and its
+open-work list names current Reaction contracts. The overview and recap summarize the channel
+hold with pointers to Layers 0/5 rather than repeating its lifecycle. Layer 1 defines only the
+follow-up event mapping; Layer 5 §6.0 remains the sole owner of the occurrence field list.
+
+### Historical specification-correction sequence (snapshot 2026-10-04)
+
+This dated sequence is retained as rationale and includes items closed after the snapshot,
+including CA4-18. It is not a current work queue. Check each item's own status and use the
+[V3 contract registry](specs/v3/contract_registry.json) and
+[specification workflow](specs/v3/spec_workflow.md) for current correction work.
+
+The shared V3 contract must remain generic across Actuator channel kinds and Reaction descriptors;
+descriptor-specific behavior may specialize a policy without creating another action, hold, guard,
+learning or configuration pipeline. This sequence concerns specification readiness, not runtime
+implementation or CT-4's separate release calibration.
+
+1. Resolve the remaining decision-required choices with the developer before applying them:
+   CA4-54, CA4-57 and CA4-58. Recheck each cited counterexample first.
+2. Close the common substrate, temporal and historical contracts: CA4-04–06, CA4-20–22,
+   CA4-28, CA4-38 and CA4-54–55.
+3. Close registry, fusion and semantic-input contracts: CA4-07–08, CA4-10, CA4-16,
+   CA4-36, CA4-46–49 and CA4-57.
+4. Close shared action authority, recovery and execution: CA4-03, CA4-18, CA4-24–27,
+   CA4-39, CA4-42–45 and CA4-50. CA4-44 includes the common command surface
+   extension recorded with CA4-51–58; CA4-27 retains a scope separate from DONE CA4-02/17.
+5. Close learner data, proposal identity and descriptor catalog: CA4-09, CA4-11–15,
+   CA4-35 and CA4-58.
+6. Align the current reading path only after the owning contracts settle: CA4-29–30 and
+   CA4-59–60. Preserve historical rationale, but mark retired models as historical.
+
+Every correction updates its owning acceptance criteria and affected current references. A DONE
+specification item is not a claim of runtime implementation or test completion. The separately
+deferred V2 `room_smart_lighting_assist` failure remains a diagnostic requirement for V3: an enabled
+Reaction that never acts despite plausible triggers must be visible rather than silently ignored.
