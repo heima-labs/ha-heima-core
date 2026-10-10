@@ -1,9 +1,8 @@
 # Heima v3 - Layer 5: Action and reaction generation
 
 **Status:** Defined V3 action-and-reaction contract. Not implemented.
-**Open corrections:** CA4-12 (catalog and candidate schema), CA4-25 (diagnostic namespaces),
-CA4-26 (recurrence authority) and CA4-27 (cross-layer configuration commit), tracked in the CA4
-backlog.
+**Open corrections:** CA4-12 (catalog and candidate schema), CA4-25 (diagnostic namespaces)
+and CA4-26 (recurrence authority), tracked in the CA4 backlog.
 **Layer:** 5 of 8. Consumes Layer-2 facts and Actuators plus the current-cycle outputs of the completed
 Layer-4 semantic DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
 input. It never feeds configuration, policy state, or action results back into Layer 4.
@@ -232,7 +231,7 @@ immutable: every candidate, `ReactionProposal`, and learner-origin `ConfiguredRe
 exact `RelationProfileRef`. A changed evidence facet creates a new learner-definition fingerprint and
 cannot reuse the prior artifact or shadow result. A changed policy facet creates a new candidate/review
 path; it never rewrites a pending proposal or configured Reaction. A missing or incompatible stored ref
-follows the ordinary Layer-5 selective revalidation rule and is never substituted by a similarly named
+follows the composed-generation impact rule (Layer 0 §4.7, §4.2) and is never substituted by a similarly named
 profile.
 
 ### 3.2 Reaction guard capabilities and profiles
@@ -873,7 +872,8 @@ requiring an endpoint is rejected.
 
 Layer 3 can refresh evidence for the same review item but cannot overwrite its review status, mode,
 action scope, guard profile, or `RelationProfileRef`. An incompatible descriptor or profile version requires Layer-5 selective
-revalidation; a policy that cannot be revalidated is unavailable, never silently reinterpreted.
+revalidation under the composed-generation impact rule (Layer 0 §4.7); a policy that cannot be
+revalidated is `configuration_invalid`, never silently reinterpreted.
 
 ### 4.1 `ReactionProposal` review lifecycle
 
@@ -1066,6 +1066,7 @@ selects a different evaluator, scheduler, authorization rule or `ApplyStep` path
 ```python
 ReactionOrigin = Literal["admin_direct", "learner_proposal"]
 ReactionExecutionMode = Literal[
+    "configuration_invalid",
     "notification_only",
     "authorized_awaiting_household_consent",
     "automatic",
@@ -1168,7 +1169,9 @@ class FrozenReactionAuthorityView:
 Layer 5 freezes this view at the shared `CycleInputBarrier` from the current
 committed configuration and authority projections. It includes one entry per
 current Reaction, even when its mode is not `automatic`; an absent or stale
-generation is therefore never inferred to be authorized. The fingerprint is
+generation is therefore never inferred to be authorized. An entry in
+`configuration_invalid` takes precedence over every authority transition and is
+excluded from evaluation, shadow and scheduling. The fingerprint is
 SHA-256 over RFC-8785 canonical JSON of the ordered entries and Layer-5
 generation fingerprint. Layer 4 transports the view opaquely (§5.1). Layer 5
 uses it to filter every Reaction-anchored recovery facet and to evaluate normal
@@ -1352,6 +1355,21 @@ simulation has zero axes and exactly one empty-key cell (§7.2). A descriptor
 that permits administrator selection of direct cells stages a bounded subset
 of its versioned permitted set; a later expansion is a semantic configuration
 successor with ordinary authority review, not a live edit.
+
+**Composed-generation dependency.** Every Reaction configuration, guard-profile and prerequisite
+generation activates only through the composed configuration generation of Layer 0 §4.7, and is a
+consumer in its dependency index. When a confirmed change elsewhere makes the current generation's
+plan fail validation (**breaking**: a missing or changed trigger, guard, axis, history, calendar,
+timing-model or Actuator-channel binding), the same commit appends an authority transition with
+administrative authorization and any household consent disabled, cancels the Reaction's future
+jobs, and projects mode `configuration_invalid`. That mode is derived, not stored: the Reaction
+neither evaluates, shadows nor schedules work until an administrator commits a successor
+configuration generation that validates; that successor starts `notification_only` under the
+ordinary rules and needs fresh promotion and consent. Pending proposals bound to the invalid
+dependency become not approvable with the existing readiness codes. A **semantic_only** upstream
+change keeps the Reaction's generation and authority unchanged; it appears in the impact record so
+the administrator can decide whether to edit or disable it. The dispatch fence (§6.0) rejects any
+unsent call of an invalidated generation.
 
 Every new configuration generation starts `notification_only`, with administrative action authorization
 disabled and household consent unset/disabled. Authority changes are immutable append-only
@@ -3637,6 +3655,17 @@ A learner may propose only values permitted by that same active descriptor.
   fails staging, while a valid binding with a temporarily unusable artifact
   selects its seed and cannot treat that artifact as automatically authorized
   (§4.2, §6.0).
+- Removing a Sensor that an automatic extraction Reaction uses as a declared
+  occupancy guard is a breaking impact. Without the administrator's
+  confirmation of the current `impact_fingerprint` nothing commits; with it,
+  one composed commit records the new Layer-2 generation, an authority
+  transition disabling authorization and consent, cancelled future jobs and
+  the derived `configuration_invalid` mode. The Reaction neither evaluates nor
+  shadows; an unsent call of its old generation fails the dispatch fence. A
+  successor configuration that validates starts `notification_only` and needs
+  fresh promotion and consent. Changing only that Sensor's reliability is
+  `semantic_only`: generation and authority stay unchanged and the Reaction
+  appears in the impact record (§4.2; Layer 0 §4.7).
 - Each of the six Initial-V3 descriptors can reach its permitted
   `notification_only` creation path through `stage_admin_direct_reaction`
   or `review_proposal`, and uses the same `promote_reaction_automatic_action`,

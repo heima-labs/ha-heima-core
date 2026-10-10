@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 5 | 0 | 16 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 4 | 0 | 17 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **60 findings** | **6** | **0** | **53** | **1** |
+| **Total** | **60 findings** | **5** | **0** | **54** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5739,11 +5739,13 @@ Layer 0 assigns administrator-authored recurrence to HA `schedule.*` and prohibi
 
 #### CA4-27 — Per-layer atomic reloads do not define a cross-layer commit
 
-**Status:** TODO. **Type:** incomplete configuration lifecycle. **References:** [Layer 2 §2.5](specs/v3/layer2_registries_spec.md), [Layer 3 §4.1.2, §5.2](specs/v3/layer3_learning_spec.md), [Layer 4 §4.2, §8](specs/v3/layer4_domain_spec.md), [Layer 5 §4.2](specs/v3/layer5_action_reactions_spec.md).
+**Status:** DONE (2026-10-10; specification readiness). **Type:** incomplete configuration lifecycle. **References:** [Layer 2 §2.5](specs/v3/layer2_registries_spec.md), [Layer 3 §4.1.2, §5.2](specs/v3/layer3_learning_spec.md), [Layer 4 §4.2, §8](specs/v3/layer4_domain_spec.md), [Layer 5 §4.2](specs/v3/layer5_action_reactions_spec.md).
 
 Each layer specifies an atomic swap, but the composition lacks a common commit/rollback rule when a valid producer edit invalidates downstream consumers. Removed/disabled semantic claims have no explicit terminal historical publication, and transitive impact propagation is not fully specified. Persisted `effective_at` also needs a clear relationship to activation completed before a crash.
 
 **Correction:** define the composition barrier, invalidation/terminal outputs, and restart from a committed generation. **Closure:** removing or relocating a producer used by a resolver and Reaction leaves neither mixed generations nor an orphaned available historical claim.
+
+**Approved resolution (2026-10-10).** Every configuration mutation in Layers 2–6 activates as one composed generation whose durable manifest write is the activation and `effective_at` (D1/A). Staging builds a dependency index from staged declarations and classifies every other consumer as breaking, semantic-only or unaffected; a nonempty impact record requires a commit carrying the reviewed base generation and `impact_fingerprint` (D2/iii). Breaking dependents are invalidated in the same commit: learning definitions and artifacts unavailable, state resolvers emit one terminal unavailable fact, Reactions get a disabling authority transition, cancelled jobs and the derived `configuration_invalid` mode until a valid successor that needs fresh promotion and consent (D3). Semantic-only changes keep dependents and only list them (D4). A bootstrap code upgrade applies the same rule under the system actor. The developer required the future Layer 6/7/8 interfaces to state their part explicitly; the overview records publication-generation, plugin dependency and impact-preview obligations. Owner: Layer 0 §4.7; dependents Layer 2 §2.5, Layer 3 §4.1.2, Layer 4 §8, Layer 5 §4.2. See the [CA4-27 review](specs/v3/reviews/CA4-27.md); no V3 runtime test ran.
 
 #### CA4-28 — Recursive immutability and invalid-evidence handling are inconsistent
 

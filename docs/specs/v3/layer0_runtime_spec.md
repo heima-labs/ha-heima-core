@@ -1310,6 +1310,79 @@ budget and its source are always visible in diagnostics (§10). A discarded hold
 follows the same rule as any other event: the live hold is unaffected and the audit stream
 reports the lost interval.
 
+### 4.7 Composed configuration generation
+
+Every configuration mutation in any layer — a Layer-2 registry change, a Layer-3 learning
+definition, a Layer-4 semantic resolver definition, a Layer-5 Reaction configuration generation,
+guard-profile or prerequisite generation, and the Layer-6 availability publication bindings that
+follow from them — activates only as part of one **composed configuration generation**. Runtime
+authority transitions (promotion, consent, disablement) and artifact-adoption transitions are not
+configuration mutations and do not use this path.
+
+```python
+@dataclass(frozen=True)
+class LayerGenerationRef:
+    layer: Literal["layer2", "layer3", "layer4", "layer5", "layer6"]
+    generation_id: str
+    definition_fingerprint: str
+
+@dataclass(frozen=True)
+class ComposedGenerationManifest:
+    composed_generation_id: str
+    previous_composed_generation_id: str | None
+    layers: tuple[LayerGenerationRef, ...]       # exactly one per layer, canonical layer order
+    impact_fingerprint: str                       # of the confirmed impact record, below
+    invalidated_dependents: tuple[str, ...]       # canonical ids of consumers invalidated by this commit
+    actor_ref: str                                # authenticated administrator or closed system actor
+    effective_at: EvidenceInstant                 # cycle-clock instant of durable commit (§3.5)
+```
+
+**Staging.** A candidate is the active composition plus the edited definitions. Each layer
+validates its own part against the candidate lower layers, using only its staged declarations.
+Layer 0 builds a staging-only dependency index from those declarations: producer claims
+(`FactTypeClaim` and `(fact_type, Location)`) and Actuator channels on one side; every consumer
+reference on the other — Fusion inputs, Layer-3 `FactSlot`/`SampleBinding` sources, Layer-4 input
+bindings and upstream claims, Layer-5 trigger, guard, envelope-axis, history, calendar and
+Actuator-channel bindings, and Layer-6 publication keys. It then classifies every consumer outside
+the directly edited objects:
+
+- **breaking** — its binding no longer validates against the candidate: missing producer or
+  channel, changed claim kind, value type, unit, vocabulary or legal scope;
+- **semantic_only** — its binding still validates, but an upstream producer's execution semantic
+  fingerprint changed;
+- **unaffected**.
+
+The canonical impact record lists every breaking and semantic-only consumer with its layer, id
+and cause. `impact_fingerprint` is SHA-256 over RFC-8785 canonical JSON of the base composed
+generation id, the candidate layer fingerprints and the ordered impact entries. Staging that fails
+a layer's own validation is rejected as before and produces no impact record.
+
+**Confirmation.** When the impact record contains any entry, the commit command must carry the
+`impact_fingerprint` the administrator reviewed and the base `composed_generation_id`. A
+different base generation or fingerprint rejects the commit without mutation; the administrator
+receives a fresh preview. An empty impact record needs no confirmation. Rendering the preview and
+issuing the confirmation are Layer-8 obligations.
+
+**Commit and activation.** One durable atomic transaction writes the manifest, every new layer
+generation record and the dependent invalidations that each owning layer defines (Layer 2 §2.5,
+Layer 3 §4.1.2, Layer 4 §8, Layer 5 §4.2), or writes none of them. That durable write is the
+activation: `effective_at` is its cycle-clock instant, and the engine swaps every layer's active
+pointer together at the next cycle boundary. No cycle observes a mix of old and new layer
+generations. Each produced fact carries its producer's generation fingerprint in `FactSource`, so
+historical attribution never depends on `effective_at`. Work admitted under an older generation is
+stopped by its own owner's guard: the Layer-5 dispatch fence rejects unsent calls of an
+invalidated or superseded Reaction generation, and a Layer-3 run captured against an older
+generation cannot publish.
+
+**Restart and code upgrade.** Bootstrap loads the latest committed manifest and rebuilds every
+layer through staging; an uncommitted candidate leaves no trace. If a code upgrade (a changed
+formula, learning type, resolver kind or descriptor version) makes part of the committed
+composition invalid, bootstrap applies the same impact classification and invalidations
+automatically under the closed system actor, records a new manifest, and reports every
+invalidated dependent as a diagnostic; there is no administrator to confirm at bootstrap.
+If that manifest cannot be written, the invalid consumers are still excluded from evaluation in
+memory, the write is retried, and a persistence diagnostic is raised; no invalid consumer runs.
+
 ---
 
 ## 5. `FactSource` / `ApplyStepSource`
@@ -2687,6 +2760,16 @@ concrete checklist rather than re-deriving one:
   under the reserved `manual_hold.lifecycle` and `reaction.follow_up` operation ids append
   once. Event facts have no `FactIdentityKey`/latest-value entry and are rejected when
   requested as current state or via `FactRef.previous_cycle` (§4).
+- A candidate removing a Sensor used by a Fusion input, a Layer-3 binding, a
+  Layer-4 resolver and a Layer-5 guard yields one impact record listing all
+  four as `breaking`; changing only that Sensor's reliability lists them as
+  `semantic_only`. A commit with a stale base generation or a different
+  `impact_fingerprint` mutates nothing; an empty impact needs no
+  confirmation. A crash before the manifest write leaves the old composition
+  active; after it, bootstrap loads the new manifest. No cycle observes a mix
+  of layer generations. A code upgrade invalidating part of the committed
+  composition is applied at bootstrap under the system actor with a
+  diagnostic for every invalidated dependent (§4.7).
 - A configuration-generation swap assigns a new non-forgeable `configuration_fingerprint` to every
   impacted source, forcing an otherwise unchanged state fact to persist; an Actuator recovery snapshot
   whose fingerprint no longer matches is discarded before recovery can propose or apply it (§5/§7.4).

@@ -1,8 +1,7 @@
 # Heima v3 - Layer 4: Semantic Resolution
 
 **Status:** Defined V3 semantic-resolution contract. Not implemented.
-**Open corrections:** CA4-22 (signal admission and expiry) and CA4-27 (cross-layer configuration
-commit), tracked in the CA4 backlog.
+**Open corrections:** CA4-22 (signal admission and expiry), tracked in the CA4 backlog.
 
 **Layer:** 4 of 8. Builds on Layer 0's cycle/timing/persistence facilities, Layer 1's immutable `HouseFact`/`Location`/`Provenance` contracts, Layer 2's current typed facts and staged registry generation, and Layer 3's closed transient `InferenceSignal` contracts. It completes the semantic-resolution DAG before Layer 5 evaluates policy. It never reads Home Assistant objects or payloads.
 
@@ -318,7 +317,7 @@ At staging, Layer 4 contributes only exact `(suppression_owner_id, suppression_s
 
 ## 8. Reload, Recovery, and Performance
 
-A changed kind/version, output claim, scope membership, input binding, signal contract, semantic parameter, priority rule, or availability contract creates an impacted generation. Its old conclusion is not reused under the new meaning: the impacted resolver starts with no evaluator-local state and emits an unavailable state until a fresh snapshot supports a result. Unimpacted resolvers preserve only state their kind explicitly declares safe.
+Every semantic generation activates only as part of one composed configuration generation (Layer 0 §4.7). A resolver whose input binding or upstream claim no longer validates after a confirmed upstream change is invalidated by that commit and does not run until a successor definition validates. A removed, disabled or invalidated state resolver emits exactly one terminal `available=False` fact for its output claim at the swap, so no earlier available conclusion remains its latest state; an episode resolver emits nothing. A semantic-only upstream change keeps the resolver and is listed in the impact record. A changed kind/version, output claim, scope membership, input binding, signal contract, semantic parameter, priority rule, or availability contract creates an impacted generation. Its old conclusion is not reused under the new meaning: the impacted resolver starts with no evaluator-local state and emits an unavailable state until a fresh snapshot supports a result. Unimpacted resolvers preserve only state their kind explicitly declares safe.
 
 Evaluation is bounded by finite declared inputs and pure evaluator work. It performs no durable history read, HA call, remote inference, lock acquisition, dynamic import, registry scan, policy lookup, Actuator resolution, or notification work. Staging, generation diffing, availability composition, and persistence maintenance are outside the engine path.
 
@@ -635,6 +634,12 @@ room; it cannot suppress urgent safety/security communication or establish an ac
   usable by a deterministic policy and never implies `activity.working`.
 - A signal-consuming semantic claim cannot feed its own learner's feature/reference/label/target path.
 - An impacted reload does not reuse old evaluator state or a conclusion under a new fingerprint.
+- A confirmed upstream change that removes `occupancy.physical` for a room invalidates that
+  room's `room_occupancy` resolver in the same composed commit; it emits one terminal
+  `available=False` `occupancy` fact at the swap and does not run until a successor validates.
+  Removing or disabling a resolver likewise closes its state claim; an episode resolver emits
+  nothing. No cycle mixes the old Layer-2 generation with the new semantic generation (§8;
+  Layer 0 §4.7).
 - Semantic resolution, signal resolution, and DAG lookup perform no I/O, dynamic import, HA access, policy lookup, Actuator resolution, or notification delivery.
 - Layer 4 contributes only exact availability-owner declarations. Tests reject a policy binding, `automation_scope_id`, visibility state, direct availability event, or Layer-6 delivery call.
 - Layer 5 receives only the completed immutable `DecisionSnapshot` and cannot cause a semantic resolver reevaluation or make a resolver inspect policy configuration.

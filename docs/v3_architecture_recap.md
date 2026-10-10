@@ -177,7 +177,11 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   baseline for current-policy
   recalculation after power recovery, never a command replay. `FactRef.previous_cycle` reads
   a sealed in-memory snapshot; an unclean restart cannot claim older durable history as its
-  immediate predecessor. Registry reload swaps a validated generation atomically.
+  immediate predecessor. Every configuration change in Layers 2–6 activates as one composed generation: a
+  durable manifest swaps all layers together between cycles. An edit that breaks a downstream
+  resolver, learner or Reaction needs the administrator's confirmation of its impact record;
+  the commit then invalidates those dependents (a Reaction becomes `configuration_invalid`
+  until a valid successor), while a semantic-only upstream change is only listed (Layer 0 §4.7).
   Each baseline facet retains its Reaction generation or trusted direct-command
   origin. A removed, edited or consent-revoked Reaction loses its baseline facets;
   surviving facets still pass current target and safety admission.
@@ -705,7 +709,8 @@ explainability system built on top.
 2. The digest notification capability — designed for, not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
    path — depends on the digest existing first.
-4. The common Layer-8 commands for each registered `ReactionDescriptor` (CA4-44).
+4. The Layer-8 rendering of the common Reaction commands (defined in Layer 5 §4.2) and of the
+   composed-generation impact preview and confirmation (Layer 0 §4.7).
 5. Whether Reactions configuration moves fully into the admin panel (Layer 8).
 6. The "no backward compatibility" project rule vs. a public plugin API (Layer 7) — needs a
    conscious amendment, not a silent exception.

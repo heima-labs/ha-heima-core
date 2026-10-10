@@ -224,8 +224,11 @@ coverage against the candidate Zone memberships. Any failure rejects the whole c
 the active generation untouched.
 
 On success, the candidate's canonical definitions, full definition fingerprints, and per-producer
-**execution semantic fingerprints** are durably recorded with an `effective_at` instant, then the
-evaluator swaps one active-generation pointer only between cycles. A semantic fingerprint is derived
+**execution semantic fingerprints** become part of one composed configuration generation (Layer 0
+§4.7): its durable manifest is the activation, carries `effective_at`, and every layer swaps its
+active pointer together, only between cycles. The same staging pass contributes Layer 2's producer
+claims and Actuator channels to the cross-layer dependency index, so an edit that breaks a
+downstream consumer requires the administrator's confirmation of the impact record before commit. A semantic fingerprint is derived
 once, after all candidate references are resolved, from exactly the fields that can affect a producer's
 value, availability, confidence, provenance semantics, temporal behavior, or spatial coverage. It is
 not calculated in an evaluation cycle. The active generation already holds the equivalent fingerprints,
@@ -2033,7 +2036,7 @@ registry at runtime.
 ## 8. Not yet decided
 
 Open cross-layer contracts affecting these registries are tracked in the CA4 backlog, including
-CA4-26 (recurrence authority) and CA4-27 (configuration commit).
+CA4-26 (recurrence authority).
 
 ---
 

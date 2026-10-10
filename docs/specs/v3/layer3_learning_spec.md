@@ -2,8 +2,8 @@
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
 **Open corrections:** CA4-12 (catalog and candidate schema), CA4-21 (historical aggregates and
-tier requiredness), CA4-22 (signal admission and expiry), CA4-25 (diagnostic namespaces), CA4-26
-(recurrence authority) and CA4-27 (cross-layer configuration commit), tracked in the CA4 backlog.
+tier requiredness), CA4-22 (signal admission and expiry), CA4-25 (diagnostic namespaces) and CA4-26
+(recurrence authority), tracked in the CA4 backlog.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
 mined). It does not read Home Assistant runtime objects, entity state, or registry internals.
@@ -168,6 +168,15 @@ withdraws candidates and live signals bound to the old learner serving
 generation, without rewriting a separately approved configured Reaction;
 `scheduling_only` takes effect at the next scheduler boundary; and
 `presentation_only` changes neither evidence nor scheduling.
+
+A learning definition is also a consumer in the composed configuration generation of Layer 0
+§4.7. When a confirmed upstream change makes one of its bindings fail validation (**breaking**),
+the commit invalidates that definition: no analysis, refresh, finding, signal or candidate is
+produced under it, its artifacts are unavailable for every egress, and its live-signal adoption
+chain closes. It stays invalid until an administrator stages a successor definition that
+validates. A **semantic_only** upstream change keeps the definition; its source-generation
+fingerprint changes, so existing artifacts become unavailable and the ordinary warm-up and
+rebuild apply (§4.5).
 
 The artifact's existing `definition_fingerprint` is the
 analysis-definition fingerprint of the resolved learner: it covers the
@@ -504,8 +513,8 @@ rounded or matched to a nearest range.
 Changing the semantics of a transform, its configuration validation, canonicalization, output schema,
 or coarsening relation requires a new transform version; an existing `(transform_id, version)` is
 immutable. A code upgrade that removes or changes a referenced version makes only affected learner
-definitions/artifacts unavailable and subject to the ordinary selective revalidation/invalidation
-path. Callables never enter persisted generations or artifacts; they retain only `ContextTransformRef`.
+definitions/artifacts unavailable and subject to the composed-generation impact rule (Layer 0
+§4.7). Callables never enter persisted generations or artifacts; they retain only `ContextTransformRef`.
 
 The tier identity is the tuple `(learner_id, learner_definition_fingerprint, tier_id)`. The
 definition fingerprint includes target semantics, subject Location, ordered feature bindings, and
@@ -1324,7 +1333,7 @@ Layer 5 evaluates its current typed trigger and guards; the learner is not polle
 never decides a live action. A compatible retraining refreshes evidence for the same canonical bundle
 candidate; a changed member, semantic parameter, trigger/profile or envelope creates a new review
 item. Changing the descriptor-owned member order changes the descriptor version and therefore follows
-Layer 5's ordinary selective revalidation.
+the composed-generation impact rule (Layer 0 §4.7).
 
 This model deliberately does not infer a future calendar schedule from a sequence of resident actions.
 Its trigger is already present and its outcome is an immediate bounded bundle. A time-only or
@@ -3663,7 +3672,7 @@ identities/channels/opening relations/intents, applicable `numeric_outcome_requi
 member `semantic_parameters`, required guards and the operating envelope's
 `envelope_semantic_projection`. It excludes measured artifact effects, artifact version,
 evidence identity, confidence and data span so compatible retraining refreshes evidence for one review
-item. An incompatible Reaction-descriptor version is handled by Layer 5's selective revalidation, never
+item. An incompatible Reaction-descriptor version is handled by the composed-generation impact rule (Layer 0 §4.7), never
 reinterpreted by Layer 3.
 
 ## 7. V2-derived learning families
@@ -3903,6 +3912,12 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   profiles use the shared response-artifact schema (§4.8; Layer 5 §3.1),
   separately from the per-inference `ResultEnvelope` of §4.4.
 - No Layer-3 implementation reads a V2 snapshot, model, approval store, or history record.
+- A confirmed upstream change that removes a learner's bound source invalidates the learning
+  definition in the same composed commit: no analysis, finding, signal or candidate, and every
+  artifact and adoption chain unavailable until a successor definition validates. A run captured
+  against the old generation cannot publish. A semantic-only upstream change keeps the definition
+  but makes existing artifacts unavailable through the source-generation fingerprint (§4.1.2;
+  Layer 0 §4.7).
 - An administrative learner instance names a registered core kind/version, legal explicit scope,
   blueprint-declared binding selections, all exposed canonical parameter values, and enabled state.
   Tests reject wildcard/live-query scopes, unordered or changed scope membership without restaging,

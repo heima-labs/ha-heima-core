@@ -222,7 +222,10 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
 
 ### Operational guarantees
 
-- Registry generations are staged, validated, fingerprinted, and atomically swapped.
+- Registry generations are staged, validated, fingerprinted, and activated only within one
+  composed configuration generation across Layers 2–6 (Layer 0 §4.7): an edit that breaks a
+  downstream resolver, learner or Reaction needs confirmation of its impact record, then
+  invalidates those dependents in the same atomic commit.
 - State producer uniqueness is checked at composition for `(fact_type, Location)`; global fact-type
   claims protect reserved or dynamic namespaces.
 - The current-cycle dependency DAG rejects cycles. `previous_cycle` is explicit and receives a
@@ -516,12 +519,21 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
   transaction, and retries delivery. Its renderer must declare finite maximum UTF-8 lengths
   for title and message in every supported locale; Layer-5 staging needs those bounds to
   prove the complete follow-up fact fits Layer 1's depth-two/8 KiB limits.
+  Its `AvailabilityPublicationGeneration` must be one layer reference of the composed
+  configuration generation (Layer 0 §4.7): its publication keys join the dependency index, and
+  its reconciliation runs at the same swap as the layers it binds.
   Notification routing, rendering, deduplication/rate limiting,
   delivery/audit storage, and resident channel behavior also belong here.
 - **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers,
   diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
   plugins to extend core hot-path semantic registries or create `ApplyStep`s/invoke Actuators.
+  A plugin's staged producer claims and consumer bindings must enter the composed-generation
+  dependency index like core ones; adding, upgrading or removing a plugin is a configuration
+  mutation with the same impact preview, confirmation and invalidation rules (Layer 0 §4.7).
 - **Layer 8:** Administrative configuration, review, diagnostics and cutover user experience.
+  It renders the composed-generation impact record (breaking and semantic-only dependents with
+  cause) and sends the commit with the reviewed base generation and `impact_fingerprint`; it
+  never commits a partial layer edit or bypasses the confirmation (Layer 0 §4.7).
 
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.
