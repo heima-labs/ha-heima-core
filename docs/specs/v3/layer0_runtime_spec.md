@@ -254,6 +254,14 @@ or schedule persistence. A helper state change enters the ordinary evaluation cy
 uninterpretable helper produces `available=False`, never an implicit schedule activation. This boundary
 does not apply to internal maintenance jobs, which remain the `CronEntry`/`AtJob` mechanisms above.
 
+The rule governs **standalone** schedules: a recurrence whose own active state is what makes
+something happen. It does not govern a **descriptor time-window parameter**: a bounded local-time
+window that a versioned Layer-5 descriptor explicitly declares, that never activates anything by
+itself, and that only limits when a Reaction already activated by its own start criteria may act.
+Such a parameter uses this section's `WeeklyRecurrence` and `Window` types and validation, is
+part of the Reaction's immutable configuration, and arms only that Reaction's ordinary next-step
+job. `security.presence_simulation`'s session is the Initial-V3 example (Layer 5 §7.2).
+
 ### 3.2 Comparison: `Window` and `LearnedWindow`
 
 ```python

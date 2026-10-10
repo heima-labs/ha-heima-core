@@ -895,6 +895,17 @@
       "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-26",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-26.md",
+      "contracts": ["L0-TIMING", "L5-PRESENCE-SIMULATION", "L5-STEP-SLOT"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS", "V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

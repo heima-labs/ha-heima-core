@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 4 | 0 | 17 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 3 | 0 | 18 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **60 findings** | **5** | **0** | **54** | **1** |
+| **Total** | **60 findings** | **4** | **0** | **55** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5731,11 +5731,13 @@ The Layer-5 registry declares two evaluation codes and only `late_recovery` for 
 
 #### CA4-26 — Admin-authored simulation recurrence conflicts with HA schedule authority
 
-**Status:** TODO. **Type:** undeclared exception. **References:** [Layer 0 §3.1](specs/v3/layer0_runtime_spec.md), [Layer 3 §8.4](specs/v3/layer3_learning_spec.md), [Layer 5 §7.2](specs/v3/layer5_action_reactions_spec.md).
+**Status:** DONE (2026-10-10; specification readiness). **Type:** undeclared exception. **References:** [Layer 0 §3.1](specs/v3/layer0_runtime_spec.md), [Layer 3 §8.4](specs/v3/layer3_learning_spec.md), [Layer 5 §7.2](specs/v3/layer5_action_reactions_spec.md).
 
 Layer 0 assigns administrator-authored recurrence to HA `schedule.*` and prohibits duplicated authoring/DST evaluation. Presence simulation instead takes an administrator-authored `WeeklyRecurrence` and derives sessions from it. CA2-2 establishes that this is not a CronEntry, but does not reconcile the broader schedule-authority rule.
 
 **Correction:** use the HA authority or explicitly scope the core session exception, including overlapping sessions. **Closure:** recurrence has one declared authority and deterministic behavior across DST, timezone edits, midnight, and overlapping occurrences.
+
+**Approved resolution (2026-10-10).** The administrator records only the absence in the calendar; lights, density and session window are configured in the presence-simulation Reaction, an ordinary Reaction activated by the calendar absence and stabilized `away`. Layer 0 §3.1 now limits HA-schedule authority to standalone schedules and admits a descriptor-declared time-window parameter that never activates anything by itself. Layer 5 §7.2 fixes session start (existing DST policy), elapsed end, midnight crossing, staging rejection of overlap and timezone-change behavior; the session boundary job is `wall_clock`. A `schedule.*` helper or recurring calendar event as session source was considered and rejected. Hybrid learning direction confirmed: PS-1 stays (Initial V3 unlearned) and the `TemporalActuationProfileModel` is the intended successor, always bounded by the configured window and lights (Layer 3 §8). See the [CA4-26 review](specs/v3/reviews/CA4-26.md); no V3 runtime test ran.
 
 #### CA4-27 — Per-layer atomic reloads do not define a cross-layer commit
 

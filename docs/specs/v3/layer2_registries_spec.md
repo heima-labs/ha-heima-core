@@ -2035,8 +2035,8 @@ registry at runtime.
 
 ## 8. Not yet decided
 
-Open cross-layer contracts affecting these registries are tracked in the CA4 backlog, including
-CA4-26 (recurrence authority).
+Open cross-layer contracts are tracked in the CA4 backlog. No open CA4 item is currently owned by
+this layer.
 
 ---
 

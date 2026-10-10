@@ -1,8 +1,8 @@
 # Heima v3 - Layer 5: Action and reaction generation
 
 **Status:** Defined V3 action-and-reaction contract. Not implemented.
-**Open corrections:** CA4-12 (catalog and candidate schema), CA4-25 (diagnostic namespaces)
-and CA4-26 (recurrence authority), tracked in the CA4 backlog.
+**Open corrections:** CA4-12 (catalog and candidate schema) and CA4-25 (diagnostic
+namespaces), tracked in the CA4 backlog.
 **Layer:** 5 of 8. Consumes Layer-2 facts and Actuators plus the current-cycle outputs of the completed
 Layer-4 semantic DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
 input. It never feeds configuration, policy state, or action results back into Layer 4.
@@ -3279,7 +3279,28 @@ This is descriptor configuration, not a new Layer-0 temporal abstraction or a `C
 `WeeklyRecurrence` supplies the non-empty weekday set, local-civil hour/minute, timezone and DST
 semantics; `Window` supplies the validated positive duration. During an eligible planned absence,
 Layer 5 uses this pair only to determine the current/next session occurrence and derive its one next
-`AtJob`; it does not install a standing recurrence or a second scheduler.
+`AtJob`; it does not install a standing recurrence or a second scheduler. It is a descriptor
+time-window parameter under Layer 0 §3.1, not a standalone schedule: the calendar's planned
+absence and stabilized `presence=away` activate the Reaction, and the session only limits when
+it may act. The administrator therefore records only the absence in the calendar and configures
+lights, density and session in this Reaction.
+
+Session occurrences are deterministic:
+
+- **Start:** the `WeeklyRecurrence` occurrence in local civil time; a nonexistent local start
+  moves to the first valid instant after the gap and an ambiguous one uses its first occurrence
+  (Layer 0 §3.1).
+- **End:** start plus `duration` as elapsed time, so a session keeps its real length across a DST
+  change. A session that crosses midnight ends on the following day and belongs to the weekday on
+  which it started.
+- **No overlap:** staging rejects a `duration` that is not strictly shorter than the minimum
+  elapsed interval between two consecutive selected weekday starts, computed in civil time over
+  one week (for every weekday selected, shorter than 24 hours).
+- **Timezone change:** an occurrence already started keeps its computed end; later occurrences are
+  recomputed in the new zone and its session-boundary job is re-armed (`wall_clock` basis).
+
+The session boundary job uses `AtJob.basis="wall_clock"`; the end of an already started session
+is also re-armed after a clock discontinuity (Layer 0 §3.5).
 
 `security.presence_simulation` is a fixed Initial-V3 core `ReactionDescriptor`, with
 `admin_direct` as its initial sole authoring mode. It is a bounded deterrence aid that may make a home
@@ -3474,6 +3495,11 @@ They assert only durable configuration/authority state, exact job creation/cance
    historical presence, raw HA payload or actor reference enters the descriptor's stored operational
    preview, job or execution-audit projections; the separate common governance ledger retains only its
    required actor references.
+7. A session `Mon–Sun 22:00` with `duration=3 h` ends at 01:00 the following day and belongs to
+   its start day; with `duration=24 h` staging rejects it as overlapping. On a spring-forward night a
+   `02:30` start begins at `03:00` and still lasts its full duration; an ongoing session keeps its
+   end across an HA timezone change while the next start uses the new zone. No session starts
+   without the calendar absence and stabilized `away`.
 
 These fixtures validate contract orchestration, not learned behavioral plausibility or an uncommanded
 lighting effect. A future learned/imported temporal profile requires its own evidence and

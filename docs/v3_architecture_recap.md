@@ -81,7 +81,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   safety-net re-evaluation, for example — each is a `CronEntry` owned by whichever subsystem needs it,
   not a separate bespoke timer mechanism per feature. Admin-authored recurrence instead belongs to an
   HA `schedule.*` helper; Heima consumes only its effective state as an ordinary sensor fact and never
-  duplicates HA's schedule picker or timezone/DST logic.
+  duplicates HA's schedule picker or timezone/DST logic. That rule covers standalone schedules; a
+  descriptor-declared time-window parameter that only limits when an already activated Reaction may
+  act, such as the presence-simulation session, is Reaction configuration (Layer 0 §3.1).
   Every declared V3 instant, including fact, job and model-artifact fields, is the same canonical
   UTC `EvidenceInstant` with six fractional digits and `+00:00`. Every positive elapsed duration,
   including model horizons and registry delay summaries, is the same `Window` with canonical

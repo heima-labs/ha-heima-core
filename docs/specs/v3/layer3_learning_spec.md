@@ -2,8 +2,8 @@
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
 **Open corrections:** CA4-12 (catalog and candidate schema), CA4-21 (historical aggregates and
-tier requiredness), CA4-22 (signal admission and expiry), CA4-25 (diagnostic namespaces) and CA4-26
-(recurrence authority), tracked in the CA4 backlog.
+tier requiredness), CA4-22 (signal admission and expiry) and CA4-25 (diagnostic namespaces), tracked in the
+CA4 backlog.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
 mined). It does not read Home Assistant runtime objects, entity state, or registry internals.
@@ -3827,6 +3827,11 @@ otherwise and every cited cross-layer dependency is complete.
    such as a reviewed lighting temporal-plan descriptor,
    must satisfy the same common temporal model contract but declares its own scope, guards and privacy
    class; it is not implicitly enabled by the security use case.
+
+   This is the approved product direction for presence simulation: Initial V3 ships the
+   core-generated, unlearned plan, and the learned `TemporalActuationProfileModel` is the intended
+   successor for the episode selector. Even then, the administrator's configured session window
+   and selected lights remain the hard bounds; a learned profile can never act outside them.
 
 5. `ComfortSetpointPreferenceModel`, a future proposal-only estimator for an administrator-reviewed
    preference parameter of a future Layer-5 HVAC descriptor. Its subject is exactly one explicit
