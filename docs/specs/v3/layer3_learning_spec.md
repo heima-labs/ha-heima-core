@@ -300,9 +300,9 @@ the resulting state at `T`: `AsOfStateFeature` reconstructs the latest state rec
 `T`, `CausalAggregateFeature` summarizes `[T - window, T]`, and `CausalSequenceFeature` returns at
 most `max_items` ordered observations from that same interval. Thus two facts emitted at the same
 instant are context observed together, never an implicit cause and outcome merely because one was
-appended first. This deliberately treats the exceptional case of two separate evaluations sharing an
-identical timestamp as concurrent too: it can merge otherwise separable evidence, but cannot invent a
-false causal relation.
+appended first. Two separate evaluations never share an instant: Layer 0 §3.5 gives every cycle a
+strictly later cycle instant, so a concurrent group always belongs to one cycle and a transition
+between consecutive cycles is never merged into one group.
 The aggregate is valid only for a source claim and aggregation that its core family validator permits
 (for example, `event_count` for events; `mean` only for a finite numeric state). Every declared historical feature/anchor read checks both `retention_coverage` and the
 Layer-0 §4.4 `ObservationCoverage` result before sample construction. An incomplete
@@ -1020,8 +1020,8 @@ create, repair or relabel any of these phases.
 
 A sample is complete only when the entire observation window is observable and remains attached to its
 anchor. Layer 0 §4.4's typed coverage determines the exclusion: an interval whose
-reasons include `process_interruption` or `continuity_metadata_unknown` is
-`censored_by_observation_gap`; otherwise `required_stream_unavailable` for the
+reasons include `process_interruption`, `clock_discontinuity`, `queue_overflow` or
+`continuity_metadata_unknown` is `censored_by_observation_gap`; otherwise `required_stream_unavailable` for the
 addressed channel is `censored_by_unavailability`. Both exclude the sample from
 training, validation, and the zero-count class. A restart shorter than the
 ordinary freshness bound remains a process gap. `first_incomplete_at` locates

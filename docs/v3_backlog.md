@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 8 | 0 | 13 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 5 | 0 | 16 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **60 findings** | **9** | **0** | **50** | **1** |
+| **Total** | **60 findings** | **6** | **0** | **53** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5676,11 +5676,13 @@ Layer 2 says every current formula except `physical_evidence.weighted_evidence` 
 
 #### CA4-20 — Monotonic deadlines and UTC history ordering have unresolved edge cases
 
-**Status:** TODO. **Type:** undefined temporal behavior. **References:** [Layer 0 §3.1, §4.0–4.1, §9](specs/v3/layer0_runtime_spec.md), [Layer 4 §9.3](specs/v3/layer4_domain_spec.md).
+**Status:** DONE (2026-10-10; specification readiness). **Type:** undefined temporal behavior. **References:** [Layer 0 §3.1, §4.0–4.1, §9](specs/v3/layer0_runtime_spec.md), [Layer 4 §9.3](specs/v3/layer4_domain_spec.md).
 
 A monotonic countdown cannot unconditionally preserve an absolute UTC deadline across wall-clock correction, despite the “cannot fire early, late” wording. Layer 0 permits distinct cycles with equal `when`, while the presence adapter requires `last_available_when < observed_at`; telemetry also describes equal-time facts as one cycle. Clock rollback needs an explicit relationship between append order, current state, and historical event time.
 
 **Correction:** distinguish elapsed and civil deadlines and specify equal-time/rollback semantics. **Closure:** a fake clock exercising forward/backward adjustment and equal-time cycles preserves one-shot firing, valid episode identity, and the declared historical ordering.
+
+**Approved resolution (2026-10-10).** Every `AtJob` declares `basis="elapsed"` or `"wall_clock"`; a clock discontinuity greater than 1 second re-arms pending wall-clock jobs against their unchanged due, firing a passed due once (20a/A). Every cycle receives `max(wall_clock_reading, previous_cycle_instant + 1 µs)`, so distinct cycles never share an instant and recorded history never moves backward, including across restart (20b/A). Relaxing the presence adapter to `<=` was considered and rejected because equal-time groups, episode keys and backward clocks would still conflict. A forward jump or a backward jump over 1 second records a process-wide `clock_discontinuity` observation gap (20c/A). Owners: Layer 0 §3.1/§3.5/§4.4; dependents Layer 2/3/4/5, overview, recap. See the [CA4-20 review](specs/v3/reviews/CA4-20.md); no V3 runtime test ran.
 
 #### CA4-21 — Historical aggregates and tier-specific requiredness are underspecified
 
@@ -5745,11 +5747,13 @@ Each layer specifies an atomic swap, but the composition lacks a common commit/r
 
 #### CA4-28 — Recursive immutability and invalid-evidence handling are inconsistent
 
-**Status:** TODO. **Type:** data-boundary ambiguity. **References:** [Layer 1 §3–4.3 and acceptance](specs/v3/layer1_substrate_spec.md), [Layer 0 §4.1, §6.2–6.4](specs/v3/layer0_runtime_spec.md).
+**Status:** DONE (2026-10-10; specification readiness). **Type:** data-boundary ambiguity. **References:** [Layer 1 §3–4.3 and acceptance](specs/v3/layer1_substrate_spec.md), [Layer 0 §4.1, §6.2–6.4](specs/v3/layer0_runtime_spec.md).
 
 A frozen dataclass plus copied nested dicts/lists prevents neither nested mutation by a consumer nor alteration of a shared snapshot. The recursive freeze requirement is explicit for canonical JSON elsewhere but not equivalently closed for HouseFact payloads. Layer-1 acceptance also requires rejection of NaN in evidence while the fail-soft evidence rule replaces invalid evidence with `{}`; the rejected object must be identified. A canonical checkpoint layout would make depth compliance verifiable, but the earlier assertion that the bound itself makes those records impossible is not retained.
 
 **Correction:** specify deep immutability, depth counting, and whether invalid evidence rejects only evidence or the whole fact. **Closure:** consumer mutation cannot change shared data; admitted hold checkpoints round-trip within bounds; NaN evidence has one specified outcome.
+
+**Approved resolution (2026-10-10).** Construction freezes `value`, `evidence` and retained `PersistedProjection`s recursively in the existing validation pass; equality uses canonical bytes and the wire form is unchanged (28a/A). One collection-depth rule applies to all three: scalars 0, each enclosing collection +1, maximum 2 (28b). A non-finite number in `evidence` discards only evidence with a diagnostic; in `value` it rejects the fact (28c/A). The hold-checkpoint clause no longer applies because CA4-01 removed that checkpoint. Owners: Layer 1 §3/§4.3/§10; dependent Layer 0 §4.1/§6.4. See the [CA4-28 review](specs/v3/reviews/CA4-28.md); no V3 runtime test ran.
 
 #### CA4-32 — Successful hold journaling conflicts with the no-I/O evaluation path
 
@@ -5783,11 +5787,13 @@ windows are excluded. Acceptance covers all four outcomes and prevents a no-acti
 
 #### CA4-38 — The durable retry queue has no resource bound or overflow policy
 
-**Status:** TODO. **Type:** newly identified degraded-mode resource gap. **References:** [Layer 0 §4.0–4.3, §8](specs/v3/layer0_runtime_spec.md).
+**Status:** DONE (2026-10-10; specification readiness). **Type:** newly identified degraded-mode resource gap. **References:** [Layer 0 §4.0–4.3, §8](specs/v3/layer0_runtime_spec.md).
 
 Failed durable batches retain their ordered facts for retry while new in-process facts continue to advance. Memory-buffer and durable-store limits do not specify a limit for this separate pending queue. During a prolonged storage outage, continuing non-coalescible events can therefore grow it without a declared bound. The contract cannot simultaneously guarantee unlimited retention of failed writes, finite memory, and uninterrupted admission without specifying a degradation choice.
 
 **Correction:** declare the queue budget, retry ordering, overflow/degradation policy, and corresponding lost-history coverage reporting. **Closure:** a prolonged failed-store scenario stays within the declared resource policy and never reports dropped events or gaps as durably complete history.
+
+**Approved resolution (2026-10-10).** The queue budget is `max(32 MiB, 5% × effective memory limit)`, exactly 32 MiB when no enforceable limit is known, recomputed only with a new health snapshot and revisable from evidence. On overflow Layer 0 first collapses superseded queued state transitions (always keeping the latest per key), then drops the oldest queued events; it never blocks admission and never drops continuity boundaries. Each loss extends one bounded per-stream interval committed as a `queue_overflow` gap when storage returns; the watermark advances only past declared losses. Owner: Layer 0 §4.6 with §4.4/§8/§9/§10; dependent Layer 3 §4.4.2. See the [CA4-38 review](specs/v3/reviews/CA4-38.md); no V3 runtime test ran.
 
 
 ### Later P1/P2 findings — priority stated on each entry

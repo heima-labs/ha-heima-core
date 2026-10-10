@@ -98,7 +98,10 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   such as notifying today about tomorrow's event; calendar awareness is Timing infrastructure,
   evaluated before the core DAG runs each cycle, not a semantic resolver or a plugin.
   Duration and civil-time values are validated at configuration staging or dynamic job registration,
-  never repaired or rechecked per cycle.
+  never repaired or rechecked per cycle. Every cycle gets a strictly increasing cycle instant
+  (`max(clock, previous + 1 µs)`), so history never moves backward; each job declares an
+  `elapsed` or `wall_clock` basis, and a clock jump over 1 second re-arms `wall_clock` jobs and
+  records a `clock_discontinuity` observation gap (Layer 0 §3.1/§3.5).
   → Layer 0 §3 is the current timing contract; `v3_house_fact_draft.md` is historical.
 - **Persistence**: `HouseFact` storage is **always atomic** — one fact per WHAT/WHERE/WHEN/HOW,
   never a bundled record. It has two tiers: a durable long-term store (for learning and audit) and
@@ -109,7 +112,10 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   distinct state transition is retained in deterministic internal append order and latest-state lookup
   remains O(1). Events append every occurrence and are never current state. `HeimaEvent` is
   a transient delivery envelope; its durable audit representation is an event `HouseFact`,
-  and delivery deduplication never erases history. The same bootstrap pass reserves fact-type
+  and delivery deduplication never erases history. During a storage outage the retry queue is
+  bounded by `max(32 MiB, 5% of effective memory)`; overflow first collapses superseded state
+  transitions, then drops oldest events, and declares each loss as a `queue_overflow` gap
+  (Layer 0 §4.6). Facts and projections are deeply immutable once constructed (Layer 1 §3). The same bootstrap pass reserves fact-type
   ownership across layers, preventing a registry producer from colliding with a Layer-0-owned
   family such as hold lifecycle events. A "snapshot" (everything true at
   one instant, or in one place, over one window) is never its own stored shape; it's a query

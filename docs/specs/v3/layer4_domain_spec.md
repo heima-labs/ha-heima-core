@@ -1,8 +1,8 @@
 # Heima v3 - Layer 4: Semantic Resolution
 
 **Status:** Defined V3 semantic-resolution contract. Not implemented.
-**Open corrections:** CA4-20 (equal-time ordering), CA4-22 (signal admission and expiry) and
-CA4-27 (cross-layer configuration commit), tracked in the CA4 backlog.
+**Open corrections:** CA4-22 (signal admission and expiry) and CA4-27 (cross-layer configuration
+commit), tracked in the CA4 backlog.
 
 **Layer:** 4 of 8. Builds on Layer 0's cycle/timing/persistence facilities, Layer 1's immutable `HouseFact`/`Location`/`Provenance` contracts, Layer 2's current typed facts and staged registry generation, and Layer 3's closed transient `InferenceSignal` contracts. It completes the semantic-resolution DAG before Layer 5 evaluates policy. It never reads Home Assistant objects or payloads.
 
@@ -252,8 +252,8 @@ class DecisionSnapshot:
 calendar_view.fingerprint, hold_admission_view.fingerprint,
 command_ownership_view.fingerprint, recovery_view.fingerprint,
 reaction_authority_view.fingerprint, state_transition_inputs)`.
-It is deterministic for a retry of the same frozen cycle and distinct for a later cycle, including one
-with the same UTC `when`. A later fact, signal, generation change, or history append cannot alter the
+It is deterministic for a retry of the same frozen cycle and distinct for every later cycle, whose
+cycle instant is strictly later (Layer 0 §3.5). A later fact, signal, generation change, or history append cannot alter the
 snapshot, its history view, trigger group, guards, or envelope result.
 
 ### 5.2 Output and Availability
@@ -394,7 +394,8 @@ PresenceTransitionValue = {
 
 `continuity="contiguous"` means no unavailable `presence` output occurred after
 `last_available_when`; `continuity="reconciled_after_gap"` means one or more unavailable outputs did
-occur. In both cases `last_available_when < observed_at`; for a reconciled episode, the physical
+occur. In both cases `last_available_when < observed_at`, which Layer 0 §3.5 guarantees by giving
+every cycle a strictly later cycle instant; for a reconciled episode, the physical
 transition is known only to have occurred in `(last_available_when, observed_at]`. The deterministic
 `episode_key` is the RFC-8785/SHA-256 digest of `(presence resolver id, from, to,
 last_available_when, observed_at)`.

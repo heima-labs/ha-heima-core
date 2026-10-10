@@ -78,11 +78,15 @@ Layer 0 standardizes the machinery every higher layer needs:
 
 - **Timing:** `AtJob` is the one execution primitive; `CronEntry` is the recurrence policy above it.
   Instants are timezone-aware UTC. Local civil time exists only for explicitly local recurrences and
-  presentation.
+  presentation. Cycle instants strictly increase; jobs declare an `elapsed` or `wall_clock` basis,
+  and a clock jump over 1 second re-arms wall-clock jobs and opens a `clock_discontinuity` gap
+  (§3.1/§3.5).
 - **Persistence:** accepted facts enter a short-term in-memory history and an ordered durable batch.
   State facts use write-on-change and a `FactIdentityKey`; event facts remain append-only. Durable
   pruning is time-based with a 14-day baseline, per-type retention declarations, a 50,000-record
-  per-type ceiling, and a 512 MiB global watermark.
+  per-type ceiling, and a 512 MiB global watermark. The durable retry queue is bounded by
+  `max(32 MiB, 5% of effective memory)` and declares overflow loss as `queue_overflow` coverage
+  (§4.6).
 - **Honest history:** retention coverage is stream-scoped. A noisy stream in one room can make its
   own historical interval truncated without falsely degrading the same fact type in another room.
   Separate durable process-continuity metadata marks restart/outage intervals; a 60-second

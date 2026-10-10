@@ -1682,7 +1682,11 @@ For every active step-programmed Reaction, the Initial-V3 contract permits one n
 Layer 5 owns one process-local next-step slot keyed by `(reaction_id, configuration_generation_id,
 reaction_activation_id)`. Its `AtJob.job_id` is stable for that activation and the core
 `next_step` purpose; it does not include a mutable plan fingerprint, mode, session, episode,
-Actuator, or `planned_step_id`. A descriptor supplies the bounded next boundary's `due`,
+Actuator, or `planned_step_id`. A descriptor supplies the bounded next boundary's `due` and its
+Layer-0 `AtJob.basis`: a boundary derived from civil or calendar time (a presence-simulation
+session or episode boundary, a comfort-trajectory calendar return boundary) is `wall_clock`; a
+boundary derived only from an elapsed duration after an in-process anchor (an adapter step-settle
+interval) is `elapsed`. It also supplies the
 canonical nonempty ordered `(actuator_id, controlled_channel, planned_step_id)` tuple and
 current validation inputs; concurrent bundle members share that boundary. The job id is
 the replacement key; each `planned_step_id` identifies a channel's program step, not a
@@ -1746,7 +1750,9 @@ A descriptor-declared sustained-state trigger may use the same Layer-0
 keeps one process-local slot keyed by `(reaction_id,
 configuration_generation_id, reaction_activation_id, "delayed_action")`.
 Its stable `job_id` contains those identities and the fixed purpose, not
-the selected duration, artifact revision, Actuator, target or snapshot.
+the selected duration, artifact revision, Actuator, target or snapshot. The
+job has Layer-0 `AtJob.basis="elapsed"`: its wait is a duration from the
+in-process qualifying anchor.
 The slot contains the original qualifying-state anchor, effective due,
 exact timing path, one stable activation action identity and an arm
 revision. A trigger-only descriptor has no concurrent programmed-step

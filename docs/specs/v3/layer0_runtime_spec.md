@@ -113,19 +113,31 @@ class AtJob:
     owner: str          # subsystem name, e.g. "semantic_resolver", "divergence_hold", "engine"
     due: EvidenceInstant  # canonical UTC instant at which this job is due
     label: str
+    basis: Literal["elapsed", "wall_clock"]  # declared by the owner; see below
 ```
 
 `AtJob` is the **one** execution primitive: a scheduled one-shot deadline.
 
-**Scheduling semantics**: `due` is a wall-clock instant, but *dispatch itself must be
-monotonic-safe* — at arm (or re-arm) time, Timing parses the canonical `due` and current
-`EvidenceInstant`, computes their difference **once**, and schedules
-that duration on a monotonic timer. The pending countdown is never re-evaluated against wall-clock
-time while armed. This means a system clock adjustment (NTP correction, or a Daylight Saving Time
-transition) that happens *while a job is pending* cannot cause it to fire early, late, or twice —
-the same robustness property the historical pre-V3 manual-hold expiry (a hand-rolled
-monotonic float) had, carried forward into the shared primitive instead of
-reimplemented per subsystem.
+**Scheduling semantics**: at arm (or re-arm) time, Timing parses the canonical `due` and the
+current cycle-instant clock (§3.5), computes their difference **once**, and schedules that
+duration on a monotonic timer. The owner declares the job's `basis`:
+
+- `elapsed`: the due expresses a duration from an in-process anchor (a fixed-duration hold, a
+  `Stability` dwell or grace, a Reaction delay, a confirmation ceiling, an
+  `IntervalRecurrence`). The monotonic countdown is authoritative and is never re-evaluated
+  against wall-clock time while armed; a wall-clock correction cannot shorten, extend or repeat it.
+- `wall_clock`: the due expresses an instant defined outside the process (a `WeeklyRecurrence`
+  occurrence, a calendar boundary, a session or recovery boundary derived from civil or calendar
+  time, a Layer-2 `last_reported + max_source_age` expiry). The monotonic countdown is armed the
+  same way, but a detected clock discontinuity (§3.5) re-arms every pending `wall_clock` job
+  against its unchanged `due`. A due already in the past after re-arm fires exactly once,
+  immediately; a due moved further away waits. Re-arm uses the ordinary `job_id` replacement,
+  so a job never fires twice for one due.
+
+An owner that cannot classify a job's due is invalid at registration. Daylight Saving Time never
+changes a UTC `due`; it affects only the civil-time computation of a `WeeklyRecurrence` due
+(below). This keeps the robustness property of the historical pre-V3 manual-hold expiry for
+elapsed waits, while absolute deadlines follow corrected wall-clock time.
 
 **Re-registration**: `job_id` is a replace key, not a uniqueness constraint to reject on conflict —
 registering an `AtJob` with an already-pending `job_id` cancels the old timer and arms the new one.
@@ -177,7 +189,9 @@ genuinely different kinds of rule, not the same rule with some fields unset — 
 answers "which wall-clock moments", `IntervalRecurrence` answers "how often, relative to now".
 
 For a `CronEntry`, Timing computes the next `due` from `pattern` relative to now, arms an `AtJob`,
-and on fire recomputes and re-arms. For `WeeklyRecurrence`, `hour`/`minute` are civil-time values in
+and on fire recomputes and re-arms. A `WeeklyRecurrence` job has `basis="wall_clock"`; an
+`IntervalRecurrence` job has `basis="elapsed"`. Calendar cache refresh at a known event boundary
+(§3.4.1) is `wall_clock`; a fixed-duration hold deadline (§6.2) is `elapsed`. For `WeeklyRecurrence`, `hour`/`minute` are civil-time values in
 the installation's configured local timezone (Home Assistant's own `time_zone` setting) — computing
 the next `due` means taking `now` (UTC), converting to that local zone, finding the next matching
 weekday/hour/minute there, then converting the result back to UTC for storage/scheduling. **This
@@ -418,6 +432,56 @@ per-entity intervals and containment; the consumer that declares one or more sta
 any permitted classification and composition under its own contract. Layer 4 transports the opaque
 frozen view only and never reads, classifies, resolves, or otherwise interprets it.
 
+### 3.5 Cycle instant and clock discontinuity
+
+Layer 0 alone reads the wall clock for engine evaluation. Every evaluation cycle receives one
+**cycle instant**:
+
+```text
+cycle_instant = max(wall_clock_reading_utc, previous_cycle_instant + 1 µs)
+```
+
+It is the `CycleInputBarrier.when` of that cycle and an `EvidenceInstant` with ordinary
+microsecond precision. Distinct cycles therefore never share an instant, and the instant of every
+later cycle is strictly greater. Within one cycle, every coordinator-assigned instant — a fact
+`when`, a normalized ingress edge instant, an occurrence time — lies in
+`(previous_cycle_instant, cycle_instant]`; an ingress source instant at or before the previous
+cycle instant is raised to `previous_cycle_instant + 1 µs`, preserving ingress order, and the
+original source instant is not retained. At bootstrap `previous_cycle_instant` is the latest
+durably committed instant known to Persistence (last `CycleCommitMarker`, continuity watermark
+or observation boundary, §4.1/§4.4), so recorded history never moves backward across a restart.
+In ordinary operation the wall-clock reading is already later and the rule changes nothing; it
+adds one comparison per cycle.
+
+Equal-`when` facts still occur *within* one cycle and remain one concurrent group (§4.0); they
+never span two cycles.
+
+**Clock discontinuity.** At each cycle start and in the system-owned 60-second check of §4.4,
+Layer 0 compares the elapsed monotonic time with the elapsed wall-clock time since the previous
+comparison. A difference greater than **1 second** in either direction is a clock discontinuity:
+
+- **Forward jump.** The skipped wall-clock interval was not observed. Layer 0 records a
+  process-wide observation gap with reason `clock_discontinuity` from the last cycle instant
+  before the jump to the first cycle instant after it, and re-arms pending `wall_clock` jobs
+  (§3.1).
+- **Backward jump.** The cycle-instant rule keeps instants strictly increasing, so successive
+  cycles advance by one microsecond from the frozen floor until the wall clock exceeds it again.
+  Those instants do not measure real elapsed time. Layer 0 emits the `clock_regression`
+  diagnostic, records a process-wide `clock_discontinuity` gap from the first frozen cycle
+  instant until the first cycle whose wall-clock reading exceeds the floor, and re-arms pending
+  `wall_clock` jobs. A regression of at most 1 second is absorbed by the cycle-instant rule with
+  the diagnostic only, and opens no gap.
+
+At bootstrap a wall-clock reading more than 1 second earlier than the durable floor is a backward
+discontinuity under the same rule. A forward difference at bootstrap is indistinguishable from
+downtime and is already covered by the ordinary process interruption (§4.4).
+`clock_discontinuity` gap boundaries use the durable observation-continuity metadata path of
+§4.4; until a boundary is acknowledged, a historical read spanning it is incomplete. Elapsed
+waits, dwell and holds continue on monotonic time and are unaffected (§3.1); they are never
+re-evaluated against cycle instants that a discontinuity may have distorted. Historical
+durations derived from `when` differences across a `clock_discontinuity` gap are incomplete, never
+used as observed elapsed time.
+
 ---
 
 ## 4. Persistence
@@ -652,7 +716,9 @@ only complete validated inline event facts, never an oversized non-fact
 projection. These facilities never retain a Home Assistant `State` object,
 its full attributes mapping, HA event context, or another mutable HA runtime object. Layer 2 extracts
 the small declared input it needs at the HA boundary; Layer 1 validates and copies the resulting
-payload before any Layer-0 facility can buffer or persist it. Calendar is the narrow explicit case:
+payload before any Layer-0 facility can buffer or persist it. Every retained fact and projection is
+deeply immutable (Layer 1 §3), so the buffer, current index, snapshots, queue and readers share one
+value without defensive copies and no consumer can alter another's view. Calendar is the narrow explicit case:
 its cache retains only normalized `start`/`end`/`summary`/`source_entity` fields in `CalendarWindow`,
 never a provider response or HA state object.
 
@@ -739,9 +805,9 @@ class FrozenCalendarView:
 
 `CycleInputBarrier` is an immutable intake boundary, not a claim that no later Layer-4 or Layer-5
 fact may share the same `when`. Such later facts belong to their declared execution phase and cannot
-retroactively enter the view. A later engine cycle with the same UTC `when` receives a different
-`cycle_id` and barrier, preserving the equal-time concurrency rule without allowing a retry to read
-newly arrived data.
+retroactively enter the view. Every later engine cycle receives a different `cycle_id` and a
+strictly later cycle instant (§3.5), so a retry of one barrier cannot read newly arrived data and
+two cycles never form one equal-time group.
 
 `FrozenCalendarView` is created only from a `ready` cache snapshot obtained after process startup as
 required by §3.4.1. A failed read remains `failed` in the frozen view and makes a calendar-dependent
@@ -839,6 +905,8 @@ cycle, while retaining meaningful changes where `value` stayed the same but
 `available`/`confidence`/stable source changed. It also remains correct after a failed durable batch:
 the live process still compares against its actual current state, and its ordered queue retries every
 uncommitted accepted transition at a later end-of-cycle batch rather than silently collapsing it.
+Only the bounded overflow policy of §4.6 may discard a queued item, and it always declares the
+resulting loss as historical coverage.
 The first valid per-channel `actuator.channel_state.*` observation after
 process restart is the narrow §5.1.1.1 exception: it force-writes one
 new-epoch boundary record even if the old durable state fingerprint
@@ -985,7 +1053,8 @@ one `HistoricalReadResult` for its requested interval and required streams; the 
 ```python
 ObservationCoverageStatus = Literal["complete", "incomplete"]
 ObservationGapReason = Literal[
-    "process_interruption", "required_stream_unavailable", "continuity_metadata_unknown",
+    "clock_discontinuity", "continuity_metadata_unknown", "process_interruption",
+    "queue_overflow", "required_stream_unavailable",
 ]
 
 @dataclass(frozen=True)
@@ -1011,7 +1080,8 @@ the request start, conservatively. The requested interval's declared endpoint
 semantics decide whether a gap exactly on a boundary intersects it. The field
 identifies an observation limit, never the occurrence time of a missing event.
 `complete` requires that the
-requested interval intersects neither a process interruption nor an unavailable interval
+requested interval intersects neither a process interruption, a clock discontinuity (§3.5),
+a durable-queue overflow loss of a required stream (§4.6), nor an unavailable interval
 of any required stream, and that continuity metadata is trustworthy. An unknown boundary
 reports `continuity_metadata_unknown`, never optimistic completeness. Per-Actuator/channel
 `available=False` intervals remain ordinary state history and affect only reads that
@@ -1074,6 +1144,10 @@ An empty observation period can therefore advance the watermark without inventin
 unacknowledged queue item or failed write leaves the watermark where it was; the failure is
 diagnostic and cannot certify a complete historical interval. The marker is bounded system
 metadata, not a `HouseFact`, hold journal, or per-Actuator checkpoint.
+A queue item discarded under §4.6 counts as resolved for this rule only after the
+`queue_overflow` gap boundary that declares its loss is durably acknowledged; the watermark
+never certifies a discarded item as written. The same recurrence performs the clock comparison
+of §3.5.
 An attempted hold transition that cannot construct a valid audit fact despite
 its staged proof is also a continuity blocker from that known transition instant
 (§6.4): the watermark cannot cross it. Reads requiring that audit stream
@@ -1189,6 +1263,52 @@ storage outage, in which case delivery is only best effort until storage returns
 never blocked on this outbox.
 This narrow synchronous preparation exception does not turn the ordinary event queue or
 hold-audit queue into a synchronous write path.
+
+### 4.6 Durable retry-queue budget and overflow
+
+The ordered durable queue (§4.2) holds every accepted state transition, event fact, inline audit
+fact and continuity boundary awaiting durable acknowledgement. While storage fails it retains
+items for retry, but within a bounded in-memory budget:
+
+```text
+queue_budget_bytes = max(32 MiB, 5% × effective_memory_limit)
+```
+
+`effective_memory_limit` is the enforceable limit in the latest `RuntimeHealthSnapshot` (§9);
+when it is absent or not enforceable the budget is exactly 32 MiB. Queue usage is measured as the
+canonical UTF-8 bytes of the queued items. The budget is recomputed only when a new health
+snapshot is published, never in the evaluation path; a lower recomputed budget applies to the
+next overflow check and never discards an item retroactively merely because the budget changed.
+The 32 MiB floor and the 5% coefficient are operational defaults, revisable from evidence in a
+later release. The follow-up intent outbox (§4.5) is a separate durable store and is not part of
+this queue.
+
+When accepting a new item would exceed the budget, Layer 0 frees space in this order and never
+blocks admission, a cycle or an HA command:
+
+1. **Collapse superseded state transitions.** For a state `FactIdentityKey` with several queued
+   transitions, the oldest queued transitions that are superseded by a later queued transition of
+   the same key are discarded. The latest queued state of every key is always retained, so the
+   durable current state stays correct once storage returns.
+2. **Discard the oldest queued event facts**, across event streams, in append order.
+
+Continuity and gap boundaries are never discarded. Every discarded item extends one in-memory
+lost interval for its own stream (`FactIdentityKey` or event `(fact_type, Location)`) from the
+earliest to the latest discarded `when`; a stream has at most one such merged interval, so this
+metadata is bounded by the registered streams. When storage accepts writes again, the
+`queue_overflow` boundaries are committed as stream-gap metadata (§4.4) in the same ordered batch
+as, or before, the retained items of those streams. A historical read requiring an affected
+stream over its lost interval is incomplete with reason `queue_overflow`; it never reports a
+discarded transition or event as absent evidence, a zero count or continuous state. A crash
+before those boundaries are durable is already covered by the unadvanced continuity watermark
+(§4.4).
+
+The short-term buffer (§4.1) and the live current index are not reduced by this policy, so
+hot-path windows and current-state admission are unaffected. Discarding emits the
+`durable_queue_overflow` diagnostic with per-stream counts and lost intervals; queue bytes,
+budget and its source are always visible in diagnostics (§10). A discarded hold-audit fact
+follows the same rule as any other event: the live hold is unaffected and the audit stream
+reports the lost interval.
 
 ---
 
@@ -1821,8 +1941,8 @@ and reuses it on every queue retry. The producer copies the complete typed
 transition, its facet-source maps and frozen `where`, `when`, `how` fact
 metadata; it validates the normalized value against Layer 1 §3 and retains
 canonical bytes at acceptance, without any mutable caller-owned map
-reference. Each reader receives a separate reconstructed value rather than
-the queue's internal mapping. A validated transition enters the ordinary
+reference. The accepted value is the deeply immutable Layer-1 form, shared by
+the buffer, queue and readers; no reader can mutate the queued audit fact. A validated transition enters the ordinary
 short-term event buffer and ordered asynchronous durable queue at its
 original append order and time. Live hold admission updates independently
 of durable acknowledgement and never reads audit history.
@@ -2166,14 +2286,19 @@ Silent failure is not acceptable anywhere in this section.
 - **Ordinary durable-tier fact-batch write failure** (§4.2): logged and surfaced as a diagnostic event; the cycle is not
   aborted and the in-memory buffer is unaffected. The durable tier is important for audit and
   learning but is not the source of truth for same-cycle correctness — losing one ordinary batch write is
-  recoverable, crashing the engine over it is not an acceptable trade. The separately bounded
-  follow-up preparation and historical-continuity guarantees use their own failure rules below.
+  recoverable, crashing the engine over it is not an acceptable trade. A prolonged failure keeps
+  the retry queue within the §4.6 budget and declares any discarded item as `queue_overflow`
+  coverage. The separately bounded follow-up preparation and historical-continuity guarantees use
+  their own failure rules below.
+- **Clock discontinuity** (§3.5): a jump greater than 1 second never moves recorded history
+  backward; it re-arms pending `wall_clock` jobs, records a `clock_discontinuity` gap and, for a
+  regression, emits `clock_regression`. Elapsed waits continue on monotonic time.
 - **Checkpoint write failure** (§7.3): logged and surfaced as a persistence diagnostic; the
   checkpoint remains dirty for retry. The failure does not change the cycle's `RecoveryState`,
   which is classified from current recovery inputs (§7.1). A missing or unusable prior projection
   still supplies no baseline for that entity (§7.3), never evidence that nothing changed.
 - **Follow-up outbox preparation/finalization failure** (§4.5): surface `follow_up_durability_degraded` when preparation fails or misses its finite acknowledgement deadline; do not indefinitely block a scheduled step or immediate revocation. Reconcile an uncertain write under the same operation id, and keep a prepared or ready intent for the prescribed recovery and delivery retry. A failed finalization must not claim that the event fact was committed.
-- **Hold-audit validation or durable write failure** (§6.1/§6.4): a violated staged depth/size bound is a producer-contract diagnostic and blocks the continuity watermark, never a truncated fact or permission to bypass the live hold. An already valid fact whose durable write fails remains queued with `durability_pending`; its queue resource bound/overflow remain CA4-38. A crash can leave an audit gap bounded by §4.4; restart never restores the hold from audit.
+- **Hold-audit validation or durable write failure** (§6.1/§6.4): a violated staged depth/size bound is a producer-contract diagnostic and blocks the continuity watermark, never a truncated fact or permission to bypass the live hold. An already valid fact whose durable write fails remains queued with `durability_pending`, subject to the §4.6 budget and overflow rule. A crash can leave an audit gap bounded by §4.4; restart never restores the hold from audit.
 - **Observation-continuity metadata failure** (§4.4): do not acknowledge a historical watermark or report complete coverage across an uncommitted interruption boundary. Surface degraded continuity and use the conservative incomplete/unknown coverage result for affected historical reads; current-cycle action admission still uses fresh inputs.
 
 ---
@@ -2183,7 +2308,8 @@ Silent failure is not acceptable anywhere in this section.
 Layer 0 owns a read-only `RuntimeHealthSnapshot` for slow-path resource admission. It describes the
 runtime that must be protected, not the house: it is not a `HouseFact`, is never stored in the fact
 timeline, cannot be read by a semantic resolver/policy as a semantic input, and cannot cause an action. Layer 3
-is its only initial consumer and interprets it only at a learning scheduling boundary.
+interprets it only at a learning scheduling boundary. The only Layer-0 use is recomputing the
+retry-queue budget from its effective memory limit when a new snapshot is published (§4.6).
 
 `RuntimeHealthSnapshot` is immutable and capability-explicit. It contains `captured_monotonic`, the
 source/capability set and last successful probe time, effective CPU capacity when known, an effective
@@ -2233,6 +2359,10 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   post-break observation against the last known expectation, with current RecoveryState and
   known break context. This comparison is not a hold event, persisted fact, or claim about an
   offline resident action (§6.3).
+- **Clock**: last cycle instant, last clock comparison, and every detected discontinuity with
+  direction, size, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
+- **Retry queue**: queued bytes, current budget and its source (floor or memory limit), and, after
+  overflow, per-stream discarded counts and `queue_overflow` lost intervals (§4.6).
 - **Persistence**: durable-tier size and retention pressure per `fact_type` (§4.3) — how close each
   is to its count ceiling, so a misbehaving sensor's volume is visible before it needs to be
   diagnosed reactively; and, per `fact_type`, its effective retention window and which registered
@@ -2260,9 +2390,8 @@ earlier semantic resolver in the same pass.
 
 ## 12. Not yet decided
 
-Open cross-layer contracts affecting this runtime are tracked in the CA4 backlog, including
-CA4-20 (monotonic deadlines and equal-time ordering), CA4-28 (fact immutability) and
-CA4-38 (durable retry-queue bound).
+Open cross-layer contracts are tracked in the CA4 backlog. No open CA4 item is currently owned
+by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3–4 and §4.6.
 
 ---
 
@@ -2285,6 +2414,33 @@ concrete checklist rather than re-deriving one:
   backdating either fact. A newer unavailable transition is the latest
   state during its interval. If stream-gap metadata cannot be acknowledged,
   the affected read is incomplete (§4.0/§4.2/§4.4).
+- Two cycles whose wall-clock readings are the same microsecond receive cycle
+  instants `T` and `T + 1 µs`; an ingress edge stamped before the previous
+  cycle instant is raised just after it. A `present` then `away` presence
+  across those cycles satisfies Layer 4's strict `last_available_when <
+  observed_at` and emits one departure (§3.5; Layer 4 §9.3).
+- With a fake monotonic clock and fake wall clock: a 0.5 s wall correction
+  emits no gap; a 2 s backward correction keeps instants strictly increasing,
+  emits `clock_regression` and records a `clock_discontinuity` gap until the
+  wall clock exceeds the frozen floor; a 10 min forward jump records a gap
+  over the skipped interval. A history read spanning either gap is incomplete
+  with `clock_discontinuity`. A bootstrap reading earlier than the durable
+  floor by more than 1 s behaves as a backward jump (§3.5/§4.4).
+- During a wall-clock correction, an armed `elapsed` 30-minute hold expires
+  after 30 monotonic minutes. An armed `wall_clock` calendar-boundary job is
+  re-armed against its unchanged due: after a forward jump past the due it
+  fires once immediately, after a backward jump it waits, and it never fires
+  twice. A job registered without `basis` is rejected (§3.1).
+- With storage failing and a fake 32 MiB budget, a flapping state stream keeps
+  only its latest queued state plus a `queue_overflow` lost interval; oldest
+  queued events are discarded next with per-stream intervals; continuity
+  boundaries are never discarded and admission never blocks. After storage
+  returns, the boundaries commit with or before the retained items, the
+  watermark advances only past declared losses, and reads over a lost
+  interval are incomplete with `queue_overflow`, never zero or continuous.
+  An unaffected stream remains complete. With a known 1 GiB memory limit the
+  budget is 51.2 MiB; without a known limit it is 32 MiB; a lower recomputed
+  budget does not retroactively discard items (§4.4/§4.6).
 - One `AtJob`/`CronEntry` execution path, monotonic-safe by construction; no remaining independent
   timer call site anywhere in the codebase.
 - Re-registering the same `(owner, job_id)` leaves one pending timer; owner cancellation is

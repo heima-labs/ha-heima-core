@@ -153,6 +153,20 @@ collection depth. `HouseFact` construction calls it;
 Layer 2 also calls it during staging for every static value that one of its interpretations can emit.
 This is one value contract with two entry points, not a second interpretation-specific validator.
 
+**Collection depth is counted one way everywhere.** A scalar has depth 0; every enclosing list,
+mapping or normalized frozen-dataclass field object adds 1. `HouseFact.value`, `Provenance.evidence`
+and `PersistedProjection` each allow a maximum depth of 2: a top-level mapping or list whose members
+are scalars or one further collection of scalars.
+
+**Deep immutability.** Construction freezes `value` and `evidence` once, in the same validation
+pass that measures depth and canonical size: every mapping becomes a read-only mapping and every
+list becomes a tuple, recursively, and a frozen dataclass value is retained only with frozen
+fields. Equality and hashing use the canonical serialization. Canonical JSON still serializes a
+frozen sequence as a JSON array, so the wire form is unchanged; the tuple is an in-memory
+representation, not an admitted input type outside a qualifying dataclass. The same freeze applies
+to a `PersistedProjection` retained by Layer 0. Consumers therefore share one value without
+defensive copies, and no consumer can alter a fact or projection held by another component.
+
 **Shared canonical JSON rule.** Every V3 reference to canonical JSON, canonical UTF-8 JSON,
 canonical serialization, or a fingerprint/digest derived from JSON means the JSON Canonicalization
 Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html)): recursive object-key sorting on raw
@@ -559,8 +573,9 @@ for small, specific diagnostic detail, not as a dumping ground for large payload
 
 **Constrained to a JSON-compatible shape, not `dict[str, Any]`.** `evidence: dict[str, EvidenceValue]`
 (§4, `EvidenceValue` defined there) — values are limited to JSON primitives (`str`/`int`/`float`/
-`bool`/`None`) or shallow collections of them, **maximum nesting depth 2** (a value, or a dict/list of
-values — one level of nested attributes, not deeper). This is
+`bool`/`None`) or shallow collections of them, **maximum nesting depth 2** under the single
+collection-depth rule of §3 (the `evidence` mapping is depth 1; one nested mapping or list of
+scalars is depth 2). This is
 mechanically enforceable and catches, at construction time, an entire class of accidental leak that a
 content-based rule cannot: a raw Home Assistant `State` object, a binary blob, an arbitrary custom
 object — none of these fit `EvidenceValue`, so a producer cannot accidentally dump one into `evidence`
@@ -576,7 +591,8 @@ fact construction; it adds no I/O or retained raw HA object to the evaluation pa
 **Violation policy: fail soft, not hard — this is a fixed, deliberate choice, not an unspecified
 detail left to whoever implements it.** `evidence` is explicitly supporting detail, not essential to
 what a `HouseFact` means (§4 intro) — a shape or size violation drops `evidence` back to `{}` for
-that specific fact and raises a diagnostic event (Layer 0 §10), but the `HouseFact` itself is
+that specific fact and raises a diagnostic event (Layer 0 §10). A non-finite number anywhere in
+`evidence` is such a violation: it discards only `evidence`, never the fact. The `HouseFact` itself is
 still created with its `fact_type`/`value`/`where`/`when`/`confidence`/`source`/`available` intact.
 Aborting the entire fact over a malformed `evidence` payload would be disproportionate — it would
 mean a bug in optional diagnostic detail can silently blind a semantic resolver to a real observation. This is
@@ -902,8 +918,8 @@ import cycle without creating a new architectural layer or moving ownership.
 
 ## 9. Not yet decided
 
-Open cross-layer contracts affecting this substrate are tracked in the CA4 backlog, including
-CA4-28 (recursive immutability and invalid evidence).
+Open cross-layer contracts are tracked in the CA4 backlog. No open CA4 item is currently owned
+by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) was closed in §3–4.3.
 
 ---
 
@@ -947,8 +963,9 @@ CA4-28 (recursive immutability and invalid evidence).
 - `HouseFact` construction rejects a `value` that isn't `EvidenceValue`-shaped or a qualifying frozen
   dataclass, exceeds the maximum nesting depth, or exceeds the size cap — a hard failure, in a test
   that tries each violation.
-- `HouseFact` construction rejects `NaN` and either infinity anywhere in `value` or `evidence`,
-  including nested collections and frozen-dataclass fields; explicit boolean values remain valid
+- `HouseFact` construction rejects `NaN` and either infinity anywhere in `value`, including nested
+  collections and frozen-dataclass fields. The same non-finite number anywhere in `evidence` creates
+  the fact with `evidence={}` and a diagnostic (§4.3). Explicit boolean values remain valid
   `EvidenceValue`s but are rejected wherever a quantitative number is required. The three confidence
   helpers and `Provenance` construction reject `bool` for every numeric argument/field rather than
   treating it as `1` or `0`.
@@ -956,6 +973,12 @@ CA4-28 (recursive immutability and invalid evidence).
   enter a `HouseFact`, `Provenance`, or a nested payload by reference or serialization. A test extracts
   selected fields into a copied normalized projection, mutates the original HA fixture afterward, and
   confirms the fact is unchanged and remains within its 8 KiB payload cap.
+- A constructed fact's `value` and `evidence`, at every nesting level, and a retained
+  `PersistedProjection` reject mutation: a consumer that tries to add a key or append to a nested
+  list fails, and the buffer, current index, snapshot and other readers continue to observe the
+  original canonical value. The frozen sequence serializes as a JSON array with unchanged bytes.
+  Depth is counted by the one §3 rule for `value`, `evidence` and `PersistedProjection`: a
+  depth-two value is accepted and a third nested collection is rejected (or discarded for evidence).
 - A `PersistedProjection` accepts only copied JSON-compatible mappings within depth 2 and 8 KiB,
   rejects raw HA objects, non-finite numbers, excessive depth, and excessive size. Layer 0
   omits an invalid recovery target without cancelling its accepted command and omits only an

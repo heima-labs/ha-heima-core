@@ -517,8 +517,9 @@ assertion is first decided, by a concrete rule, not by each producer's discretio
   publishes changes leaves it `None` unless its integration separately guarantees reports.
   This is validated for shape at staging, but the physical reporting promise cannot be
   inferred or proved merely from an HA timestamp.
-  A staged binding with this gate arms one ordinary Layer-0 `AtJob` for the first
-  representable instant strictly after `last_reported + max_source_age`.
+  A staged binding with this gate arms one ordinary Layer-0 `AtJob` with
+  `basis="wall_clock"` for the first representable instant strictly after
+  `last_reported + max_source_age`.
   A newer report re-arms the same job id; cancellation/replacement uses the
   shared scheduler, never a Sensor-specific timer loop. At due, a fresh
   frozen HA intake rechecks `last_reported` before declaring unavailable;
@@ -1149,7 +1150,8 @@ state. The two cases are deliberately different:
   pending deadline and commit it in this same evaluation. `None` means no required stability time, not
   "wait until a later evaluation". This is what makes `Stability(to_true=None, ... )` genuinely
   instant-on for occupancy/presence and avoids an artificial extra-cycle latency.
-- **A positive dwell is one verified deadline, not polling.** If the candidate differs and its window
+- **A positive dwell is one verified deadline, not polling.** Dwell and grace deadlines use
+  Layer-0 `AtJob.basis="elapsed"`. If the candidate differs and its window
   is positive, replace any pending transition toward another value, record
   `(pending_value, pending_since, due=pending_since+window, token, generation)`, and arm exactly one
   Layer-0 `AtJob` for `due`. A subsequent input-driven evaluation that still sees that same candidate
@@ -2031,8 +2033,7 @@ registry at runtime.
 ## 8. Not yet decided
 
 Open cross-layer contracts affecting these registries are tracked in the CA4 backlog, including
-CA4-26 (recurrence authority), CA4-27 (configuration commit), and
-CA4-28 (immutable values).
+CA4-26 (recurrence authority) and CA4-27 (configuration commit).
 
 ---
 
