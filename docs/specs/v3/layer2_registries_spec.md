@@ -673,7 +673,7 @@ there is no desktop telemetry default. These normalized facts can be current Lay
 working-context contract, while a direct Layer-5 interruption policy may independently consume a
 declared communication-session fact without waiting for learning.
 
-### 3.5 Core solar-geometry bindings
+### 3.6 Core solar-geometry bindings
 
 Initial V3 obtains solar position through the existing Layer-2 `Sensor`
 mechanism. When a staged environmental formula or learning definition needs
@@ -1370,7 +1370,7 @@ inputs and produces W/m²
 suffix resolves to exactly that opening; an unknown opening, incompatible
 room, duplicate binding/output claim, missing orientation or wrong input
 unit/shape rejects staging. Both solar-angle facts use canonical radians
-with the same north/clockwise azimuth convention (§3.5). A Topology change invalidates the compiled
+with the same north/clockwise azimuth convention (§3.6). A Topology change invalidates the compiled
 formula and dependent learning definitions. Evaluation uses only the frozen
 orientation and current typed inputs, never a Topology lookup or HA metadata.
 The geometry/irradiance interpretation is exactly Layer 3 §4.8.2; no proxy
@@ -1601,7 +1601,7 @@ each other.
 input came from a `Sensor`" from "this input came from another `FusionRule`". A `FusionRule` may
 freely list, in `inputs`, a `FactRef` that another `FusionRule`'s own `produces`/`where` matches.
 Concrete motivating case: "zone occupancy" reusing "room occupancy" (itself already a
-`WeightedQuorumStrategy` `FusionRule`) instead of re-deriving from every room's raw sensors again,
+`physical_evidence.weighted_evidence` `FusionRule`) instead of re-deriving from every room's raw sensors again,
 duplicating weights/threshold/stability across every consumer that wants a coarser view.
 
 **Why this is safe for the "decide and act fast" goal, not a regression from the earlier "two waves
@@ -1630,7 +1630,8 @@ own. The actual risk is that **debounce windows accumulate across levels, silent
 configures a higher tier without knowing what a lower tier already waited.** Worked through with
 concrete numbers:
 
-- Tier 1 — `physical_room_occupancy` (`FusionRule`, `WeightedQuorumStrategy` over room sensors,
+- Tier 1 — `physical_room_occupancy` (`FusionRule`, `physical_evidence.weighted_evidence` over
+  the room's evidence Sensors,
   producing `occupancy.physical`):
   `Stability(to_true=None, to_false=Window(seconds=120))`. Occupied is reported instantly; vacant is
   reported only after the room has read empty for 120s.
@@ -2059,7 +2060,7 @@ CA4-28 (immutable values).
   impossible angle, missing attribute, stale/unavailable Sun state or changed
   observer location cannot yield an available solar-incidence input; unrelated
   automations continue. A north- and south-facing opening consume the same
-  geometry pair through distinct staged formula configurations (§3.5/§5.3).
+  geometry pair through distinct staged formula configurations (§3.6/§5.3).
 - A configured HA `schedule.*` helper can feed the casa-scoped
   `quiet_hours.active` state claim through the ordinary `StateReadBinding` and
   `MappingInterpretation`: active becomes exact boolean `True`, inactive exact
@@ -2243,7 +2244,7 @@ CA4-28 (immutable values).
   input without the declared canonical W/m² unit fails staging. Geometry mode yields a
   dimensionless proxy and cannot claim W/m² exposure. At or below zero solar
   elevation, the geometric direct component is zero even for a matching
-  opening azimuth (§3.5/§5.3; Layer 3 §4.8.2).
+  opening azimuth (§3.6/§5.3; Layer 3 §4.8.2).
 - `numeric.hysteresis_condition.v1` rejects wrong source kind/unit, wrong
   output kind/Location, missing or misplaced previous-cycle self-reference,
   equal/reversed thresholds for its direction, non-finite thresholds and extra

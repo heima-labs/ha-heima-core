@@ -2261,11 +2261,15 @@ earlier semantic resolver in the same pass.
 ## 12. Not yet decided
 
 Open cross-layer contracts affecting this runtime are tracked in the CA4 backlog, including
-CA4-28 (fact immutability) and CA4-38 (audit queue bound).
+CA4-20 (monotonic deadlines and equal-time ordering), CA4-28 (fact immutability) and
+CA4-38 (durable retry-queue bound).
 
 ---
 
 ## 13. Acceptance criteria (for the eventual implementation phase)
+
+Not part of this design spec's approval gate — recorded so the implementation phase inherits a
+concrete checklist rather than re-deriving one:
 
 - A `HistoryViewRequirement` stages only for a registered state/event stream
   with its matching slice kind, unique id and retained positive `Window`.
@@ -2281,9 +2285,6 @@ CA4-28 (fact immutability) and CA4-38 (audit queue bound).
   backdating either fact. A newer unavailable transition is the latest
   state during its interval. If stream-gap metadata cannot be acknowledged,
   the affected read is incomplete (§4.0/§4.2/§4.4).
-Not part of this design spec's approval gate — recorded so the implementation phase inherits a
-concrete checklist rather than re-deriving one:
-
 - One `AtJob`/`CronEntry` execution path, monotonic-safe by construction; no remaining independent
   timer call site anywhere in the codebase.
 - Re-registering the same `(owner, job_id)` leaves one pending timer; owner cancellation is

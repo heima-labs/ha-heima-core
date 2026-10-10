@@ -402,7 +402,7 @@
     {
       "id": "L2-SOLAR-GEOMETRY",
       "owner": "docs/specs/v3/layer2_registries_spec.md",
-      "heading": "3.5 Core solar-geometry bindings",
+      "heading": "3.6 Core solar-geometry bindings",
       "depends_on": ["L2-QUANTITATIVE-UNITS", "L0-WINDOW", "L1-LOCATION"]
     },
     {

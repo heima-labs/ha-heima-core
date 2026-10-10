@@ -1,6 +1,9 @@
 # Heima v3 - Layer 3: Learning / pattern recognition
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
+**Open corrections:** CA4-12 (catalog and candidate schema), CA4-21 (historical aggregates and
+tier requiredness), CA4-22 (signal admission and expiry), CA4-25 (diagnostic namespaces), CA4-26
+(recurrence authority) and CA4-27 (cross-layer configuration commit), tracked in the CA4 backlog.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
 mined). It does not read Home Assistant runtime objects, entity state, or registry internals.
@@ -2180,7 +2183,7 @@ changes can inform a registered response profile; an active-at-entry
 no-command decision remains separate from an observed response to a change.
 
 Solar geometry is also a declared fact input, supplied by the two
-core-generated Layer-2 `Sensor` registrations of Layer 2 §3.5 as
+core-generated Layer-2 `Sensor` registrations of Layer 2 §3.6 as
 `external.solar_elevation` and `external.solar_azimuth` at `casa`; both read
 one frozen `sun.sun` state, enforce freshness, and convert degrees to canonical
 radians. It is not recomputed ad hoc by a learner from raw HA configuration.
@@ -3889,7 +3892,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   still needs its staged typed trigger, conditions and guard contract (§6.5;
   Layer 5 §3.2).
 - Solar-dependent environmental learners bind only the two current
-  casa-scoped radian facts from Layer 2 §3.5 and the staged per-opening
+  casa-scoped radian facts from Layer 2 §3.6 and the staged per-opening
   incidence output; a stale Sun source, changed observer location or geometry
   proxy mislabeled as irradiance cannot enter a sample or proposal (§4.8.2).
 - Every registered Initial-V3 relation profile validates a policy-consumable

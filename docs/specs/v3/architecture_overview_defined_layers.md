@@ -4,8 +4,9 @@
 specifications and introduces no new implementation requirement.
 
 **Maintenance:** Manually synchronized when a confirmed decision is promoted to an authoritative
-specification. **Reviewed through:** 2026-10-04 for the CA4-01 A1/B1/C2 contracts and
-their dependent ownership paths in `docs/v3_backlog.md`. Where it differs from an
+specification. **Reviewed through:** 2026-10-10 for every CA4 correction closed in
+`docs/v3_backlog.md`, including the partial CA4-12 decisions; open CA4 items are not summarized as
+settled. Where it differs from an
 authoritative specification, that specification wins.
 
 **Scope:** Layers 0, 1, 2, 3, 4, and 5 are defined in detail today. Layer 6 appears only where an

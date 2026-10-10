@@ -1,6 +1,9 @@
 # Heima v3 - Layer 5: Action and reaction generation
 
 **Status:** Defined V3 action-and-reaction contract. Not implemented.
+**Open corrections:** CA4-12 (catalog and candidate schema), CA4-25 (diagnostic namespaces),
+CA4-26 (recurrence authority) and CA4-27 (cross-layer configuration commit), tracked in the CA4
+backlog.
 **Layer:** 5 of 8. Consumes Layer-2 facts and Actuators plus the current-cycle outputs of the completed
 Layer-4 semantic DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
 input. It never feeds configuration, policy state, or action results back into Layer 4.

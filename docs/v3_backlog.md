@@ -5010,10 +5010,10 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | Severity | IDs | TODO | IN_PROGRESS | DONE | NOT_APPLICABLE |
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
-| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 2 | 0 | 31 | 0 |
+| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 8 | 0 | 13 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **60 findings** | **10** | **0** | **49** | **1** |
+| **Total** | **60 findings** | **9** | **0** | **50** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
