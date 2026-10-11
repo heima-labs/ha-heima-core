@@ -373,6 +373,10 @@ history to mean anything and would make no sense recomputed every cycle.
     resident-approved-routine positive sleep-, relax-, and domestic-working-context contracts; every
     other statistical signal is diagnostic-only by design — computed and observable, but never
     consumed by semantic resolution.
+    A signal is emitted inside the cycle, after the Layer-2 barrier and before Layer 4, stamped
+    with the cycle instant and admitted as `emitted_at <= when < expires_at`; one `elapsed` expiry
+    job per contract and subject wakes a fresh evaluation, so an assisted conclusion never outlives
+    its signal.
   - **`LearningProposalCandidate`** — the registry-analyzer stage's typed hand-off to Layer 5. An
     active analyzer may emit it only under its exact registered core candidate kind and permitted
     egress; Layer 5 alone validates it and creates the reviewable `ReactionProposal`, always gated by

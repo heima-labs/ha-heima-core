@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 3 | 0 | 19 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 2 | 0 | 20 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **61 findings** | **4** | **0** | **56** | **1** |
+| **Total** | **61 findings** | **3** | **0** | **57** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5694,13 +5694,13 @@ The shared `mean`, `rate`, `true_duration`, and sequence resolvers do not fully 
 
 #### CA4-22 — Signal timestamp admission and expiry wakeups are incomplete
 
-**Status:** TODO. **Type:** timing/routing gap. **References:** [Layer 3 §6.3](specs/v3/layer3_learning_spec.md), [Layer 4 §5.1, §6](specs/v3/layer4_domain_spec.md).
+**Status:** DONE (2026-10-11; specification readiness). **Type:** timing/routing gap. **References:** [Layer 3 §6.3](specs/v3/layer3_learning_spec.md), [Layer 4 §5.1, §6](specs/v3/layer4_domain_spec.md).
 
 `emitted_at < snapshot.when < expires_at` rejects a signal stamped at the receiving cycle's timestamp. The order of serving publication relative to that barrier is not closed. Although expired signals must be rejected on evaluation, no owner is assigned to wake evaluation when an admitted signal expires; a materialized assisted claim can otherwise remain visible until another event/fallback cycle.
 
 **Correction:** define boundary inclusivity, publication ordering, and expiry-triggered reevaluation. **Closure:** same-time emission has a declared admission result, and expiry retracts the assisted conclusion under an explicit timing guarantee without depending on incidental external activity.
 
-**Approved decisions (2026-10-11), not yet applied.** (1) Signal inference runs inside the cycle, after Layer-2 facts and before Layer 4, on the frozen intake; `emitted_at` is the cycle instant and admission is `emitted_at <= snapshot.when < expires_at`. (2) Layer 3 arms one replaceable `elapsed` Layer-0 `AtJob` per (contract, subject) at the emitted signal's `expires_at`; its due requests a fresh evaluation, so an assisted conclusion never outlives its signal. Specification text, review and acceptance still to be written.
+**Approved resolution (2026-10-11).** (1) Signal inference runs inside the cycle, after Layer-2 facts and before Layer 4, on the frozen intake; `emitted_at` is the cycle instant and admission is `emitted_at <= snapshot.when < expires_at`. (2) Layer 3 arms one replaceable `elapsed` Layer-0 `AtJob` per (contract, subject) at the emitted signal's `expires_at`; its due requests a fresh evaluation, so an assisted conclusion never outlives its signal. A signal belongs only to its emitting cycle; startup replays no expiry callback. Applied in Layer 3 §6.3/§9 and Layer 4 §5.1/§6/§10; see the [CA4-22 review](specs/v3/reviews/CA4-22.md); no V3 runtime test ran.
 
 #### CA4-23 — The literal numeric parser regex is double-escaped
 

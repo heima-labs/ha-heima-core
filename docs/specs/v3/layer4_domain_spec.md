@@ -1,7 +1,7 @@
 # Heima v3 - Layer 4: Semantic Resolution
 
 **Status:** Defined V3 semantic-resolution contract. Not implemented.
-**Open corrections:** CA4-22 (signal admission and expiry), tracked in the CA4 backlog.
+**Open corrections:** none.
 
 **Layer:** 4 of 8. Builds on Layer 0's cycle/timing/persistence facilities, Layer 1's immutable `HouseFact`/`Location`/`Provenance` contracts, Layer 2's current typed facts and staged registry generation, and Layer 3's closed transient `InferenceSignal` contracts. It completes the semantic-resolution DAG before Layer 5 evaluates policy. It never reads Home Assistant objects or payloads.
 
@@ -193,7 +193,7 @@ parameters, raw HA selectors, callables, Actuators, policies, or dynamic fact ex
 Layer 0 first consolidates the accepted equal-`when` Layer-2 intake facts behind one immutable
 `CycleInputBarrier`. The engine creates an immutable `SemanticInputSnapshot` containing that completed
 input group and declared current values, active Layer-2/semantic-generation fingerprints, valid
-registered signals, cycle identity/UTC `when`, and only predeclared Layer-0 `previous_cycle` values.
+registered signals emitted by Layer 3 earlier in this same cycle (Layer 3 §6.3), cycle identity/UTC `when`, and only predeclared Layer-0 `previous_cycle` values.
 
 Layer 4 evaluates enabled semantic resolvers in deterministic topological order. An evaluator can read only declared lower-fact slots, declared upstream semantic-claim slots, one declared optional signal slot, parameters, and declared previous-cycle values. It cannot inspect a global fact map, HA cache, policy, future resolver output, or arbitrary prior result.
 
@@ -290,8 +290,11 @@ An edge exists only for a declared same-cycle upstream semantic claim. The gener
 A signal is considered only when its core signal type and frozen contract authorize this resolver kind;
 the contract's claim parameters and legal scope kind, and the core-declared routing projection,
 must exactly match the resolver's materialized claim parameters and subject scope;
-`emitted_at < snapshot.when < expires_at`; its artifact/freshness/schema is valid; and the resolver's
-declared priority permits it. Otherwise it is absent for the cycle. A valid optional signal may still
+`emitted_at <= snapshot.when < expires_at`; its artifact/freshness/schema is valid; and the resolver's
+declared priority permits it. Otherwise it is absent for the cycle. Because Layer 3 emits within the
+cycle after the Layer-2 barrier, an admitted signal has `emitted_at == snapshot.when`; the inclusive
+lower bound admits it, and the exclusive upper bound makes a signal expiring exactly at the cycle
+instant absent. Retraction at expiry relies on Layer 3's expiry `AtJob`, not on unrelated input. A valid optional signal may still
 lose to stronger deterministic evidence, recorded as bounded provenance without raw learner or HA
 payload.
 
@@ -592,6 +595,7 @@ room; it cannot suppress urgent safety/security communication or establish an ac
 - Two distinct `IndirectAssistanceContract`s may route the same signal type to occupancy and activity,
   respectively; staging rejects a single signal type/contract identity routed to two resolver kinds,
   mismatched claim parameters, or an incompatible subject scope.
+- A signal emitted in the cycle with instant `t` is admitted at `snapshot.when == t`; one with `expires_at == t` is absent. With no other input, Layer 3's expiry job triggers a cycle at `expires_at`, and a signal that no longer qualifies retracts the assisted conclusion in that cycle; a restart carries no signal forward.
 - An absent/expired/invalid signal never becomes a negative assertion, stale retained state, policy action, fact of its own, or direct notification.
 - An unsupported state conclusion publishes `available=False` with undefined value, not the old available conclusion. Event outputs have no latest-value or `previous_cycle` use.
 - A resolver may report availability only through a non-empty canonical tuple of Layer-3

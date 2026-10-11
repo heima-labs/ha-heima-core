@@ -2,7 +2,7 @@
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
 **Open corrections:** CA4-12 (catalog and candidate schema), CA4-21 (historical aggregates and
-tier requiredness), CA4-22 (signal admission and expiry) and CA4-25 (diagnostic namespaces), tracked in the
+tier requiredness) and CA4-25 (diagnostic namespaces), tracked in the
 CA4 backlog.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
@@ -3104,6 +3104,24 @@ within its staleness limit, and
 its current bounded inputs pass the type's freshness rules; otherwise it is absent rather than
 fabricated as a low-quality signal.
 
+**Emission timing and expiry wakeup.** Signal emission is a synchronous step of the engine cycle:
+it runs after Layer 0 closes the `CycleInputBarrier` with the cycle's Layer-2 facts and before
+Layer 4 builds its `SemanticInputSnapshot`. The emitter reads only the adopted artifact and its
+declared bounded inputs from that frozen intake and the sealed previous-cycle values; it never
+reads a Layer-4 output of the same cycle, which preserves the no-feedback rule below. Its
+`emitted_at` is the cycle instant (Layer 0 §3.5). A signal belongs to its emitting cycle only:
+it is never carried into a later snapshot, and every cycle re-emits or omits it from fresh inputs.
+For each emitted signal, Layer 3 arms one ordinary Layer-0 `AtJob` with `basis="elapsed"`, owner
+`learning_signal`, job id derived from `(contract_id, subject)`, and `due=expires_at`. A newer
+emission replaces it; a cycle in which that `(contract_id, subject)` emits nothing cancels it, and
+a removed, deactivated or invalidated contract or artifact cancels it at its generation swap. At
+due, the job requests a fresh evaluation cycle; that cycle re-emits only if the artifact and
+inputs still qualify, otherwise the signal is absent and the assisted conclusion is retracted by
+the consuming resolver. An assisted conclusion therefore never outlives its signal by more than
+ordinary cycle latency, without depending on unrelated external activity. Startup does not
+replay a missed expiry callback: no signal survives a restart, and the first cycle emits only
+from fresh inputs.
+
 #### `indirect.semantic_assist.v1`
 
 `IndirectSemanticAssistModel-v1` is the sole producer of this one initial core signal type. Its closed
@@ -3131,7 +3149,7 @@ class IndirectSemanticAssistSignal:
 `calibrated_probability` contract includes its slice-appropriate PPV/calibration evidence; a
 `routine_affinity` contract includes recurrence, coverage, contradiction, shadow, and drift evidence,
 not a fabricated accuracy metric. The signal has no negative assertion, raw proxy/reference input,
-resident identity, HA target, command, or policy field. `emitted_at < expires_at`; `expires_at` is no
+resident identity, HA target, command, or policy field. `emitted_at` is its cycle instant and `emitted_at < expires_at`; `expires_at` is no
 later than the contract maximum TTL, artifact staleness boundary, or a required input's freshness
 deadline.
 
@@ -3876,6 +3894,12 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 
 ## 9. Initial acceptance criteria
 
+- A signal is emitted within its cycle after the Layer-2 barrier and before Layer 4, with
+  `emitted_at` equal to the cycle instant; it is never carried into a later cycle. Each emission
+  arms or replaces one `elapsed` expiry `AtJob` per `(contract_id, subject)` at `expires_at`; a cycle
+  without emission or a generation swap removing the contract/artifact cancels it. With no other
+  input, the job's due cycle re-emits only from still-qualifying inputs, otherwise the assisted
+  conclusion is retracted; a restart replays no expiry callback (§6.3).
 - A `TimeRange` uses two canonical `EvidenceInstant`s in ascending order;
   equal endpoints represent one observed instant but never prove gap-free
   coverage. A diagnostic or candidate whose evidence span is reversed is
