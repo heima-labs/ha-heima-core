@@ -552,8 +552,9 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   selects one typed room-humidity level, delta or rate trigger; current room occupancy is required
   only where declared. A fan already active at qualifying start is untouched
   for that activation, while an initially inactive fan can follow its
-  declared start/change/end steps. The earlier one-shot draft specified only
-  activation; the required Initial-V3 specialization remains CA4-12 work.
+  declared start/change/end steps: start at a staged level, step up while humidity keeps
+  rising, stop when humidity stays below an end level or at a runtime cap; leaving the room
+  does not stop it, and a resident switch-off cancels the activation.
   Learning preserves observed entry state, transitions and
   verified origin without treating an active-at-entry no-op as a Heima effect.
   Its common environmental learner keys separate response estimates by the
@@ -595,8 +596,10 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   Resumption recalculates current
   policy with a new activation and never restores a hold, timer, missed step
   or learning coverage across the gap.
-  Its full `humidity_extraction` relation-profile registration remains CA4-12
-  work. `environment.planned_comfort_trajectory`
+  Its `humidity_extraction` profile learns humidity-ratio response separately for start and
+  step-up; starting or stepping up a room fan needs no descriptor guard (a registered low-risk
+  intent). Every environmental profile's horizons and evidence gates come from a core-frozen
+  release calibration. `environment.planned_comfort_trajectory`
   is also a registered Initial-V3 descriptor, but evidence-gated: its administrative HVAC/calendar/
   comfort prerequisites may be staged as immutable versioned generations, while a proposal requires
   validated thermal evidence and action requires the subsequent notification-only shadow, authenticated

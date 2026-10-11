@@ -361,6 +361,15 @@ version="1")`. It permits `opening_security`, `precipitation`, `wind`, `thermal_
 | `(open_for_exchange, air_quality)` | `opening_security`, `precipitation`, `wind`, `thermal_bounds`, `outdoor_air_quality` |
 | `(close_to_retain, thermal)`, `(close_to_retain, air_quality)`, `(close_to_retain, hygrometric)` | none; `close_to_retain` is in the descriptor's `safe_direction_intents` |
 
+`environment.air_extraction` uses `ReactionGuardContractRef(guard_contract_id=
+"environment.air_extraction.guards.v1", version="1")` for its direct path and its learned profile.
+It permits `quiet_hours.v1`, `presence` and `privacy`, each optional. Its variants
+`(activate_extraction, default)`, `(adjust_extraction, default)` and `(stop_extraction, default)`
+require none: `activate_extraction` and `adjust_extraction` are `low_risk_intents` (rationale: a room
+extraction fan moves air out of the room it serves and creates no exterior, security or thermal
+hazard; requiring presence would wrongly block extraction after the resident leaves), and
+`stop_extraction` is a `safe_direction_intents` entry.
+
 `routine.actuation_bundle` uses `ReactionGuardContractRef(guard_contract_id=
 "routine.actuation_bundle.guards.v1", version="1")` for its direct path and its learned profile. It
 permits `presence`, `privacy`, `quiet_hours.v1`, `opening_security`, `precipitation` and `wind`. Every
@@ -376,9 +385,11 @@ Every relation profile names one exact `ReactionGuardContractRef`. An `admin_dir
 with no relation profile instead names one exact descriptor-level guard contract. In either case the
 frozen contract defines the capabilities the configuration may use and the subset required
 for each action variant. That subset is non-empty, except for a variant whose `action_intent` the
-descriptor declares in `safe_direction_intents`, such as closing an exterior opening: moving toward
-the safe physical state needs no descriptor veto, while hold, physical confirmation, ownership and
-channel arbitration still apply under §6.0. The variant key is a frozen pair of the existing
+descriptor declares in `safe_direction_intents`, such as closing an exterior opening, or in
+`low_risk_intents`, such as starting a room extraction fan, with a registered rationale: neither
+moving toward the safe physical state nor an intrinsically low-risk action needs a descriptor veto,
+while hold, physical confirmation, ownership and channel arbitration still apply under §6.0. A
+low-risk declaration is a reviewed descriptor-version fact, never an administrator setting. The variant key is a frozen pair of the existing
 `action_intent` and a finite descriptor-version-owned `semantic_variant_id`.
 The descriptor's existing parameter/member validators derive exactly one
 variant from staged typed parameters; a descriptor with no variation uses
@@ -455,6 +466,7 @@ class RegisteredReactionDescriptor:
     program_family: ProgramFamilyRef | None  # shared activation/exit rules (§3.2 Program families)
     hold_release_mode: Literal["fixed_duration", "next_reaction_step"]
     safe_direction_intents: frozenset[str]  # intents moving toward the safe physical state (§3.2)
+    low_risk_intents: Mapping[str, str]     # intent -> registered rationale for no required guard (§3.2)
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
@@ -572,8 +584,8 @@ Suppressing an ongoing step does not implicitly close the activation. Every
 selected step still passes current authority, guards, hold, physical-state
 and whole-channel admission. For a learned multi-step proposal, staging
 must validate how its reviewed objective and intent bind to each
-estimate-dependent step; the exact Initial-V3 `humidity_extraction` mapping
-remains CA4-12 work.
+estimate-dependent step; the Initial-V3 `humidity_extraction` mapping binds
+`reduce_moisture` to its `start` and `modify_up` classes and treats `terminate` as diagnostic (§7).
 For an estimate-dependent target modification, the specialization must also
 find a currently qualifying need under its staged typed conditions and an
 eligible response for the exact proposed physical transition whose
@@ -2989,7 +3001,8 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   trigger `True -> False`, objective `limit_thermal_exchange` and `close_to_retain` stages with no
   required guard binding.
 - `environment.air_extraction`: one room-owned extraction-fan endpoint in any registered room and no
-  `opening_id`; intent `activate_extraction`. Its `humidity_extraction` profile selects exactly one
+  `opening_id`; intents `activate_extraction`, `adjust_extraction` and `stop_extraction`. Its
+  `humidity_extraction` profile selects exactly one
   typed room relative-humidity trigger from `level_crossing` (upward crossing of a staged level),
   `delta_over_window` (positive rise in a bounded staged `Window`), or `rate_over_window` (positive
   rise divided by a bounded staged `Window`). The descriptor version validates the selected
@@ -2998,8 +3011,7 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   condition is evaluated separately as a typed semantic guard; without that declaration,
   occupancy is not required. Missing or stale declared occupancy blocks the action, and an
   incomplete humidity history makes delta/rate abstain under §5.1. The profile predicts humidity
-  reduction, not a synthetic shower fact. Its complete relation-profile evidence and policy
-  registration remains CA4-12 work. At the qualifying start of an extraction
+  reduction, not a synthetic shower fact. At the qualifying start of an extraction
   activation, the descriptor requires a fresh valid observed inactive fan. If
   the fan is already active, it admits no `ApplyStep` for that activation,
   including no speed change or later stop, regardless of origin or whether
@@ -3012,7 +3024,7 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   developer-supplied §3.2 `program_evaluator` specialization that can select
   start, target modification and terminal steps from typed current context,
   with stable step identities, bounded canonical targets and a verified
-  normal exit. Fan speed and `off` are descriptor-specific targets of those
+  normal exit. Fan speed (the canonical `level` below) and `off` are descriptor-specific targets of those
   generic steps, not common evaluator branches. The earlier one-shot
   `activate_extraction` draft lacks that specialization and is incomplete;
   staging cannot accept it as the full Initial-V3 extraction program. This
@@ -3021,8 +3033,7 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   and bounded range of target modification, and physical termination, with
   distinct comparable reference cohorts and class-keyed estimates. A single
   class for every speed change or a pooled on/speed/off estimate is invalid.
-  Exact matchers, outcome horizons and policy qualification remain CA4-12
-  registration work. Its finite step kinds must declare whether their target
+  Its finite step kinds must declare whether their target
   needs an eligible estimate for that step's exact physical transition class.
   Without a speed-modification estimate, that change is suppressed; an
   explicitly deterministic terminal rule may still select `off` at a
@@ -3038,6 +3049,47 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   its own confirmed inactive-to-active transition and fresh current state.
   Its channel uses the approved `fixed_duration` hold release; a resident
   correction blocks later automatic target steps until that hold releases.
+
+  **Registration (CA4-12c).** `authoring_modes` are `admin_direct` and `learner_proposal`;
+  `supported_profile_refs` is exactly `humidity_extraction` version `"1"`; the guard contract (§3.2)
+  is also its `direct_guard_contract`; `safe_direction_intents={"stop_extraction"}` and
+  `low_risk_intents` covers `activate_extraction` and `adjust_extraction`. The canonical target is
+  `level`, an integer in `[1, N]` where `N` is the channel adapter's declared level count (`N=1` for
+  an on/off fan), or `off`. Its staged program parameters are `start_level`, `max_level`
+  (`1 <= start_level <= max_level <= N`), `settle_window`, `end_level` (relative humidity),
+  `end_dwell` and `max_runtime`, each a bounded `Window` or canonical value validated at staging. The
+  registered `program_evaluator` specialization selects:
+
+  1. **Start:** the staged humidity trigger qualifies, the fan is freshly observed `off`, and a
+     declared occupancy condition holds -> `activate_extraction` to `start_level`.
+  2. **Increase:** only when `max_level > start_level`. At least `settle_window` after the previous
+     step, relative humidity still satisfies the start condition and is rising -> `adjust_extraction`
+     to the next level up to `max_level`. On a learned path this step also needs an eligible
+     `modify_up` estimate for its exact cell; without one it is suppressed. Initial V3 has no
+     downward modification.
+  3. **Normal end:** relative humidity at or below `end_level` for `end_dwell` -> `stop_extraction`,
+     `natural_completion`. Unavailable humidity is `not_ended`.
+  4. **Runtime cap:** `max_runtime` after the start step -> `stop_extraction`,
+     `natural_completion`, regardless of humidity, so a stuck sensor cannot leave the fan running.
+  5. **Resident switch-off:** an observed resident `off` during the activation is
+     `normal_cancellation`; the fixed-duration hold applies, and a new activation requires relative
+     humidity first to return to or below `end_level`, so Heima does not restart against the
+     resident.
+
+  Occupancy is never required unless declared; leaving the room does not stop the program, which
+  ends only through items 3–5. Objective/intent pairs: `reduce_moisture -> activate_extraction`
+  and `reduce_moisture -> adjust_extraction` (learned and direct); `end_extraction ->
+  stop_extraction` (direct only: a deterministic end rule; the `terminate` class is diagnostic
+  evidence). The step timers use the common next-step slot (`elapsed` basis).
+
+  Valid direct example: bathroom subject `Location(scope="room", room_id="bathroom")`,
+  `relation_profile=None`, trigger `delta_over_window` of +10 relative-humidity points in a 10-minute
+  `Window`, no occupancy condition, a two-level fan, `start_level=1`, `max_level=2`,
+  `settle_window=10 min`, `end_level=65 %`, `end_dwell=5 min`, `max_runtime=60 min`, the zero-axis
+  empty-key envelope and an empty guard binding set. A shower raises humidity: the fan starts at
+  level 1 while the resident is present, steps to level 2 after 10 minutes if humidity keeps rising,
+  keeps running after the resident leaves and stops once humidity stays at or below 65 % for 5
+  minutes, or after 60 minutes at the latest.
 - `routine.actuation_bundle`: one room-scoped, finite ordered `ActuationBundle` triggered by one
   declared typed state transition or occurrence and guarded by a closed current-context profile. Its
   Reaction-descriptor-version-fixed member bound, member capability vocabulary, canonical target schemas and
@@ -3130,9 +3182,9 @@ The two already specified step-programmed Initial-V3 descriptors,
 `managed_episode_resumption=False`; their existing restart rules recompute
 their programs without claiming ownership from this new projection.
 `environment.air_extraction` is the third required step-programmed
-Initial-V3 descriptor; its exact registered specialization, target schema,
-and normal-exit rule remain CA4-12 closure work. Its resumption capability
-and fixed-duration hold release are fixed above, not left to inference.
+Initial-V3 descriptor; its specialization, target schema and normal-exit rule
+are registered above. Its resumption capability and fixed-duration hold
+release are fixed above, not left to inference.
 
 ### 7.1 Evidence-gated Initial-V3 descriptor
 
@@ -3764,6 +3816,13 @@ A learner may propose only values permitted by that same active descriptor.
 
 ## 8. Initial acceptance criteria
 
+- `environment.air_extraction` stages the §7 direct example with an empty required guard set
+  (`low_risk_intents` and `safe_direction_intents`). In its trace the fan starts at level 1 while
+  the room is occupied, steps to level 2 only after `settle_window` with humidity still rising,
+  is not stopped by vacancy, and stops at `end_level` held for `end_dwell` or at `max_runtime`. A fan
+  already on at entry is untouched; a resident switch-off is `normal_cancellation` and no new
+  activation starts until humidity first returns to `end_level`; a learned `adjust_extraction`
+  without an eligible `modify_up` cell is suppressed; `start_level > max_level` is rejected.
 - `routine.actuation_bundle` stages the §7 direct example with required capabilities exactly
   `presence`; it rejects a configuration without a `presence` binding, and a member whose physical
   action requires safety guards in an environmental descriptor inherits them. A learned candidate is

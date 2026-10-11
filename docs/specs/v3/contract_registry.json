@@ -608,6 +608,12 @@
       "owner": "docs/specs/v3/layer3_learning_spec.md",
       "heading": "4.4.3 `ActuationRoutinePatternModel-v1`",
       "depends_on": ["L3-ROUTINE-OUTPUT", "L5-RELATION-PROFILES"]
+    },
+    {
+      "id": "L3-ENVIRONMENTAL-GATES",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "Environmental response evidence-gate calibration",
+      "depends_on": ["L5-RELATION-PROFILES"]
     }
   ],
   "reviewed_slices": [

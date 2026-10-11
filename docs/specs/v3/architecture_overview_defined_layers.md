@@ -388,10 +388,9 @@ action.
   subject to current admission. For a learned modification the descriptor
   also requires current need and a conservative response qualifying under
   the reviewed objective; the developer declares legal bounded actions,
-  not their fixed efficacy or indispensable future targets. The earlier one-shot draft
-  declared only activation; the required Initial-V3 start/change/end
-  specialization remains CA4-12 work. The `humidity_extraction` relation-profile
-  evidence and policy registration remains open under CA4-12.
+  not their fixed efficacy or indispensable future targets. Its registered
+  start/step-up/end program, level target, `humidity_extraction` profile and
+  guard contract are in Layer 5 §7 and §3.2.
   This descriptor declares managed-episode resumption; it is available only
   after a verified Heima inactive-to-active edge. Layer 5 stores one compact
   open/closed state per channel in Layer 0's ordinary cycle batch. After

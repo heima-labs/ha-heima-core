@@ -1938,6 +1938,37 @@ observed calendar end as an arrival label. Activation requires calibrated trajec
 and operating-envelope coverage for both cohorts and every published step bucket; an energy benefit is
 publishable only with a separately staged measured energy/power outcome.
 
+##### Environmental response evidence-gate calibration
+
+The five non-HVAC `environmental_response.v1` profiles and `humidity_extraction` follow the same
+release discipline as the thermal profile below: each profile version has exactly one core-frozen
+calibration, approved by the core release authority and never by a household administrator, that
+fixes its outcome horizons and evidence gates.
+
+```python
+@dataclass(frozen=True)
+class EnvironmentalResponseGateCalibration:
+    calibration_id: str
+    profile_ref: RelationProfileRef
+    outcome_horizons: tuple[Window, ...]      # non-empty, ascending, unique; the profile's horizons
+    minimum_transition_support_per_cell: int
+    minimum_reference_support_per_cell: int
+    minimum_distinct_calendar_blocks_per_cohort: int
+    bootstrap_replica_count: int
+    minimum_valid_bootstrap_replicas: int
+    response_interval_nominal_coverage: float  # in (0, 1)
+    maximum_response_interval_width: float     # in the profile's canonical outcome unit
+    minimum_independent_shadow_episodes: int
+    approved_by: str
+    calibration_evidence_fingerprint: str
+```
+
+Counts are positive, `minimum_valid_bootstrap_replicas <= bootstrap_replica_count`, and the width is
+finite and positive. Each `environmental_response.v1` cell is eligible only when its horizon is in
+`outcome_horizons` and every support, block, replica, width and shadow gate passes; the interval is
+§4.8's temporal block bootstrap. The objective and `minimum_practical_delta` test of this section is
+applied on top of these gates. A profile without a frozen calibration publishes diagnostics only.
+
 ##### Initial thermal evidence-gate calibration
 
 The Initial-V3 numerical gates are not administrator preferences and are not selected from a current
@@ -2221,10 +2252,14 @@ their own profile-declared class and estimate only with complete pre/post,
 matching stable-state reference and confounder coverage. Initial and
 resulting speed remain typed context;
 active-at-entry observations cannot be silently pooled with
-inactive-at-entry activations to estimate the latter's response. The exact
-`humidity_extraction` transition matchers, comparable reference cohorts and
-outcome horizons still require CA4-12 registration; recording or estimating a speed edge
-does not itself authorize a speed policy.
+inactive-at-entry activations to estimate the latter's response. The
+`humidity_extraction` profile registers three classes on the fan's canonical `level` facet:
+`start` (`off -> level k`), `modify_up` (`level k -> level k+1`) and `terminate`
+(`level k -> off`); initial and resulting levels remain typed context, and any other edge (a
+downward step, a jump of more than one level) is excluded. Its outcome is the room humidity-ratio
+change at the calibrated horizons; each class's reference cohort is stable-state windows with the
+fan at the class's pre-state level. `terminate` is learned as diagnostic evidence only. Recording or
+estimating a level edge does not itself authorize a level policy.
 Its named, typed feature bindings describe only the context at or before that transition: the selected
 profile's measurements, topology, solar/weather conditions, presence where declared, and all relevant
 observed device states. Its named outcome bindings describe measurements strictly after the anchor at
@@ -3553,7 +3588,8 @@ count bound, duplicate-channel rule, opening/Actuator relation, numeric-outcome 
 and bounds, parameter schema/bounds, guard requirements, exact registered
 profile-output compatibility, and Layer-5 translation for each
 `(reaction_descriptor_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
-`open_for_exchange`, `close_to_retain`, and `activate_extraction`. Notification content belongs to the
+`open_for_exchange`, `close_to_retain`, `activate_extraction`, `adjust_extraction` and
+`stop_extraction`. Notification content belongs to the
 subsequent Layer-5/6 notification template, never to learner-provided text. An empty bundle is legal only for a
 descriptor explicitly declared `notification_only`; a descriptor requiring an endpoint rejects it during
 Layer-5 staging.
@@ -3755,7 +3791,7 @@ opening state, and either CO2 or humidity-ratio delta according to purpose, with
 outdoor-air-quality only where declared. `environment.air_extraction` permits room humidity-rise,
 humidity-rate and humidity-level bands, optionally declared current room occupancy, and observed
 fan state; no room-kind or bathroom label is an axis. Its trigger input is typed relative humidity;
-the profile's separate humidity-ratio outcome is still subject to CA4-12 registration.
+its learned outcome is the room humidity-ratio change (§4.8.1).
 Every registered descriptor permits
 only its version-declared axes. For a `learner_proposal`, the selected
 `relation_profile` may further restrict them; its validator rejects every
@@ -4005,6 +4041,11 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 
 ## 9. Initial acceptance criteria
 
+- An `environmental_response.v1` cell is eligible only under its profile's frozen
+  `EnvironmentalResponseGateCalibration`, at a calibrated horizon and with every support, block,
+  replica, width and shadow gate passing; a profile without a calibration publishes diagnostics only.
+  A `humidity_extraction` edge `level 2 -> level 1` (downward) or `level 1 -> level 3` (jump) is
+  excluded rather than classified; `off -> level 2` is a `start` with level 2 as context (§4.8.1).
 - A routine cell is proposal-eligible only with a `RoutineValidationReport` entry for its exact
   bundle and context key whose intervals match the cell, whose `failed_gates` is empty and whose
   counts, precision, lift and no-effect bounds pass the frozen `RoutineEvidenceGateCalibration`; a

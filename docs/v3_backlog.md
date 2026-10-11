@@ -5210,7 +5210,7 @@ Initial-V3 `environment.solar_shading` and `environment.external_exchange`.
 This resolves those two origin sets only. Their profile-free direct guard
 contracts and finite direct envelope cells still need exact registration
 before either direct path can stage (registered in slices 12a and 12b);
-the extraction origin set remains open.
+the extraction origin set is registered in slice 12c.
 The approved common-contract correction now keys required guards by
 descriptor-validated `(action_intent, semantic_variant_id)` and lets a
 descriptor's direct envelope use its own fixed axis subset, including the
@@ -5396,6 +5396,8 @@ record is preserved as history; its current-consumer statement is aligned.
 **Slice 12b — `environment.external_exchange` (approved and applied 2026-10-11).** One profile per purpose (`thermal_exchange`, `air_quality_exchange`, `hygrometric_exchange` v"1"); one guard contract `environment.external_exchange.guards.v1` keyed by purpose; new descriptor field `safe_direction_intents` lets a safe-direction variant (`close_to_retain`) have an empty required guard set; objectives `cool_with_outdoor_air`, `warm_with_outdoor_air`, `limit_thermal_exchange` added, and direct-only `close_after_ventilation`; direct trigger is a hysteresis boolean over the purpose quantity, using the new Layer-2 `numeric.difference.v1` for indoor-minus-outdoor temperature or humidity ratio; endpoint must face an exterior side (CA4-62); one direct example and acceptance. Remaining: 12d routine, 12c extraction, 12e examples.
 
 **Slice 12d — `routine.actuation_bundle` (approved and applied 2026-10-11).** Profile `routine_actuation_bundle` v"1" (trigger as one `primary` class, `routine.bundle_frequency.v1`, optional shadow); single objective `reproduce_resident_routine`; both origins; guard contract `routine.actuation_bundle.guards.v1` requiring `presence` for every member and inheriting the environmental safety guards for the same physical action; core-frozen `RoutineEvidenceGateCalibration` and keyed `RoutineValidationReport` reusing the §4.8 temporal block bootstrap; one direct example and acceptance. Remaining: 12c extraction, 12e examples.
+
+**Slice 12c — `environment.air_extraction` (approved and applied 2026-10-11).** Both origins; target `level` 1..N or `off`; intents `activate_extraction`, `adjust_extraction`, `stop_extraction`; program start/step-up/normal end/runtime cap/resident switch-off with staged `start_level`, `max_level`, `settle_window`, `end_level`, `end_dwell`, `max_runtime`; occupancy optional and vacancy never stops the program (developer clarification: the fan also runs while the room is occupied); `humidity_extraction` v"1" with `start`/`modify_up`/`terminate` classes on the `level` facet and humidity-ratio outcome; objectives `reduce_moisture` (start, step-up) and direct-only `end_extraction`; guard contract with no required guard via new `low_risk_intents` (start, step-up) and `safe_direction_intents` (stop). Cross-cutting: `EnvironmentalResponseGateCalibration` fixes horizons and gates for all six `environmental_response.v1` profiles. Remaining: 12e cross-descriptor examples.
 
 #### CA4-13 — LearnedWindow calibration bypasses the declared learning lifecycle
 
