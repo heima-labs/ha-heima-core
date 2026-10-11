@@ -345,10 +345,26 @@ Actuator is `weather_exposed` (Layer 2 §6); every other member is `default`. Re
 cover is never blocked by wind. `privacy` and `quiet_hours.v1` are optional bindings an administrator
 may add; they introduce no new capability or evaluator.
 
+`environment.external_exchange` likewise uses one contract for its direct path and its three
+learned profiles: `ReactionGuardContractRef(guard_contract_id="environment.external_exchange.guards.v1",
+version="1")`. It permits `opening_security`, `precipitation`, `wind`, `thermal_bounds`,
+`outdoor_air_quality`, `co2_bounds`, `humidity_bounds`, `privacy` and `quiet_hours.v1`. The
+`semantic_variant_id` is the staged purpose:
+
+| Variant | Required capabilities |
+|---|---|
+| `(open_for_exchange, thermal)` | `opening_security`, `precipitation`, `wind`, `thermal_bounds` |
+| `(open_for_exchange, hygrometric)` | `opening_security`, `precipitation`, `wind`, `thermal_bounds` |
+| `(open_for_exchange, air_quality)` | `opening_security`, `precipitation`, `wind`, `thermal_bounds`, `outdoor_air_quality` |
+| `(close_to_retain, thermal)`, `(close_to_retain, air_quality)`, `(close_to_retain, hygrometric)` | none; `close_to_retain` is in the descriptor's `safe_direction_intents` |
+
 Every relation profile names one exact `ReactionGuardContractRef`. An `admin_direct` descriptor
 with no relation profile instead names one exact descriptor-level guard contract. In either case the
-frozen contract defines the capabilities the configuration may use and the non-empty subset required
-for each action variant. The variant key is a frozen pair of the existing
+frozen contract defines the capabilities the configuration may use and the subset required
+for each action variant. That subset is non-empty, except for a variant whose `action_intent` the
+descriptor declares in `safe_direction_intents`, such as closing an exterior opening: moving toward
+the safe physical state needs no descriptor veto, while hold, physical confirmation, ownership and
+channel arbitration still apply under §6.0. The variant key is a frozen pair of the existing
 `action_intent` and a finite descriptor-version-owned `semantic_variant_id`.
 The descriptor's existing parameter/member validators derive exactly one
 variant from staged typed parameters; a descriptor with no variation uses
@@ -424,6 +440,7 @@ class RegisteredReactionDescriptor:
     managed_episode_resumption: bool  # versioned; requires an ongoing program
     program_family: ProgramFamilyRef | None  # shared activation/exit rules (§3.2 Program families)
     hold_release_mode: Literal["fixed_duration", "next_reaction_step"]
+    safe_direction_intents: frozenset[str]  # intents moving toward the safe physical state (§3.2)
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
@@ -2908,8 +2925,9 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   required.
 - `environment.external_exchange`: one compatible opening endpoint; intents
   `open_for_exchange`/`close_to_retain`; purposes `thermal`, `air_quality`, or `hygrometric`;
-  automatic mode requires the descriptor's applicable opening-security, precipitation, wind
-  and thermal guard capabilities; the common hold and physical-state admission gates apply
+  automatic opening requires the purpose's applicable opening-security, precipitation, wind,
+  thermal and, for `air_quality`, outdoor-air-quality guard capabilities, while closing requires
+  none (`safe_direction_intents`); the common hold and physical-state admission gates apply
   separately to the affected Actuator channel (§3.2, §6.0). Its Initial-V3
   `authoring_modes` are `admin_direct` and `learner_proposal`. The same
   `open_for_exchange` intent resolves a distinct staged action variant for
@@ -2920,8 +2938,42 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   selected purpose. A direct zero-axis empty-key envelope is permitted only
   when its typed trigger, conditions and purpose-specific guards completely
   delimit action. Learned paths retain exact profile and supported context
-  cells. The exact direct guard sets, trigger grammar and complete direct
-  staging example remain CA4-12 work.
+  cells.
+
+  The endpoint's opening must satisfy `opening_faces_exterior` (Layer 1 §7); a window toward an
+  interior garage is rejected. Each purpose uses exactly one profile at version `"1"`:
+  `thermal -> thermal_exchange`, `air_quality -> air_quality_exchange`, `hygrometric ->
+  hygrometric_exchange`. The guard contract is `environment.external_exchange.guards.v1` (§3.2),
+  which is also its `direct_guard_contract`; `safe_direction_intents={"close_to_retain"}`. Legal
+  objective/intent pairs:
+
+  | Purpose | Objective | Intent | Learned | Direct |
+  |---|---|---|---|---|
+  | thermal | `cool_with_outdoor_air` | `open_for_exchange` | yes | yes |
+  | thermal | `warm_with_outdoor_air` | `open_for_exchange` | yes | yes |
+  | thermal | `limit_thermal_exchange` | `close_to_retain` | yes | yes |
+  | air_quality | `reduce_co2` | `open_for_exchange` | yes | yes |
+  | hygrometric | `reduce_moisture` | `open_for_exchange` | yes | yes |
+  | air_quality, hygrometric | `close_after_ventilation` | `close_to_retain` | no | yes |
+
+  `close_after_ventilation` is a deterministic direct rule, not a learned response claim. A direct
+  trigger is a `state_transition` of an administrator-declared Layer-2 boolean produced by
+  `numeric.hysteresis_condition.v1`, whose numeric source staging verifies against the purpose at
+  the subject room: room CO2 for `air_quality`; a `numeric.difference.v1` of indoor minus outdoor
+  temperature for `thermal`; a `numeric.difference.v1` of indoor minus outdoor humidity ratio for
+  `hygrometric` (Layer 2 §5.3). A trigger on another quantity, or an inline comparison, is rejected.
+
+  Valid direct example: the living-room motorized window, Actuator on opening
+  `living_south_window` (faces `outside`), purpose `thermal`, a `numeric.difference.v1` producing
+  the living-room indoor-minus-outdoor temperature difference, and a hysteresis boolean
+  `environment.free_cooling_available` (`above`, entry 3.0 C, exit 1.0 C). The configuration has
+  subject `Location(scope="room", room_id="living")`, `relation_profile=None`, trigger
+  `state_transition(environment.free_cooling_available@living, False -> True)`, objective
+  `cool_with_outdoor_air`, one member `open_for_exchange`, the zero-axis empty-key envelope, and a
+  guard-profile generation binding `opening_security`, `precipitation`, `wind` and
+  `thermal_bounds`. Its required capabilities are exactly those four. A companion Reaction with
+  trigger `True -> False`, objective `limit_thermal_exchange` and `close_to_retain` stages with no
+  required guard binding.
 - `environment.air_extraction`: one room-owned extraction-fan endpoint in any registered room and no
   `opening_id`; intent `activate_extraction`. Its `humidity_extraction` profile selects exactly one
   typed room relative-humidity trigger from `level_crossing` (upward crossing of a staged level),
@@ -3686,6 +3738,13 @@ A learner may propose only values permitted by that same active descriptor.
 
 ## 8. Initial acceptance criteria
 
+- `environment.external_exchange` stages the §7 thermal direct example with required capabilities
+  exactly `opening_security`, `precipitation`, `wind` and `thermal_bounds`; an `air_quality` opening
+  additionally requires `outdoor_air_quality`; a `close_to_retain` variant stages with an empty
+  required set because the intent is declared safe-direction, while still passing hold, physical
+  confirmation and channel arbitration. It rejects a window toward an interior garage, a thermal
+  trigger not derived from an indoor-minus-outdoor difference, an inline comparison, and a learned
+  `close_after_ventilation` candidate.
 - `environment.solar_shading` stages the §7 direct example with required capabilities exactly
   `thermal_bounds` and `wind`; it rejects the same configuration without a `wind` binding, accepts an
   interior blind without one, never requires `wind` for `decrease_shading`, rejects `admit_daylight`

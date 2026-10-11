@@ -2021,7 +2021,10 @@ validates the closed objective vocabulary, its compatible outcome orientation, p
 and the threshold's unit/range. This is deliberately separate from the response estimate: a lower room temperature, for
 example, is not intrinsically desirable without an explicit objective. Initial objective/action pairs
 include `limit_solar_gain -> increase_shading`, `admit_solar_gain -> decrease_shading`,
-`reduce_co2 -> open_for_exchange`, and `reduce_moisture -> open_for_exchange`; they are finite
+`admit_daylight -> decrease_shading` (`solar_shading` only), `cool_with_outdoor_air ->
+open_for_exchange`, `warm_with_outdoor_air -> open_for_exchange`, `limit_thermal_exchange ->
+close_to_retain`, `reduce_co2 -> open_for_exchange`, and `reduce_moisture -> open_for_exchange`
+(complete matrices in Layer 5 §7); they are finite
 profile-owned semantics, not admin-authored labels or an arbitrary utility function.
 
 A usable cell enters a policy candidate's `CanonicalEnvelope` only when the bootstrap interval proves

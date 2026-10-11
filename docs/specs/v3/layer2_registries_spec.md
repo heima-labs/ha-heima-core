@@ -197,7 +197,8 @@ fact values as valid `EvidenceValue`s.
   remains the runtime guard for formula-produced values.
 - `physical_evidence.weighted_evidence` requires a configuration payload that compiles to a
   `PhysicalEvidenceWeightedConfig`. The environmental solar-incidence and
-  humidity-ratio formulas have their own closed compiled configurations in
+  humidity-ratio formulas and the generic `numeric.hysteresis_condition.v1` and
+  `numeric.difference.v1` formulas have their own closed compiled configurations in
   §5.3; every other Initial-V3 formula requires `configuration=None`. The physical-evidence
   formula's
   bindings contain every input index exactly once, in `[0, len(inputs))`; both weights are finite,
@@ -1354,6 +1355,19 @@ same boolean state stream. Entry/exit thresholds therefore have one staged
 owner in the Layer-2 formula, rather than two independent copies in the
 Reaction and learner. The geometry-only proxy is rejected for this binding.
 
+#### Generic numeric difference
+
+The core registers `numeric.difference.v1` with `implementation_version="1"`. It takes exactly two
+ordered current-cycle canonical numeric state `FactRef`s, `minuend` then `subtrahend`, and produces
+one numeric state `minuend - subtrahend` at a declared `Location`. Its configuration has exactly
+`source_unit`; staging requires both inputs to carry that canonical unit and the output to use it,
+and rejects extra fields or a previous-cycle input. The entry uses `min_inputs=2` and
+`confidence_mode="inherit_input"`, inheriting the lower confidence of the two inputs, ties toward the
+minuend. Either input unavailable, stale, invalid or in the wrong unit yields `available=False`; no
+value is remembered. Typical uses are the indoor-minus-outdoor temperature or humidity-ratio
+difference that a `numeric.hysteresis_condition.v1` then turns into a Reaction trigger, so a Reaction
+never computes a derived quantity inline (Layer 5 §5.1).
+
 #### Environmental formula configurations
 
 The core registers `environment.solar_incidence.v1` with one closed
@@ -2276,6 +2290,9 @@ this layer.
   dimensionless proxy and cannot claim W/m² exposure. At or below zero solar
   elevation, the geometric direct component is zero even for a matching
   opening azimuth (§3.6/§5.3; Layer 3 §4.8.2).
+- `numeric.difference.v1` with indoor 26.0 C and outdoor 22.5 C yields 3.5 C at the declared
+  Location with the lower input confidence; it rejects mismatched units, a third input or a
+  previous-cycle input, and publishes unavailable when either input is unavailable.
 - `numeric.hysteresis_condition.v1` rejects wrong source kind/unit, wrong
   output kind/Location, missing or misplaced previous-cycle self-reference,
   equal/reversed thresholds for its direction, non-finite thresholds and extra

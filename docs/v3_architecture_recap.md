@@ -572,7 +572,10 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   envelope may have the one empty-key cell while learned proposals retain
   supported context cells; direct trigger and guard checks remain mandatory.
   External-exchange guard requirements use its validated purpose variant,
-  rather than requiring every purpose's capabilities together.
+  rather than requiring every purpose's capabilities together; closing, a declared
+  safe-direction intent, requires no descriptor guard. A thermal or hygrometric trigger
+  uses a Layer-2 indoor-minus-outdoor difference, never an inline comparison. No V3
+  descriptor yet closes or retracts on arriving weather (CA4-63).
   The required extraction program declares managed-episode resumption and
   fixed-duration hold release. A registered ongoing-program descriptor may
   resume after restart only from a

@@ -596,6 +596,12 @@
       "owner": "docs/specs/v3/layer1_substrate_spec.md",
       "heading": "7. `Topology`",
       "depends_on": ["L1-ZONE-ROLES"]
+    },
+    {
+      "id": "L2-NUMERIC-DIFFERENCE",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "Generic numeric difference",
+      "depends_on": ["L2-NUMERIC-HYSTERESIS"]
     }
   ],
   "reviewed_slices": [
