@@ -485,7 +485,9 @@ they must not weaken ownership, typed boundaries, staged validation, or hot-path
 ## 11. Defined but Gated, and Deferred Ownership
 
 The following descriptors are defined Initial-V3 contracts, but remain gated per household rather than
-being unconditional behavior:
+being unconditional behavior. Both declare the shared, versioned `planned_absence_program` family
+(Layer 5 §3.2), which owns their calendar-plus-stabilized-away activation, departure and bootstrap
+handling, normal exit, next-step hold release, restart and consent rules once:
 
 - **Evidence-gated Initial-V3 descriptor:** `environment.planned_comfort_trajectory` is registered
   from the start. Its administrative HVAC/calendar/comfort prerequisites are staged as an

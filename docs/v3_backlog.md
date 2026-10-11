@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58 | 3 | 0 | 18 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 3 | 0 | 19 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **60 findings** | **4** | **0** | **55** | **1** |
+| **Total** | **61 findings** | **4** | **0** | **56** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6102,6 +6102,14 @@ command set reused by every descriptor, keeping only `stage_comfort_trajectory_p
 descriptor-specific. CA4-12 covers the original environment-shaped candidate
 gap; its per-member numeric/effect fields were partially corrected on
 2026-10-07, while the profile/objective catalog remains open.
+
+#### CA4-61 — Planned-absence descriptors duplicate their shared program rules
+
+**Status:** DONE (2026-10-11; specification readiness). **Severity:** P2. **Origin:** developer review of the CA4-26 presence-simulation model.
+
+**Problem.** Comfort trajectory (Layer 5 §7.1) and presence simulation (§7.2) restated the same planned-absence activation, departure/bootstrap, normal exit, next-activation, hold-release, restart and consent rules. Any behavioral change had to be repeated in both, and a future absence program would copy them again.
+
+**Approved resolution (2026-10-11).** A closed, versioned `ProgramFamilyRegistry` in Layer 5 §3.2 with one family, `planned_absence_program` version `"1"`, holds those rules once; a descriptor declares `program_family` and its own `program_evaluator` calls the family's pure component. A family change is a new family version adopted through each descriptor's new version. An unversioned shared section was rejected because it could silently alter configured descriptors. §7.1/§7.2 keep only descriptor-specific behavior; overview and recap summarize. See the [CA4-61 review](specs/v3/reviews/CA4-61.md); no V3 runtime test ran.
 
 ### P3 — Low
 

@@ -407,6 +407,7 @@ class RegisteredReactionDescriptor:
     program_evaluator: PureFunction | None  # registered evaluate_program implementation for step-programmed versions
     normal_exit_contract: PureFunction | None
     managed_episode_resumption: bool  # versioned; requires an ongoing program
+    program_family: ProgramFamilyRef | None  # shared activation/exit rules (§3.2 Program families)
     hold_release_mode: Literal["fixed_duration", "next_reaction_step"]
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
@@ -744,6 +745,70 @@ the channel became readable.
 they never describe an action that reached this phase. An invalid configuration, authorization, or
 descriptor/Actuator incompatibility found at staging or proposal review is instead a typed staging or
 review diagnostic, never a runtime availability occurrence.
+
+#### Program families
+
+A **program family** is a core-owned, versioned set of activation, continuity, exit and restart
+rules that several step-programmed descriptors share. It is written, validated and tested once,
+and each descriptor version that declares it inherits it instead of restating it. It is not a
+second evaluator, scheduler or action path: a descriptor still registers its own pure
+`program_evaluator`, which calls the family's pure component on the same frozen snapshot and then
+plans only its own steps and targets.
+
+```python
+@dataclass(frozen=True)
+class ProgramFamilyRef:
+    family_id: str
+    version: str                      # exact registered token, e.g. "1"
+
+@dataclass(frozen=True)
+class AbsenceProgramState:
+    effective_absence: bool | None    # None: undecidable (calendar failed or presence unavailable)
+    selected_interval_start: EvidenceInstant | None
+    selected_interval_end: EvidenceInstant | None
+    exit: ReactionNormalExitOutcome   # "not_ended" unless the family proves an exit
+    evaluation_requested_by_departure: bool
+```
+
+`ProgramFamilyRegistry` is bootstrap-frozen and closed to administrators, learners and plugins.
+A descriptor version names at most one exact `ProgramFamilyRef`; changing family behavior creates
+a new family version, which each declaring descriptor adopts only through its own new version.
+Staging rejects a declared family whose requirements below are not met, and a descriptor cannot
+override a family rule.
+
+**`planned_absence_program`, version `"1"`.** For every declaring descriptor:
+
+1. **Calendar binding.** The configuration has exactly one `CalendarPlanBinding` with
+   `expected_category="planned_absence"` (§5.1), selected by the binding's union rule.
+2. **Effective absence.** True only when a selected planned-absence interval is *active* (never
+   merely upcoming) and the current casa `presence` claim is a stabilized `away`. Staging
+   requires the casa presence `FusionRule` to declare a non-null `Stability.to_true`. A failed
+   calendar read or unavailable presence makes the state undecidable, never true.
+3. **Start.** The family's start criterion is effective absence. During a running process an
+   observed `presence.departure` episode requests an immediate fresh evaluation; at bootstrap the
+   current plan and stabilized `away` establish effective absence directly, without recovering a
+   pre-restart departure.
+4. **Normal exit.** A committed `presence.return`, or a fresh valid calendar result proving
+   removal or replacement of the selected interval, is `normal_cancellation` of the current
+   activation. The valid end of the selected interval with no later step or ongoing target of the
+   descriptor's program is `natural_completion`. Calendar failure, undecidable presence, hold,
+   guard veto or an unresolved descriptor input is `not_ended`: future steps are suppressed but no
+   exit is invented.
+5. **Next activation.** After an exit, a later eligible interval starts a new activation under the
+   same configuration generation; no job, hold or step identity crosses activations.
+6. **Holds.** `hold_release_mode="next_reaction_step"`; a channel staged only for declaring
+   descriptors needs no `hold_duration`.
+7. **Restart.** `managed_episode_resumption=False`. No activation, hold, job or missed step is
+   restored; fresh current inputs may open a new activation and select only still-future steps
+   through the one next-step slot (§6.0).
+8. **Authority.** `requires_household_consent=True`.
+
+The family component returns `AbsenceProgramState`; the descriptor's `normal_exit_contract` uses
+its `exit` value and may only add the descriptor's own terminal-target rule. Initial V3 has two
+declaring descriptors, `environment.planned_comfort_trajectory` (§7.1) and
+`security.presence_simulation` (§7.2). A future program of the same kind, for example an
+absence frost-protection descriptor, declares the family and specifies only its own steps,
+targets, endpoints, guards and prerequisites.
 
 ## 4. Candidate to `ConfiguredReaction`
 
@@ -2864,20 +2929,18 @@ with a stable identifier and the common descriptor/runtime mechanism. It is not 
 its `learner_proposal` path remains operationally dormant until all evidence and staged prerequisites
 below are present. Registration alone never makes it eligible, and it never uses a fallback target,
 endpoint, model, calendar plan, or consent value.
-Its descriptor version declares `hold_release_mode="next_reaction_step"` and the versioned
-`normal_exit_contract` below. A channel staged only for this descriptor needs no `hold_duration`.
+Its descriptor version declares `program_family=("planned_absence_program", "1")` (§3.2 Program
+families), which supplies its calendar binding, effective-absence start, departure and bootstrap
+behavior, normal exit, next-step hold release, restart rule and consent requirement. This section
+specifies only what is specific to the trajectory.
 
 Its only authoring mode is `learner_proposal`. An administrator stages its HVAC, calendar and comfort
 prerequisites, but cannot use `admin_direct` to create a comfort-trajectory `ConfiguredReaction`
 without the required thermal evidence and ordinary proposal review.
 
 - `environment.planned_comfort_trajectory`: one explicit conditioned scope and independently
-  registered heating and/or cooling endpoints. It requires a `CalendarPlanBinding` with category
-  `planned_absence`, a current stabilized casa `presence=away` claim, and descriptor-declared
-  comfort/safety bounds. Staging requires a casa presence `FusionRule` with non-null
-  `Stability.to_true`. During a running process, an observed `departure` episode requests an immediate
-  fresh evaluation; at bootstrap the current plan and stabilized presence claim establish the effective
-  absence directly. While the plan remains
+  registered heating and/or cooling endpoints, active only during the family's effective absence,
+  with descriptor-declared comfort/safety bounds. While the plan remains
   valid, it may use only an exact-cell, unexpired `hvac_thermal_response`
   `ThermalResponseParameter` as a bounded reachability estimate. Layer 5 combines its conservative
   recovery duration with an explicitly configured return target and the calendar return boundary to
@@ -3079,11 +3142,9 @@ class DesiredConditioningMode:
   the same pending knot retains its `planned_step_id`; the ordinal advances only when that knot is
   consumed or terminally skipped, never merely because a guard vetoed an evaluation. The canonical
   target fingerprint is computed from the fresh frozen snapshot when the due step is evaluated.
-  These identities name steps, not a persisted curve or a prebuilt command list. At bootstrap,
-  Layer 5 treats the active planned-absence interval and current stabilized `presence=away` as the
-  effective absence, then arms only the activation's one next-step slot derivable from that fresh snapshot and current
-  configuration. It does not require, persist, or recover a pre-restart `departure` episode; otherwise
-  it remains unarmed.
+  These identities name steps, not a persisted curve or a prebuilt command list. At bootstrap the
+  family's effective absence (§3.2) opens a new activation, which arms only the one next-step slot
+  derivable from that fresh snapshot and current configuration; otherwise it remains unarmed.
 
   At each recovery knot Layer 5 rereads the current snapshot, recalculates one next supported target,
   emits at most one `ApplyStep`, and arms at most one following `AtJob`. It never replays missed knots,
@@ -3124,18 +3185,10 @@ class DesiredConditioningMode:
   incompatible evidence/configuration leaves the registered descriptor dormant and produces no proposal
   or action.
 
-  Its versioned normal-exit contract applies to one active planned-absence
-  trajectory, never to the reusable configured Reaction. A committed `return`
-  or a fresh, valid calendar result proving removal or replacement of that
-  selected absence is `normal_cancellation` of the current activation. A
-  valid selected interval reaching its end with no later trajectory step or
-  ongoing program target is `natural_completion`. A replacement eligible
-  interval can start a new activation under the same generation after the old
-  one closes. Calendar failure/unavailability, unresolved model or bound,
-  temporary presence uncertainty, hold, and guard veto are `not_ended`:
-  they suppress steps but do not falsely prove the program ended. Authority
-  revocation or configuration replacement follows the common immediate
-  invalidation path. A later activation never reuses the earlier id or jobs.
+  Its normal exit is the family's (§3.2): it applies to one active trajectory, never to the
+  reusable configured Reaction. An unresolved thermal model or bound is an additional
+  descriptor-specific `not_ended` cause. Authority revocation or configuration replacement follows
+  the common immediate invalidation path.
 
   **Initial-V3 lifecycle gates.** Gates 1--2 are required before Layer 5 may admit a candidate and
   create its reviewable proposal. An accepted proposal creates a `ConfiguredReaction` only in
@@ -3307,8 +3360,10 @@ is also re-armed after a clock discontinuity (Layer 0 §3.5).
 less obviously vacant during a planned absence; it is never a security guarantee or a substitute for
 physical security. It uses the common `ConfiguredReaction`, scheduler, current-snapshot admission,
 ordered `ApplyStep` and audit path. It neither becomes a learning family nor acquires a security-specific
-runtime. Its `hold_release_mode` is `"next_reaction_step"`, with the versioned
-`normal_exit_contract` below. A channel staged only for this descriptor needs no `hold_duration`.
+runtime. Its descriptor version declares `program_family=("planned_absence_program", "1")` (§3.2
+Program families), which supplies its calendar binding, effective-absence start, departure and
+bootstrap behavior, normal exit, next-step hold release, restart rule and consent requirement.
+This section specifies only what is specific to presence simulation.
 Its `supported_profile_refs` is empty and its exact descriptor-level
 `direct_guard_contract` is `security.presence_simulation.interior_lighting.v1`: for `light_state` it
 permits and requires only the stabilized `presence` capability. Manual hold, command ownership and
@@ -3319,10 +3374,9 @@ axis_values=(), support=None, calibrated=None)})`. The sole empty-key cell
 adds no context restriction and supplies no fabricated learning evidence;
 the active planned-absence interval, stabilized presence, session, guard,
 authority and physical admission checks remain mandatory. Staging rejects a
-supplied axis, other cell, or non-null support/calibration field. Its existing
-versioned activation start criteria require a current active matching
-planned-absence interval and valid stabilized casa `presence=away`; the
-session determines the next eligible step, not a second activation.
+supplied axis, other cell, or non-null support/calibration field. Its activation
+start criterion is the family's effective absence; the session determines the
+next eligible step, not a second activation.
 
 Its casa-scoped immutable configuration generation contains one `CalendarPlanBinding` for
 `planned_absence`, the exact required `presence` guard-profile generation, a canonical non-empty set of
@@ -3370,33 +3424,17 @@ guards, ownership, physical confirmation and follow-up rules to every step.
 Completion adds no further command: the Reaction executes its declared
 sequence, including its planned switch-offs, while eligible.
 
-An episode requires an active (not merely upcoming) matching planned-absence interval and current
-stabilized `presence=away`. During a running process, `presence.departure` requests an immediate fresh
-evaluation; at bootstrap the same current-state conditions establish the effective absence without
-recovering that earlier episode. A calendar is context, not proof of absence. Staging requires a casa
-presence FusionRule with non-null `Stability.to_true`; Layer 5 never consumes raw camera results or
-adds a separate return timeout. The committed
-`presence.return` is the sole presence-based terminal cancellation. A transient contradictory or
-unavailable result abstains only the affected episode, allowing later fresh evaluation. A
-calendar update, departure occurrence or due `AtJob` is only an evaluation
-request under the same plan; none becomes a second trigger or bypasses the
-start criteria. Repeated qualifying snapshots reuse the current activation
-and one next-step slot. At bootstrap Layer 4 seeds presence without inventing
-a departure, and the descriptor may open a new activation only from fresh
-current qualifying inputs, skipping every missed step. A
-fresh valid calendar result proving removal or replacement of the selected
-absence cancels its current activation; a valid interval end with no later
-episode or ongoing program target completes it. The planned switch-off steps
-are handled before normal completion; a blocked or unconfirmed step does not
-claim that the light physically switched off. A committed
-`presence.return` before the sequence finishes cancels its still-future steps
-because the absence criteria no longer hold. Layer 5 sends no additional
-command to restore or switch off a light; a step already sent to HA is not
-compensated. These are the descriptor's
-versioned `normal_exit_contract` results. A still-eligible changed calendar
-may start a new activation and replaces the job with that new activation id;
-the configured Reaction stays enabled. Calendar failure/unavailability and a
-failed required guard suppress future commands without claiming a normal exit.
+An episode requires the family's effective absence (§3.2), which also defines start, departure,
+bootstrap, normal cancellation, natural completion and the next activation. Layer 5 never consumes
+raw camera results or adds a separate return timeout. A transient contradictory or unavailable
+presence result abstains only the affected episode, allowing later fresh evaluation. A calendar
+update, departure occurrence or due `AtJob` is only an evaluation request under the same plan;
+none becomes a second trigger. Repeated qualifying snapshots reuse the current activation and one
+next-step slot. Specific to this descriptor: the planned switch-off steps are handled before
+natural completion, and a blocked or unconfirmed step does not claim that the light physically
+switched off. A committed `presence.return` before the sequence finishes cancels its still-future
+steps; Layer 5 sends no additional command to restore or switch off a light, and a step already
+sent to HA is not compensated.
 A guard alone does not erase an already identified due episode boundary for
 an active next-step hold; that boundary evaluates release under §6.0 without
 admitting a blocked command.
@@ -4059,6 +4097,15 @@ A learner may propose only values permitted by that same active descriptor.
   scope. The availability occurrence contains neither rendered text nor an
   Actuator/HA id and does not use `reaction.follow_up`'s prepared-intent
   write (§3.2; Layer 3 §6.3.1).
+- Both Initial-V3 planned-absence descriptors declare
+  `program_family=("planned_absence_program", "1")`, and staging rejects either one if its
+  configuration lacks the `planned_absence` calendar binding, its casa presence fusion has a null
+  `Stability.to_true`, or its descriptor version contradicts a family rule (hold release, restart,
+  consent). Given the same calendar and presence trace — departure, bootstrap during an active
+  absence, early return, calendar removal, calendar outage, interval end — the family component
+  returns the same `AbsenceProgramState` for both descriptors; only their steps and targets differ.
+  A family change is a new family version adopted through each descriptor's new version, never an
+  in-place edit (§3.2 Program families).
 - The Initial-V3 presence-simulation and comfort-trajectory descriptor entries both declare
   `hold_release_mode="next_reaction_step"`; their staged channels need no `hold_duration` unless
   another fixed-duration descriptor uses that Actuator. A confirmed scheduled target followed by

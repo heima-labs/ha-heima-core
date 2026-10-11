@@ -585,6 +585,10 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   applies the absence target directly, then uses a core-generated recovery-only ramp: one fresh,
   model-supported HVAC step at a time, bounded by adapter constraints and never replayed in a burst.
   Its channel holds use the next target-changing step of that Reaction for release.
+  Both planned-absence descriptors declare the shared `planned_absence_program` family: its
+  calendar-plus-stabilized-away start, departure/bootstrap handling, normal exit, next-step hold
+  release, restart and consent rules are written once (Layer 5 §3.2) and a future absence program
+  reuses them.
   `security.presence_simulation` is also a registered Initial-V3 `admin_direct` descriptor, not a
   Layer-3 learning family: an admin stages an explicit set of suitable interior-light endpoints plus
   calendar/session/activity settings. Endpoint admission uses registered light-state channels and
