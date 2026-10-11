@@ -5010,10 +5010,10 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | Severity | IDs | TODO | IN_PROGRESS | DONE | NOT_APPLICABLE |
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
-| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
+| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 0 | 0 | 33 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63 | 1 | 0 | 23 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **63 findings** | **2** | **0** | **60** | **1** |
+| **Total** | **63 findings** | **1** | **0** | **61** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5179,7 +5179,7 @@ been implemented or tested.
 
 #### CA4-12 — The initial catalog and candidate schema are not mutually complete
 
-**Status:** TODO. **Type:** incompatible vocabulary and missing schema variants. **References:** [Layer 3 §4.8, §6.4–6.6](specs/v3/layer3_learning_spec.md), [Layer 5 §3, §7](specs/v3/layer5_action_reactions_spec.md).
+**Status:** DONE (2026-10-11; specification readiness). **Type:** incompatible vocabulary and missing schema variants. **References:** [Layer 3 §4.8, §6.4–6.6](specs/v3/layer3_learning_spec.md), [Layer 5 §3, §7](specs/v3/layer5_action_reactions_spec.md).
 
 The earlier mismatch between Layer 3's `reduce_solar_gain` and Layer 5's `limit_solar_gain` was resolved by using the latter exact ID in both contracts. The earlier omission of `thermal_shading` from the initial profile enumeration has also been corrected. The room-neutral `humidity_extraction` and routine relation profiles still lack corresponding complete evidence/policy entries. The earlier common candidate imposed positive numeric deltas and predicted effects on every member, including routines; the partial correction below removes that false requirement but does not close the catalog gap.
 
@@ -5398,6 +5398,8 @@ record is preserved as history; its current-consumer statement is aligned.
 **Slice 12d — `routine.actuation_bundle` (approved and applied 2026-10-11).** Profile `routine_actuation_bundle` v"1" (trigger as one `primary` class, `routine.bundle_frequency.v1`, optional shadow); single objective `reproduce_resident_routine`; both origins; guard contract `routine.actuation_bundle.guards.v1` requiring `presence` for every member and inheriting the environmental safety guards for the same physical action; core-frozen `RoutineEvidenceGateCalibration` and keyed `RoutineValidationReport` reusing the §4.8 temporal block bootstrap; one direct example and acceptance. Remaining: 12c extraction, 12e examples.
 
 **Slice 12c — `environment.air_extraction` (approved and applied 2026-10-11).** Both origins; target `level` 1..N or `off`; intents `activate_extraction`, `adjust_extraction`, `stop_extraction`; program start/step-up/normal end/runtime cap/resident switch-off with staged `start_level`, `max_level`, `settle_window`, `end_level`, `end_dwell`, `max_runtime`; occupancy optional and vacancy never stops the program (developer clarification: the fan also runs while the room is occupied); `humidity_extraction` v"1" with `start`/`modify_up`/`terminate` classes on the `level` facet and humidity-ratio outcome; objectives `reduce_moisture` (start, step-up) and direct-only `end_extraction`; guard contract with no required guard via new `low_risk_intents` (start, step-up) and `safe_direction_intents` (stop). Cross-cutting: `EnvironmentalResponseGateCalibration` fixes horizons and gates for all six `environmental_response.v1` profiles. Remaining: 12e cross-descriptor examples.
+
+**Slice 12e and closure (2026-10-11).** Layer 5 §7.3 publishes the single catalog matrix (descriptor, origins, profiles and output schema, objective/intent, guard contract, program) for the six Initial-V3 descriptors at version "1", with an index of direct examples and learned candidate examples for comfort trajectory, solar shading, air extraction and routine; no example needs a placeholder unit or fictitious effect. Closure criterion met. See the [CA4-12 review](specs/v3/reviews/CA4-12.md); no V3 runtime test ran.
 
 #### CA4-13 — LearnedWindow calibration bypasses the declared learning lifecycle
 

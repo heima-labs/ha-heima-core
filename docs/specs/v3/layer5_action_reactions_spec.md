@@ -1,7 +1,7 @@
 # Heima v3 - Layer 5: Action and reaction generation
 
 **Status:** Defined V3 action-and-reaction contract. Not implemented.
-**Open corrections:** CA4-12 (catalog and candidate schema), tracked in the CA4 backlog.
+**Open corrections:** none; CA4-12 closed in Layer 5 §7.3.
 **Layer:** 5 of 8. Consumes Layer-2 facts and Actuators plus the current-cycle outputs of the completed
 Layer-4 semantic DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
 input. It never feeds configuration, policy state, or action results back into Layer 4.
@@ -3814,7 +3814,56 @@ configuration may use a descriptor without a learner only when its `authoring_mo
 `admin_direct`; `environment.planned_comfort_trajectory` remains learner-proposal-only.
 A learner may propose only values permitted by that same active descriptor.
 
+### 7.3 Initial-V3 catalog matrix and valid examples
+
+This matrix is the single owner summary of the six Initial-V3 registrations; the referenced
+sections stay authoritative for their details. Every Initial-V3 descriptor is registered at
+version `"1"`, and every listed profile is `RelationProfileRef(profile_id=..., version="1")`.
+
+| Descriptor | Origins | Profiles -> policy output | Objective -> intent | Guard contract | Program |
+|---|---|---|---|---|---|
+| `environment.solar_shading` | direct, learned | `thermal_shading`, `solar_shading` -> `environmental_response.v1` | `limit_solar_gain -> increase_shading`; `admit_solar_gain -> decrease_shading`; `admit_daylight -> decrease_shading` (`solar_shading` or direct only) | `environment.solar_shading.guards.v1` | trigger-driven |
+| `environment.external_exchange` | direct, learned | `thermal_exchange`, `air_quality_exchange`, `hygrometric_exchange` (one per purpose) -> `environmental_response.v1` | thermal: `cool_with_outdoor_air`, `warm_with_outdoor_air -> open_for_exchange`, `limit_thermal_exchange -> close_to_retain`; `reduce_co2`, `reduce_moisture -> open_for_exchange`; `close_after_ventilation -> close_to_retain` (direct only) | `environment.external_exchange.guards.v1` | trigger-driven; safe: `close_to_retain` |
+| `environment.air_extraction` | direct, learned | `humidity_extraction` -> `environmental_response.v1` | `reduce_moisture -> activate_extraction`, `adjust_extraction`; `end_extraction -> stop_extraction` (direct only) | `environment.air_extraction.guards.v1` | step-programmed; low-risk: activate, adjust; safe: stop |
+| `routine.actuation_bundle` | direct, learned | `routine_actuation_bundle` -> `routine.bundle_frequency.v1` | `reproduce_resident_routine ->` every admitted member intent | `routine.actuation_bundle.guards.v1` | trigger-driven |
+| `environment.planned_comfort_trajectory` | learned only | `hvac_thermal_response` -> `hvac_thermal_response.policy_output.v1` | `planned_comfort_reachability -> follow_comfort_trajectory` | from its prerequisite generation (§7.1) | step-programmed, `planned_absence_program` v"1" |
+| `security.presence_simulation` | direct only | none | none (direct `light_state`) | `security.presence_simulation.interior_lighting.v1` | step-programmed, `planned_absence_program` v"1" |
+
+Only environmental-response members carry a `NumericOutcomeRequirement`, in the registered outcome's
+canonical unit; comfort-trajectory and routine members carry `None`, and presence simulation has no
+candidate. Valid examples:
+
+- **Direct:** solar shading, external exchange, air extraction and routine in §7; presence
+  simulation in §7.2 with its §7.2.1 fixtures.
+- **Learned comfort trajectory:** the exact candidate translation of Layer 3 §6.4.1.
+- **Learned solar shading:** `reaction_descriptor_id="environment.solar_shading"`, version `"1"`,
+  subject the living room, `relation_profile=solar_shading@1`, `objective_id="limit_solar_gain"`,
+  `descriptor_parameters={}`, one member `increase_shading` on the awning channel with
+  `opening_id="living_south_window"`, its canonical shading target and
+  `NumericOutcomeRequirement(minimum_practical_delta=0.5)` (°C reduction), required guards exactly
+  `thermal_bounds` and `wind`, and the artifact's supported incident-solar-exposure and
+  outdoor-temperature cells as envelope.
+- **Learned air extraction:** `environment.air_extraction` `"1"`, the bathroom subject,
+  `humidity_extraction@1`, `objective_id="reduce_moisture"`, root `descriptor_parameters` carrying the
+  staged program parameters of §7 (`start_level`, `max_level`, `settle_window`, `end_level`,
+  `end_dwell`, `max_runtime`), one `activate_extraction` member at `level` 1 with
+  `NumericOutcomeRequirement(minimum_practical_delta=0.0005)` (kg/kg humidity-ratio reduction), an
+  empty required guard set, and the supported humidity-rise and fan-state cells. Its step-up uses the
+  `modify_up` class only when that cell is eligible.
+- **Learned routine:** `routine.actuation_bundle` `"1"`, the living room, `routine_actuation_bundle@1`,
+  `objective_id="reproduce_resident_routine"`, the observed three-light bundle with
+  `numeric_outcome_requirement=None` for every member, required guard exactly `presence`, and the
+  context cells of its eligible `RoutineBundleFrequencyCell`s.
+
+No example requires a placeholder outcome unit, a fictitious measured effect, an invented relation
+profile or a guard outside its registered contract.
+
 ## 8. Initial acceptance criteria
+
+- Each §7.3 example validates against its registered descriptor, profile, objective/intent pair,
+  guard contract and output schema; replacing a routine member's `None` requirement with a numeric
+  one, adding a profile to presence simulation, or a learned `close_after_ventilation` or
+  `end_extraction` candidate is rejected.
 
 - `environment.air_extraction` stages the §7 direct example with an empty required guard set
   (`low_risk_intents` and `safe_direction_intents`). In its trace the fan starts at level 1 while

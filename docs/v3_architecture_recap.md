@@ -9,8 +9,8 @@ itself should be enough to understand the system on its own.
 **Authority and maintenance.** The Layer 0--5 specifications are authoritative; where this recap
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
-through:** 2026-10-10 for every CA4 correction closed in `docs/v3_backlog.md`, including the
-partial CA4-12 decisions; open CA4 items are not summarized as settled.
+through:** 2026-10-11 for every CA4 correction closed in `docs/v3_backlog.md`, through CA4-62
+and the CA4-12 catalog closure; the open CA4-63 is not summarized as settled.
 
 For current specification work, the [contract registry](specs/v3/contract_registry.json) and
 [workflow](specs/v3/spec_workflow.md) provide bounded navigation and review evidence.
@@ -547,7 +547,7 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   `ApplyStep` and follow-up handling. Only timed future boundaries use the
   next `AtJob` slot. An event step that releases a next-step hold needs a
   fresh current-state continuation before any command.
-- **Initial catalog scope**: descriptors include solar shading, external exchange,
+- **Initial catalog scope** (one owner matrix with valid examples: Layer 5 §7.3): descriptors include solar shading, external exchange,
   room-neutral air extraction, and the generic routine actuation bundle. The extraction descriptor
   selects one typed room-humidity level, delta or rate trigger; current room occupancy is required
   only where declared. A fan already active at qualifying start is untouched

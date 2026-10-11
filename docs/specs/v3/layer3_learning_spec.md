@@ -1,8 +1,7 @@
 # Heima v3 - Layer 3: Learning / pattern recognition
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
-**Open corrections:** CA4-12 (catalog and candidate schema), tracked in the
-CA4 backlog.
+**Open corrections:** none; CA4-12 closed in Layer 5 §7.3.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
 mined). It does not read Home Assistant runtime objects, entity state, or registry internals.
