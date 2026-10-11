@@ -1769,7 +1769,8 @@ evidence-gated `hvac_thermal_response` are Initial-V3 profiles of that one learn
 learner kinds. The latter is registered from the start but cannot produce an operational candidate
 until its stricter profile evidence and Layer-5 staged-prerequisite gates pass. Each Initial-V3 profile
 is registered as `RelationProfileRef(profile_id=<named profile>, version="1")`.
-Layer 1 `Topology` is structural prior knowledge: it identifies rooms, exterior openings, facade
+Layer 1 `Topology` is structural prior knowledge: it identifies rooms and their enclosure, exterior
+openings (`opening_faces_exterior`, Layer 1 §7), the thermal envelope, facade
 exposure, and permitted connections; it is never treated as a measurement of heat or airflow.
 
 Each declaration selects exactly one validated `RelationProfileRef` during staging. The exact ref, its
@@ -3552,8 +3553,8 @@ stand in for it.
 
 The candidate concerns exactly one descriptor-defined scope. The initial environmental and routine
 descriptors remain room-scoped, while `environment.planned_comfort_trajectory` accepts only the staged
-`ConditioningScope.location` (`room` or `casa`). A member that acts on an opening requires an exterior
-Layer-1 Opening owned by a room subject and an endpoint whose `opening_id` matches it. A member that
+`ConditioningScope.location` (`room` or `casa`). A member that acts on an opening requires a
+Layer-1 Opening for which `opening_faces_exterior` holds (Layer 1 §7), owned by a room subject and an endpoint whose `opening_id` matches it. A member that
 acts on a room device, such as an extraction fan or light, forbids `opening_id` and requires endpoint
 ownership that matches its room subject. The HVAC trajectory member instead requires the one endpoint
 declared by its compatible `HvacTrajectoryBinding`; it has no `opening_id` and cannot derive an endpoint

@@ -3094,7 +3094,8 @@ without the required thermal evidence and ordinary proposal review.
 @dataclass(frozen=True)
 class ConditioningScope:
     conditioning_scope_id: str
-    location: Location                  # exactly one `room` or `casa`; never `zone` or `rooms`
+    location: Location                  # exactly one `room` or `casa`; never `zone` or `rooms`;
+                                        # a room must be in the thermal envelope (Layer 1 §6.1)
     temperature_fact: FactRef           # staged canonical current temperature for this scope
 
 @dataclass(frozen=True)

@@ -128,8 +128,8 @@ evaluation-path lookup.
 
 That pass also resolves each producer `Location` before it is admitted: `scope="room"` must name a
 registered room; every id in `scope="rooms"` must name a registered room; and `scope="zone"` must name
-a registered Zone. Zone and Topology registration perform their own Room-registry reference resolution
-under Layer 1 §6/§7. Thus construction may remain free of registry ordering, but no unknown spatial
+a registered Zone. Zone, `ZoneRoleBinding` and Topology registration perform their own Room-registry
+or Zone reference resolution under Layer 1 §6, §6.1 and §7, in the same staged generation. Thus construction may remain free of registry ordering, but no unknown spatial
 reference can reach a running `Sensor` or `FusionRule`.
 
 `Sensor.sensor_id` is unique among Sensors and `FusionRule.fusion_id` is unique among FusionRules

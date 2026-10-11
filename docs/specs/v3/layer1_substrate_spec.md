@@ -910,7 +910,7 @@ facts and actions already have a home entirely independent of `Topology` — `Lo
 
 **`Topology` is not a fact producer and not a `FusionRule` input by itself.** It is queried, not
 consumed as a stream — by `FusionRule`s, by Reactions, and by Reaction-descriptor requirements, when deciding
-whether and how to act (e.g. "does this room have an operable opening to the outside", "what's
+whether and how to act (e.g. "does this room have an opening for which `opening_faces_exterior` holds", "what's
 adjacent to it"). This is why it has no `where`/`when`/`how` of its own: it is not a `HouseFact`, it
 is standing structural context `HouseFact`-producing and `HouseFact`-consuming logic can read.
 

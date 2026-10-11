@@ -5209,7 +5209,8 @@ The developer has approved both `admin_direct` and `learner_proposal` for
 Initial-V3 `environment.solar_shading` and `environment.external_exchange`.
 This resolves those two origin sets only. Their profile-free direct guard
 contracts and finite direct envelope cells still need exact registration
-before either direct path can stage; the extraction origin set remains open.
+before either direct path can stage (solar shading: registered in slice 12a);
+the extraction origin set remains open.
 The approved common-contract correction now keys required guards by
 descriptor-validated `(action_intent, semantic_variant_id)` and lets a
 descriptor's direct envelope use its own fixed axis subset, including the
