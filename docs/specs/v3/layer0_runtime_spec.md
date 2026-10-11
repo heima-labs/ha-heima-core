@@ -1684,8 +1684,9 @@ everything causally downstream of that origin within the same causal chain — n
 an intermediate step. Origin points:
 
 - **A per-cycle evaluation**: one `correlation_id` is minted at the start of each engine evaluation
-  cycle and propagated to every `HouseFact` (Layer-2 sensor/fusion output, Layer-4 semantic claim)
-  and every `ApplyStep` (Layer 5) produced synchronously within that cycle.
+  cycle and propagated to every `HouseFact` (Layer-2 sensor/fusion output, Layer-4 semantic claim),
+  every `InferenceSignal` emitted in that cycle (Layer 3 §6.3) and every `ApplyStep` (Layer 5)
+  produced synchronously within that cycle.
 - **A Layer 3 learning analysis run**: `PatternLearner.analyze()` runs on its own slow cycle, mining
   potentially days of history spanning many prior `correlation_id`s — it is a new causal origin, not
   a continuation of any one of them, so it mints its own fresh `correlation_id` for whatever

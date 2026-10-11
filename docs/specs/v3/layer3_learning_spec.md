@@ -10,7 +10,8 @@ mined). It does not read Home Assistant runtime objects, entity state, or regist
 Layer 3 is the historical-learning boundary. It derives statistical findings and optional learned
 models from retained, atomic `HouseFact` history. It is deliberately separate from Layer 2's
 `FusionRule`: a fusion combines current facts synchronously in the engine cycle; learning analyzes
-history on a slow path.
+history on a slow path. Its only in-cycle step is the bounded emission of an adopted live signal
+(§6.3), which serves an artifact but never trains or validates one.
 
 ## 1. Purpose
 
@@ -593,8 +594,9 @@ on transient initialization state rather than only on the staged learning defini
 configuration, audit, and recovery bounded while tier-specific `min_support` continues to handle
 ordinary local sparsity after the learner is warmed up.
 
-At an anchor, the sample builder first applies §4.2's typed historical observation-coverage gate; a gap-crossing training sample cannot
-enter any tier as a zero or negative outcome. It then resolves the tier's declared dimensions and produces its
+At an anchor, the sample builder first applies §4.2's typed historical observation-coverage gate and
+requiredness scope; a gap-crossing training sample cannot enter any tier as a zero or negative outcome,
+and a gap in a stream read only by some tiers excludes the sample from those tiers only. It then resolves the tier's declared dimensions and produces its
 concrete `ContextBucketKey`: the tier identity plus the ordered canonical dimension values. For
 example, a `rich` semantic-context tier can use `(day_kind=weekday, local_time_bucket=19:15,
 occupancy=present, darkness=dark)`, while a `coarse` tier can use only
@@ -4019,7 +4021,8 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 - A truncated required history interval leaves the learner warm-up/degraded and produces no new usable
   model from that interval.
 - A bounded historical read with `ObservationCoverage(status="incomplete")` makes
-  a fixed-window sample unavailable even if retention is complete and matching states
+  every feature reading that window missing, excluding the sample from that feature's consumers
+  under §4.2's requiredness scope, even if retention is complete and matching states
   appear on both sides of a short restart. The common `SampleBinding` builder rejects
   an incomplete feature/anchor or point/event-count outcome window; optional missing
   representation cannot turn a process gap into context. A time-to-event outcome
@@ -4078,8 +4081,9 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   Tests cover as-of state, causal aggregate, bounded causal sequence, point-horizon, event-window,
   time-to-event with right-censoring, and context-only samples. A later fact must never alter an
   earlier sample's features; records sharing `when` are consolidated as one concurrent context and
-  never become an implicit feature/outcome pair; an unavailable/stale required feature or invalid
-  target discards that sample with its declared diagnostic reason.
+  never become an implicit feature/outcome pair; an unavailable/stale required feature excludes that
+  sample from its consumers under §4.2's requiredness scope, and an invalid target discards it, each
+  with its declared diagnostic reason.
 - `ContextTransformRef.canonical_config` plus `ReactionDescriptorCandidate.descriptor_parameters` and
   member `semantic_parameters` pass the same RFC-8785 `CanonicalJsonObject` validator before their
   type-specific validator. Tests reject duplicate keys,

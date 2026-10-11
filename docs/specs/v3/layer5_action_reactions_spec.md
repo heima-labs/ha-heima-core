@@ -3130,8 +3130,8 @@ class DesiredConditioningMode:
   Layer 3 supplies measured bounded step response; Layer 5 alone derives the direction, next target,
   and timing from the current snapshot, remaining return delta, calendar boundary, and constraints.
 
-  The recovery ramp has no persisted curve or prebuilt command list. During a running process, its sole
-  semantic episode trigger is the observed `departure` episode. A selected plan/dependency change and
+  The recovery ramp has no persisted curve or prebuilt command list. Departure handling is the
+  family's start rule (§3.2, Program families, rule 3). A selected plan/dependency change and
   the descriptor's one next
   Layer-0 `AtJob` request a fresh re-evaluation of that same plan; neither is a second semantic trigger
   or a stored event. The job uses the common activation-stable next-step slot of §6.0; a changed

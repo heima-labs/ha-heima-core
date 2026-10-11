@@ -237,7 +237,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
 
 ## 6. Layer 3: Historical Learning and Pattern Recognition
 
-Layer 3 is off the engine hot path. It reads only Layer-0 fact history and immutable staged contracts;
+Layer 3 analysis, training and validation are off the engine hot path. Its only in-cycle step is the
+bounded emission of an adopted live `InferenceSignal`, after the Layer-2 barrier and before Layer 4,
+with one replaceable expiry `AtJob` per contract and subject (Layer 3 §6.3). It reads only Layer-0 fact history and immutable staged contracts;
 it never reads HA runtime objects or a mutable HA payload.
 
 ### Shared learning platform
@@ -547,7 +549,7 @@ Before implementing a component, answer these questions in order:
 1. Is this a durable assertion about the house? If yes, use a Layer-1 `HouseFact` persisted by Layer 0.
 2. Is it a current HA observation or a fusion of observations? It belongs to Layer 2.
 3. Does it need retained history, validation, support and bounded statistical evidence? It belongs to
-   Layer 3 and must run off the hot path.
+   Layer 3 and must run off the hot path; only bounded serving of an adopted live signal runs in the cycle.
 4. Is it a current semantic decision? It belongs to Layer 4, not to a learner or a policy.
 5. Does it create, approve, evaluate, or execute an action? It belongs to Layer 5.
 6. Does it render or deliver a resident-facing message? It belongs to Layer 6.
