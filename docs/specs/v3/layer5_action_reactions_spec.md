@@ -370,6 +370,11 @@ extraction fan moves air out of the room it serves and creates no exterior, secu
 hazard; requiring presence would wrongly block extraction after the resident leaves), and
 `stop_extraction` is a `safe_direction_intents` entry.
 
+`safety.weather_protection` uses `ReactionGuardContractRef(guard_contract_id=
+"safety.weather_protection.guards.v1", version="1")`. It permits no capability and its sole variant
+`(secure_for_weather, default)` requires none: `secure_for_weather` is in the descriptor's
+`safe_direction_intents`, and a protective action must not depend on an optional binding.
+
 `routine.actuation_bundle` uses `ReactionGuardContractRef(guard_contract_id=
 "routine.actuation_bundle.guards.v1", version="1")` for its direct path and its learned profile. It
 permits `presence`, `privacy`, `quiet_hours.v1`, `opening_security`, `precipitation` and `wind`. Every
@@ -613,11 +618,12 @@ activation id, enforces step-id idempotency, applies common guards, hold and
 ownership admission, and translates an admitted target through the one
 `ApplyStep` path. It never dispatches directly from this pure result.
 `requires_household_consent` is an exact, frozen descriptor-version property. The
-registry rejects a missing or non-boolean value. All six
+registry rejects a missing or non-boolean value. All seven
 Initial-V3 descriptor registrations declare `True`:
 `environment.solar_shading`, `environment.external_exchange`,
 `environment.air_extraction`, `environment.planned_comfort_trajectory`,
-`security.presence_simulation`, and `routine.actuation_bundle`. This records
+`security.presence_simulation`, `routine.actuation_bundle` and
+`safety.weather_protection`. This records
 the choice for each descriptor;
 future descriptor versions must declare their own value instead of inheriting a
 global default. Consent is a common authority gate, not a `ReactionGuardCapability`.
@@ -1688,7 +1694,7 @@ and the closed codes of §4.0, never a descriptor-invented string.
    revocation cancels affected future jobs. An administrator role alone
    never substitutes for resident consent authority.
 
-These commands apply to all six Initial-V3 descriptors under one
+These commands apply to all seven Initial-V3 descriptors under one
 `ConfiguredReaction` lifecycle. Descriptor-specific preparation, such as
 `stage_comfort_trajectory_prerequisite_generation`, may create an immutable
 input referenced by a later configuration, but cannot duplicate these
@@ -3162,7 +3168,7 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   confirmation admission. This path does not change the descriptor's
   `normal_exit_contract=None` or `hold_release_mode="fixed_duration"`.
 
-All six Initial-V3 descriptors use the common §4.2 Layer-8 command surface
+All seven Initial-V3 descriptors use the common §4.2 Layer-8 command surface
 for configuration creation or proposal review, promotion, consent and
 disablement. The presence-simulation descriptor and the other
 `admin_direct`-capable descriptors use `stage_admin_direct_reaction` with
@@ -3816,7 +3822,7 @@ A learner may propose only values permitted by that same active descriptor.
 
 ### 7.3 Initial-V3 catalog matrix and valid examples
 
-This matrix is the single owner summary of the six Initial-V3 registrations; the referenced
+This matrix is the single owner summary of the seven Initial-V3 registrations; the referenced
 sections stay authoritative for their details. Every Initial-V3 descriptor is registered at
 version `"1"`, and every listed profile is `RelationProfileRef(profile_id=..., version="1")`.
 
@@ -3828,13 +3834,14 @@ version `"1"`, and every listed profile is `RelationProfileRef(profile_id=..., v
 | `routine.actuation_bundle` | direct, learned | `routine_actuation_bundle` -> `routine.bundle_frequency.v1` | `reproduce_resident_routine ->` every admitted member intent | `routine.actuation_bundle.guards.v1` | trigger-driven |
 | `environment.planned_comfort_trajectory` | learned only | `hvac_thermal_response` -> `hvac_thermal_response.policy_output.v1` | `planned_comfort_reachability -> follow_comfort_trajectory` | from its prerequisite generation (§7.1) | step-programmed, `planned_absence_program` v"1" |
 | `security.presence_simulation` | direct only | none | none (direct `light_state`) | `security.presence_simulation.interior_lighting.v1` | step-programmed, `planned_absence_program` v"1" |
+| `safety.weather_protection` | direct only | none | none (direct `secure_for_weather`) | `safety.weather_protection.guards.v1` | step-programmed per hazard episode; safe: `secure_for_weather` |
 
 Only environmental-response members carry a `NumericOutcomeRequirement`, in the registered outcome's
 canonical unit; comfort-trajectory and routine members carry `None`, and presence simulation has no
 candidate. Valid examples:
 
 - **Direct:** solar shading, external exchange, air extraction and routine in §7; presence
-  simulation in §7.2 with its §7.2.1 fixtures.
+  simulation in §7.2 with its §7.2.1 fixtures; weather protection in §7.4.
 - **Learned comfort trajectory:** the exact candidate translation of Layer 3 §6.4.1.
 - **Learned solar shading:** `reaction_descriptor_id="environment.solar_shading"`, version `"1"`,
   subject the living room, `relation_profile=solar_shading@1`, `objective_id="limit_solar_gain"`,
@@ -3858,7 +3865,58 @@ candidate. Valid examples:
 No example requires a placeholder outcome unit, a fictitious measured effect, an invented relation
 profile or a guard outside its registered contract.
 
+### 7.4 Initial-V3 direct descriptor: `safety.weather_protection`
+
+This descriptor secures exposed endpoints when a weather hazard arrives; Reaction guards alone only
+veto opening or deployment and never close anything. It is `admin_direct` only, has no relation
+profile or learner, and declares `requires_household_consent=True`,
+`safe_direction_intents={"secure_for_weather"}`, `normal_exit_contract` below,
+`managed_episode_resumption=False` and `hold_release_mode="fixed_duration"`.
+
+- **Hazard and trigger.** One Reaction per hazard. Its start criterion is the `True` state of an
+  administrator-declared Layer-2 boolean produced by `numeric.hysteresis_condition.v1` over a
+  wind-speed or precipitation fact (for example wind at or above 40 km/h to enter, at or below
+  25 km/h to exit). The exit threshold also defines the end of the hazard.
+- **Endpoints.** The administrator selects rooms and/or endpoints; staging keeps only Actuators that
+  are `weather_exposed` (Layer 2 §6: declared exterior, in an exterior room, or undeclared on an
+  opening that faces an exterior side, so a window operator qualifies while an interior blind declared
+  `is_external=False` does not), and only channels whose core translation registers
+  `secure_for_weather`. The
+  persisted set is explicit and canonically ordered, never a live group; an empty result rejects
+  staging.
+- **Target.** The safe target is fixed per channel kind and adapter by the core translation entry
+  (closed opening, retracted awning, closed shutter), never chosen by the administrator. A channel
+  already observed in its safe target receives no step.
+- **Program.** The hazard boolean becoming `True` opens an activation; its evaluation selects one
+  `secure_for_weather` step for every selected channel not in its safe target, each through ordinary
+  admission. Later evaluations during the same hazard secure a channel that has left its safe target
+  only when no hold blocks it. The boolean returning `False` is `natural_completion`; it sends no
+  command and never restores a prior position. After a restart a still-active hazard opens a new
+  activation from fresh state.
+- **Resident hold.** A manual hold on a selected channel is respected; the descriptor never
+  preempts a resident or another writer (§3.2). While the hazard is active and a held channel is not
+  in its safe target, Layer 5 emits the existing `AvailabilitySuppressionOccurrence` with
+  `manual_hold_active` for that channel, so Layer 6 can warn the resident (for example "living-room
+  window held open by you; rain detected").
+- **No confirmation.** Securing runs without a runtime confirmation; the completed or skipped steps
+  are reported as ordinary execution audit and follow-up outcomes, and Layer 6 renders a resident
+  notice of the securing action (overview §11).
+- **Valid direct example.** Casa subject, `relation_profile=None`, trigger
+  `state_transition(environment.wind_hazard@casa, False -> True)` from a hysteresis over the casa
+  wind-speed fact, selected endpoints the living-room awning (`is_external=True`) and the living-room
+  window actuator on `living_south_window`, the zero-axis empty-key envelope and an empty guard
+  binding set. With the awning extended and the window open, both are secured; with the window held
+  open by the resident, only the awning is retracted and a `manual_hold_active` occurrence is
+  emitted for the window.
+
 ## 8. Initial acceptance criteria
+
+- `safety.weather_protection` stages the §7.4 example with an empty required guard set and rejects a
+  selection containing no `weather_exposed` endpoint, and drops an interior blind declared
+  `is_external=False`. On hazard start it secures every
+  selected channel not already safe; a held channel is not commanded and yields
+  `manual_hold_active`; hazard end sends no restore command; a restart during the hazard secures
+  from fresh state only.
 
 - Each §7.3 example validates against its registered descriptor, profile, objective/intent pair,
   guard contract and output schema; replacing a routine member's `None` requirement with a numeric
@@ -4077,7 +4135,7 @@ profile or a guard outside its registered contract.
   fresh promotion and consent. Changing only that Sensor's reliability is
   `semantic_only`: generation and authority stay unchanged and the Reaction
   appears in the impact record (§4.2; Layer 0 §4.7).
-- Each of the six Initial-V3 descriptors can reach its permitted
+- Each of the seven Initial-V3 descriptors can reach its permitted
   `notification_only` creation path through `stage_admin_direct_reaction`
   or `review_proposal`, and uses the same `promote_reaction_automatic_action`,
   `set_reaction_household_consent` when its consent property is true,
@@ -4207,7 +4265,7 @@ profile or a guard outside its registered contract.
   same Layer-3 canonical reason tuple. Every occurrence reaches Layer 6's transient
   `AvailabilityEpisodeTracker` regardless of the current binding set; Layer 5 cannot query the
   publication index, render, persist or deliver `automation.availability`.
-- All six Initial-V3 descriptor registrations named in §3.2 each declare
+- All seven Initial-V3 descriptor registrations named in §3.2 each declare
   `requires_household_consent=True`. After admin promotion without a resident
   grant, each projects `authorized_awaiting_household_consent` and sends no
   `ApplyStep`; revocation blocks subsequent dispatch, including the next call

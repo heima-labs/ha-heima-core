@@ -359,7 +359,7 @@ action.
 - A `ConfiguredReaction` has one stable identity and immutable append-only configuration generations.
   Its compiled canonical plan is persisted without callables; administrative enablement and any
   household consent are separate authority transitions, so neither can silently rewrite policy meaning.
-  All six Initial-V3 descriptors declare resident consent as required. An awaiting or
+  All seven Initial-V3 descriptors declare resident consent as required. An awaiting or
   revoked consent blocks commands as an authority state, not as an unavailable input.
 - The frozen descriptor version supplies the base typed plan grammar. A
   learner relation profile narrows it; a profile-free admin-direct Reaction
@@ -525,6 +525,9 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
   transaction, and retries delivery. Its renderer must declare finite maximum UTF-8 lengths
   for title and message in every supported locale; Layer-5 staging needs those bounds to
   prove the complete follow-up fact fits Layer 1's depth-two/8 KiB limits.
+  It must also render a resident notice of a completed `safety.weather_protection` securing
+  step and of its `manual_hold_active` occurrence for a held exposed channel (Layer 5 §7.4),
+  from typed Layer-5 outcomes only.
   Its `AvailabilityPublicationGeneration` must be one layer reference of the composed
   configuration generation (Layer 0 §4.7): its publication keys join the dependency index, and
   its reconciliation runs at the same swap as the layers it binds.

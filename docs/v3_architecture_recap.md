@@ -485,7 +485,7 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   no finite lift and cannot make a proposal eligible.
   A configured Reaction has one stable identity plus immutable append-only configuration generations; its canonical compiled
   plan is persisted without callables, while authorization and consent remain separate runtime-authority
-  transitions. All six Initial-V3 descriptors require resident consent. Missing
+  transitions. All seven Initial-V3 descriptors require resident consent. Missing
   consent blocks commands through authority state rather than an availability
   suppression. Reaction guards use one bootstrap-frozen core capability registry and typed,
   versioned household guard-profile generations, not per-descriptor condition expressions.
@@ -547,7 +547,7 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   `ApplyStep` and follow-up handling. Only timed future boundaries use the
   next `AtJob` slot. An event step that releases a next-step hold needs a
   fresh current-state continuation before any command.
-- **Initial catalog scope** (one owner matrix with valid examples: Layer 5 §7.3): descriptors include solar shading, external exchange,
+- **Initial catalog scope** (one owner matrix with valid examples: Layer 5 §7.3): descriptors include weather protection (secures exposed awnings, shutters and exterior-facing windows on a wind or rain hazard, respects a resident hold with a warning, never restores automatically), solar shading, external exchange,
   room-neutral air extraction, and the generic routine actuation bundle. The extraction descriptor
   selects one typed room-humidity level, delta or rate trigger; current room occupancy is required
   only where declared. A fan already active at qualifying start is untouched
@@ -579,7 +579,7 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   rather than requiring every purpose's capabilities together; closing, a declared
   safe-direction intent, requires no descriptor guard. A thermal or hygrometric trigger
   uses a Layer-2 indoor-minus-outdoor difference, never an inline comparison. No V3
-  descriptor yet closes or retracts on arriving weather (CA4-63).
+  descriptor guard closes anything: arriving weather is handled by `safety.weather_protection`.
   The required extraction program declares managed-episode resumption and
   fixed-duration hold release. A registered ongoing-program descriptor may
   resume after restart only from a
