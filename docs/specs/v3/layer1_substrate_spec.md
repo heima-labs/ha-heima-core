@@ -65,6 +65,8 @@ Layer 1 is **not** responsible for:
 - the `Room` registry itself (a room's name, type, floor as an inventory record) — `room_id` here is
   a stable reference into that registry, carried forward from today's existing room-inventory model
   unchanged; Layer 1 consumes `room_id` as an opaque identifier, it does not define what a room is.
+  Topology (§7) requires only two attributes of that inventory: `floor` and `enclosure`
+  (`interior` | `exterior`, default `interior`; CA4-62).
 
 ### 2.1 Non-goals
 
@@ -744,6 +746,27 @@ was in force for a fact rather than interpreting all records using today’s Zon
 
 ---
 
+### 6.1 Zone roles
+
+A Zone is generic; the core recognizes a purpose only through a closed set of zone roles, each bound
+by an administrator to at most one Zone:
+
+```python
+ZoneRole = Literal["thermal_envelope", "security_perimeter"]
+
+@dataclass(frozen=True)
+class ZoneRoleBinding:
+    role: ZoneRole
+    zone_id: str
+```
+
+A binding is Heima configuration data in the same composed generation as Zones and Topology (Layer 0
+§4.7); a duplicate role or unknown zone is rejected. `thermal_envelope` defaults to all `interior`
+rooms when unbound; thermal learning and comfort consumers read only that membership, never a room's
+functional label. `security_perimeter` has no default and no Initial-V3 consumer; it reserves the
+place where a future security perimeter is declared, instead of a stored connection classification.
+A role binding adds no field to `Zone` and does not make zones exclusive or nested.
+
 ## 7. `Topology`
 
 ```python
@@ -763,21 +786,16 @@ class Opening:
                                        # reference only; `Topology` itself never reads live entity
                                        # state, same non-live-dependency discipline as `Sensor.device_id`
                                        # (Layer 2 §3)
+    other_side: str = "outside"      # what lies across this opening: a registered room id or the
+                                       # reserved "outside". Declared for every opening, windows
+                                       # included (added 2026-10-11, CA4-62); "outside" is the default
 
 @dataclass(frozen=True)
 class ResolvedConnection:
     room_a: str
-    room_b: str                      # the two rooms this connection joins — `"outside"` is a
-                                       # reserved `room_b` value for an opening that exits the house,
-                                       # not a real room
-    opening_id: str                  # the `Opening` this connection is derived from
-    connection_type: str             # derived, never independently stored — "indoor", "outdoor", or
-                                       # "separate" (corrected 2026-09-08: an earlier version of this
-                                       # comment invented "door"/"open_plan" as examples, which aren't
-                                       # real values at all — "door" is actually a value of
-                                       # `Opening.type`, an unrelated field; verified against
-                                       # `custom_components/heima/room_topology.py`'s real
-                                       # `CONNECTION_TYPES`, not assumed)
+    room_b: str                      # equals the opening's `other_side`; `"outside"` is the reserved
+                                       # value for an opening that exits the house, not a real room
+    opening_id: str                  # the passable `door`/`door_window` `Opening` it is derived from
     access_type: str = "direct"      # "direct", "stairs", or "elevator" (corrected 2026-09-08, same
                                        # error and same source of truth: was "normal"/"restricted",
                                        # neither a real value; real default is "direct", not "normal")
@@ -789,6 +807,10 @@ class Topology:
     exposure_by_room: dict[str, tuple[str, ...]]   # room_id -> sorted orientations of its
                                                      # window-bearing openings (derived from `openings`,
                                                      # not independently authored)
+    enclosure_by_room: dict[str, Literal["interior", "exterior"]]
+                                                     # room_id -> enclosure, read from the Room registry's
+                                                     # own `enclosure` attribute (default "interior");
+                                                     # added 2026-10-11, CA4-62
     floor_by_room: dict[str, int]                   # room_id -> floor, read from the Room registry's
                                                      # own `floor` attribute (added 2026-09-08: this
                                                      # is not derived from `openings`/`connections` the
@@ -810,23 +832,43 @@ connection's `room_a`. `room_b` is either a registered room id or the reserved l
 This ownership rule makes a connection's direction canonical instead of allowing the same physical
 relationship to be serialized with its endpoints swapped.
 
-`exposure_by_room` and `floor_by_room` are derived views, not independently authored input. On build or
+`exposure_by_room`, `enclosure_by_room` and `floor_by_room` are derived views, not independently authored input. On build or
 deserialization the registry recomputes them from canonical openings plus the Room registry, orders
 each exposure tuple by Unicode code point, serializes map keys under the shared RFC-8785 rule, and
 removes duplicate orientations. A
 serialized derived view that disagrees with this recomputation is rejected. Topology registration also
-resolves every `Opening.room_id`, non-`outside` `ResolvedConnection.room_b`, and derived-view room key
+resolves every `Opening.room_id`, non-`outside` `Opening.other_side` and `ResolvedConnection.room_b`, and derived-view room key
 against the Room registry; unknown ids, duplicate opening/connection ids, or a broken opening-owner
-link are errors. Its canonical fingerprint is the shared RFC-8785 serialization of those canonical
+link are errors. A `ResolvedConnection` exists exactly for each passable `door` or `door_window`
+opening and its `room_b` equals that opening's `other_side`; a `window` has no connection. Its
+canonical fingerprint is the shared RFC-8785 serialization of those canonical
 primary data and derived views.
+
+**One physical model, purpose-specific questions (CA4-62, 2026-10-11).** Topology records only
+physical facts: each room's `enclosure` (IFC `IfcSpace` internal/external semantics: `interior` is
+enclosed by physical boundaries, `exterior` is not, e.g. a terrace or garden), what lies across every
+opening (`other_side`), and which openings are passable. It stores no purpose-specific classification.
+V2's derived `connection_type` (`indoor`/`outdoor`/`separate`, with an override) was a security
+alarm-boundary classification mixed into the topology; it is not carried into V3. A room's functional
+label (garage, basement, transit) is descriptive inventory and drives no rule. Every consumer uses
+the same pure derived queries, defined once here:
+
+- **exterior side**: a side is exterior when it is `outside` or a room whose enclosure is `exterior`;
+- **`opening_faces_exterior(opening)`**: `True` when at least one side of the opening (its owner room
+  or `other_side`) is exterior; a window toward a garage (`interior`) is therefore `False`;
+- **thermal envelope membership**: the rooms of the `Zone` bound to role `thermal_envelope` (§6),
+  or all `interior` rooms when that role is unbound.
+
+Purpose-specific groupings that are not physical facts, such as the thermal envelope or a future
+security perimeter, are Zones with a core role (§6), following IFC's `IfcZone` grouping of spaces.
 
 A third, complementary piece of WHERE — genuinely distinct from both `Location` and `Zone`, not a
 variant of either:
 
 - `Location` says *which* place a fact is about.
 - `Zone` says *an explicit group someone declared*.
-- `Topology` says *how rooms physically relate to each other* — adjacency, openings between rooms,
-  connection type, orientation, floor.
+- `Topology` says *how rooms physically relate to each other* — room enclosure, what lies across
+  every opening, passable connections, orientation, floor.
 
 **`Opening`/`ResolvedConnection` are restated here in full — corrected 2026-09-08.** An earlier
 version of this section said they "carry forward unchanged in shape from Heima's existing
@@ -834,7 +876,7 @@ room-topology model... Layer 1 does not redefine them," without ever stating tha
 review to be a real self-containment gap, more serious than the `Room`/`room_id` deferral it was
 modeled on: `room_id` is genuinely opaque everywhere it's used (Layer 1 never inspects its internal
 structure), but `Topology` uses `Opening`/`ResolvedConnection` as *structured* data with fields whose
-meaning (`orientation`, `connection_type`, `access_type`) a reader needs to actually understand what
+meaning (`orientation`, `other_side`, `access_type`) a reader needs to actually understand what
 `Topology` answers. The shapes above carry every field a Layer 1 consumer actually reads, matching
 Heima's existing room-topology model (`custom_components/heima/room_topology.py`) — flattened only in
 packaging, presenting the query-time, already-resolved view a Layer 1 consumer reads (`Topology` is
@@ -852,7 +894,9 @@ or the reserved `outside`) — "casa" isn't adjacent to anything, it **contains*
 different kind of relationship entirely, one this graph isn't built to represent as a peer node.
 Every whole-house topological question is answered as an **aggregate query over the existing
 room-keyed structures**, never a lookup on a dedicated entry: "does the house have an outdoor
-opening" is `any(c.room_b == "outside" for c in connections)` (corrected 2026-09-08 — this example
+opening" is `any(opening_faces_exterior(o) for o in openings)` (revised 2026-10-11 under CA4-62;
+the 2026-09-08 form `any(c.room_b == "outside" for c in connections)` missed windows and exterior
+rooms; corrected 2026-09-08 — this example
 previously queried `exposure_by_room` for the literal string `"outside"`, but `exposure_by_room`
 holds compass *orientations* of window-bearing openings, e.g. `"north"`; it can never contain the
 string `"outside"` at all, so the original query could never return `True` for any house, silently
@@ -924,6 +968,13 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
 ---
 
 ## 10. Acceptance criteria (for the eventual implementation phase)
+
+- Topology has no stored `connection_type`. `opening_faces_exterior` is `True` for a window with
+  default `other_side="outside"`, for a door to a room whose enclosure is `exterior` (terrace), and
+  for an opening owned by an exterior room; it is `False` for a window or door toward an `interior`
+  garage. Only `door`/`door_window` openings produce a `ResolvedConnection`, with `room_b` equal to
+  `other_side`. Thermal-envelope membership is the bound Zone's rooms, or every `interior` room when
+  `thermal_envelope` is unbound; a duplicate role binding or unknown zone is rejected (§6.1, §7).
 
 - `ScopeKind` accepts exactly the four `Location.scope` values; a registry's
   legal-scope set cannot introduce a fifth spelling or replace a concrete

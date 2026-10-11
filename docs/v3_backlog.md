@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–62 | 1 | 0 | 22 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–62 | 0 | 0 | 23 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **62 findings** | **2** | **0** | **59** | **1** |
+| **Total** | **62 findings** | **1** | **0** | **60** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5390,7 +5390,7 @@ registration still blocks learned candidate staging. The CA4-12 review has
 the exact information mapping and scenarios. CA4-47's old type-definition
 record is preserved as history; its current-consumer statement is aligned.
 
-**Slice 12a — `environment.solar_shading` (approved and applied 2026-10-11).** Supported profiles `thermal_shading`/`solar_shading` v"1"; one guard contract `environment.solar_shading.guards.v1` for the direct and learned paths, with `wind` required only for `(increase_shading, exterior_deployable)`; the variant derives from the Actuator's staged `weather_exposed` (new `Actuator.is_external`, IFC `IsExternal` semantics, Layer 2 §6); objective/intent matrix (no `admit_daylight` under `thermal_shading`); one complete direct example and acceptance. Remaining: 12b external exchange (after CA4-62), 12d routine, 12c extraction, 12e cross-descriptor examples. See the [CA4-12 review](specs/v3/reviews/CA4-12.md).
+**Slice 12a — `environment.solar_shading` (approved and applied 2026-10-11).** Supported profiles `thermal_shading`/`solar_shading` v"1"; one guard contract `environment.solar_shading.guards.v1` for the direct and learned paths, with `wind` required only for `(increase_shading, exterior_deployable)`; the variant derives from the Actuator's staged `weather_exposed` (new `Actuator.is_external`, IFC `IsExternal` semantics, Layer 2 §6; exposure rule corrected by CA4-62); objective/intent matrix (no `admit_daylight` under `thermal_shading`); one complete direct example and acceptance. Remaining: 12b external exchange (after CA4-62), 12d routine, 12c extraction, 12e cross-descriptor examples. See the [CA4-12 review](specs/v3/reviews/CA4-12.md).
 
 #### CA4-13 — LearnedWindow calibration bypasses the declared learning lifecycle
 
@@ -6111,9 +6111,11 @@ gap; its per-member numeric/effect fields were partially corrected on
 
 #### CA4-62 — Topology does not distinguish outdoor spaces
 
-**Status:** TODO. **Severity:** P2. **Origin:** developer review during CA4-12a (2026-10-11). **References:** [Layer 1 §7](specs/v3/layer1_substrate_spec.md), [Layer 2 §6](specs/v3/layer2_registries_spec.md).
+**Status:** DONE (2026-10-11; specification readiness). **Severity:** P2. **Origin:** developer review during CA4-12a (2026-10-11). **References:** [Layer 1 §7](specs/v3/layer1_substrate_spec.md), [Layer 2 §6](specs/v3/layer2_registries_spec.md).
 
 Rooms are opaque ids and the only exterior is the reserved `outside` node, so an outdoor area such as a terrace or garden cannot be a registered space. IFC classifies every space `INTERNAL`/`EXTERNAL` and openHAB nests `Terrace`/`Garden` under an `Outdoor` location; V3 has no equivalent. Until resolved, an outdoor area is modeled as `outside`. **Correction:** decide the Room-registry owner and an indoor/outdoor space classification, then its effect on derived `connection_type`, `weather_exposed`, casa presence/occupancy, thermal learning inputs, external exchange and lighting/presence simulation. **Must precede CA4-12b.**
+
+**Approved resolution (2026-10-11).** V2's room model was reviewed against IFC, gbXML/EnergyPlus and openHAB and not carried 1:1. One physical model serves every consumer: each room's `enclosure` (`interior`/`exterior`, IFC `IfcSpace` semantics, read from the room inventory with default `interior`); `other_side` on every opening, windows included (default `outside`); passable connections only for `door`/`door_window`; `Actuator.is_external` for the device. V2's stored `connection_type` and override (a security alarm-boundary classification) are removed; functional room labels drive no rule. Consumers use derived queries defined once in Layer 1 §7 (`opening_faces_exterior`, thermal-envelope membership). Purpose-specific groupings are Zones with a closed core role (`thermal_envelope`, default all interior rooms; `security_perimeter`, reserved), following `IfcZone`. Exterior rooms are part of casa presence; indoor learning slots bind only thermal-envelope rooms; presence simulation admits exterior-room lights only explicitly; `weather_exposed` is corrected for plain windows and exterior rooms. See the [CA4-62 review](specs/v3/reviews/CA4-62.md); no V3 runtime test ran.
 
 #### CA4-61 — Planned-absence descriptors duplicate their shared program rules
 

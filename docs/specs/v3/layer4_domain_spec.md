@@ -366,6 +366,8 @@ physical fusion or the bounded indirect assist; the latter is never eligible as 
 `present | away`. It has exactly one required Layer-2 boolean input `presence.physical` at
 `Location(scope="casa")` and no initial `InferenceSignal` input. Physical `True` resolves to `present`,
 physical `False` resolves to `away`, and an unavailable physical input resolves to `available=False`.
+A room whose enclosure is `exterior` (terrace, garden) is part of `casa`: evidence the administrator
+binds from it is ordinary presence evidence, and enclosure never excludes it (Layer 1 §7).
 
 Layer 4 adds no dwell, grace, or retained state to this base claim: Layer 2's `presence.physical`
 fusion owns source quorum, explicit evidence admission/correlation, and transition stability. Layer 4

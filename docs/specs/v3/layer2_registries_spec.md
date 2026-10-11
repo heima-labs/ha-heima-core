@@ -1860,19 +1860,20 @@ class Actuator:
 #### Exterior exposure
 
 An Actuator's position is its `where` room and, where applicable, its `opening_id`; Topology (Layer 1
-§7) tells whether that opening connects to the reserved `outside`. Position alone cannot tell whether
+§7) tells whether that room is `exterior` and whether that opening faces an exterior side. Position
+alone cannot tell whether
 the actuated element itself is mounted outside: an interior blind and an exterior awning can serve
 the same exterior window. `is_external` records that physical property once per device, following
 IFC's `IsExternal` property of `Pset_ShadingDeviceCommon`/`Pset_WindowCommon`. Staging rejects
-`is_external=True` for an Actuator whose `opening_id` resolves to a connection between two rooms.
+`is_external=True` for an Actuator in an `interior` room whose `opening_id` does not face an exterior
+side (Layer 1 §7, `opening_faces_exterior`).
 
-The derived, read-only `weather_exposed` property is `True` when `is_external` is `True`, or when
-`is_external` is `None` and the Actuator's `opening_id` connects to `outside` (conservative default);
-otherwise it is `False`. It is computed at staging from the Actuator and the current Topology, enters
+The derived, read-only `weather_exposed` property is `True` when `is_external` is `True`; when the
+Actuator's `where` room is `exterior`; or when `is_external` is `None` and its `opening_id` faces an
+exterior side (conservative default). Otherwise it is `False`. It is computed at staging from the Actuator and the current Topology, enters
 the composed configuration generation (Layer 0 §4.7) and is never re-derived in the cycle. A
-descriptor may use it only to derive a staged action variant (Layer 5 §3.2). Until the Topology
-distinguishes outdoor spaces (CA4-62), an open outdoor area such as a terrace is modeled as `outside`,
-not as a registered room.
+descriptor may use it only to derive a staged action variant (Layer 5 §3.2). A terrace or garden is a
+registered room with `enclosure="exterior"`.
 
 ### 6.1 Registered logical channels
 
@@ -2063,9 +2064,11 @@ this layer.
 
 ## 9. Acceptance criteria (for the eventual implementation phase)
 
-- An Actuator with `is_external=True`, or with `is_external=None` and an `opening_id` connecting to
-  `outside`, is `weather_exposed`; one with `is_external=False`, or `None` without such an opening,
-  is not. `is_external=True` on an opening between two rooms is rejected at staging (§6).
+- An Actuator with `is_external=True`, in an `exterior` room, or with `is_external=None` on an
+  opening facing an exterior side (including a plain window with default `other_side`) is
+  `weather_exposed`; one with `is_external=False` in an `interior` room, or on a window toward an
+  `interior` garage, is not. `is_external=True` on an interior opening of an interior room is rejected
+  at staging (§6).
 - A registered Actuator channel has a unique bounded normalized
   `ChannelStateValue` projection under Layer 0 §5.1.1.1; its full facet
   snapshot and exact changed-facet set fit Layer 1's depth-two/8 KiB value

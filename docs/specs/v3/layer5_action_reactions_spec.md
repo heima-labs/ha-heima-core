@@ -3523,7 +3523,8 @@ group. Each endpoint must be an explicitly selected `where: room` Actuator with 
 by this descriptor's light intent. `actuator_role` may suggest an endpoint in the Layer-8 picker but
 is never an admission test. Selection is the administrator's declaration that the endpoint
 is appropriate as an interior light for this deterrence use; Layer 2 has no global `simulation_safe`
-field. Unknown, duplicate, empty, incompatible or subsequently changed selections reject staging or
+field. An endpoint in a room whose enclosure is `exterior` (Layer 1 §7) enters only through explicit
+selection of that endpoint or room. Unknown, duplicate, empty, incompatible or subsequently changed selections reject staging or
 make the current generation unavailable rather than silently changing its membership. All unselected
 or incompatible endpoints, openings, locks, alarms, HVAC, appliances, scripts and scenes are excluded
 by construction. A generic switch with a compatible registered light-state channel may be selected
@@ -3687,8 +3688,8 @@ A learner may propose only values permitted by that same active descriptor.
 - `environment.solar_shading` stages the §7 direct example with required capabilities exactly
   `thermal_bounds` and `wind`; it rejects the same configuration without a `wind` binding, accepts an
   interior blind without one, never requires `wind` for `decrease_shading`, rejects `admit_daylight`
-  under `thermal_shading`, and treats an undeclared `is_external` on an opening to `outside` as
-  `weather_exposed` (Layer 2 §6).
+  under `thermal_shading`, and treats an undeclared `is_external` on an opening facing an exterior
+  side as `weather_exposed` (Layer 2 §6).
 - Every governance command returns one `GovernanceCommandResult`: `applied` with its resulting
   record, `idempotent_replay` with the original result, or `rejected` with closed codes and no
   mutation; `stage_admin_direct_reaction` for comfort trajectory returns

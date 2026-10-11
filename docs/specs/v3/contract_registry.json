@@ -583,7 +583,19 @@
       "id": "L2-ACTUATOR-EXPOSURE",
       "owner": "docs/specs/v3/layer2_registries_spec.md",
       "heading": "Exterior exposure",
+      "depends_on": ["L1-TOPOLOGY"]
+    },
+    {
+      "id": "L1-ZONE-ROLES",
+      "owner": "docs/specs/v3/layer1_substrate_spec.md",
+      "heading": "6.1 Zone roles",
       "depends_on": ["L1-LOCATION"]
+    },
+    {
+      "id": "L1-TOPOLOGY",
+      "owner": "docs/specs/v3/layer1_substrate_spec.md",
+      "heading": "7. `Topology`",
+      "depends_on": ["L1-ZONE-ROLES"]
     }
   ],
   "reviewed_slices": [
@@ -1000,6 +1012,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-25.md",
       "contracts": ["L5-DIAGNOSTIC-REGISTRY", "L5-GOVERNANCE-RESULT", "L5-EXECUTION-AUDIT", "L5-COMFORT-TRAJECTORY", "L5-PRESENCE-SIMULATION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-62",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-62.md",
+      "contracts": ["L1-TOPOLOGY", "L1-ZONE-ROLES", "L2-ACTUATOR-EXPOSURE"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",

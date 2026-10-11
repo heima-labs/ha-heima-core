@@ -223,10 +223,14 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   directly, never other zones.
 - **`Topology`**: a third, complementary piece of WHERE, distinct from both `Location` and `Zone`.
   `Location` says *which* place a fact is about; `Zone` says *an explicit group someone declared*;
-  `Topology` says *how rooms physically relate to each other* — adjacency, openings between rooms,
-  connection type, orientation, floor. It is not itself a fact producer or a fusion input — it's
-  context that `FusionRule`s, Reactions, and Reaction-descriptor requirements can query (e.g. "does this room
-  have an opening to the outside," "what's adjacent to it") when deciding whether and how to act.
+  `Topology` says *how rooms physically relate to each other* — each room's enclosure
+  (interior/exterior, e.g. a terrace is exterior), what lies across every opening (windows included),
+  passable doors, orientation, floor. It stores only physical facts — no security or thermal
+  classification — and every consumer asks the same derived questions ("does this opening face
+  outside?"). Purpose-specific groups (thermal envelope, a future security perimeter) are Zones with
+  a closed core role, as IFC does with `IfcZone`. It is not itself a fact producer or a fusion input —
+  it's context that `FusionRule`s, Reactions, and Reaction-descriptor requirements can query when
+  deciding whether and how to act.
   → Layer 1 §5–§7 is the current location/topology contract; `v3_house_fact_draft.md` is historical.
 
 ---
@@ -327,8 +331,7 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   Actuator record; an optional opening must belong to its room, while lights and other ordinary room
   equipment have no opening relation. An optional `is_external` (IFC `IsExternal` semantics) says
   whether the device itself is mounted outside; with the opening it derives a conservative
-  `weather_exposed`, used for example to require a wind guard for an exterior awning. Outdoor spaces
-  such as a terrace are not yet a Topology concept (CA4-62). Commands live only in whichever
+  `weather_exposed`, used for example to require a wind guard for an exterior awning. Commands live only in whichever
   Reaction decides to send them. → `docs/specs/v3/layer2_registries_spec.md`; the older
   `v3_sensors_actuators_draft.md` remains background only and no longer reflects the current `Sensor`
   shape.

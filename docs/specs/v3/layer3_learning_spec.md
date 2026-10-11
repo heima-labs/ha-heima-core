@@ -2208,6 +2208,10 @@ For a quantitative slot, staging checks the producing Layer-2 Sensor's
 canonical unit contract against the slot unit; history and current inference
 use only the resulting canonical value. A unit-drift `available=False` fact
 cannot become an episode sample or a thermal parameter input.
+An indoor slot (`room_temperature`, `room_co2`, `indoor_humidity`, `indoor_humidity_ratio`,
+`room_illuminance`) binds only a room in the thermal envelope (Layer 1 §6.1/§7); a reading in an
+`exterior` room, such as a terrace temperature, may bind only an outdoor slot, explicitly. An
+`observed_opening_state` used as exchange evidence requires an opening that faces an exterior side.
 The initial core-owned slots are `room_temperature`, `outdoor_temperature`, `room_co2`,
 `indoor_humidity`, `outdoor_humidity`, `indoor_humidity_ratio`, `outdoor_humidity_ratio`,
 `room_illuminance`, `solar_irradiance`, `incident_solar_exposure`, `outdoor_air_quality`,
