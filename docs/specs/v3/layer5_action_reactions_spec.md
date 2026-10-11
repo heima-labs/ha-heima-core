@@ -1,8 +1,7 @@
 # Heima v3 - Layer 5: Action and reaction generation
 
 **Status:** Defined V3 action-and-reaction contract. Not implemented.
-**Open corrections:** CA4-12 (catalog and candidate schema) and CA4-25 (diagnostic
-namespaces), tracked in the CA4 backlog.
+**Open corrections:** CA4-12 (catalog and candidate schema), tracked in the CA4 backlog.
 **Layer:** 5 of 8. Consumes Layer-2 facts and Actuators plus the current-cycle outputs of the completed
 Layer-4 semantic DAG. It consumes Layer-3 `LearningProposalCandidate` only as a reviewable proposal
 input. It never feeds configuration, policy state, or action results back into Layer 4.
@@ -409,6 +408,7 @@ class RegisteredReactionDescriptor:
     managed_episode_resumption: bool  # versioned; requires an ongoing program
     program_family: ProgramFamilyRef | None  # shared activation/exit rules (§3.2 Program families)
     hold_release_mode: Literal["fixed_duration", "next_reaction_step"]
+    execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
     reaction_translation_contract: PureValidator
@@ -844,6 +844,24 @@ ReactionEvaluationReasonCode = Literal[
 
 ReactionExecutionAuditCode = Literal[
     "late_recovery",
+    "late_step_skipped",
+    "stale_callback_discarded",
+    "future_work_cancelled",
+    "alternate_bundle_selected",
+    "bundle_skipped_no_admissible_alternative",
+    "fallback_served_without_artifact",
+]
+
+GovernanceCommandOutcome = Literal["applied", "idempotent_replay", "rejected"]
+
+GovernanceCommandRejectionCode = Literal[
+    "actor_unauthorized",
+    "stale_precondition",
+    "operation_id_conflict",
+    "target_not_found",
+    "authoring_mode_not_permitted",
+    "validation_failed",
+    "consent_disposition_incomplete",
 ]
 
 @dataclass(frozen=True)
@@ -853,14 +871,84 @@ class Layer5DiagnosticRegistry:
     proposal_readiness_codes: frozenset[ProposalReadinessReasonCode]
     evaluation_codes: frozenset[ReactionEvaluationReasonCode]
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]
+    governance_command_codes: frozenset[GovernanceCommandRejectionCode]
     canonicalize_readiness_codes: PureFunction
 ```
 
 The initial registry contains exactly the literals above. A transition code is valid only for its
 corresponding disposition: `accepted_by_admin` -> `accepted`, `rejected_by_admin` -> `rejected`, and
 `candidate_kind_incompatible` -> `proposal_incompatible`. Readiness codes are duplicate-free and in
-registry canonical order; `approvable` readiness has an empty tuple. `late_recovery` is an execution-audit code for a safe next recovery-knot
-decision; it is neither an `ApplyCallFailureReason` nor an `AutomationSuppressionReason`.
+registry canonical order; `approvable` readiness has an empty tuple.
+
+#### Governance command results
+
+Every common §4.2 command and every registered descriptor-specific preparation command, such as
+`stage_comfort_trajectory_prerequisite_generation`, returns exactly one typed result to its caller:
+
+```python
+@dataclass(frozen=True)
+class GovernanceCommandResult:
+    operation_id: str
+    command_id: str                   # registered command name
+    outcome: GovernanceCommandOutcome
+    rejection_codes: tuple[GovernanceCommandRejectionCode, ...]
+    readiness_codes: tuple[ProposalReadinessReasonCode, ...]
+    resulting_ref: str | None         # new generation/transition/proposal id when applied
+```
+
+`applied` has empty code tuples and the identity of the record it appended. `idempotent_replay`
+returns the original result unchanged for the same operation id and canonical request.
+`rejected` has a non-empty, duplicate-free canonical `rejection_codes` tuple, changes nothing and
+has `resulting_ref=None`; `readiness_codes` is non-empty only together with `validation_failed`
+when the failed check has a readiness code. `actor_unauthorized` covers a missing role or explicit
+resident authority; `stale_precondition` covers any expected generation, transition, revision or
+empty-current sentinel that differs from the current one; `operation_id_conflict` is reuse of an
+operation id with different content; `authoring_mode_not_permitted` is, for example,
+`stage_admin_direct_reaction` for a learner-proposal-only descriptor; and
+`consent_disposition_incomplete` is a resident-authority removal without exactly one disposition
+per affected consent. The result goes only to the Layer-8 caller; it is never a resident
+notification.
+
+#### Execution audit
+
+```python
+@dataclass(frozen=True)
+class ReactionExecutionAudit:
+    reaction_id: str
+    configuration_generation_id: str
+    reaction_activation_id: str | None
+    snapshot_id: str | None           # None only for a callback discarded before evaluation
+    code: ReactionExecutionAuditCode
+    planned_step_id: str | None
+    cause_ref: str | None             # required exactly for future_work_cancelled
+    artifact_ref: str | None          # exact ArtifactRef identity where one exists
+    recorded_at: EvidenceInstant
+```
+
+The codes are descriptor-neutral; each descriptor version declares in
+`RegisteredReactionDescriptor.execution_audit_codes` the subset it may emit, and staging rejects a
+code outside the registry:
+
+- `late_recovery`: a program that continues with the next safe step after its remaining supported
+  ramp can no longer meet its boundary.
+- `late_step_skipped`: a due job evaluated after its step's admissible time; the step is skipped,
+  never caught up.
+- `stale_callback_discarded`: a callback whose activation or arm revision is no longer current.
+- `future_work_cancelled`: pending jobs of the activation were cancelled; `cause_ref` names the
+  existing record that caused it (the `ReactionNormalExitResult`, the `ReactionAuthorityTransition`,
+  or the successor configuration generation), so no second cause vocabulary exists.
+- `alternate_bundle_selected` / `bundle_skipped_no_admissible_alternative`: before admission a
+  freshly derived complete alternate bundle was admitted, or none was and no member was commanded.
+- `fallback_served_without_artifact`: a serving role used its descriptor-authorized fallback or
+  staged seed because no usable adopted artifact exists; `artifact_ref` is `None` at first use with
+  no adoption, otherwise the unusable adopted revision. A role without such a fallback abstains
+  through `AutomationSuppressionReason` instead.
+
+An execution-audit code is neither an `ApplyCallFailureReason` (a call that was attempted), an
+`AutomationSuppressionReason`, nor a `ReactionFollowUpOutcome`. These records feed Layer-5 audit and
+the read-only shadow view only; resident-visible output remains exclusively
+`ReactionFollowUpOccurrence` and `AvailabilitySuppressionOccurrence` through Layer 6. A skipped step
+that releases a hold produces its audit record and, under §6.0, its follow-up occurrence.
 
 Layer 3 submits the closed `ReactionDescriptorCandidate` defined in Layer 3 §6.4 with
 `candidate_kind="reaction.descriptor"` and `candidate_kind_version=1`. Layer 5 first validates that exact
@@ -1475,8 +1563,8 @@ mutation atomically, and returns a typed result. Retrying the same operation
 id with the same canonical request returns its prior result without another
 generation or authority transition; reusing it with different content is
 rejected. A stale precondition, unauthorized actor, or failed validation
-changes nothing. Command results and rejections use the common diagnostic
-namespace to be completed under CA4-25, never a descriptor-invented string.
+changes nothing. Command results and rejections use `GovernanceCommandResult`
+and the closed codes of §4.0, never a descriptor-invented string.
 
 1. `stage_admin_direct_reaction` creates a root plus generation `0`, or
    appends one complete successor generation to an existing admin-direct
@@ -2737,7 +2825,12 @@ All Initial-V3 descriptors use the common mechanism above. A descriptor may decl
 bundle or a finite ordered multi-member bundle within its core-owned bound. In both cases staging,
 evaluation, complete-bundle admissibility and one-endpoint `ApplyStep` execution follow the same
 registry, validation, review and runtime contracts. An alternate bundle may be freshly derived only
-before admission; no known-invalid original bundle is partially executed:
+before admission; no known-invalid original bundle is partially executed.
+Every Initial-V3 descriptor declares the §4.0 execution-audit codes `stale_callback_discarded`,
+`future_work_cancelled`, `alternate_bundle_selected` and `bundle_skipped_no_admissible_alternative`;
+a descriptor with a declared timing path whose fallback is a staged seed also declares
+`fallback_served_without_artifact`. Only `environment.planned_comfort_trajectory` declares
+`late_recovery`, and only `security.presence_simulation` declares `late_step_skipped`:
 
 - `environment.solar_shading`: one compatible cover endpoint associated with the subject opening;
   intents `increase_shading`/`decrease_shading`; objectives `limit_solar_gain`,
@@ -3253,7 +3346,7 @@ decision about a pre-existing household consent, not an administrative consent g
 
 The panel's shadow view is read-only. For each reaction it may expose the prerequisite/artifact/profile
 identity, evidence freshness, current readiness, bounded duration/temperature summaries, would-be
-absence target and recovery knots, suppression/cancellation reasons and `late_recovery` audits. It
+absence target and recovery knots, suppression reasons and §4.0 execution-audit records. It
 never exposes calendar title/description/attendee content, raw fact history, resident identity beyond
 the acting audit reference, raw HA payload, or an unredacted artifact.
 
@@ -3404,7 +3497,7 @@ may contain a finite concurrent light bundle across rooms. Layer 5 schedules onl
 normalized calendar-plan fingerprint, local session, episode index and step kind in the
 selected planned-step identity, not in the job replacement key. Each firing reads a fresh snapshot, revalidates every gate, derives at most
 one still-future bundle and then its successor job. Missed or late work is skipped, never caught up,
-replayed, burst or compensated.
+replayed, burst or compensated; a skipped late step records `late_step_skipped` (§4.0).
 For each selected channel, the bounded generator derives a stable `planned_step_id` from the
 activation, normalized plan fingerprint, local session, episode index, on/off step kind and
 channel; re-evaluating the same pending boundary preserves the
@@ -3467,8 +3560,8 @@ seed, whole future programme, calendar text, resident identity, historical prese
 scene or script. The common Layer-5 governance ledger retains its required authenticated actor
 references under §4.2, but they are never copied into these operational projections. Correlation and
 execution audit use only reaction/configuration identity, a non-reconstructive plan fingerprint,
-session/episode identity, logical members, `ApplyStep` outcomes and closed suppression/cancellation
-reasons.
+session/episode identity, logical members, `ApplyStep` outcomes, closed suppression reasons and
+§4.0 execution-audit codes.
 
 A later generic `TemporalActuationProfileModel` may supply a bounded reviewed profile/artifact only
 after its independent learning, privacy, scheduling, evidence and shadow-promotion contract exists. It
@@ -3550,6 +3643,14 @@ A learner may propose only values permitted by that same active descriptor.
 
 ## 8. Initial acceptance criteria
 
+- Every governance command returns one `GovernanceCommandResult`: `applied` with its resulting
+  record, `idempotent_replay` with the original result, or `rejected` with closed codes and no
+  mutation; `stage_admin_direct_reaction` for comfort trajectory returns
+  `authoring_mode_not_permitted`. Every acceptance outcome of §7.1.2 and §7.2.1 maps to a declared
+  execution-audit code, `ReactionNormalExitOutcome`, `ApplyCallOutcome`, follow-up outcome or
+  suppression reason; a code outside the descriptor's `execution_audit_codes` is rejected,
+  `future_work_cancelled` always names its existing cause record, and first use with no adopted
+  artifact records `fallback_served_without_artifact` with `artifact_ref=None` (§4.0).
 - Every learned descriptor/profile pair resolves one exact frozen
   policy-output schema and validator through its `RelationProfileRef`.
   Tests reject an unknown variant, unit mismatch, unordered numeric interval

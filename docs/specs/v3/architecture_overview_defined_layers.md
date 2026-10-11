@@ -537,7 +537,9 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
 - **Layer 8:** Administrative configuration, review, diagnostics and cutover user experience.
   It renders the composed-generation impact record (breaking and semantic-only dependents with
   cause) and sends the commit with the reviewed base generation and `impact_fingerprint`; it
-  never commits a partial layer edit or bypasses the confirmation (Layer 0 §4.7).
+  never commits a partial layer edit or bypasses the confirmation (Layer 0 §4.7). It renders each
+  Layer-5 `GovernanceCommandResult` and execution-audit code from the closed §4.0 vocabularies and
+  never turns them into resident notifications.
 
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.

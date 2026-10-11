@@ -1,7 +1,7 @@
 # Heima v3 - Layer 3: Learning / pattern recognition
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
-**Open corrections:** CA4-12 (catalog and candidate schema) and CA4-25 (diagnostic namespaces), tracked in the
+**Open corrections:** CA4-12 (catalog and candidate schema), tracked in the
 CA4 backlog.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be

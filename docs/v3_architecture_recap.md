@@ -724,8 +724,9 @@ explainability system built on top.
 2. The digest notification capability — designed for, not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
    path — depends on the digest existing first.
-4. The Layer-8 rendering of the common Reaction commands (defined in Layer 5 §4.2) and of the
-   composed-generation impact preview and confirmation (Layer 0 §4.7).
+4. The Layer-8 rendering of the common Reaction commands and their closed `GovernanceCommandResult`
+   and execution-audit codes (Layer 5 §4.0, §4.2) and of the composed-generation impact preview
+   and confirmation (Layer 0 §4.7).
 5. Whether Reactions configuration moves fully into the admin panel (Layer 8).
 6. The "no backward compatibility" project rule vs. a public plugin API (Layer 7) — needs a
    conscious amendment, not a silent exception.

@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 1 | 0 | 21 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 0 | 0 | 22 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **61 findings** | **2** | **0** | **58** | **1** |
+| **Total** | **61 findings** | **1** | **0** | **59** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5727,11 +5727,13 @@ or execution audit while permitting correlation with the governance decision.
 
 #### CA4-25 — Closed diagnostic namespaces do not cover all required outcomes
 
-**Status:** TODO. **Type:** incomplete vocabulary. **References:** [Layer 3 §6.3.1](specs/v3/layer3_learning_spec.md), [Layer 5 §4.0, §5.2, §7.1.1, §7.2](specs/v3/layer5_action_reactions_spec.md).
+**Status:** DONE (2026-10-11; specification readiness). **Type:** incomplete vocabulary. **References:** [Layer 3 §6.3.1](specs/v3/layer3_learning_spec.md), [Layer 5 §4.0, §5.2, §7.1.1, §7.2](specs/v3/layer5_action_reactions_spec.md).
 
 The Layer-5 registry declares two evaluation codes and only `late_recovery` for execution audit. Other requirements call for closed outcomes for stale administrative preconditions, unauthorized actors, late simulation jobs, cancellation, and alternative selection without fully assigning those codes and schemas to an owning namespace. Existing ApplyCall failures and automation-suppression reasons do not automatically define administrative and descriptor audit outcomes.
 
 **Correction:** map each required outcome to its actual registry/code/schema, including first-use states with no artifact. **Closure:** every acceptance scenario can emit a declared typed result without inventing a string or an ArtifactRef; diagnostics remain distinct from resident notification.
+
+**Approved resolution (2026-10-11).** No new registry: the existing `Layer5DiagnosticRegistry` (Layer 5 §4.0) gains `GovernanceCommandRejectionCode` and a typed `GovernanceCommandResult` (`applied`/`idempotent_replay`/`rejected`) for every common and descriptor-specific governance command. `ReactionExecutionAuditCode` is extended with descriptor-neutral codes (`late_step_skipped`, `stale_callback_discarded`, `future_work_cancelled` with a `cause_ref` to the existing exit/authority/generation record, `alternate_bundle_selected`, `bundle_skipped_no_admissible_alternative`, `fallback_served_without_artifact` with `artifact_ref=None` at first use); each descriptor declares its emitted subset. Results go only to Layer 8 and audit; resident output remains follow-up and availability occurrences. See the [CA4-25 review](specs/v3/reviews/CA4-25.md); no V3 runtime test ran.
 
 #### CA4-26 — Admin-authored simulation recurrence conflicts with HA schedule authority
 

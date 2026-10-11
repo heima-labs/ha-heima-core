@@ -560,6 +560,24 @@
       "owner": "docs/specs/v3/layer3_learning_spec.md",
       "heading": "Requiredness scope",
       "depends_on": ["L3-CAUSAL-WINDOW"]
+    },
+    {
+      "id": "L5-DIAGNOSTIC-REGISTRY",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "4.0 Layer-5 diagnostic registry",
+      "depends_on": ["L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L5-GOVERNANCE-RESULT",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Governance command results",
+      "depends_on": ["L5-DIAGNOSTIC-REGISTRY"]
+    },
+    {
+      "id": "L5-EXECUTION-AUDIT",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Execution audit",
+      "depends_on": ["L5-DIAGNOSTIC-REGISTRY", "L5-REACTION-ARTIFACT-ADOPTION"]
     }
   ],
   "reviewed_slices": [
@@ -965,6 +983,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-21.md",
       "contracts": ["L3-CAUSAL-WINDOW", "L3-REQUIREDNESS-SCOPE"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-25",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-25.md",
+      "contracts": ["L5-DIAGNOSTIC-REGISTRY", "L5-GOVERNANCE-RESULT", "L5-EXECUTION-AUDIT", "L5-COMFORT-TRAJECTORY", "L5-PRESENCE-SIMULATION"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
