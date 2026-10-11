@@ -5700,6 +5700,8 @@ The shared `mean`, `rate`, `true_duration`, and sequence resolvers do not fully 
 
 **Correction:** define boundary inclusivity, publication ordering, and expiry-triggered reevaluation. **Closure:** same-time emission has a declared admission result, and expiry retracts the assisted conclusion under an explicit timing guarantee without depending on incidental external activity.
 
+**Approved decisions (2026-10-11), not yet applied.** (1) Signal inference runs inside the cycle, after Layer-2 facts and before Layer 4, on the frozen intake; `emitted_at` is the cycle instant and admission is `emitted_at <= snapshot.when < expires_at`. (2) Layer 3 arms one replaceable `elapsed` Layer-0 `AtJob` per (contract, subject) at the emitted signal's `expires_at`; its due requests a fresh evaluation, so an assisted conclusion never outlives its signal. Specification text, review and acceptance still to be written.
+
 #### CA4-23 — The literal numeric parser regex is double-escaped
 
 **Status:** DONE (2026-10-04; specification readiness). **Type:** executable documentation error. **References:** [Layer 2 §4](specs/v3/layer2_registries_spec.md).
