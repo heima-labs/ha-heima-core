@@ -209,7 +209,8 @@ requires a new version. The
 `hvac_thermal_response` profile uses `hvac_thermal_response.policy_output.v1`:
 its typed parameter remains `ThermalResponseParameter` and its mandatory
 core release gate remains `ThermalEvidenceGateCalibration`, with their existing
-fields and bounds. The routine relation profile must register
+fields and bounds. The routine relation profile
+`RelationProfileRef(profile_id="routine_actuation_bundle", version="1")` registers
 `routine.bundle_frequency.v1` for Layer 3 §4.4.3's single
 `RoutineBundleFrequencyCell` per bundle/context cell. Its validator matches
 the candidate's complete canonical bundle fingerprint, assembly window and
@@ -217,9 +218,11 @@ profile/descriptor pair. Each `CoverageCell` in the candidate's supported
 envelope must match exactly one eligible output record with the same exact
 context key; diagnostic records outside that envelope remain diagnostic and
 cannot be promoted by proximity or fallback. The validator checks the keyed
-eligibility report; it never accepts a member-frequency substitute. A missing
-exact routine profile
-registration remains a CA4-12 catalog blocker, not an inferred profile.
+`RoutineValidationReport` against the profile's `RoutineEvidenceGateCalibration` (Layer 3 §4.4.3);
+it never accepts a member-frequency substitute. Its evidence facet declares the routine trigger as
+one `primary` transition class, the routine confounders of Layer 3 §4.4.3 and
+`shadow_requirement="optional_before_proposal"`; its policy facet permits only
+`routine.actuation_bundle` and the single objective `reproduce_resident_routine`.
 The output-schema version field is `"1"` for these initial
 registrations. No administrator, learner instance or plugin may register an
 alternate schema or validator.
@@ -357,6 +360,17 @@ version="1")`. It permits `opening_security`, `precipitation`, `wind`, `thermal_
 | `(open_for_exchange, hygrometric)` | `opening_security`, `precipitation`, `wind`, `thermal_bounds` |
 | `(open_for_exchange, air_quality)` | `opening_security`, `precipitation`, `wind`, `thermal_bounds`, `outdoor_air_quality` |
 | `(close_to_retain, thermal)`, `(close_to_retain, air_quality)`, `(close_to_retain, hygrometric)` | none; `close_to_retain` is in the descriptor's `safe_direction_intents` |
+
+`routine.actuation_bundle` uses `ReactionGuardContractRef(guard_contract_id=
+"routine.actuation_bundle.guards.v1", version="1")` for its direct path and its learned profile. It
+permits `presence`, `privacy`, `quiet_hours.v1`, `opening_security`, `precipitation` and `wind`. Every
+member variant requires `presence`, whose binding references the casa `presence` claim (Layer 4
+§9.2) even for a room-scoped Reaction: a routine never acts while the house is away. A member also
+requires the safety capabilities that an environmental descriptor requires for the same physical
+action, so a routine cannot bypass them: `open_for_exchange` adds `opening_security`,
+`precipitation` and `wind`; `increase_shading` on a `weather_exposed` cover (variant
+`exterior_deployable`) adds `wind`. These apply only where the routine descriptor version admits
+that intent. A bundle requires the union of its members' sets (above).
 
 Every relation profile names one exact `ReactionGuardContractRef`. An `admin_direct` descriptor
 with no relation profile instead names one exact descriptor-level guard contract. In either case the
@@ -3034,6 +3048,18 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   safety/privacy/security guard before the complete bundle is admitted. This descriptor is generic:
   lighting is an expected first use, not a namespace-specific execution mechanism.
 
+  Its Initial-V3 `authoring_modes` are `admin_direct` and `learner_proposal`. Its sole
+  `supported_profile_refs` entry is `routine_actuation_bundle` version `"1"` (§3.1), with the single
+  objective `reproduce_resident_routine` paired with every member intent the descriptor version
+  admits and no `NumericOutcomeRequirement`. Its guard contract, also its `direct_guard_contract`,
+  is `routine.actuation_bundle.guards.v1` (§3.2). Valid direct example: subject
+  `Location(scope="room", room_id="living")`, `relation_profile=None`, trigger
+  `state_transition(projector.power@living, off -> on)`, three `light_state` members setting
+  three living-room lights to low brightness, the zero-axis empty-key envelope and a guard-profile
+  generation binding `presence`; the required capabilities are exactly `presence`. The same bundle
+  with an `open_for_exchange` member, where admitted, also requires `opening_security`,
+  `precipitation` and `wind`.
+
   For historical routine discovery, the descriptor version registers a
   bounded, pure `ObservedMemberProjection` for each permitted
   `(action_intent, channel_kind, actuation_adapter_id)` translation entry.
@@ -3738,6 +3764,11 @@ A learner may propose only values permitted by that same active descriptor.
 
 ## 8. Initial acceptance criteria
 
+- `routine.actuation_bundle` stages the §7 direct example with required capabilities exactly
+  `presence`; it rejects a configuration without a `presence` binding, and a member whose physical
+  action requires safety guards in an environmental descriptor inherits them. A learned candidate is
+  proposal-eligible only under `routine_actuation_bundle` v"1" with a matching report entry that
+  passes every `RoutineEvidenceGateCalibration` gate (Layer 3 §4.4.3).
 - `environment.external_exchange` stages the §7 thermal direct example with required capabilities
   exactly `opening_security`, `precipitation`, `wind` and `thermal_bounds`; an `air_quality` opening
   additionally requires `outdoor_air_quality`; a `close_to_retain` variant stages with an empty

@@ -1363,11 +1363,64 @@ failed chronological validation keeps the cell diagnostic. The same
 artifact retains the keyed temporal-block, calibration, holdout and
 coverage report from the preceding validation contract; the registered
 validator checks that report and its gate results against this cell before
-Layer 3 may publish it as policy-consumable. Until the exact routine
-`RelationProfileRef` and validator are registered, the output is not
-proposal-eligible (CA4-12). Neither the point lift (derived
+Layer 3 may publish it as policy-consumable. The registered profile is
+`RelationProfileRef(profile_id="routine_actuation_bundle", version="1")` (Layer 5 §3.1); its
+validator checks each cell against the report and calibration below. Neither the point lift (derived
 from the two probabilities) nor any measured field enters the immutable
 candidate's semantic fingerprint.
+
+Its gate values are one core-frozen release calibration per profile version, approved by the core
+release authority and never by a household administrator, following the thermal calibration
+pattern of §4.8:
+
+```python
+@dataclass(frozen=True)
+class RoutineEvidenceGateCalibration:
+    calibration_id: str
+    profile_ref: RelationProfileRef
+    minimum_complete_triggers_per_cell: int
+    minimum_matching_triggers_per_cell: int
+    minimum_distinct_calendar_blocks_per_cell: int
+    minimum_conditional_precision: float      # the learner-wide min_confidence for this profile
+    minimum_lift: float                       # > 1
+    no_effect_lift: float                     # >= 1; lift interval lower bound must exceed it
+    no_effect_precision: float                # precision interval lower bound must exceed it
+    interval_nominal_coverage: float          # in (0, 1)
+    bootstrap_replica_count: int
+    minimum_valid_bootstrap_replicas: int
+    approved_by: str
+    calibration_evidence_fingerprint: str
+
+@dataclass(frozen=True)
+class RoutineValidationEntry:
+    canonical_bundle_fingerprint: str
+    context_cell_key: tuple[BucketValue, ...]
+    block_duration: Window
+    block_count: int
+    valid_replica_count: int
+    bootstrap_seed: str
+    precision_interval: RoutineEstimateInterval | None
+    lift_interval: RoutineEstimateInterval | None
+    holdout_conditional_probability: float | None
+    holdout_lift: float | None
+    calibration_error: float | None           # matching-bundle outcome, holdout partition
+    coverage_complete: bool
+    failed_gates: tuple[str, ...]             # canonical calibration field names; empty iff eligible
+
+@dataclass(frozen=True)
+class RoutineValidationReport:
+    calibration_id: str
+    bootstrap_version: str
+    entries: tuple[RoutineValidationEntry, ...]   # unique (bundle fingerprint, context key)
+```
+
+Counts are positive integers, `minimum_valid_bootstrap_replicas <= bootstrap_replica_count`, and the
+interval coverage equals every cell's `nominal_coverage`. The report reuses §4.8's temporal block
+bootstrap protocol and seed rule with `canonical_cell_key` replaced by the bundle fingerprint and
+context key; each block is at least the feature lookback plus the assembly window. A cell is eligible
+only when its entry exists, `failed_gates` is empty, both intervals are present and match the cell,
+`valid_replica_count` meets the minimum, and every count, precision, lift and no-effect gate passes.
+A missing entry, a mismatched interval or a non-empty `failed_gates` keeps the cell diagnostic.
 
 Its frozen `shadow_requirement` is `optional_before_proposal`: its only actionable egress after an
 explicit administrative transition is a reviewable `ReactionDescriptorCandidate` for the core Layer-5
@@ -3952,6 +4005,11 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 
 ## 9. Initial acceptance criteria
 
+- A routine cell is proposal-eligible only with a `RoutineValidationReport` entry for its exact
+  bundle and context key whose intervals match the cell, whose `failed_gates` is empty and whose
+  counts, precision, lift and no-effect bounds pass the frozen `RoutineEvidenceGateCalibration`; a
+  missing entry, too few valid bootstrap replicas or a lift interval touching `no_effect_lift`
+  keeps it diagnostic. The bootstrap seed reproduces the report (§4.4.3).
 - A trace with unequal state durations yields one time-weighted `mean`, `true_duration`,
   `minimum` and `maximum` under zero-order hold over `[T - window, T]`; an event at `T - window`
   is not counted and one at `T` is. A source unavailable anywhere in the window makes the feature

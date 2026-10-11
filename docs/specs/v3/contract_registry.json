@@ -602,6 +602,12 @@
       "owner": "docs/specs/v3/layer2_registries_spec.md",
       "heading": "Generic numeric difference",
       "depends_on": ["L2-NUMERIC-HYSTERESIS"]
+    },
+    {
+      "id": "L3-ROUTINE-GATES",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.4.3 `ActuationRoutinePatternModel-v1`",
+      "depends_on": ["L3-ROUTINE-OUTPUT", "L5-RELATION-PROFILES"]
     }
   ],
   "reviewed_slices": [

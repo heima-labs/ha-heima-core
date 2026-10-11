@@ -571,6 +571,9 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   and learned proposals through the same descriptor path. Their direct
   envelope may have the one empty-key cell while learned proposals retain
   supported context cells; direct trigger and guard checks remain mandatory.
+  The routine bundle (direct "scene on event" or learned) always requires current
+  casa presence and inherits the safety guards of the same physical action; its learned
+  path is gated by a core-frozen release calibration and a keyed temporal-block report.
   External-exchange guard requirements use its validated purpose variant,
   rather than requiring every purpose's capabilities together; closing, a declared
   safe-direction intent, requires no descriptor guard. A thermal or hygrometric trigger
