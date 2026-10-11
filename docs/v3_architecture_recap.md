@@ -392,6 +392,9 @@ history to mean anything and would make no sense recomputed every cycle.
   depending on what's being predicted (a match ratio for a categorical outcome, an inverse-dispersion
   score for a continuous one — never reinvented per family), and a generalized tiered fallback (try
   the most specific model with enough support, fall back to a coarser one, down to the coarsest).
+  Window features use one resolver for training and serving: state values hold until the next
+  change (time-weighted, never interpolated), and a feature missing only for a richer tier excludes
+  the sample from that tier alone, so the coarser fallback still learns from it.
   A bounded ML model may use the same historical bindings when the baseline cannot express a real,
   measurable relationship. It trains off the hot path, publishes a versioned validated artifact, and
   has no additional authority over semantic claims or actions. Local in-process training is bounded and may

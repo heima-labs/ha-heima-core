@@ -1,8 +1,7 @@
 # Heima v3 - Layer 3: Learning / pattern recognition
 
 **Status:** Defined V3 core contract; explicitly deferred future components remain unimplemented.
-**Open corrections:** CA4-12 (catalog and candidate schema), CA4-21 (historical aggregates and
-tier requiredness) and CA4-25 (diagnostic namespaces), tracked in the
+**Open corrections:** CA4-12 (catalog and candidate schema) and CA4-25 (diagnostic namespaces), tracked in the
 CA4 backlog.
 **Layer:** 3 of 8. Builds on Layer 0 (`Timing`, Persistence, retention coverage), Layer 1
 (`HouseFact`, `Location`, `Provenance`), and Layer 2 (the registered facts whose history can be
@@ -246,7 +245,7 @@ class AsOfStateFeature(FeatureBase):
 @dataclass(frozen=True)
 class CausalAggregateFeature(FeatureBase):
     window: Window
-    aggregation: Literal["event_count", "true_duration", "mean", "minimum", "maximum", "rate"]
+    aggregation: Literal["event_count", "true_duration", "mean", "minimum", "maximum"]
 
 @dataclass(frozen=True)
 class CausalSequenceFeature(FeatureBase):
@@ -306,8 +305,8 @@ one concurrent observation group, even when Layer 0 used its internal `AppendOrd
 state deterministically. `AppendOrder` is not exposed to Layer 3 and has no causal meaning there.
 The sample builder first consolidates the complete equal-time group, then evaluates features against
 the resulting state at `T`: `AsOfStateFeature` reconstructs the latest state record at-or-before
-`T`, `CausalAggregateFeature` summarizes `[T - window, T]`, and `CausalSequenceFeature` returns at
-most `max_items` ordered observations from that same interval. Thus two facts emitted at the same
+`T`, and `CausalAggregateFeature` and `CausalSequenceFeature` follow the canonical window semantics
+below. Thus two facts emitted at the same
 instant are context observed together, never an implicit cause and outcome merely because one was
 appended first. Two separate evaluations never share an instant: Layer 0 §3.5 gives every cycle a
 strictly later cycle instant, so a concurrent group always belongs to one cycle and a transition
@@ -315,10 +314,11 @@ between consecutive cycles is never merged into one group.
 The aggregate is valid only for a source claim and aggregation that its core family validator permits
 (for example, `event_count` for events; `mean` only for a finite numeric state). Every declared historical feature/anchor read checks both `retention_coverage` and the
 Layer-0 §4.4 `ObservationCoverage` result before sample construction. An incomplete
-observation window discards the fixed-window sample; an optional feature's ordinary
+observation window makes the features that read it missing; an optional feature's ordinary
 missing representation cannot turn a process gap into observed context. A required
-feature that is unavailable, stale, invalid, or lacks required retention discards
-the sample with a diagnostic reason. Optional never means implicit imputation: it requires its declared
+feature that is unavailable, stale, invalid, or lacks required retention or coverage
+excludes the sample, with a diagnostic reason, from exactly the consumers that use it
+(requiredness scope below). Optional never means implicit imputation: it requires its declared
 `missing_representation_id`. A missing or invalid `PointOutcome` target discards
 the sample. An absent event in a complete `EventWindowOutcome` window is a valid
 zero/false outcome; an absent `TimeToEventOutcome` event at the end of complete
@@ -326,6 +326,54 @@ observation is a right-censored duration. Neither rule applies to an incomplete
 observation window. A `FutureStateFractionOutcome` likewise requires complete
 observation and retention for its entire interval and a valid state at its anchor;
 an incomplete fraction is excluded, never filled from a later matching state.
+
+#### Causal window semantics
+
+One versioned feature resolver implements these rules for historical construction and live
+inference; only the source of records differs. History is write-on-change, so a state value holds
+from its record until the next record for the same claim (zero-order hold); nothing is
+interpolated.
+
+- **State aggregates** (`mean`, `minimum`, `maximum`, `true_duration`) cover the closed interval
+  `[T - window, T]`. The initial value is the as-of state at `T - window`; each later record
+  replaces it from its own `when`, and the consolidated equal-time group at `T` is the final value.
+  `mean` is time-weighted, the integral of the value over the interval divided by `window`;
+  `true_duration` is the number of seconds for which a boolean state is `true`, a finite
+  non-negative number no greater than `window`. A record exactly at `T` adds zero duration and zero
+  weight, while `minimum` and `maximum` range over every value held during the interval including
+  the value at `T`. If the source is unavailable, stale or invalid anywhere in the interval, lacks
+  an as-of state at `T - window`, or crosses an incomplete retention or observation interval, the
+  feature is missing; it is never computed over the valid part only.
+- **Event aggregates** (`event_count`) cover the half-open interval `(T - window, T]`, so adjacent
+  windows never count one occurrence twice; the concurrent group at `T` is included. A complete
+  interval with no occurrence counts zero; an incomplete one makes the feature missing.
+- **Sequences** return the records in `(T - window, T]`: for a state source its records (changes)
+  in that interval, for an event source its occurrences. They are ordered by `when`, then, within
+  one concurrent group, by the canonical RFC-8785 serialization of `(fact identity, value)`;
+  `AppendOrder` is never used. When more than `max_items` qualify, the most recent `max_items` are
+  kept. Coverage failure anywhere in the interval makes the feature missing.
+
+A rate is not an aggregation: over a fixed window it is only `event_count` divided by a constant,
+and the slope of a numeric state belongs to a Layer-2 formula or an explicit model.
+
+Example: a 30-minute `mean` over a temperature held at 20 C for 25 minutes and 26 C for the last
+5 minutes is 21.0 C (not the unweighted 23.0 C); `maximum` is 26 C; a report at 26 C exactly at
+`T` changes neither.
+
+#### Requiredness scope
+
+`required` applies to the consumers that read a feature, not unconditionally to the whole sample.
+A feature that is the outcome input of every tier, a non-tier model input, or a dimension of every
+declared tier is sample-wide: when required and missing, the sample is discarded. A feature used as
+a dimension only by some tiers is tier-scoped: when required and missing, including through a gap
+in a stream read only by those tiers, the sample is excluded from exactly those tiers and still
+enters every tier that does not use it. A missing outcome always discards the whole sample. In
+training each tier counts its admitted samples independently, so tier support may differ and is
+governed by its own `min_support`; serving applies the same scope through the tier-local
+`missing_dimension` and `retention_incomplete` outcomes of §4.3. For example, a sample lacking
+`darkness` does not enter a `rich (day_kind, time, occupancy, darkness)` tier but does enter its
+`coarse (day_kind, time)` fallback. An optional feature uses its declared missing representation
+and is never excluded.
 
 `AsOfStateFeature` and `PointOutcome` address typed state claims. Their
 previous `max_age` field is removed: elapsed time since the last *change* is
@@ -3894,6 +3942,14 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 
 ## 9. Initial acceptance criteria
 
+- A trace with unequal state durations yields one time-weighted `mean`, `true_duration`,
+  `minimum` and `maximum` under zero-order hold over `[T - window, T]`; an event at `T - window`
+  is not counted and one at `T` is. A source unavailable anywhere in the window makes the feature
+  missing. Equal-time sequence items order by canonical serialization, and overflow keeps the most
+  recent `max_items`. Training and serving give the same value for the same records (§4.2).
+- A required feature used only by the rich tier and missing in a sample excludes that sample from
+  the rich tier only; the coarse tier still counts it, and serving falls back to the coarse tier
+  with a `missing_dimension` trace for the rich one (§4.2, §4.3).
 - A signal is emitted within its cycle after the Layer-2 barrier and before Layer 4, with
   `emitted_at` equal to the cycle instant; it is never carried into a later cycle. Each emission
   arms or replaces one `elapsed` expiry `AtJob` per `(contract_id, subject)` at `expires_at`; a cycle

@@ -548,6 +548,18 @@
       "owner": "docs/specs/v3/layer4_domain_spec.md",
       "heading": "6. Inference Signal Gateway",
       "depends_on": ["L3-SIGNAL-EGRESS", "L4-DECISION-SNAPSHOT"]
+    },
+    {
+      "id": "L3-CAUSAL-WINDOW",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "Causal window semantics",
+      "depends_on": ["L0-CYCLE-INSTANT"]
+    },
+    {
+      "id": "L3-REQUIREDNESS-SCOPE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "Requiredness scope",
+      "depends_on": ["L3-CAUSAL-WINDOW"]
     }
   ],
   "reviewed_slices": [
@@ -942,6 +954,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-22.md",
       "contracts": ["L3-SIGNAL-EGRESS", "L4-SIGNAL-GATEWAY", "L4-DECISION-SNAPSHOT", "L0-CYCLE-INSTANT"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-21",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-21.md",
+      "contracts": ["L3-CAUSAL-WINDOW", "L3-REQUIREDNESS-SCOPE"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",

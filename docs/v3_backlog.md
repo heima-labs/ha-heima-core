@@ -5011,9 +5011,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 1 | 0 | 32 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 2 | 0 | 20 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61 | 1 | 0 | 21 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **61 findings** | **3** | **0** | **57** | **1** |
+| **Total** | **61 findings** | **2** | **0** | **58** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -5686,11 +5686,13 @@ A monotonic countdown cannot unconditionally preserve an absolute UTC deadline a
 
 #### CA4-21 — Historical aggregates and tier-specific requiredness are underspecified
 
-**Status:** TODO. **Type:** incomplete shared algorithm. **References:** [Layer 3 §4.2–4.3](specs/v3/layer3_learning_spec.md), [Layer 0 §4](specs/v3/layer0_runtime_spec.md).
+**Status:** DONE (2026-10-11; specification readiness). **Type:** incomplete shared algorithm. **References:** [Layer 3 §4.2–4.3](specs/v3/layer3_learning_spec.md), [Layer 0 §4](specs/v3/layer0_runtime_spec.md).
 
 The shared `mean`, `rate`, `true_duration`, and sequence resolvers do not fully define duration weighting, interpolation, boundaries, and gap handling on write-on-change history. Separately, rejecting a sample when any required feature is missing can prevent the promised coarser-tier fallback when a rich-tier dimension is absent. Requiredness is not clearly scoped to the entire sample or the selected tier.
 
 **Correction:** define canonical resolver semantics and requiredness per applicable tier. **Closure:** a trace with unequal state durations and a missing rich-only feature has one reproducible training/serving result and an explicit fallback decision.
+
+**Approved resolution (2026-10-11).** (a) One resolver for training and serving: zero-order hold, no interpolation; state aggregates over `[T - window, T]` from the as-of state at `T - window`, time-weighted `mean`, `true_duration` in seconds, `minimum`/`maximum` including the value at `T`; any invalid portion makes the feature missing. `event_count` and sequences use `(T - window, T]`; sequences order equal-time items canonically and keep the most recent `max_items`. `rate` is removed as redundant. (b) Requiredness is scoped to the consumers that read a feature: a dimension of only some tiers excludes the sample from those tiers only; features of every tier, non-tier inputs and the outcome stay sample-wide. Applied in Layer 3 §4.2/§9; see the [CA4-21 review](specs/v3/reviews/CA4-21.md); no V3 runtime test ran.
 
 #### CA4-22 — Signal timestamp admission and expiry wakeups are incomplete
 
