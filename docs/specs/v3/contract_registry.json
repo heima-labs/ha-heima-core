@@ -307,7 +307,7 @@
       "id": "L5-SOLAR-SHADING",
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "7. Initial V3 descriptors",
-      "depends_on": ["L0-TIMING", "L2-NUMERIC-HYSTERESIS"]
+      "depends_on": ["L0-TIMING", "L2-NUMERIC-HYSTERESIS", "L2-ACTUATOR-EXPOSURE"]
     },
     {
       "id": "L3-FUTURE-STATE-FRACTION",
@@ -578,6 +578,12 @@
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "Execution audit",
       "depends_on": ["L5-DIAGNOSTIC-REGISTRY", "L5-REACTION-ARTIFACT-ADOPTION"]
+    },
+    {
+      "id": "L2-ACTUATOR-EXPOSURE",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "Exterior exposure",
+      "depends_on": ["L1-LOCATION"]
     }
   ],
   "reviewed_slices": [

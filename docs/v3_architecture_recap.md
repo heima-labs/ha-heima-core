@@ -325,7 +325,10 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   fixed-duration channels. Each channel still gets its own deadline. A hold never
   survives restart; the Actuator record is never itself a command. One HA command endpoint has one
   Actuator record; an optional opening must belong to its room, while lights and other ordinary room
-  equipment have no opening relation. Commands live only in whichever
+  equipment have no opening relation. An optional `is_external` (IFC `IsExternal` semantics) says
+  whether the device itself is mounted outside; with the opening it derives a conservative
+  `weather_exposed`, used for example to require a wind guard for an exterior awning. Outdoor spaces
+  such as a terrace are not yet a Topology concept (CA4-62). Commands live only in whichever
   Reaction decides to send them. → `docs/specs/v3/layer2_registries_spec.md`; the older
   `v3_sensors_actuators_draft.md` remains background only and no longer reflects the current `Sensor`
   shape.

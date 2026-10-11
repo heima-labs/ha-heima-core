@@ -329,6 +329,22 @@ version="1")` and requires that same capability for its sole
 `(light_state, default)` action variant. It introduces no new capability or
 evaluator.
 
+`environment.solar_shading` uses one guard contract for its direct path and for both of its learned
+relation profiles: `ReactionGuardContractRef(guard_contract_id="environment.solar_shading.guards.v1",
+version="1")`. It permits `wind`, `thermal_bounds`, `privacy` and `quiet_hours.v1`, each at version
+`1`. Its action variants and required sets are:
+
+| Variant `(action_intent, semantic_variant_id)` | Required capabilities |
+|---|---|
+| `(increase_shading, default)` | `thermal_bounds` |
+| `(increase_shading, exterior_deployable)` | `thermal_bounds`, `wind` |
+| `(decrease_shading, default)` | `thermal_bounds` |
+
+The descriptor derives `exterior_deployable` exactly for `increase_shading` on a cover whose staged
+Actuator is `weather_exposed` (Layer 2 §6); every other member is `default`. Retracting an exterior
+cover is never blocked by wind. `privacy` and `quiet_hours.v1` are optional bindings an administrator
+may add; they introduce no new capability or evaluator.
+
 Every relation profile names one exact `ReactionGuardContractRef`. An `admin_direct` descriptor
 with no relation profile instead names one exact descriptor-level guard contract. In either case the
 frozen contract defines the capabilities the configuration may use and the non-empty subset required
@@ -2863,8 +2879,33 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   `CanonicalEnvelope` only with this descriptor's complete typed trigger,
   staged guards and target bounds; it carries no environmental-response
   support or calibration. A learned proposal still needs an eligible exact
-  relation profile and its own supported context cells. The exact direct
-  guard contract and a complete direct staging example remain CA4-12 work.
+  relation profile and its own supported context cells.
+
+  Its `supported_profile_refs` are exactly `thermal_shading` and `solar_shading`, version `"1"`
+  (Layer 3 §4.8). Both profiles and the direct path name
+  `environment.solar_shading.guards.v1` (§3.2); its `direct_guard_contract` is that ref. The legal
+  objective/intent pairs are:
+
+  | Objective | Intent | `thermal_shading` | `solar_shading` | Direct |
+  |---|---|---|---|---|
+  | `limit_solar_gain` | `increase_shading` | yes | yes | yes |
+  | `admit_solar_gain` | `decrease_shading` | yes | yes | yes |
+  | `admit_daylight` | `decrease_shading` | no | only with an indoor-illuminance binding | yes, with an indoor-illuminance trigger or guard slot |
+
+  Valid direct example: the living-room exterior awning `cover.living_awning` (registered with
+  `opening_id="living_south_window"`, `is_external=True`) and an administrator-declared Layer-2
+  `FusionRule` using `numeric.hysteresis_condition.v1` over that opening's
+  `environment.incident_solar_exposure`, producing the boolean state
+  `environment.solar_gain_high` at the living room. The configuration has subject
+  `Location(scope="room", room_id="living")`, `relation_profile=None`, trigger
+  `state_transition(environment.solar_gain_high@living, False -> True)`, objective
+  `limit_solar_gain`, one member `increase_shading` on that cover with a canonical
+  shading target, the zero-axis empty-key envelope, and a guard-profile generation binding
+  `thermal_bounds` (indoor temperature) and `wind`. The member derives variant
+  `(increase_shading, exterior_deployable)`, so the plan's required capabilities are exactly
+  `thermal_bounds` and `wind`. The same configuration without the `wind` binding is rejected at
+  staging; for an interior blind (`is_external=False`) the variant is `default` and `wind` is not
+  required.
 - `environment.external_exchange`: one compatible opening endpoint; intents
   `open_for_exchange`/`close_to_retain`; purposes `thermal`, `air_quality`, or `hygrometric`;
   automatic mode requires the descriptor's applicable opening-security, precipitation, wind
@@ -3643,6 +3684,11 @@ A learner may propose only values permitted by that same active descriptor.
 
 ## 8. Initial acceptance criteria
 
+- `environment.solar_shading` stages the §7 direct example with required capabilities exactly
+  `thermal_bounds` and `wind`; it rejects the same configuration without a `wind` binding, accepts an
+  interior blind without one, never requires `wind` for `decrease_shading`, rejects `admit_daylight`
+  under `thermal_shading`, and treats an undeclared `is_external` on an opening to `outside` as
+  `weather_exposed` (Layer 2 §6).
 - Every governance command returns one `GovernanceCommandResult`: `applied` with its resulting
   record, `idempotent_replay` with the original result, or `rejected` with closed codes and no
   mutation; `stage_admin_direct_reaction` for comfort trajectory returns
