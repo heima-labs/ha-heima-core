@@ -2310,7 +2310,8 @@ is `None` exactly for `opened`. The occurrence carries only these closed fields;
 text, severity `info`, family and quiet-hours behavior. The closing phase is audit and delivery
 state only: Layer 6 appends its `reaction.advisory` fact, retires the opening record undelivered if
 it is still waiting (for example deferred by quiet hours), and never sends residents a closing
-notice; an advice already delivered is not withdrawn. An activation never survives a restart, so
+notice; an advice already delivered is only cleared silently from the device through its tag
+(Layer 6 §7.4), never retracted with a message. An activation never survives a restart, so
 Layer 6 treats an `opened` advisory from before the current process start without a `closed` phase
 as closed: it retires an undelivered record without delivery and appends no fact.
 
@@ -2333,6 +2334,7 @@ class ReactionActionNoticeOccurrence:
     operation_id: str                 # sha256 of "reaction.action_notice.operation.v1:" + RFC-8785
                                       # [reaction_id, configuration_generation_id, reaction_activation_id]
     reaction_id: str
+    reaction_descriptor_id: str       # selects the Layer-6 notification family
     configuration_generation_id: str
     reaction_activation_id: str
     snapshot_id: str
@@ -2456,6 +2458,7 @@ ReactionFollowUpOutcome = Literal[
 class ReactionFollowUpIntent:
     operation_id: str
     reaction_id: str
+    reaction_descriptor_id: str         # selects the Layer-6 notification family
     configuration_generation_id: str
     reaction_activation_id: str
     actuator_id: str
@@ -2476,6 +2479,7 @@ class ReactionFollowUpIntent:
 class ReactionFollowUpOccurrence:
     operation_id: str                    # one opaque id for this boundary and channel; stable on retry
     reaction_id: str
+    reaction_descriptor_id: str
     configuration_generation_id: str
     reaction_activation_id: str
     actuator_id: str
@@ -2496,7 +2500,7 @@ class ReactionFollowUpOccurrence:
 
 Layer 5 owns both immutable contracts; `ReactionFollowUpIntent` is the sole durable
 pre-outcome projection (Layer 0 §4.5), and `ReactionFollowUpOccurrence` is its transient
-resolved result. Layer 6 validates both and requires the stable operation, Reaction/generation/activation,
+resolved result. Layer 6 validates both and requires the stable operation, Reaction/descriptor/generation/activation,
 Actuator/channel, subject, path, hold and planned-step identities of an occurrence
 to match its prepared intent. The due/final target, later-step status and observed
 projection may be resolved only after the fresh snapshot and therefore may differ

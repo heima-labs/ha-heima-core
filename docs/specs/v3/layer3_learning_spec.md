@@ -3418,9 +3418,9 @@ not already received that episode is delivered independently. On `restored`, Lay
 bindings recorded as notified and still active for the episode. It groups delivery by
 `(automation_scope_id, subject, reasons)` and, only there, builds the standard
 `automation.availability` event, derives its notification key/severity and persists its
-Layer-1 audit fact with its delivery record in Layer 0's unified notification outbox (§4.5). Delivery configuration may choose channel and grouping duration, but may not turn
-repeated per-cycle diagnostics into resident-facing spam or suppress the first user-visible failed
-automation without an explicit higher-level policy decision.
+Layer-1 audit fact with its delivery record in Layer 0's unified notification outbox (§4.5). Delivery behavior (families, quiet hours, channels) is fixed by Layer 6 (Layer 6 §6–§7); it may
+not turn repeated per-cycle diagnostics into resident-facing spam or suppress the first
+user-visible failed automation without an explicit higher-level policy decision.
 For `active_channel_unmanaged_after_restart`, the resident text states that the
 actuator is observed active, Heima has no usable current proof to manage it,
 and Heima will leave it as observed rather than assume responsibility for a

@@ -23,7 +23,7 @@ runtime state, or learning; a V2 export can exist only outside V3 as rollback/re
 ```
 Layer 8  Admin / config surface        config_flow forms + admin panel (registries + actions)
 Layer 7  Extensibility                 third-party extensions, pull-only, core-mediated contracts
-Layer 6  Notification / communication  one pipeline, 3-tier quiet hours, digest
+Layer 6  Notification / communication  one pipeline, family quiet hours, digests
 Layer 5  Action / reaction generation  Reaction descriptors, review and safe application
 Layer 4  Semantic Resolution (the DAG) independent semantic claims and episodes
 Layer 3  Learning / pattern recognition PatternLearner, bounded live signals, proposal analyzers

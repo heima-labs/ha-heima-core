@@ -44,7 +44,8 @@ Layer 6 does not own:
 - the administrative surface that edits recipients and shows history (Layer 8).
 
 Layer 6 never issues an `ApplyStep`, changes a Reaction, interprets a response, reads Home
-Assistant state for a decision, or writes a fact type it does not own.
+Assistant entity state for a decision, or writes a fact type it does not own. It reads from Home
+Assistant only configuration: the system language and the registered `notify.*` services.
 
 ## 3. Core principles
 
@@ -83,7 +84,7 @@ class NotificationKindDescriptor:
     claim_owner_id: str                    # Layer 0 FactTypeClaim owner, e.g. "layer6.reaction_advisory"
     input_type: str                        # the closed typed occurrence the adapter accepts
     audience: NotificationAudience
-    default_family: NotificationFamily     # §6.1; availability may resolve to "safety"
+    default_family: NotificationFamily | None   # None: resolved from the descriptor namespace (§6.1)
     severity: EventSeverity                # fixed per kind (Layer 1 §3.1)
     delivered_phases: frozenset[str]       # phases that reach people; other phases are audit only
     clearing_phases: frozenset[str]        # phases that clear an earlier delivered phase (§7.4)
@@ -95,10 +96,10 @@ class NotificationKindDescriptor:
 
 | Kind | Input | Audience | Family | Severity | Delivered phases | Answer |
 |---|---|---|---|---|---|---|
-| `reaction.follow_up` | `ReactionFollowUpOccurrence` (Layer 5 §6.0) | residents | attention | warning | the one outcome | none |
+| `reaction.follow_up` | `ReactionFollowUpOccurrence` (Layer 5 §6.0) | residents | by descriptor namespace (§6.1) | warning | the one outcome | none |
 | `automation.availability` | `AvailabilitySuppressionOccurrence` via the tracker (§9.2) | residents | by descriptor namespace (§6.1) | warning | `abstaining`, `reason_changed`, `restored` | none |
 | `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents | suggestion | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
-| `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents | safety | info | the one notice | none |
+| `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents | by descriptor namespace (§6.1) | info | the one notice | none |
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
 | `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened`, `reissued` (`closed` clears) | `layer5.household_consent`: grant / decline |
 | `proposal.review_pending` | `ProposalReviewOccurrence` (Layer 5 §6.0) | administrators | governance | info | `created`, `approvable_again`, grouped by the digest (§6.3) | none; link to the Layer-8 panel |
@@ -112,8 +113,9 @@ Each kind has exactly one core adapter. On an occurrence it:
 
 1. validates the occurrence against its closed contract (identities non-empty, phase and reason
    fields consistent, sizes bounded) and rejects it otherwise with a diagnostic;
-2. builds the event fact: `fact_type=notification_kind`, `where=subject`, `when=occurred_at` (or
-   the recovery instant for `interrupted_before_outcome`), `how.source=FactSource(kind="system",
+2. builds the event fact: `fact_type=notification_kind`, `where=subject`, `when=occurred_at`
+   (`detected_at` for an availability occurrence; the recovery instant for
+   `interrupted_before_outcome`), `how.source=FactSource(kind="system",
    source_id=claim_owner_id)`, and an `OperationalEventValue` with the kind's severity, its
    `context_version`, its `notification_key` (§7.6) and the occurrence's closed fields mapped to
    scalar `context` entries;
@@ -124,7 +126,7 @@ Each kind has exactly one core adapter. On an occurrence it:
 
 An exact retry of the same operation returns the existing record; a different payload under the
 same key is rejected (Layer 0 §4.5). `context` never contains a display name, rendered text, raw HA
-state, an HA entity id other than a registered Actuator id, or a person's identity.
+state, an HA entity id or a person's identity; an `actuator_id` is a Layer-2 logical identity.
 
 ## 5. Recipients and audiences
 
@@ -170,16 +172,18 @@ through the fallback channel (§7.3). This is also the behavior of an unconfigur
 
 ### 6.1 Families (C3)
 
-Families are closed and fixed per kind (§4.2). The only kind whose family depends on its input is
-`automation.availability`: its family comes from the namespace of the descriptor of the binding it
-is delivered for, through one closed core table:
+Families are closed and fixed per kind (§4.2). For the three kinds that report on a Reaction's
+action — `reaction.follow_up`, `automation.availability` and `reaction.action_notice` — the family
+comes from the namespace of that Reaction's descriptor (for availability, the descriptor of the
+binding it is delivered for), through one closed core table:
 
-| Descriptor namespace | Availability family |
+| Descriptor namespace | Family |
 |---|---|
 | `safety.*` | `safety` |
 | `environment.*`, `security.*`, `routine.*` | `attention` |
 
-So a window held open while weather protection is active is a `safety` notice. A future descriptor
+So a window held open while weather protection is active, a weather-protection step left
+unconfirmed, and the weather-protection action notice are all `safety` notices. A future descriptor
 namespace must add its row with the descriptor's core release; staging rejects a binding whose
 namespace has no row, so no namespace falls into a family by default.
 
@@ -249,7 +253,9 @@ For each resolved recipient, Layer 6 sends one call to each endpoint `notify.*` 
 - `data.url` (or `clickAction`) for a proposal digest, pointing to the Layer-8 panel;
 - the push priority of §6.1.
 
-A recipient is reached when at least one of its endpoints accepted the call.
+A recipient is reached when at least one of its endpoints accepted the call. The per-call payload
+is the transient `HeimaEvent` envelope derived from the event fact (Layer 1 §3.1); it is never
+persisted.
 
 ### 7.3 Retries and fallback
 
@@ -289,7 +295,8 @@ A `ready` record retires undelivered only when:
 - its item closed before delivery (advisory, proposal, recovery confirmation, consent request);
 - its item expired (a recovery request past `expires_at`);
 - its family is silent during quiet hours (§6.2);
-- it is a pre-restart advisory without a closing phase (Layer 5 §6.0).
+- it is a pre-restart advisory without a closing phase (Layer 5 §6.0);
+- it is a consent opening superseded by a `reissued` phase of the same request (§9.3).
 
 The audit fact always remains. Each retirement increments a diagnostic counter by kind and cause.
 
@@ -334,8 +341,8 @@ own automations on it; Heima never consumes it.
 Each `(notification_kind, context_version)` has one core-fixed template per supported locale,
 selected further by the closed `context` fields (phase, intent, closing reason, outcome). Templates
 are versioned with the core and not editable by administrators. A template uses only closed context
-fields, the subject Location and names resolved from the current configuration (room, opening,
-Actuator, Reaction). A name longer than 64 characters is truncated; an identifier that is no longer
+fields, the subject Location, names resolved from the current configuration (room, opening,
+Actuator) and the core-owned localized label of the Reaction's descriptor. A name longer than 64 characters is truncated; an identifier that is no longer
 configured is shown as the identifier. An unknown `context_version` renders a generic text with the
 kind and identifiers.
 
@@ -436,6 +443,7 @@ are routed with the new recipients.
 - Follow-up intents are recovered by Layer 0 §4.5.1.
 - Pre-restart advisories without a closing phase retire undelivered.
 - Recovery confirmations invalidated by the restart arrive as `closed` occurrences from Layer 0.
+- Consent requests still pending arrive as `reissued` occurrences with a fresh request id (§9.3).
 - Digest windows restart from the current open set; the 4-hour spacing is not persisted, so a
   restart may send one extra digest.
 - The availability tracker starts empty (Layer 3 §6.3.1).
@@ -493,8 +501,9 @@ closed advisory (§7.4, §9.3) and the namespace-based availability family (§6.
   proposal clears the digest on the phone.
 - A recovery confirmation `closed` clears the opening notification; an opening still undelivered
   at `expires_at` retires undelivered.
-- An availability episode bound to a weather-protection Reaction is delivered as `safety` during
-  quiet hours; the tracker scenarios of Layer 3 §6.3.1 pass unchanged.
+- An availability episode, an unconfirmed follow-up and an action notice of a weather-protection
+  Reaction are delivered as `safety` during quiet hours, while the same kinds for an
+  `environment.*` Reaction are held; the tracker scenarios of Layer 3 §6.3.1 pass unchanged.
 - After a restart every `ready` record is delivered again with the same tag, a pre-restart
   advisory without closure retires undelivered, and no delivery blocks an evaluation cycle.
 - Every delivery fires one `heima_notification` event with closed fields only.

@@ -249,7 +249,7 @@ EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
 
 @dataclass(frozen=True)
 class OperationalEventValue:
-    notification_key: str                 # non-empty stable delivery dedup/rate-limit key
+    notification_key: str                 # non-empty stable delivery identity (Layer 6 §7.6)
     severity: EventSeverity                # delivery/diagnostic priority, never fact identity
     context_version: int                   # >= 1; version of this fact type's context schema
     context: dict[str, EvidenceValue]      # closed fields and stable identifiers only, never text
@@ -295,8 +295,9 @@ and `automation.availability`) is appended once per `(notification_kind, operati
 and `actuator.target_lifecycle`, `actuator.correction` and
 `actuator.resident_control` deduplicate by their own stable event/edge ids
 under Layer 0 §4.2. None uses
-`notification_key` as fact identity. That key is consumed by Layer 6's delivery policy for its
-configured deduplication and rate-limiting window. Thus a suppressed repeat delivery remains visible in the audit
+`notification_key` as fact identity. Layer 6 uses that key for delivery identity; it has no
+time-based deduplication or rate-limiting window, and repeats on a device are replaced through
+item tags (Layer 6 §7.4–§7.6). A delivery that is not made remains visible in the audit
 trail, while `severity` may affect rendering, route selection, escalation, and diagnostics but never
 the fact's identity, ownership, retention semantics, or causal correlation. Event consumers must not
 derive a live state from this value; a current claim needs a separate `state` fact by Layer 0 §4.
@@ -1085,7 +1086,7 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   event at the V3 boundary rather than translating it. Two distinct equal event occurrences are both retained, while exact operation-id retries of
   `manual_hold.lifecycle` and of any notification kind's `(notification_kind, operation_id)`
   (Layer 0 §4.5) retain one fact and conflicting retries fail.
-  A Layer-6 delivery suppression based on a shared `notification_key` never removes an audit
+  A Layer-6 decision not to deliver (Layer 6 §7.5) never removes an audit
   record (§3.1; Layer 0 §4.5/§6.4).
 - A `HoldLifecycleValue` carrying two facet expectation sources is copied and
   validated against its producer-owned full audit schema and the ordinary

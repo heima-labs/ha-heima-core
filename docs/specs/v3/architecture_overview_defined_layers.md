@@ -534,7 +534,7 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
   Its `AvailabilityPublicationGeneration` must be one layer reference of the composed
   configuration generation (Layer 0 §4.7): its publication keys join the dependency index, and
   its reconciliation runs at the same swap as the layers it binds.
-  Notification routing, rendering, deduplication/rate limiting,
+  Notification routing, rendering, repeat replacement through item tags,
   delivery/audit storage, and resident channel behavior also belong here.
 - **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers,
   diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
