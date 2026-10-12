@@ -590,6 +590,9 @@ typed `RecoveryConfirmationOccurrence` (§7.4.1). It likewise reserves `reaction
 (owner `layer6.reaction_action_notice`), `proposal.review_pending` (owner
 `layer6.proposal_review`) and `reaction.consent_request` (owner `layer6.consent_request`) as
 Layer-6 event claims for the typed Layer-5 occurrences of Layer 5 §6.0; Layer 5 never appends them.
+The core reserves `FactTypeClaim(fact_type_pattern="reaction.advisory_feedback",
+owner_id="layer5.advisory_feedback", emission_kind="event")` for the resident feedback that Layer 5
+records from an answered advisory (Layer 5 §6.0); it is not a notification.
 
 State-history and event-history reads are deliberately different. For a state fact, the query is the
 at-or-before-window-start record plus changes inside the window, as specified below. For an event fact,
@@ -1790,8 +1793,9 @@ class VerifiedResponse:
 ```
 
 The frozen `ResponseOwnerRegistry` is closed to administrators, learners and plugins. Initial V3
-registers one owner, `layer0.recovery_confirmation` (§7.4.1); a later owner, such as proposal review
-or household consent, needs its own reviewed registration. An owner declares each request when it
+registers three owners: `layer0.recovery_confirmation` (§7.4.1), `layer5.household_consent` and
+`layer5.advisory_feedback` (Layer 5 §6.0). A later owner, such as proposal review or disabling an
+automation from a notification, needs its own reviewed registration. An owner declares each request when it
 becomes actionable and withdraws it when it closes; only a currently declared, unexpired request
 accepts a response.
 

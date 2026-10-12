@@ -657,7 +657,10 @@ recovery confirmation reaches Layer 6 as a typed occurrence when it opens and ag
 closes, so no stale approve button survives on a phone. Three further typed occurrences complete
 the inputs: a protective action notice (weather protection, residents), a new-proposal review notice
 (administrators, grouped by the digest) and a household-consent request notice (consent-authorized
-residents, informative only in Initial V3).
+residents). Recovery confirmations, consent requests (grant/decline) and advisories
+(done/dismiss/not useful, recorded as learning feedback) are actionable through HA mobile
+notification actions; Layer 6 uses HA infrastructure throughout (`notify.*`, notification tags,
+`persistent_notification` as fallback, a `heima_notification` bus event).
 
 The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
 uses Layer 0's unified notification outbox (one durable store for every notification to a person:
