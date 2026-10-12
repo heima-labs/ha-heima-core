@@ -300,7 +300,11 @@ on the phone, by the item tag (§7.4). The key is never a fact identity.
 Layer 6 encodes each button as an HA mobile action identifier
 `"HEIMA:" + response_request_id + ":" + action`. On a `mobile_app_notification_action` event with
 that prefix it passes the request id, the action and the event's authenticated HA user context to
-Layer 0's ingress (§5.1.3), and does nothing else. It never interprets, validates or answers a
+Layer 0's ingress (§5.1.3), and does nothing else. The mobile app fires this event through its
+registration webhook, and HA sets the event context's `user_id` to the HA user the device is
+registered to (`mobile_app` `registration_context`); an event without a user is rejected by the
+ingress. Because the same webhook can fire any event type, the button payload is not trusted:
+the unguessable request id, the verified user and the owner's own check decide. It never interprets, validates or answers a
 response itself; an unknown prefix is ignored. The response request id comes from the occurrence
 (§13, U1).
 
@@ -462,9 +466,6 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
    message), so its feedback buttons do not stay on the phone after the request is withdrawn.
 4. **Availability family.** Proposed: every availability notice bound to a `safety.*` Reaction is
    `safety`, not only `manual_hold_active` (C3 named that case).
-5. **HA user in mobile action events.** Verify in HA's documentation that
-   `mobile_app_notification_action` carries the authenticated HA user of the device, which the
-   ingress requires.
 
 ## 15. Initial acceptance criteria
 
