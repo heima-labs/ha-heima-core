@@ -216,8 +216,8 @@ fact values as valid `EvidenceValue`s.
 ### 2.5 Atomic configuration reload
 
 **Resolved 2026-09-09.** A registry reload is one immutable `RegistryGeneration`, never a sequence of
-live unregister/register calls. Staging happens outside evaluation and constructs candidate Room, Zone,
-Topology, Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
+live unregister/register calls. Staging happens outside evaluation and constructs candidate Room
+(including its `floor` and `enclosure` attributes), Zone, `ZoneRoleBinding`, Topology, Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
 Before it can replace the active generation, one complete validation pass resolves every spatial
 reference and checks §2.3 producer uniqueness, fact ownership, numeric/cardinality constraints,
 formula availability and binding validation (§5.3), Fusion DAG order, and §5.7 source/destination
@@ -572,8 +572,8 @@ unit selection. The converted finite number is the only value passed to
 numeric output or bucket thresholds, and downstream typed bindings validate
 the declared canonical unit. The core unit-conversion registry is
 bootstrap-frozen, versioned and pure; a changed conversion semantic version
-invalidates dependent staged generations/artifacts under ordinary selective
-invalidation. It never receives a raw HA object or executes on a learning or
+invalidates dependent staged generations/artifacts under the composed-generation
+impact rule (Layer 0 §4.7). It never receives a raw HA object or executes on a learning or
 action path.
 
 Staging rejects a quantitative Sensor with no unit contract, empty/unknown
@@ -719,8 +719,8 @@ source entity/attribute paths, converter version, bounds, age limit and HA
 observer-location fingerprint enter the two Sensor execution fingerprints.
 A changed HA home location is a staged source-definition update, as are a
 source binding or converter version change. Until that new generation is
-committed, solar geometry is unavailable; the ordinary selective generation
-revalidation then invalidates dependent solar
+committed, solar geometry is unavailable; the composed-generation impact rule
+(Layer 0 §4.7) then invalidates dependent solar
 formula plans and learning artifacts; evaluation never queries HA location
 or calculates an ephemeris on the policy path. Installations without a
 usable Sun source may keep unrelated automations active, while a solar
@@ -1359,7 +1359,8 @@ Reaction and learner. The geometry-only proxy is rejected for this binding.
 
 The core registers `numeric.difference.v1` with `implementation_version="1"`. It takes exactly two
 ordered current-cycle canonical numeric state `FactRef`s, `minuend` then `subtrahend`, and produces
-one numeric state `minuend - subtrahend` at a declared `Location`. Its configuration has exactly
+one numeric state `minuend - subtrahend` at the minuend's `Location` (§5.7's formula-declared
+destination). Its configuration has exactly
 `source_unit`; staging requires both inputs to carry that canonical unit and the output to use it,
 and rejects extra fields or a previous-cycle input. The entry uses `min_inputs=2` and
 `confidence_mode="inherit_input"`, inheriting the lower confidence of the two inputs, ties toward the
@@ -1731,6 +1732,15 @@ to be one blanket rule — worked out per strategy:
   already exactly that room or a member of that destination's room set. Checked at registration time,
   in the same pass that already walks every `FusionRule`'s `inputs` for §2.3's producer-uniqueness
   check and §5.6's cycle detection — no new traversal needed.
+  **Formula-declared destination (CA5).** A registered formula whose result describes one specific
+  input's place rather than the combined scope may instead declare an exact destination rule in its
+  `validate_binding`; that rule replaces the join check for that formula only and is part of its
+  implementation version. `numeric.difference.v1` places its result at the minuend's Location;
+  `environment.solar_incidence.v1` at the subject opening's owner room;
+  `environment.humidity_ratio.v1` at the temperature and relative-humidity inputs' Location (a
+  casa pressure input does not widen it); `numeric.hysteresis_condition.v1` at its numeric input's
+  Location. A formula without a declared rule keeps the join check, and no administrator can supply
+  or override one.
 - **`PrecedenceStrategy`**: deliberately exempt from any such rule. A fallback chain's whole point can
   be "use a coarser or differently-scoped reading as an approximation when nothing more specific
   exists" — e.g. a bedroom's own TRV temperature sensor, falling back to a whole-house outdoor
@@ -2290,7 +2300,7 @@ this layer.
   dimensionless proxy and cannot claim W/m² exposure. At or below zero solar
   elevation, the geometric direct component is zero even for a matching
   opening azimuth (§3.6/§5.3; Layer 3 §4.8.2).
-- `numeric.difference.v1` with indoor 26.0 C and outdoor 22.5 C yields 3.5 C at the declared
+- `numeric.difference.v1` with indoor 26.0 C and outdoor 22.5 C yields 3.5 C at the minuend's
   Location with the lower input confidence; it rejects mismatched units, a third input or a
   previous-cycle input, and publishes unavailable when either input is unavailable.
 - `numeric.hysteresis_condition.v1` rejects wrong source kind/unit, wrong
@@ -2363,7 +2373,10 @@ this layer.
 - A `UnanimityStrategy`/`WeightedQuorumStrategy`/`FormulaStrategy` `FusionRule` whose `where` is not
   equal to or coarser than the join of its `inputs`' source locations is rejected at registration time
   (§5.7) — verified for a `zone` destination missing one input's room from that `Zone`'s `room_ids`,
-  and confirmed to succeed for a valid `casa` destination regardless of input locations.
+  and confirmed to succeed for a valid `casa` destination regardless of input locations. A formula
+  with a declared destination rule is checked against that rule instead: an indoor-minus-outdoor
+  `numeric.difference.v1` stages at the living room and is rejected at `casa` or another room; a
+  solar-incidence output stages only at its opening's owner room.
 - A `PrecedenceStrategy` `FusionRule` with `inputs` at heterogeneous, unrelated locations — including
   one coarser than its own declared `where` — registers successfully, confirming §5.7's exemption for
   this strategy is not accidentally enforced by the same check as the three aggregating strategies.

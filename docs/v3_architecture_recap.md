@@ -9,8 +9,8 @@ itself should be enough to understand the system on its own.
 **Authority and maintenance.** The Layer 0--5 specifications are authoritative; where this recap
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
-through:** 2026-10-11 for every CA4 correction closed in `docs/v3_backlog.md`, through CA4-62
-and the CA4-12 catalog closure; the open CA4-63 is not summarized as settled.
+through:** 2026-10-12 for every CA4 correction closed in `docs/v3_backlog.md`, including the
+CA4-64 full-reread (CA5) corrections; no CA4 item is open.
 
 For current specification work, the [contract registry](specs/v3/contract_registry.json) and
 [workflow](specs/v3/spec_workflow.md) provide bounded navigation and review evidence.
@@ -580,13 +580,17 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   safe-direction intent, requires no descriptor guard. A thermal or hygrometric trigger
   uses a Layer-2 indoor-minus-outdoor difference, never an inline comparison. No V3
   descriptor guard closes anything: arriving weather is handled by `safety.weather_protection`.
+  Protection never outranks another automation: every action that would undo it (deploying an
+  exterior awning, opening a window) must use the protection's own hazard state as its wind/rain
+  guard, so it is vetoed while the hazard lasts; identical safe targets from several automations
+  merge into one command.
   The required extraction program declares managed-episode resumption and
   fixed-duration hold release. A registered ongoing-program descriptor may
   resume after restart only from a
   committed proof of Heima's physical inactive-to-active edge and a fresh
   current reading. That compact open/closed channel state joins ordinary
   cycle persistence on opening and closure, without a per-command flush;
-  speed changes do not update it. At every restart, if the first fresh valid
+  level changes do not update it. At every restart, if the first fresh valid
   device reading is active and usable proof is missing, Heima leaves it
   untouched and produces the existing Layer-6
   availability notice with reason `active_channel_unmanaged_after_restart`.
@@ -748,5 +752,5 @@ explainability system built on top.
 7. A namespacing convention for third-party-registered identifiers
    (`"plugin.<plugin_id>.<name>"`) — still to be reviewed for Layer 7; the current
    cross-layer claims and candidate-kind/Reaction-descriptor references must remain collision-free.
-8. The remaining Layer 0–5 specification corrections are tracked individually as CA4 backlog
-   items; the retired domain drafts are historical context, not pending architecture decisions.
+8. Layer 0–5 have no open CA4 correction after the CA5 full reread; any new finding is tracked as
+   a CA4 backlog item. The retired domain drafts are historical context, not pending decisions.

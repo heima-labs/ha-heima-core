@@ -37,10 +37,12 @@ typed lifecycle. Five concepts:
 3. **`Location`** — WHERE a fact is about: the whole house, one room, a declared zone, or an ad hoc
    room combination.
 4. **`Zone`** — an admin-declared, named group of rooms.
-5. **`Topology`** — how rooms physically relate to each other: adjacency, openings, floors.
+5. **`Topology`** — how rooms physically relate to each other: room enclosure, what lies across
+   every opening, passable connections, orientation, floors.
 
 (`Zone` and `Topology` are both part of WHERE, listed separately from `Location` because they answer
-different questions — see §6 and §7.)
+different questions — see §6 and §7. A closed set of zone roles, §6.1, names the purpose-specific
+groupings the core recognizes.)
 
 ## 2. Scope
 
@@ -744,8 +746,6 @@ historical meaning without
 incorrectly changing a `Location(scope="zone")` identity: audit can determine which room membership
 was in force for a fact rather than interpreting all records using today’s Zone definition.
 
----
-
 ### 6.1 Zone roles
 
 A Zone is generic; the core recognizes a purpose only through a closed set of zone roles, each bound
@@ -761,11 +761,14 @@ class ZoneRoleBinding:
 ```
 
 A binding is Heima configuration data in the same composed generation as Zones and Topology (Layer 0
-§4.7); a duplicate role or unknown zone is rejected. `thermal_envelope` defaults to all `interior`
+§4.7); a duplicate role or unknown zone is rejected, and a `thermal_envelope` Zone containing a room
+whose enclosure is `exterior` is rejected. `thermal_envelope` defaults to all `interior`
 rooms when unbound; thermal learning and comfort consumers read only that membership, never a room's
 functional label. `security_perimeter` has no default and no Initial-V3 consumer; it reserves the
 place where a future security perimeter is declared, instead of a stored connection classification.
 A role binding adds no field to `Zone` and does not make zones exclusive or nested.
+
+---
 
 ## 7. `Topology`
 
@@ -805,8 +808,9 @@ class Topology:
     openings: tuple[Opening, ...]
     connections: tuple[ResolvedConnection, ...]
     exposure_by_room: dict[str, tuple[str, ...]]   # room_id -> sorted orientations of its
-                                                     # window-bearing openings (derived from `openings`,
-                                                     # not independently authored)
+                                                     # window-bearing openings that face an exterior
+                                                     # side (derived from `openings`, not
+                                                     # independently authored; CA5)
     enclosure_by_room: dict[str, Literal["interior", "exterior"]]
                                                      # room_id -> enclosure, read from the Room registry's
                                                      # own `enclosure` attribute (default "interior");
@@ -856,11 +860,11 @@ the same pure derived queries, defined once here:
 - **exterior side**: a side is exterior when it is `outside` or a room whose enclosure is `exterior`;
 - **`opening_faces_exterior(opening)`**: `True` when at least one side of the opening (its owner room
   or `other_side`) is exterior; a window toward a garage (`interior`) is therefore `False`;
-- **thermal envelope membership**: the rooms of the `Zone` bound to role `thermal_envelope` (§6),
+- **thermal envelope membership**: the rooms of the `Zone` bound to role `thermal_envelope` (§6.1),
   or all `interior` rooms when that role is unbound.
 
 Purpose-specific groupings that are not physical facts, such as the thermal envelope or a future
-security perimeter, are Zones with a core role (§6), following IFC's `IfcZone` grouping of spaces.
+security perimeter, are Zones with a core role (§6.1), following IFC's `IfcZone` grouping of spaces.
 
 A third, complementary piece of WHERE — genuinely distinct from both `Location` and `Zone`, not a
 variant of either:
@@ -974,7 +978,8 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   for an opening owned by an exterior room; it is `False` for a window or door toward an `interior`
   garage. Only `door`/`door_window` openings produce a `ResolvedConnection`, with `room_b` equal to
   `other_side`. Thermal-envelope membership is the bound Zone's rooms, or every `interior` room when
-  `thermal_envelope` is unbound; a duplicate role binding or unknown zone is rejected (§6.1, §7).
+  `thermal_envelope` is unbound; a duplicate role binding, unknown zone or exterior room in the
+  thermal envelope is rejected. `exposure_by_room` omits a window toward an interior garage (§6.1, §7).
 
 - `ScopeKind` accepts exactly the four `Location.scope` values; a registry's
   legal-scope set cannot introduce a fifth spelling or replace a concrete

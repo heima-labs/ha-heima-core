@@ -430,7 +430,6 @@ class ActivityEvidenceSlot:
     role: ActivityEvidenceRole
     source: FactRef                # current typed Layer-2 or upstream semantic state
     qualifying_values: tuple[EvidenceValue, ...]
-    max_age: Window
     required: bool
 
 @dataclass(frozen=True)
@@ -439,17 +438,21 @@ class ActivityProfile:
     implementation_version: int
     legal_scopes: frozenset[ScopeKind]
     output_mode: ActivityOutputMode
-    slots: tuple[ActivityEvidenceSlot, ...]  # exact typed/fresh/scope-compatible bindings
+    slots: tuple[ActivityEvidenceSlot, ...]  # exact typed/scope-compatible bindings
     accepted_signal_type: str | None
     evaluate: PureActivityEvaluator           # core code, resolved at bootstrap; never serialized
 ```
 
 An `ActivityEvidenceSlot` is a finite, staged current-state binding, not a
 history query. Its `source.previous_cycle` is false; staging resolves its
-registered value vocabulary, exact subject-compatible `Location`, producer
-generation and positive `max_age`, and rejects empty, duplicate or wrong-type
-`qualifying_values`. An unavailable or older-than-`max_age` reading cannot
-satisfy any role. Only an explicit available `closure` match may support
+registered value vocabulary, exact subject-compatible `Location` and producer
+generation, and rejects empty, duplicate or wrong-type `qualifying_values`.
+An unavailable reading cannot satisfy any role. Freshness is the producer's: a
+state's `when` is its last accepted change, so an old `when` never makes a
+continuously observed state stale; source report age is Layer 2's
+`max_source_age` (Layer 1 §4.1, Layer 0 §4.4). A profile that needs to know that
+something changed recently binds an event or episode slot, never the age of a
+state. Only an explicit available `closure` match may support
 `inactive`; a missing or false `anchor` never does.
 
 An `anchor` is an explicitly normalized fact whose positive value has direct semantics for the
@@ -587,9 +590,11 @@ room; it cannot suppress urgent safety/security communication or establish an ac
   report suppression reasons; a present contract permits only its own output,
   scope and registered reason subset (§4.1/§7).
 - `ActivityEvidenceSlot` rejects an event or previous-cycle source, wrong
-  value type/scope, empty qualifying set or invalid age. A stale context
-  reading cannot become an anchor, and only an available matching closure
-  slot can establish an inactive bipolar activity (§9.4).
+  value type/scope or empty qualifying set; it has no age field. A context
+  reading cannot become an anchor, an unavailable reading satisfies no role,
+  a stable state changed hours ago still qualifies while available, and only
+  an available matching closure slot can establish an inactive bipolar
+  activity (§9.4).
 - Every enabled semantic resolver has a registered core kind/version, legal explicit scope, valid claim parameters, one materialized unique output claim, resolved typed inputs, valid parameters, and deterministic DAG position.
 - Staging rejects wildcards, raw HA selectors, expressions/callables, Actuator/policy references, unknown/unauthorized signals, invalid/unroutable signal parameters, duplicate claims, and same-cycle cycles.
 - A resolver evaluates only its frozen snapshot; later fact/signal/policy/action changes cannot alter that cycle's result.

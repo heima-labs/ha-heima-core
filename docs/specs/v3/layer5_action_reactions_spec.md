@@ -54,7 +54,7 @@ not a policy mechanism. The ordinary learned-policy path is unidirectional:
 `ReactionDescriptorRegistry` is core-owned, bootstrap-frozen, versioned and O(1). It is not
 administrator-configurable or plugin-extensible. There is one evaluator, one configured-Reaction
 persistence path, one action-admissibility phase and one `ApplyStep` protocol. Namespaces such as
-`environment.*`, `lighting.*`, and `security.*` identify descriptors of this mechanism, never a
+`environment.*`, `lighting.*`, `security.*` and `safety.*` identify descriptors of this mechanism, never a
 separate rule engine or action protocol.
 
 A `ReactionDescriptor` is the sole core contract from which a runtime `ConfiguredReaction` may be
@@ -192,8 +192,8 @@ device type. The thermal validator is bound to the core-frozen
 calibration is release metadata, not a learner-produced artifact payload.
 Changing schema id/version or validator semantics creates a new profile version
 and invalidates incompatible artifacts/candidates rather than silently coercing
-them. Initial `thermal_shading`, `solar_shading`, `thermal_exchange`, `air_quality_exchange` and
-`hygrometric_exchange` use the registered `environmental_response.v1` output
+them. Initial `thermal_shading`, `solar_shading`, `thermal_exchange`, `air_quality_exchange`,
+`hygrometric_exchange` and `humidity_extraction` use the registered `environmental_response.v1` output
 shape for bounded response-artifact cells in Layer 3 §4.8.2. This
 policy-consumable artifact schema is distinct from Layer 3's per-inference
 `ResultEnvelope` and its closed `ResultPayload` union. The schema's exact
@@ -334,19 +334,25 @@ evaluator.
 
 `environment.solar_shading` uses one guard contract for its direct path and for both of its learned
 relation profiles: `ReactionGuardContractRef(guard_contract_id="environment.solar_shading.guards.v1",
-version="1")`. It permits `wind`, `thermal_bounds`, `privacy` and `quiet_hours.v1`, each at version
-`1`. Its action variants and required sets are:
+version="1")`. It permits `wind`, `precipitation`, `thermal_bounds`, `privacy` and
+`quiet_hours.v1`, each at version `1`. Its action variants and required sets are:
 
 | Variant `(action_intent, semantic_variant_id)` | Required capabilities |
 |---|---|
 | `(increase_shading, default)` | `thermal_bounds` |
-| `(increase_shading, exterior_deployable)` | `thermal_bounds`, `wind` |
+| `(increase_shading, exterior_deployable)` | `thermal_bounds`, `wind`, `precipitation` |
 | `(decrease_shading, default)` | `thermal_bounds` |
 
 The descriptor derives `exterior_deployable` exactly for `increase_shading` on a cover whose staged
 Actuator is `weather_exposed` (Layer 2 §6); every other member is `default`. Retracting an exterior
-cover is never blocked by wind. `privacy` and `quiet_hours.v1` are optional bindings an administrator
-may add; they introduce no new capability or evaluator.
+cover is never blocked by wind or rain. `privacy` and `quiet_hours.v1` are optional bindings an
+administrator may add; they introduce no new capability or evaluator.
+
+A `wind` or `precipitation` binding is either a typed numeric reading with a bounded limit or an
+exact Layer-2 boolean hazard state, where `True` vetoes. When a channel is covered by a
+`safety.weather_protection` Reaction for that hazard, every staged opposing action variant on the
+channel must bind the capability to exactly that Reaction's hazard state (§7.4), so the hazard has
+one threshold owner and the opposing action is vetoed for exactly as long as the hazard lasts.
 
 `environment.external_exchange` likewise uses one contract for its direct path and its three
 learned profiles: `ReactionGuardContractRef(guard_contract_id="environment.external_exchange.guards.v1",
@@ -383,7 +389,7 @@ member variant requires `presence`, whose binding references the casa `presence`
 requires the safety capabilities that an environmental descriptor requires for the same physical
 action, so a routine cannot bypass them: `open_for_exchange` adds `opening_security`,
 `precipitation` and `wind`; `increase_shading` on a `weather_exposed` cover (variant
-`exterior_deployable`) adds `wind`. These apply only where the routine descriptor version admits
+`exterior_deployable`) adds `wind` and `precipitation`. These apply only where the routine descriptor version admits
 that intent. A bundle requires the union of its members' sets (above).
 
 Every relation profile names one exact `ReactionGuardContractRef`. An `admin_direct` descriptor
@@ -846,8 +852,10 @@ override a family rule.
 1. **Calendar binding.** The configuration has exactly one `CalendarPlanBinding` with
    `expected_category="planned_absence"` (§5.1), selected by the binding's union rule.
 2. **Effective absence.** True only when a selected planned-absence interval is *active* (never
-   merely upcoming) and the current casa `presence` claim is a stabilized `away`. Staging
-   requires the casa presence `FusionRule` to declare a non-null `Stability.to_true`. A failed
+   merely upcoming) and the current casa `presence` claim is a committed `away` (already
+   stabilized by the Layer-2 fusion). Staging also requires the casa presence `FusionRule` to
+   declare a non-null `Stability.to_true`: this is the return-confirmation dwell, so a brief false
+   `present` reading cannot commit a `presence.return` and end the program (rule 4). A failed
    calendar read or unavailable presence makes the state undecidable, never true.
 3. **Start.** The family's start criterion is effective absence. During a running process an
    observed `presence.departure` episode requests an immediate fresh evaluation; at bootstrap the
@@ -915,6 +923,7 @@ ReactionExecutionAuditCode = Literal[
     "alternate_bundle_selected",
     "bundle_skipped_no_admissible_alternative",
     "fallback_served_without_artifact",
+    "coalesced_identical_target",
 ]
 
 GovernanceCommandOutcome = Literal["applied", "idempotent_replay", "rejected"]
@@ -985,7 +994,8 @@ class ReactionExecutionAudit:
     snapshot_id: str | None           # None only for a callback discarded before evaluation
     code: ReactionExecutionAuditCode
     planned_step_id: str | None
-    cause_ref: str | None             # required exactly for future_work_cancelled
+    cause_ref: str | None             # required exactly for future_work_cancelled and
+                                      # coalesced_identical_target
     artifact_ref: str | None          # exact ArtifactRef identity where one exists
     recorded_at: EvidenceInstant
 ```
@@ -1004,6 +1014,9 @@ code outside the registry:
   or the successor configuration generation), so no second cause vocabulary exists.
 - `alternate_bundle_selected` / `bundle_skipped_no_admissible_alternative`: before admission a
   freshly derived complete alternate bundle was admitted, or none was and no member was commanded.
+- `coalesced_identical_target`: this Reaction's member was merged into another Reaction's identical
+  safe-direction target on the same channel (§6.0 arbitration); `cause_ref` names the dispatched
+  `apply_step_id`, and this member sent no call.
 - `fallback_served_without_artifact`: a serving role used its descriptor-authorized fallback or
   staged seed because no usable adopted artifact exists; `artifact_ref` is `None` at first use with
   no adoption, otherwise the unusable adopted revision. A role without such a fallback abstains
@@ -1578,7 +1591,8 @@ successor with ordinary authority review, not a live edit.
 generation activates only through the composed configuration generation of Layer 0 §4.7, and is a
 consumer in its dependency index. When a confirmed change elsewhere makes the current generation's
 plan fail validation (**breaking**: a missing or changed trigger, guard, axis, history, calendar,
-timing-model or Actuator-channel binding), the same commit appends an authority transition with
+timing-model or Actuator-channel binding, or a changed derived Topology/Actuator property it uses,
+such as `weather_exposed`, `opening_faces_exterior` or thermal-envelope membership), the same commit appends an authority transition with
 administrative authorization and any household consent disabled, cancels the Reaction's future
 jobs, and projects mode `configuration_invalid`. That mode is derived, not stored: the Reaction
 neither evaluates, shadows nor schedules work until an administrator commits a successor
@@ -2107,7 +2121,7 @@ that reading under current policy, even without an observed crossing. This
 runtime start is not a historical transition or a replay of an event-only
 trigger. Unreadable or invalid state cannot start it; missed pre-restart due
 times never command or shorten the new wait.
-The trigger-job and model-specific eligibility details remain under CA4-13;
+The trigger-job and model-specific eligibility details are those closed by CA4-13 above;
 the artifact-adoption transitions are in §4.2 and Layer 3 §4.9. This
 paragraph fixes the selection math and qualifying-state continuation.
 
@@ -2439,9 +2453,17 @@ Arbitration is a bounded, whole-cycle pass, independent of registration or evalu
 2. For the remaining complete bundles, form each set of channel keys, rejecting duplicate keys
    within one bundle at staging. A key already held by an unresolved in-flight lease blocks the
    complete new bundle. If two distinct remaining bundles claim the same key, both complete
-   bundles are blocked, whether their targets conflict, address disjoint facets, or propose
-   identical values. Conflict never authorizes a winner
-   by iteration order. The Initial-V3 core precedence-exception table is empty. A future exception
+   bundles are blocked, whether their targets conflict or address disjoint facets. The one
+   exception is an **identical safe target**: when every claimant's member on that key has the
+   identical complete canonical target and targeted facets, and every such intent is in its
+   descriptor's `safe_direction_intents`, the claims do not conflict. The key is reserved once by
+   the claimant first in canonical `(reaction_id, configuration_generation_id,
+   reaction_activation_id)` order, whose member dispatches the one `ApplyStep`; every other
+   claimant's member on that key sends no call and records `coalesced_identical_target` (§4.0).
+   Only the dispatching Reaction's confirmed target anchors a hold. The other keys of every bundle
+   follow the ordinary rules. Conflict never authorizes a winner
+   by iteration order. The Initial-V3 core precedence-exception table is empty: opposing actions
+   are prevented by guards before arbitration (§7.4), not by precedence. A future exception
    requires a separately reviewed, versioned core descriptor rule with explicit applicability and
    safety proof; no administrator, learner, or plugin may add one implicitly.
 3. Reserve all keys of every unblocked bundle atomically in canonical key order before dispatch.
@@ -2895,7 +2917,9 @@ Every Initial-V3 descriptor declares the §4.0 execution-audit codes `stale_call
 `future_work_cancelled`, `alternate_bundle_selected` and `bundle_skipped_no_admissible_alternative`;
 a descriptor with a declared timing path whose fallback is a staged seed also declares
 `fallback_served_without_artifact`. Only `environment.planned_comfort_trajectory` declares
-`late_recovery`, and only `security.presence_simulation` declares `late_step_skipped`:
+`late_recovery`, and only `security.presence_simulation` declares `late_step_skipped`. Every
+descriptor with a `safe_direction_intents` entry (`environment.external_exchange`,
+`environment.air_extraction`, `safety.weather_protection`) also declares `coalesced_identical_target`:
 
 - `environment.solar_shading`: one compatible cover endpoint associated with the subject opening;
   intents `increase_shading`/`decrease_shading`; objectives `limit_solar_gain`,
@@ -2950,11 +2974,12 @@ a descriptor with a declared timing path whose fallback is a staged seed also de
   `state_transition(environment.solar_gain_high@living, False -> True)`, objective
   `limit_solar_gain`, one member `increase_shading` on that cover with a canonical
   shading target, the zero-axis empty-key envelope, and a guard-profile generation binding
-  `thermal_bounds` (indoor temperature) and `wind`. The member derives variant
+  `thermal_bounds` (indoor temperature), `wind` and `precipitation`. The member derives variant
   `(increase_shading, exterior_deployable)`, so the plan's required capabilities are exactly
-  `thermal_bounds` and `wind`. The same configuration without the `wind` binding is rejected at
-  staging; for an interior blind (`is_external=False`) the variant is `default` and `wind` is not
-  required.
+  `thermal_bounds`, `wind` and `precipitation`. The same configuration without the `wind` or
+  `precipitation` binding is rejected at staging; for an interior blind (`is_external=False`) the
+  variant is `default` and neither is required. If the awning is also protected by a
+  `safety.weather_protection` Reaction, those two bindings must reference its hazard states (§7.4).
 - `environment.external_exchange`: one compatible opening endpoint; intents
   `open_for_exchange`/`close_to_retain`; purposes `thermal`, `air_quality`, or `hygrometric`;
   automatic opening requires the purpose's applicable opening-security, precipitation, wind,
@@ -3848,7 +3873,7 @@ candidate. Valid examples:
   `descriptor_parameters={}`, one member `increase_shading` on the awning channel with
   `opening_id="living_south_window"`, its canonical shading target and
   `NumericOutcomeRequirement(minimum_practical_delta=0.5)` (°C reduction), required guards exactly
-  `thermal_bounds` and `wind`, and the artifact's supported incident-solar-exposure and
+  `thermal_bounds`, `wind` and `precipitation`, and the artifact's supported incident-solar-exposure and
   outdoor-temperature cells as envelope.
 - **Learned air extraction:** `environment.air_extraction` `"1"`, the bathroom subject,
   `humidity_extraction@1`, `objective_id="reduce_moisture"`, root `descriptor_parameters` carrying the
@@ -3877,6 +3902,14 @@ profile or learner, and declares `requires_household_consent=True`,
   administrator-declared Layer-2 boolean produced by `numeric.hysteresis_condition.v1` over a
   wind-speed or precipitation fact (for example wind at or above 40 km/h to enter, at or below
   25 km/h to exit). The exit threshold also defines the end of the hazard.
+- **Opposing actions are vetoed, not outranked.** Each Reaction declares its hazard
+  (`wind` or `precipitation`). Staging, in the same composed generation, requires every other
+  staged action variant that moves a protected channel away from its safe target (for example
+  `(increase_shading, exterior_deployable)` or `open_for_exchange`) to require that hazard's guard
+  capability bound to exactly this Reaction's hazard state (§3.2), and rejects the generation
+  otherwise. While the hazard lasts, the opposing action fails its guard before arbitration, so
+  securing never competes with it; identical safe targets from several Reactions, such as wind and
+  rain closing one window, coalesce into one command (§6.0).
 - **Endpoints.** The administrator selects rooms and/or endpoints; staging keeps only Actuators that
   are `weather_exposed` (Layer 2 §6: declared exterior, in an exterior room, or undeclared on an
   opening that faces an exterior side, so a window operator qualifies while an interior blind declared
@@ -3911,6 +3944,16 @@ profile or learner, and declares `requires_household_consent=True`,
 
 ## 8. Initial acceptance criteria
 
+- Arbitration: wind and rain `safety.weather_protection` Reactions that both secure one window in
+  one cycle produce one `ApplyStep` from the canonically first Reaction and one
+  `coalesced_identical_target` audit for the other; a weather-protection close and an
+  `external_exchange` `close_to_retain` with the identical complete target coalesce the same way.
+  Different targets on one channel still block both bundles.
+- With an exterior awning protected for wind and rain, staging rejects a solar-shading
+  `increase_shading` Reaction whose `wind` or `precipitation` binding is not the protection
+  Reaction's hazard state. While either hazard is `True` the deployment fails its guard before
+  arbitration and the retraction proceeds; when the hazard ends nothing is restored, and solar
+  shading may deploy again only through its own trigger and guards.
 - `safety.weather_protection` stages the §7.4 example with an empty required guard set and rejects a
   selection containing no `weather_exposed` endpoint, and drops an interior blind declared
   `is_external=False`. On hazard start it secures every
@@ -3943,8 +3986,9 @@ profile or learner, and declares `requires_household_consent=True`,
   trigger not derived from an indoor-minus-outdoor difference, an inline comparison, and a learned
   `close_after_ventilation` candidate.
 - `environment.solar_shading` stages the §7 direct example with required capabilities exactly
-  `thermal_bounds` and `wind`; it rejects the same configuration without a `wind` binding, accepts an
-  interior blind without one, never requires `wind` for `decrease_shading`, rejects `admit_daylight`
+  `thermal_bounds`, `wind` and `precipitation`; it rejects the same configuration without either
+  weather binding, accepts an interior blind without them, never requires them for
+  `decrease_shading`, rejects `admit_daylight`
   under `thermal_shading`, and treats an undeclared `is_external` on an opening facing an exterior
   side as `weather_exposed` (Layer 2 §6).
 - Every governance command returns one `GovernanceCommandResult`: `applied` with its resulting
@@ -4286,7 +4330,7 @@ profile or learner, and declares `requires_household_consent=True`,
   between calls has the same stop effect; an unrelated channel or genuinely disjoint facet does not.
   A timed-out first call is not blindly retried: its physical outcome follows §6.0.1 and another
   command requires a fresh valid read and current authority. This tests the common dispatch fence
-  independently of the cross-layer composition commit still tracked by CA4-27.
+  independently of the cross-layer composition commit of Layer 0 §4.7.
 - Given an environmental descriptor whose profile requires opening security and wind, staging
   requires only those descriptor guard bindings. When a readable channel has an active hold,
   action admission reports `manual_hold_active`; when a separate channel is unreadable, it

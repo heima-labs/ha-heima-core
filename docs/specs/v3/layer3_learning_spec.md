@@ -106,8 +106,8 @@ than requiring changes to generic engine conditionals.
 The active definition and persisted artifact store only `kind_id` and `version`, never a callable or
 implementation object. A new core type or version is introduced by reviewed core code and registry
 registration. During staging, its validator accepts only compatible definitions; a changed version
-revalidates and selectively invalidates the definitions/artifacts that use that type, using the same
-generation semantics as other core registries.
+revalidates the definitions/artifacts that use that type and invalidates them under the
+composed-generation impact rule (Layer 0 §4.7), like other core registries.
 
 The admin can instantiate a registered core type for an explicit scope, enable or disable it, and set
 only its explicitly exposed typed parameters. A legal scope is exactly one
@@ -119,7 +119,7 @@ live query such as "every room with humidity" is never a scope: it could silentl
 population, binding, retention demand, resource cost and evidence meaning when registries change. The
 canonical `LocationKey` and resolved ordered membership are included in the
 definition fingerprint. A Zone or set membership change
-therefore stages a new generation and receives the type's ordinary selective invalidation; it never
+therefore stages a new generation under the composed-generation impact rule (Layer 0 §4.7); it never
 adds a room to an active learner implicitly.
 
 The admin cannot register a type, provide code, substitute a binding/model implementation, or create
@@ -1285,7 +1285,7 @@ the microsecond-start count as a binomial sample size or confidence floor.
 
 `lift = P(bundle | trigger, context) / P(bundle | subject)` when the baseline
 is positive. Independence has lift 1; a positive association must exceed
-the descriptor's core-owned minimum above 1. An empty baseline cohort or
+the profile's frozen `RoutineEvidenceGateCalibration.minimum_lift`, above 1. An empty baseline cohort or
 zero observed baseline probability makes lift unavailable, not infinite;
 the candidate stays diagnostic and cannot pass the lift gate. The same rule
 applies to a validation partition or temporal-block resample with zero
@@ -1301,7 +1301,8 @@ assembly window, followed by an untouched final holdout. It records support, dis
 conditional precision, baseline frequency, lift, calibration of the binary matching-bundle outcome,
 window completeness/censoring, bundle-size distribution, operating-envelope coverage and the same
 metrics for the no-routine baseline. A temporal block confidence interval for precision and lift must
-exclude the descriptor's no-effect threshold in the declared direction; aggregate frequency alone cannot
+exclude the calibration's no-effect thresholds (`no_effect_lift`, `no_effect_precision`) in the
+declared direction; aggregate frequency alone cannot
 pass an operational slice. A sparse routine, a context slice with poor calibration, or a bundle whose
 member composition changes across partitions remains diagnostic/unavailable.
 
@@ -1816,7 +1817,7 @@ legal physical transition, observation slots, outcome shape and horizons, confou
 metrics, and shadow requirement; its policy facet declares the permitted Layer-5 descriptors and
 policy meaning. Layer 3 never registers, edits, or interprets the policy facet.
 `thermal_shading`, `solar_shading`, `thermal_exchange`, `air_quality_exchange`,
-`hygrometric_exchange`, and the
+`hygrometric_exchange`, `humidity_extraction`, and the
 evidence-gated `hvac_thermal_response` are Initial-V3 profiles of that one learner, not distinct
 learner kinds. The latter is registered from the start but cannot produce an operational candidate
 until its stricter profile evidence and Layer-5 staged-prerequisite gates pass. Each Initial-V3 profile
@@ -1833,7 +1834,7 @@ disappears.
 The same selected `RegisteredRelationProfile` fixes the sole policy-output
 schema id/version and pure validator (Layer 5 §3.1). The artifact records that
 exact schema identity; publication validates its typed output under any required
-core-frozen release-gate calibration before a candidate can be formed. The five non-HVAC
+core-frozen release-gate calibration before a candidate can be formed. The six non-HVAC
 Initial-V3 profiles use the common `environmental_response.v1` schema for the
 bounded response-artifact cells defined in §4.8.2: exact
 profile/transition-class/context/horizon
@@ -1870,6 +1871,7 @@ introduced.
 | `thermal_exchange` | room indoor temperature, outdoor temperature, observed state of an exterior opening, and resolved topology | conditional thermal response of an exchange |
 | `air_quality_exchange` | `thermal_exchange` plus room CO2 | conditional CO2 response subject to thermal constraints |
 | `hygrometric_exchange` | `thermal_exchange` plus indoor/outdoor temperature and relative humidity, resolved to humidity ratio or dew point | conditional moisture response subject to thermal constraints |
+| `humidity_extraction` | room relative humidity and humidity ratio, the extraction fan's observed `level` channel state, and occupancy only where declared | conditional moisture response of fan start and one-level increase |
 
 The following Initial-V3 profile is registered but evidence-gated. Staging accepts it only with its
 declared observation bindings; it remains unable to publish a `ThermalResponseParameter` or an
@@ -1939,7 +1941,7 @@ publishable only with a separately staged measured energy/power outcome.
 
 ##### Environmental response evidence-gate calibration
 
-The five non-HVAC `environmental_response.v1` profiles and `humidity_extraction` follow the same
+The six non-HVAC `environmental_response.v1` profiles (including `humidity_extraction`) follow the same
 release discipline as the thermal profile below: each profile version has exactly one core-frozen
 calibration, approved by the core release authority and never by a household administrator, that
 fixes its outcome horizons and evidence gates.
@@ -2087,11 +2089,12 @@ local temporal dependence and makes the published artifact reproducible.
 The `canonical_cell_key` includes `transition_class_id`, so two physical
 transition classes cannot share a bootstrap sample identity or interval.
 
-Every selected relation profile's evidence facet declares core-owned `minimum_transition_support`,
-`minimum_reference_support`, `minimum_distinct_calendar_blocks`, and
-`maximum_response_interval_width` in the outcome's canonical unit. A cell is usable only when both
-cohort-support gates and its temporal-diversity gate pass and its bootstrap interval is no wider than that profile's
-limit. These gates are evidence qualifications, not user-configurable confidence thresholds and not a
+The profile's frozen calibration is the sole owner of these gate values:
+`EnvironmentalResponseGateCalibration` (support per cohort, distinct calendar blocks, bootstrap
+replicas, interval coverage and maximum interval width in the outcome's canonical unit) or, for
+`hvac_thermal_response`, `ThermalEvidenceGateCalibration`. A cell is usable only when both
+cohort-support gates and its temporal-diversity gate pass and its bootstrap interval is no wider than that
+calibration's limit. These gates are evidence qualifications, not user-configurable confidence thresholds and not a
 claim of causal significance. Bootstrap resampling is used because the uncertainty of a median-derived
 statistic generally has no convenient analytic form ([NIST bootstrap guidance](https://www.itl.nist.gov/div898/handbook/eda/section3/eda334.htm)); block resampling rather than iid resampling is required
 because the records arise from a temporally dependent house process
@@ -2106,7 +2109,8 @@ example, is not intrinsically desirable without an explicit objective. Initial o
 include `limit_solar_gain -> increase_shading`, `admit_solar_gain -> decrease_shading`,
 `admit_daylight -> decrease_shading` (`solar_shading` only), `cool_with_outdoor_air ->
 open_for_exchange`, `warm_with_outdoor_air -> open_for_exchange`, `limit_thermal_exchange ->
-close_to_retain`, `reduce_co2 -> open_for_exchange`, and `reduce_moisture -> open_for_exchange`
+close_to_retain`, `reduce_co2 -> open_for_exchange`, `reduce_moisture -> open_for_exchange`,
+and `reduce_moisture -> activate_extraction`/`adjust_extraction`
 (complete matrices in Layer 5 §7); they are finite
 profile-owned semantics, not admin-authored labels or an arbitrary utility function.
 
@@ -2278,7 +2282,8 @@ Each registered relation profile owns a bounded list of outcome horizons; there 
 environmental response duration. Initial target shapes are: room-temperature change for thermal
 shading and thermal exchange; indoor illuminance change only where an indoor illuminance binding is
 declared; CO2 reduction or time below a declared threshold for air-quality exchange; and humidity
-change for hygrometric exchange. The evidence-gated `hvac_thermal_response` profile uses a
+change for hygrometric exchange; and room humidity-ratio change after the fan's `start` or
+`modify_up` transition for `humidity_extraction`. The evidence-gated `hvac_thermal_response` profile uses a
 room-temperature trajectory only when it meets the evidence-gated eligibility contract in §4.8 and
 the `hvac_thermal_response` requirements in §8 item 6. The horizons, target shape, exclusion
 policy, and relation profile all enter the definition fingerprint.
@@ -2329,10 +2334,10 @@ per episode so parallel Sensor and channel projections of the same physical
 change cannot double-count it. A different channel, mismatched contract,
 unavailable reading, incomplete predecessor history or post-restart baseline
 cannot be substituted for the declared anchor.
-For an extraction fan, staged canonical active and speed facets preserve
+For an extraction fan, the staged canonical `level` facet (`off` or `1..N`) preserves
 whether it was already active at a qualifying start and which physical
-speed transitions followed. No requested speed, last Heima command or
-assumed ownership replaces those observations. Complete observed speed
+level transitions followed. No requested level, last Heima command or
+assumed ownership replaces those observations. Complete observed level
 changes can inform a registered response profile; an active-at-entry
 no-command decision remains separate from an observed response to a change.
 
@@ -2478,6 +2483,8 @@ where configured, time in the desired illuminance range. `air_quality_exchange` 
 predicted time below threshold, CO2 ppm-minutes above threshold, and observed recovery time.
 `hygrometric_exchange` requires humidity-ratio error; where an administrator also configured a
 relative-humidity comfort range, it records time outside that range as an operational comfort metric.
+`humidity_extraction` requires humidity-ratio error per transition class and horizon and the
+observed time for relative humidity to return to the configured end level.
 No profile can become eligible when it lacks the metrics needed to substantiate its own permitted
 meaning.
 
@@ -3587,8 +3594,8 @@ count bound, duplicate-channel rule, opening/Actuator relation, numeric-outcome 
 and bounds, parameter schema/bounds, guard requirements, exact registered
 profile-output compatibility, and Layer-5 translation for each
 `(reaction_descriptor_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
-`open_for_exchange`, `close_to_retain`, `activate_extraction`, `adjust_extraction` and
-`stop_extraction`. Notification content belongs to the
+`open_for_exchange`, `close_to_retain`, `activate_extraction`, `adjust_extraction`,
+`stop_extraction` and `follow_comfort_trajectory`. Notification content belongs to the
 subsequent Layer-5/6 notification template, never to learner-provided text. An empty bundle is legal only for a
 descriptor explicitly declared `notification_only`; a descriptor requiring an endpoint rejects it during
 Layer-5 staging.
@@ -3823,7 +3830,7 @@ Actuator, guard, configuration generation, or canonical fingerprint that changes
 is resolved by Layer 5 under its revalidation rules; Layer 3 never reinterprets a candidate to bridge
 the mismatch.
 
-`environment.*`, `lighting.*`, `security.*`, and future namespaces are descriptors of the one Layer-5
+`environment.*`, `lighting.*`, `security.*`, `safety.*`, and future namespaces are descriptors of the one Layer-5
 Reaction-descriptor mechanism. They do not select a distinct Layer-3 analyzer, policy engine, persistence
 path or action protocol. Layer 3 may estimate only values declared by the descriptor, such as a
 threshold, window, bounded duration, envelope or expected effect. A deterministic policy can use the
@@ -4101,7 +4108,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   artifact output under its exact profile-owned schema id/version. A schema
   mismatch or invalid payload blocks candidate production without a new
   Layer-3-to-Layer-5 path. The thermal parameter additionally requires its
-  frozen `ThermalEvidenceGateCalibration`; the five non-HVAC environmental
+  frozen `ThermalEvidenceGateCalibration`; the six non-HVAC environmental
   profiles use the shared response-artifact schema (§4.8; Layer 5 §3.1),
   separately from the per-inference `ResultEnvelope` of §4.4.
 - No Layer-3 implementation reads a V2 snapshot, model, approval store, or history record.
@@ -4523,7 +4530,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   presents its conditional observed response difference as causal effect.
 - A profile-declared observed cover/opening Sensor transition, registered HVAC-action transition,
   or exact registered Actuator-channel facet transition can anchor the same environmental episode
-  mechanism. An extraction-fan channel with a changed declared active/speed facet and complete
+  mechanism. An extraction-fan channel with a changed declared `level` facet and complete
   predecessor/continuation history may qualify; a future humidifier channel needs its own exact
   profile and outcome before it can qualify. A command result, `already_satisfied` decision,
   unchanged or unrelated facet, duplicate Sensor/channel projection, channel mismatch, first
@@ -4533,13 +4540,13 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
 - An extraction fan already active at qualifying start records its observed
   state and origin but supplies no Heima-start effect sample; no command or
   `already_satisfied` decision is relabeled as a physical transition. When
-  an inactive fan is started and later changes speed or stops under a
-  declared program, each actual edge retains its pre/post active and speed
-  facets and may enter only its exact `transition_class_id` cohort with
-  complete coverage. Start, speed increase, speed decrease and termination
-  have separate estimates and same-class stable-state references; a profile
-  with one pooled on/speed/off cell or overlapping class matchers is rejected.
-  A resident/external speed edge retains its origin rather than becoming a
+  an inactive fan is started and later changes level or stops under a
+  declared program, each actual edge retains its pre/post `level` and may
+  enter only its exact `transition_class_id` cohort with complete coverage.
+  `start`, `modify_up` and `terminate` have separate estimates and
+  same-class stable-state references; a downward or multi-level edge is
+  excluded; a profile with one pooled on/level/off cell or overlapping class
+  matchers is rejected. A resident/external level edge retains its origin rather than becoming a
   Heima action; a post-gap baseline is never an edge (§4.8.1–4.8.2).
 - A profile with multiple versioned observed-transition classes assigns a
   complete physical edge to exactly one class or excludes it. Its episode,

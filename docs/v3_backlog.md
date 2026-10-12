@@ -5010,10 +5010,10 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | Severity | IDs | TODO | IN_PROGRESS | DONE | NOT_APPLICABLE |
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
-| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52 | 0 | 0 | 33 | 0 |
+| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64 | 0 | 0 | 34 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63 | 0 | 0 | 24 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **63 findings** | **0** | **0** | **62** | **1** |
+| **Total** | **64 findings** | **0** | **0** | **63** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6133,6 +6133,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-64 — Full Layer 0–5 reread (CA5) found cross-section inconsistencies
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P1. **Origin:** CA5 full reread of Layer 0–5, overview and recap after CA4-12/62/63.
+
+**Problem.** 31 findings: three normative contradictions and 28 residues of earlier corrections. (1) Layer 2 §5.7's join rule rejected `numeric.difference.v1`, `environment.solar_incidence.v1` and `environment.humidity_ratio.v1` outputs at a room from casa inputs. (2) Layer 4 `ActivityEvidenceSlot.max_age` measured age from a state's last change, the conflation CA4-05 removed elsewhere (added in parallel by CA4-47). (3) Layer 5 arbitration blocked both bundles even for identical targets, so two weather-protection Reactions closing one window, or protection versus solar shading under rain, could secure nothing.
+
+**Approved resolution (2026-10-12).** (1) A formula may declare an exact destination rule in its `validate_binding`; the join check applies otherwise. (2) `max_age` is removed: freshness comes from availability and Layer 2 `max_source_age`; recent change needs an event/episode slot. (3) Identical complete safe-direction targets on one channel coalesce into one `ApplyStep` (new audit code `coalesced_identical_target`); opposing actions are prevented by guards, not precedence: exterior deployment requires `wind` and `precipitation`, and when a channel is protected every opposing variant must bind those guards to the protection Reaction's own hazard state, checked at staging. Residues fixed: `humidity_extraction` in Layer 3/5 profile lists, objectives, target shapes, KPIs and `level` terminology; single calibration owner for environmental gates; closed CA4-13/27/63 cited as open; CA4-27 "selective" wording; derived Topology/exposure properties in the composed-generation dependency index; exterior-only `exposure_by_room`; no exterior room in the thermal envelope; calendar consumer is Layer 5 only; hold terminology; zone-role references; `follow_comfort_trajectory` intent; `safety.*` namespace; planned-absence presence wording; summaries. See the [CA4-64 review](specs/v3/reviews/CA4-64.md); no V3 runtime test ran.
 
 #### CA4-61 — Planned-absence descriptors duplicate their shared program rules
 

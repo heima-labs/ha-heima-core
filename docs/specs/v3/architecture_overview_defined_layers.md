@@ -4,9 +4,8 @@
 specifications and introduces no new implementation requirement.
 
 **Maintenance:** Manually synchronized when a confirmed decision is promoted to an authoritative
-specification. **Reviewed through:** 2026-10-11 for every CA4 correction closed in
-`docs/v3_backlog.md`, through CA4-62 and the CA4-12 catalog closure; the open CA4-63 is not
-summarized as settled. Where it differs from an
+specification. **Reviewed through:** 2026-10-12 for every CA4 correction closed in
+`docs/v3_backlog.md`, including the CA4-64 full-reread (CA5) corrections; no CA4 item is open. Where it differs from an
 authoritative specification, that specification wins.
 
 **Scope:** Layers 0, 1, 2, 3, 4, and 5 are defined in detail today. Layer 6 appears only where an
@@ -378,11 +377,11 @@ action.
   a level crossing, a rise over a window or a rise rate; room occupancy is
   required only when declared. A fan already active at qualifying start is
   untouched by that activation; an initially inactive fan may be controlled
-  through its declared steps. Observed entry state, active/speed/stop edges
+  through its declared steps. Observed entry state, `level` start/increase/stop edges
   and origin remain distinct learning evidence. The common environmental
   learner keeps a separate profile-declared physical transition class,
-  comparable reference cohort and response estimate for start, each
-  supported modification direction/range and termination. Each programmed
+  comparable reference cohort and response estimate for `start`, `modify_up`
+  and `terminate` (a downward or multi-level edge is excluded). Each programmed
   step declares whether it needs its exact class estimate; a missing estimate
   suppresses that step, while a descriptor-declared deterministic step remains
   subject to current admission. For a learned modification the descriptor

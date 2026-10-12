@@ -74,7 +74,7 @@ contracts only.
 
 It never permits a behavioral cycle: Layer 0 does not query or invoke Layer-1 registries, topology,
 zone resolution, sensor/fusion logic, semantic resolution, or policy logic; Layer 1 does not execute Timing, Persistence,
-Recovery, or Manual Hold behavior while constructing its value objects. Bootstrap composes these
+Recovery, or Divergence Hold Manager behavior while constructing its value objects. Bootstrap composes these
 contracts before cycles begin, and the hot path contains no Layer-0 -> Layer-1 -> Layer-0 call chain.
 Concrete module layout may use a neutral contracts module or type-only references to avoid a language-
 level import cycle, but this does not create a new architectural layer or change either owner's
@@ -370,7 +370,7 @@ mechanical extraction only. **Corrected 2026-09-08**: an earlier version of this
 layer produced an already-classified label ("vacation", "day_off"...). It doesn't, and can't: the
 keyword-matching logic that turns raw event text into a named category lives in Layer 2's
 `KeywordClassifier`, composed by `CalendarInterpretation` (its own spec, §4), and Layer 0 cannot
-depend on Layer 2. `summary` is the event's raw text, never classified here. A Layer 4/5 consumer that
+depend on Layer 2. `summary` is the event's raw text, never classified here. A Layer-5 consumer that
 needs to ask "is this `CalendarWindow` a vacation" declares the explicit `KeywordClassifier`
 configuration it uses; it must not infer one merely from `source_entity`. That same pure classifier may
 be shared with a calendar Sensor, but is never a second, separately maintained matching implementation.
@@ -1320,7 +1320,8 @@ reports the lost interval.
 
 ### 4.7 Composed configuration generation
 
-Every configuration mutation in any layer — a Layer-2 registry change, a Layer-3 learning
+Every configuration mutation in any layer — a Layer-2 registry change (including the room
+inventory attributes, Zones, `ZoneRoleBinding`s and Topology staged with it), a Layer-3 learning
 definition, a Layer-4 semantic resolver definition, a Layer-5 Reaction configuration generation,
 guard-profile or prerequisite generation, and the Layer-6 availability publication bindings that
 follow from them — activates only as part of one **composed configuration generation**. Runtime
@@ -1351,7 +1352,10 @@ Layer 0 builds a staging-only dependency index from those declarations: producer
 (`FactTypeClaim` and `(fact_type, Location)`) and Actuator channels on one side; every consumer
 reference on the other — Fusion inputs, Layer-3 `FactSlot`/`SampleBinding` sources, Layer-4 input
 bindings and upstream claims, Layer-5 trigger, guard, envelope-axis, history, calendar and
-Actuator-channel bindings, and Layer-6 publication keys. It then classifies every consumer outside
+Actuator-channel bindings, every consumer of a derived Topology or Actuator property
+(`opening_faces_exterior`, `weather_exposed`, thermal-envelope membership; Layer 1 §6.1/§7,
+Layer 2 §6), and Layer-6 publication keys. A changed room enclosure, opening `other_side`,
+`is_external` or zone-role binding therefore classifies every consumer of the derived property. It then classifies every consumer outside
 the directly edited objects:
 
 - **breaking** — its binding no longer validates against the candidate: missing producer or
