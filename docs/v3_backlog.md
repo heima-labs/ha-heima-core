@@ -1767,6 +1767,21 @@ rather than reinventing in v3.
 **house_state:presence(other families) ratio ≈ 30:1.** This — not a lack of other learning — is
 why the developer's day-to-day experience is "I only ever see house-state notifications."
 
+### Layer 6 specification decisions (approved, 2026-10-12)
+
+Decisions recorded before the Layer-6 specification is written; the spec will be their owner.
+Inputs are the closed typed occurrences of CA4-65–68.
+
+- **C1 — Recipients.** A `NotificationRecipient` is one person: stable `recipient_id`, optional
+  `ha_user_id` (links an actionable answer to the person; authentication stays at Layer 0's
+  ingress), `endpoints` (`notify.*` with `supports_actions`, as in V2) and `audiences`. V2 groups
+  and free routes are not carried over: each typed notification has a closed audience —
+  `residents`, `administrators`, `consent_authorities`. The administrator only assigns people to
+  `residents`/`administrators`; `consent_authorities` is derived from `HouseholdConsentAuthority`
+  through `ha_user_id`, never configured by hand. Audience membership is a delivery preference,
+  never authority. An audience with no reachable recipient never drops a notification silently
+  (fallback channel: C2).
+
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
 Revising the earlier framing — it's not 5 unrelated channels, it's **two tiers of the same concern
