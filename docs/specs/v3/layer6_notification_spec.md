@@ -2,8 +2,8 @@
 
 **Status:** DRAFT for developer review (2026-10-12). Not approved, not implemented, not yet an
 authoritative layer in `contract_registry.json`.
-**Open corrections:** the open points of §14 must be decided before approval; the upstream changes
-of §13 are applied (CA4-73).
+**Open corrections:** none; the upstream changes of §13 are applied (CA4-73) and §14 has no open
+point. The draft still needs the developer's explicit approval before it becomes authoritative.
 
 **Layer:** 6 of 8. Builds on Layer 0's unified notification delivery outbox (§4.5), authenticated
 response ingress (§5.1.3), Runtime Scheduler, composed configuration generation (§4.7) and
@@ -96,7 +96,7 @@ class NotificationKindDescriptor:
 | Kind | Input | Audience | Family | Severity | Delivered phases | Answer |
 |---|---|---|---|---|---|---|
 | `reaction.follow_up` | `ReactionFollowUpOccurrence` (Layer 5 §6.0) | residents | attention | warning | the one outcome | none |
-| `automation.availability` | `AvailabilitySuppressionOccurrence` via the tracker (§9.2) | residents | attention; safety for a `safety.*` binding | warning | `abstaining`, `reason_changed`, `restored` | none |
+| `automation.availability` | `AvailabilitySuppressionOccurrence` via the tracker (§9.2) | residents | by descriptor namespace (§6.1) | warning | `abstaining`, `reason_changed`, `restored` | none |
 | `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents | suggestion | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
 | `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents | safety | info | the one notice | none |
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
@@ -171,9 +171,17 @@ through the fallback channel (§7.3). This is also the behavior of an unconfigur
 ### 6.1 Families (C3)
 
 Families are closed and fixed per kind (§4.2). The only kind whose family depends on its input is
-`automation.availability`: it is `safety` when the binding it is delivered for belongs to a
-`safety.*` descriptor (for example a window held open while weather protection is active), and
-`attention` otherwise.
+`automation.availability`: its family comes from the namespace of the descriptor of the binding it
+is delivered for, through one closed core table:
+
+| Descriptor namespace | Availability family |
+|---|---|
+| `safety.*` | `safety` |
+| `environment.*`, `security.*`, `routine.*` | `attention` |
+
+So a window held open while weather protection is active is a `safety` notice. A future descriptor
+namespace must add its row with the descriptor's core release; staging rejects a binding whose
+namespace has no row, so no namespace falls into a family by default.
 
 Priority maps to Home Assistant mobile push options: `safety` uses the time-sensitive
 interruption level (iOS) and high priority (Android); the other families use the platform default.
@@ -217,7 +225,10 @@ treats quiet hours as not active, so nothing is held indefinitely.
 During quiet hours, each `reaction.advisory` `opened` record is held. When quiet hours end, Layer 6
 selects the held advisories whose activation is still open (no `closed` phase yet) and delivers them
 per resident as one notification. A closed advisory retires undelivered. A digest that contains one
-advisory is delivered as that advisory's ordinary actionable notification (§14, point 2, for several).
+advisory is delivered as that advisory's ordinary actionable notification. A digest of several
+advisories carries no buttons, because HA allows at most three actions per notification on Android;
+feedback on each advisory remains possible from the Layer-8 surface through the same ingress until
+its activation closes.
 
 ## 7. Delivery
 
@@ -242,14 +253,14 @@ A recipient is reached when at least one of its endpoints accepted the call.
 
 ### 7.3 Retries and fallback
 
-Failed endpoint calls are retried with a core-fixed growing schedule (§14, point 1). When at least
+Failed endpoint calls are retried after 30 seconds, 2 minutes and 10 minutes (core-fixed). When at least
 one resolved recipient is still unreached after the last retry, or when the audience has no
 reachable recipient, Layer 6 creates one `persistent_notification` with `notification_id` equal to
 the item tag. HA cannot address it to one user: every HA user sees it in the panel. This is accepted
 for Initial V3 and revisited if it proves noisy. An actionable phase delivered only through the fallback carries no buttons; it remains
 answerable from the Layer-8 surface through the same ingress (C2). The record becomes `delivered`
 once every resolved recipient was reached or the fallback accepted. A failed fallback keeps the
-record `ready` and is retried with the same schedule; diagnostics expose it.
+record `ready` and is retried every 30 minutes; diagnostics expose it.
 
 ### 7.4 Item tags and clearing
 
@@ -456,16 +467,9 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 
 ## 14. Open points for the developer
 
-1. **Retry schedule.** Proposed: 30 s, 2 min, 10 min, then fallback; failed fallback retried every
-   30 min.
-2. **Advisory digest with several advisories.** HA allows at most three buttons per notification,
-   so a grouped advisory notification cannot carry feedback buttons for each item. Proposed: the
-   grouped notification has no buttons, and feedback for each advisory remains possible from the
-   Layer-8 surface.
-3. **Clearing a delivered advisory when it closes.** Proposed: yes, silently through its tag (no
-   message), so its feedback buttons do not stay on the phone after the request is withdrawn.
-4. **Availability family.** Proposed: every availability notice bound to a `safety.*` Reaction is
-   `safety`, not only `manual_hold_active` (C3 named that case).
+None. The retry schedule (§7.3), the advisory digest without buttons (§6.4), silent clearing of a
+closed advisory (§7.4, §9.3) and the namespace-based availability family (§6.1) were approved on
+2026-10-12.
 
 ## 15. Initial acceptance criteria
 
