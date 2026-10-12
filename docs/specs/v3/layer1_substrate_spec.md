@@ -324,6 +324,10 @@ same audit-fact-plus-outbox rule.
 configured Reaction produced instead of a command (Layer 5 §6.0). Its sole producer is the Layer-6
 advisory adapter, which validates Layer 5's typed `ReactionAdvisoryOccurrence` and maps its fixed
 fields to `context` under the same rule.
+`recovery.confirmation_request` is one approved V3 event fact type: the opening or closing of a
+power-recovery confirmation request (Layer 0 §7.4.1). Its sole producer is the Layer-6
+recovery-confirmation adapter, which renders the actionable notification from Layer 0's typed
+`RecoveryConfirmationOccurrence`; the answer returns only through Layer 0's response ingress.
 
 ---
 

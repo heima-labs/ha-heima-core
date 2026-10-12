@@ -584,6 +584,9 @@ delivery boundary unambiguous before any resident-visible availability path is e
 The core likewise reserves `FactTypeClaim(fact_type_pattern="reaction.advisory",
 owner_id="layer6.reaction_advisory", emission_kind="event")` for the Layer-6 adapter of Layer 5's
 typed `ReactionAdvisoryOccurrence` (Layer 5 §6.0); Layer 5 never appends it.
+The core reserves `FactTypeClaim(fact_type_pattern="recovery.confirmation_request",
+owner_id="layer6.recovery_confirmation", emission_kind="event")` for the Layer-6 adapter of the
+typed `RecoveryConfirmationOccurrence` (§7.4.1).
 
 State-history and event-history reads are deliberately different. For a state fact, the query is the
 at-or-before-window-start record plus changes inside the window, as specified below. For an event fact,
@@ -2402,7 +2405,37 @@ different proposal may create a fresh request after the current-cycle checks.
 
 The request is declared to the authenticated response ingress (§5.1.3) when it becomes `open`,
 with actions `approve` and `dismiss` and actor category `resident`, and withdrawn on every
-terminal transition. A `VerifiedResponse` from that ingress matches `request_id` to the current
+terminal transition.
+
+Layer 0 hands each request to Layer 6 twice through one typed occurrence: when it opens, so the
+resident receives an actionable notification, and when it reaches a terminal state, so Layer 6
+can close or replace that notification and no stale button stays usable on a device.
+
+```python
+@dataclass(frozen=True)
+class RecoveryConfirmationOccurrence:
+    operation_id: str                 # sha256 of "recovery.confirmation.operation.v1:" + RFC-8785
+                                      # [request_id, phase]
+    phase: Literal["opened", "closed"]
+    request_id: str
+    recovery_episode_id: str
+    actuator_id: str
+    controlled_channel: str
+    subject: Location                 # the Actuator's registered Location, supplied with the proposal
+    proposed_facets: dict[str, str]   # facet -> canonical JSON text, Layer 5 §6.0 codec
+    allowed_actions: tuple[str, ...]  # ("approve", "dismiss") for "opened"; empty for "closed"
+    terminal_state: Literal["approved", "dismissed", "invalidated", "cancelled", "expired"] | None
+    expires_at: EvidenceInstant
+    occurred_at: EvidenceInstant
+```
+
+Layer 5 supplies the subject and the bounded proposed-facet projection together with the proposal;
+Layer 0 adds no Actuator lookup. `terminal_state` is `None` exactly for `opened`. The occurrence
+carries no actor identity, raw HA state or service data. Layer 6 alone renders it as the
+`recovery.confirmation_request` event fact with its delivery record in the unified outbox (§4.5);
+the operation id appends each phase at most once. A delivery failure does not change the request:
+it still expires at `expires_at`, and a response arriving only through the ingress can approve it.
+After restart the invalidated pre-restart requests (below) produce their `closed` occurrence. A `VerifiedResponse` from that ingress matches `request_id` to the current
 `open` request. Approval then takes a fresh cycle input barrier and reruns the same
 read/evaluate/compare and dispatch admission under a serialized compare-and-swap on
 request state, proposal fingerprint and active generation. If unchanged, it records
@@ -2584,6 +2617,11 @@ by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
 
+- A recovery confirmation produces one `opened` occurrence with `approve`/`dismiss` and one
+  `closed` occurrence with its terminal state, each appended once as
+  `recovery.confirmation_request`; an identical proposal on a later cycle produces neither again.
+  A delivery failure leaves the request and its deadline unchanged, and a restart produces the
+  `closed` occurrence for each invalidated pre-restart request (§7.4.1).
 - Every delivered notification of any kind has exactly one audit event fact and one outbox record
   written in the same transaction; a crash between them is impossible by construction. A `ready`
   record survives fact retention until delivered or retired; an exact transition retry is

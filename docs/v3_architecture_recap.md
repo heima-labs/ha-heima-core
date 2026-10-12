@@ -651,7 +651,9 @@ notifies residents, only the administrator preview; once authorized, a member co
 advice (for example opening a manual window) produces one `reaction.advisory` per activation
 instead of a command. Answers to actionable notifications return through
 one authenticated Layer-0 response ingress that routes a verified response to the request's
-registered owner (initially the power-recovery confirmation); Layer 6 only carries them.
+registered owner (initially the power-recovery confirmation); Layer 6 only carries them. A
+recovery confirmation reaches Layer 6 as a typed occurrence when it opens and again when it
+closes, so no stale approve button survives on a phone.
 
 The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
 uses Layer 0's unified notification outbox (one durable store for every notification to a person:
