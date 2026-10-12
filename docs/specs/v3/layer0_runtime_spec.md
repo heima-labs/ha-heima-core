@@ -1229,8 +1229,12 @@ class NotificationDeliveryRecord:
   event fact (Layer 1 §3.1): either both commit or neither. Every delivered notification therefore
   has exactly one audit fact and one ready record, and a crash can never leave an event without its
   delivery record or the reverse.
-- **`delivered`** records the acknowledged delivery attempt; **`retired`** ends the record, either
-  after delivery or, for a prepared record, when its boundary needs no notice.
+- **`delivered`** records the acknowledged delivery attempt; **`retired`** ends the record: after
+  delivery; for a prepared record, when its boundary needs no notice; or directly from `ready`
+  without delivery when Layer 6 decides no notice is due any longer (for example an item closed
+  before its deferred or grouped delivery). Retiring an undelivered record never removes its audit
+  fact, which was committed with `ready`. One delivery attempt may cover several `ready` records
+  (a grouped digest); each then records its own `delivered` transition.
 
 `(notification_kind, operation_id)` is the unique key of the record and also the durable identity
 of its audit event fact (`fact_type=notification_kind`), so an event fact needs no separate
@@ -2664,7 +2668,8 @@ concrete checklist rather than re-deriving one:
   `closed` occurrence for each invalidated pre-restart request (§7.4.1).
 - Every delivered notification of any kind has exactly one audit event fact and one outbox record
   written in the same transaction; a crash between them is impossible by construction. A `ready`
-  record survives fact retention until delivered or retired; an exact transition retry is
+  record survives fact retention until delivered or retired; `ready -> retired` without
+  delivery keeps the audit fact; an exact transition retry is
   idempotent and a different payload under the same `(notification_kind, operation_id)` is
   rejected. Only `reaction.follow_up` uses `prepared`. A storage failure blocks no cycle (§4.5).
 - A response to a recovery confirmation through the ingress reaches the owner only with a valid HA

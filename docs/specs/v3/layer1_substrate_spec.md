@@ -320,8 +320,8 @@ context, then appends the event fact together with its `ready` delivery record i
 notification outbox (Layer 0 §4.5); neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
 event. Layer 0 reserves its exclusive event claim. Every notification Layer 6 delivers follows this
 same audit-fact-plus-outbox rule.
-`reaction.advisory` is one approved V3 event fact type: a resident-facing suggestion that a
-configured Reaction produced instead of a command (Layer 5 §6.0). Its sole producer is the Layer-6
+`reaction.advisory` is one approved V3 event fact type: the opening or closing of a resident-facing
+suggestion that a configured Reaction produced instead of a command (Layer 5 §6.0). Its sole producer is the Layer-6
 advisory adapter, which validates Layer 5's typed `ReactionAdvisoryOccurrence` and maps its fixed
 fields to `context` under the same rule.
 `recovery.confirmation_request` is one approved V3 event fact type: the opening or closing of a
@@ -329,8 +329,8 @@ power-recovery confirmation request (Layer 0 §7.4.1). Its sole producer is the 
 recovery-confirmation adapter, which renders the actionable notification from Layer 0's typed
 `RecoveryConfirmationOccurrence`; the answer returns only through Layer 0's response ingress.
 `reaction.action_notice` (a completed protective action, residents), `proposal.review_pending` (a
-new or again-approvable proposal, administrators) and `reaction.consent_request` (household consent
-needed or no longer needed, consent-authorized residents) are approved V3 event fact types with
+new, again-approvable or closed proposal, administrators) and `reaction.consent_request` (household
+consent needed or no longer needed, consent-authorized residents) are approved V3 event fact types with
 the same sole-Layer-6-producer rule, each rendered from its typed Layer-5 occurrence (Layer 5 §6.0).
 `reaction.advisory_feedback` is an approved V3 event fact type but not a notification: Layer 5 alone
 appends it when a resident answers an advisory, as non-authoritative learning evidence.

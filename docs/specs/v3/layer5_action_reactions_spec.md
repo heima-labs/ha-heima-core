@@ -837,8 +837,9 @@ none.
 issues no command and no resident-facing notification: its evaluations feed only the
 administrator's read-only preview. Advice is delivered once the Reaction is administratively
 authorized; household consent gates only command members, because advice moves nothing. Each
-eligible advice member produces one `ReactionAdvisoryOccurrence` per activation (§6.0), not one per
-evaluation, and no closing "no longer needed" notice.
+eligible advice member produces one `ReactionAdvisoryOccurrence(opened)` per activation (§6.0), not
+one per evaluation, and one `closed` occurrence when the activation ends; the closing phase is never
+delivered to residents as a "no longer needed" notice.
 
 #### Program families
 
@@ -2284,7 +2285,8 @@ appends the `reaction.advisory` event fact and its delivery record in the unifie
 class ReactionAdvisoryOccurrence:
     operation_id: str                 # sha256 of "reaction.advisory.operation.v1:" + RFC-8785
                                       # [reaction_id, configuration_generation_id,
-                                      #  reaction_activation_id, member_index]
+                                      #  reaction_activation_id, member_index, phase]
+    phase: Literal["opened", "closed"]
     reaction_id: str
     configuration_generation_id: str
     reaction_activation_id: str
@@ -2296,13 +2298,20 @@ class ReactionAdvisoryOccurrence:
     opening_id: str | None
     actuator_id: str | None
     controlled_channel: str | None
+    closed_reason: Literal["activation_ended", "authorization_disabled", "superseded"] | None
     occurred_at: EvidenceInstant
 ```
 
-The operation id makes the advice at most once per activation and member, across retries and
-re-evaluations. The occurrence carries only these closed fields; Layer 6 owns the text, severity
-`info`, family and quiet-hours behavior. Revocation or a configuration successor stops further
-advice like any future work; an advice already delivered is not withdrawn.
+The operation id makes each phase at most once per activation and member, across retries and
+re-evaluations. `closed` is produced when the activation ends, when administrative authorization
+is disabled or revoked, or when a configuration successor replaces the generation; `closed_reason`
+is `None` exactly for `opened`. The occurrence carries only these closed fields; Layer 6 owns the
+text, severity `info`, family and quiet-hours behavior. The closing phase is audit and delivery
+state only: Layer 6 appends its `reaction.advisory` fact, retires the opening record undelivered if
+it is still waiting (for example deferred by quiet hours), and never sends residents a closing
+notice; an advice already delivered is not withdrawn. An activation never survives a restart, so
+Layer 6 treats an `opened` advisory from before the current process start without a `closed` phase
+as closed: it retires an undelivered record without delivery and appends no fact.
 
 #### Resident action notice
 
@@ -2337,26 +2346,40 @@ not replace a channel's `manual_hold_active` availability notice or a `reaction.
 
 #### Proposal review notice
 
-When Layer 5 creates a `ReactionProposal` or `ReactionArtifactAdoptionProposal` (§4.1), and again
-only when a pending proposal that had become not approvable becomes approvable, it gives Layer 6:
+When Layer 5 creates a `ReactionProposal` or `ReactionArtifactAdoptionProposal` (§4.1), when a
+pending proposal that had become not approvable becomes approvable again, and when a proposal stops
+being reviewable, it gives Layer 6:
 
 ```python
 @dataclass(frozen=True)
 class ProposalReviewOccurrence:
     operation_id: str                 # sha256 of "proposal.review.operation.v1:" + RFC-8785
-                                      # [proposal_id, phase, evidence_revision_id]
-    phase: Literal["created", "approvable_again"]
+                                      # [proposal_id, phase, cause_record_id]
+    phase: Literal["created", "approvable_again", "closed"]
+    cause_record_id: str              # the §4.1 record that caused the phase (below)
     proposal_id: str
     proposal_kind: Literal["reaction_configuration", "artifact_adoption"]
     reaction_descriptor_id: str
     reaction_descriptor_version: str
     subject: Location
     evidence_revision_id: str
+    closed_reason: Literal["accepted", "rejected", "proposal_incompatible", "not_approvable"] | None
     occurred_at: EvidenceInstant
 ```
 
-Its audience is administrators only; Layer 6 renders `proposal.review_pending` and owns grouping
-into a digest. The occurrence carries no evidence payload, learner text or approval control.
+`cause_record_id` is the initial `ProposalEvidenceRevision` for `created`, the
+`ProposalReadinessAssessment` that records the readiness change for `approvable_again` and for
+`closed` with `not_approvable`, and the terminal `ProposalReviewTransition` for the other closed
+reasons. Keying the operation on that record keeps two distinct readiness changes under one
+evidence revision distinct, while a retry of the same change stays one operation. `closed` with
+`not_approvable` is produced only when a pending proposal whose latest phase was `created` or
+`approvable_again` receives a not-approvable assessment; a later approvable assessment produces
+`approvable_again`. `closed_reason` is `None` exactly for the other two phases.
+
+Its audience is administrators only; Layer 6 renders `proposal.review_pending` for every phase and
+owns grouping into a digest. A proposal is open for review from its latest `created` or
+`approvable_again` phase until a later `closed`; the closing phase is never delivered on its own.
+The occurrence carries no evidence payload, learner text or approval control.
 
 #### Household consent request notice
 
@@ -2392,10 +2415,10 @@ available; both paths share one authority rule.
 
 #### Advisory feedback
 
-Each delivered `ReactionAdvisoryOccurrence` is actionable for feedback only: the owner
+Each delivered `ReactionAdvisoryOccurrence(opened)` is actionable for feedback only: the owner
 `layer5.advisory_feedback` declares a request with actions `done`, `dismiss` and `not_useful`, actor
-category `resident`, open for as long as the activation lasts and withdrawn when it ends; there is
-no separate feedback window. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
+category `resident`, open for as long as the activation lasts and withdrawn at its `closed` phase;
+there is no separate feedback window. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
 (`advisory_operation_id`, `action`, `actor_category`, `recorded_at`), once per advisory and
 action. Feedback grants no authority, sends no command, changes no Reaction state and is never a
 correction of Heima. It is bounded explicit evidence for the future
@@ -4110,7 +4133,10 @@ profile or learner, and declares `requires_household_consent=True`,
   one `ReactionActionNoticeOccurrence` with three channel outcomes, once, after every confirmation
   window; a descriptor with `resident_action_notice=False` produces none. A new proposal produces
   one `ProposalReviewOccurrence(created)` for administrators, and a later evidence refresh that
-  keeps it approvable produces none. Promotion of a consent-requiring Reaction produces one
+  keeps it approvable produces none. Approval, rejection, incompatibility or loss of approvability
+  produces one `closed` with its reason; two separate returns to approvability under the same
+  evidence revision produce two distinct `approvable_again` operations. An advice activation that
+  ends produces one `ReactionAdvisoryOccurrence(closed)` per advice member and no resident notice. Promotion of a consent-requiring Reaction produces one
   `ConsentRequestOccurrence(opened)`; a grant, disablement or successor generation produces one
   `closed` with its reason. None of the three carries actor identity or rendered text.
 - A Reaction in `notification_only` produces no `ApplyStep` and no resident notification, only the

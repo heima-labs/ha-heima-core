@@ -650,9 +650,10 @@ suggestions) alike — instead of one sophisticated, configurable path for the f
 unconfigurable direct-call path for the latter. A Reaction under trial (`notification_only`) never
 notifies residents, only the administrator preview; once authorized, a member configured as
 advice (for example opening a manual window) produces one `reaction.advisory` per activation
-instead of a command. Answers to actionable notifications return through
+instead of a command, plus an undelivered closing phase when the activation ends. Answers to actionable notifications return through
 one authenticated Layer-0 response ingress that routes a verified response to the request's
-registered owner (initially the power-recovery confirmation); Layer 6 only carries them. A
+registered owner (power-recovery confirmation, household consent, advisory feedback); Layer 6
+only carries them. A
 recovery confirmation reaches Layer 6 as a typed occurrence when it opens and again when it
 closes, so no stale approve button survives on a phone. Three further typed occurrences complete
 the inputs: a protective action notice (weather protection, residents), a new-proposal review notice
@@ -672,18 +673,18 @@ fits Layer 1's depth-two/8 KiB value contract. A failed or timed-out intent
 preparation has the diagnosed, best-effort notice guarantee described above;
 the adapter never replays an Actuator command.
 
-- **Quiet hours are resolved per family/type, not as one blanket switch**, in 3 behaviors: `bypass`
-  (security-posture-relevant, can't wait — e.g. "went to sleep without arming security"), `defer`
-  (held until quiet hours end, folded into the digest), `silent` (never actively pushed at all —
-  learned Reaction proposals land here, since "N automations are now possible" is never urgent).
-  Layer 5 separately defines an opt-in `quiet_hours.v1` action guard over a
-  casa-scoped boolean `quiet_hours.active` fact. Layer-6 notification quiet-hours
-  input and routing remain to be specified there; room-scoped `activity.sleeping`
-  alone does not establish a casa-wide quiet context.
-- **Digest**: a periodic batch summary ("12 new suggestions today") instead of one push per item —
-  the mechanism that makes routing large volumes of low-urgency review items to `defer`/`silent`
-  actually usable instead of just delayed spam. Not yet built.
-  → `v3_backlog.md` §Notifications.
+- **Quiet hours are resolved per closed notification family** (decided 2026-10-12, C3/C4 in
+  `v3_backlog.md`, to be owned by the Layer-6 spec): `safety` bypasses; `attention` is deferred to
+  the end of quiet hours; `suggestion` advisories are held and delivered as one digest at the end
+  of quiet hours, only those whose activation is still open; `governance` is deferred, with
+  proposal reviews grouped by the digest. Quiet hours are the existing casa
+  `quiet_hours.active` fact, one source for the Layer-5 guard and Layer 6; room-scoped
+  `activity.sleeping` alone does not establish a casa-wide quiet context.
+- **Digest** (decided, not built): new-proposal notices for administrators are collected for
+  30 minutes after the first one and sent as one notification ("N new proposals to review") at
+  most every 4 hours, replacing the previous one on the phone through a fixed HA notification tag
+  and cleared when no proposal remains open. Only proposals still open for review are counted.
+  → `v3_backlog.md` §Layer 6 specification decisions.
 
 ---
 
@@ -756,7 +757,7 @@ explainability system built on top.
 ## What's still genuinely open across all layers
 
 1. Third-party plugin discovery mechanism (entry points vs. an `hass.data` handshake) — not chosen.
-2. The digest notification capability — designed for, not built.
+2. The digest notification capability — decided (C4), not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
    path — depends on the digest existing first.
 4. The Layer-8 rendering of the common Reaction commands and their closed `GovernanceCommandResult`

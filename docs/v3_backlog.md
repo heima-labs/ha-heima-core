@@ -1785,8 +1785,9 @@ Inputs are the closed typed occurrences of CA4-65–68.
   recipients' `notify.*` endpoints; closing/replacing a notification uses the mobile notification
   `tag` set to `notification_key`; button answers arrive through HA's `mobile_app_notification_action`
   event, which Layer 6 forwards to Layer 0's response ingress. `persistent_notification` is the
-  fallback when an audience has no reachable recipient or every endpoint failed after retries; the
-  outbox records the delivery channel. Retries use core-fixed attempts and growing intervals. An
+  fallback when an audience has no reachable recipient or every endpoint failed after retries;
+  Layer-6 diagnostics record which channel delivered each notification (the Layer-0 outbox stores
+  no channel). Retries use core-fixed attempts and growing intervals. An
   actionable notification goes only to `supports_actions` endpoints; without one it is sent without
   buttons and stays answerable from the Layer-8 surface through the same ingress. Every delivered
   notification also fires a `heima_notification` HA bus event with closed fields (type, audience,
@@ -1799,12 +1800,24 @@ Inputs are the closed typed occurrences of CA4-65–68.
   protected channel) high; `attention` (`reaction.follow_up`, other `automation.availability`,
   `recovery.confirmation_request`) normal; `suggestion` (`reaction.advisory`) low; `governance`
   (`reaction.consent_request`, `proposal.review_pending`) low. Core-fixed quiet-hours behavior:
-  `safety` bypass; `attention` defer to the end of quiet hours; `suggestion` silent (the audit fact
-  is appended, the delivery record retires undelivered, no later replay, because advice is only
-  valid now); `governance` defer or digest (C4). Quiet hours are the existing casa
+  `safety` bypass; `attention` defer to the end of quiet hours; `suggestion` held and delivered as
+  one digest at the end of quiet hours containing only advisories whose activation is still open
+  (an advisory closed meanwhile retires undelivered, CA4-71); `governance` defer, with proposal
+  reviews grouped by the digest (C4). Quiet hours are the existing casa
   `quiet_hours.active` fact (Layer 5 §3.2), one source for guards and notifications; without it
   there are no quiet hours. The administrator may only turn a deferring family (`attention`,
   `governance`) to silent; `safety` can never be silenced.
+- **C4 — Digest.** Only `proposal.review_pending` (administrators) is grouped; consent requests stay
+  individual (actionable, rare, deferred in quiet hours) and advisories use the C3 end-of-quiet-hours
+  digest. The first open proposal starts a core-fixed 30-minute collection window; at its end one
+  notification ("N new proposals to review", link to the Layer-8 panel) covers every proposal still
+  open for review; at most one proposal digest per audience every 4 hours, later proposals wait for
+  the next one; a digest due in quiet hours is sent when they end. A fixed HA notification `tag` per
+  audience makes each digest replace the previous one, and Layer 6 clears it (`clear_notification`)
+  when no proposal remains open. Each proposal keeps its own outbox record and audit fact; one
+  delivery covers several records, each marked `delivered`; a proposal closed before its digest
+  retires undelivered. Open means a latest `created`/`approvable_again` phase without a later
+  `closed` (CA4-71). No new fact type, store or schedule.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
@@ -5050,9 +5063,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70 | 0 | 0 | 37 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69 | 0 | 0 | 27 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71 | 0 | 0 | 28 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **70 findings** | **0** | **0** | **69** | **1** |
+| **Total** | **71 findings** | **0** | **0** | **70** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6172,6 +6185,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-71 — Digest and quiet-hours grouping lacked closing phases and undelivered retirement
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P2. **Origin:** Layer-6 decisions C3/C4.
+
+**Problem.** Layer 6 could not tell whether a proposal or an advisory was still current at a deferred or grouped delivery: `ProposalReviewOccurrence` had no closing phase and `ReactionAdvisoryOccurrence` was one-shot. Layer 0 allowed `retired` only after delivery or from `prepared`, so a deferred item that became moot had no legal end. The proposal operation id over `[proposal_id, phase, evidence_revision_id]` collapsed two returns to approvability under one evidence revision.
+
+**Approved resolution (2026-10-12).** Layer 0 §4.5 allows `ready -> retired` without delivery when Layer 6 decides no notice is due (the audit fact remains) and one delivery covering several ready records; no new outbox field. `ProposalReviewOccurrence` gains `closed` (`accepted`, `rejected`, `proposal_incompatible`, `not_approvable`) and `cause_record_id`, the §4.1 record causing the phase, which keys the operation id. `ReactionAdvisoryOccurrence` gains `opened`/`closed` (`activation_ended`, `authorization_disabled`, `superseded`); closing phases are never delivered to people, and a pre-restart advisory without closure is treated as closed. See the [CA4-71 review](specs/v3/reviews/CA4-71.md); no V3 runtime test ran.
 
 #### CA4-70 — Protected retry-queue items can exceed the hard budget
 
