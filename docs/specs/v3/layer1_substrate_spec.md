@@ -328,6 +328,10 @@ fields to `context` under the same rule.
 power-recovery confirmation request (Layer 0 §7.4.1). Its sole producer is the Layer-6
 recovery-confirmation adapter, which renders the actionable notification from Layer 0's typed
 `RecoveryConfirmationOccurrence`; the answer returns only through Layer 0's response ingress.
+`reaction.action_notice` (a completed protective action, residents), `proposal.review_pending` (a
+new or again-approvable proposal, administrators) and `reaction.consent_request` (household consent
+needed or no longer needed, consent-authorized residents) are approved V3 event fact types with
+the same sole-Layer-6-producer rule, each rendered from its typed Layer-5 occurrence (Layer 5 §6.0).
 
 ---
 

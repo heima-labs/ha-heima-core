@@ -586,7 +586,10 @@ owner_id="layer6.reaction_advisory", emission_kind="event")` for the Layer-6 ada
 typed `ReactionAdvisoryOccurrence` (Layer 5 §6.0); Layer 5 never appends it.
 The core reserves `FactTypeClaim(fact_type_pattern="recovery.confirmation_request",
 owner_id="layer6.recovery_confirmation", emission_kind="event")` for the Layer-6 adapter of the
-typed `RecoveryConfirmationOccurrence` (§7.4.1).
+typed `RecoveryConfirmationOccurrence` (§7.4.1). It likewise reserves `reaction.action_notice`
+(owner `layer6.reaction_action_notice`), `proposal.review_pending` (owner
+`layer6.proposal_review`) and `reaction.consent_request` (owner `layer6.consent_request`) as
+Layer-6 event claims for the typed Layer-5 occurrences of Layer 5 §6.0; Layer 5 never appends them.
 
 State-history and event-history reads are deliberately different. For a state fact, the query is the
 at-or-before-window-start record plus changes inside the window, as specified below. For an event fact,

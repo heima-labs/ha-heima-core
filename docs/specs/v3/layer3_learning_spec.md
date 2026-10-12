@@ -3541,7 +3541,7 @@ non-actionable question from being accidentally admitted through Layer 5's actio
 Layer 3 therefore never constructs a `ReactionProposal` or
 `ReactionArtifactAdoptionProposal`, sends a notification, decides approval, or
 applies a resulting configuration. Except for the operational availability occurrences in §6.3.1,
-Layer 6 may notify an administrator and Layer 8 may present a review surface only after Layer 5 has
+Layer 6 may notify an administrator (through Layer 5's `ProposalReviewOccurrence`, Layer 5 §6.0) and Layer 8 may present a review surface only after Layer 5 has
 created the reviewable proposal. The future administrative-review surface may additionally render a
 `ContextHypothesisCandidate`, but its decision reaches a future semantic resolver only through that separate
 audited contract; neither path bypasses Layer-5 action review.

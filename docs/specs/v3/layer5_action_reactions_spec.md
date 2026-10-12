@@ -479,6 +479,7 @@ class RegisteredReactionDescriptor:
     safe_direction_intents: frozenset[str]  # intents moving toward the safe physical state (§3.2)
     low_risk_intents: Mapping[str, str]     # intent -> registered rationale for no required guard (§3.2)
     advisory_intents: frozenset[str]        # intents a member may deliver as resident advice (§3.2)
+    resident_action_notice: bool            # notify residents of completed commands (§6.0)
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
@@ -2303,6 +2304,86 @@ re-evaluations. The occurrence carries only these closed fields; Layer 6 owns th
 `info`, family and quiet-hours behavior. Revocation or a configuration successor stops further
 advice like any future work; an advice already delivered is not withdrawn.
 
+#### Resident action notice
+
+A descriptor version with `resident_action_notice=True` tells residents what it did. In Initial V3
+only `safety.weather_protection` declares it; every other descriptor declares `False`. When every
+channel selected by an activation's step has a recorded outcome (after its confirmation window),
+Layer 5 gives Layer 6 one occurrence for that activation:
+
+```python
+@dataclass(frozen=True)
+class ChannelNoticeOutcome:
+    actuator_id: str
+    controlled_channel: str
+    outcome: Literal["completed", "unconfirmed", "failed", "skipped_manual_hold"]
+
+@dataclass(frozen=True)
+class ReactionActionNoticeOccurrence:
+    operation_id: str                 # sha256 of "reaction.action_notice.operation.v1:" + RFC-8785
+                                      # [reaction_id, configuration_generation_id, reaction_activation_id]
+    reaction_id: str
+    configuration_generation_id: str
+    reaction_activation_id: str
+    snapshot_id: str
+    subject: Location
+    channels: tuple[ChannelNoticeOutcome, ...]  # canonical key order; bounded by staged endpoints
+    occurred_at: EvidenceInstant
+```
+
+Layer 6 renders it as one `reaction.action_notice` event fact with severity `info` (for example
+"windows and awnings secured for rain; living-room window left open by you"). It summarizes and does
+not replace a channel's `manual_hold_active` availability notice or a `reaction.follow_up` warning.
+
+#### Proposal review notice
+
+When Layer 5 creates a `ReactionProposal` or `ReactionArtifactAdoptionProposal` (§4.1), and again
+only when a pending proposal that had become not approvable becomes approvable, it gives Layer 6:
+
+```python
+@dataclass(frozen=True)
+class ProposalReviewOccurrence:
+    operation_id: str                 # sha256 of "proposal.review.operation.v1:" + RFC-8785
+                                      # [proposal_id, phase, evidence_revision_id]
+    phase: Literal["created", "approvable_again"]
+    proposal_id: str
+    proposal_kind: Literal["reaction_configuration", "artifact_adoption"]
+    reaction_descriptor_id: str
+    reaction_descriptor_version: str
+    subject: Location
+    evidence_revision_id: str
+    occurred_at: EvidenceInstant
+```
+
+Its audience is administrators only; Layer 6 renders `proposal.review_pending` and owns grouping
+into a digest. The occurrence carries no evidence payload, learner text or approval control.
+
+#### Household consent request notice
+
+When a Reaction enters `authorized_awaiting_household_consent`, and when that state ends, Layer 5
+gives Layer 6 one occurrence per phase:
+
+```python
+@dataclass(frozen=True)
+class ConsentRequestOccurrence:
+    operation_id: str                 # sha256 of "reaction.consent.operation.v1:" + RFC-8785
+                                      # [reaction_id, configuration_generation_id,
+                                      #  authority_transition_id, phase]
+    phase: Literal["opened", "closed"]
+    reaction_id: str
+    configuration_generation_id: str
+    authority_transition_id: str      # the transition that opened the request
+    reaction_descriptor_id: str
+    subject: Location
+    closed_reason: Literal["granted", "authorization_disabled", "superseded"] | None
+    occurred_at: EvidenceInstant
+```
+
+Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1). In Initial V3 the
+notice is informative: consent is granted through the existing `set_reaction_household_consent`
+command, not through the notification. An actionable consent answer would need its own registered
+owner in Layer 0's response ingress (§5.1.3) and is a later extension.
+
 #### Resident follow-up operational event
 
 Layer 5 owns the operational cause, not resident text or event-fact persistence. At a qualifying
@@ -3988,8 +4069,9 @@ profile or learner, and declares `requires_household_consent=True`,
   `manual_hold_active` for that channel, so Layer 6 can warn the resident (for example "living-room
   window held open by you; rain detected").
 - **No confirmation.** Securing runs without a runtime confirmation; the completed or skipped steps
-  are reported as ordinary execution audit and follow-up outcomes, and Layer 6 renders a resident
-  notice of the securing action (overview §11).
+  are reported as ordinary execution audit and follow-up outcomes, and the descriptor's
+  `resident_action_notice=True` produces one `ReactionActionNoticeOccurrence` per activation that
+  Layer 6 renders as `reaction.action_notice` (§6.0).
 - **Valid direct example.** Casa subject, `relation_profile=None`, trigger
   `state_transition(environment.wind_hazard@casa, False -> True)` from a hysteresis over the casa
   wind-speed fact, selected endpoints the living-room awning (`is_external=True`) and the living-room
@@ -4000,6 +4082,13 @@ profile or learner, and declares `requires_household_consent=True`,
 
 ## 8. Initial acceptance criteria
 
+- A weather-protection activation that secures two channels and skips one held channel produces
+  one `ReactionActionNoticeOccurrence` with three channel outcomes, once, after every confirmation
+  window; a descriptor with `resident_action_notice=False` produces none. A new proposal produces
+  one `ProposalReviewOccurrence(created)` for administrators, and a later evidence refresh that
+  keeps it approvable produces none. Promotion of a consent-requiring Reaction produces one
+  `ConsentRequestOccurrence(opened)`; a grant, disablement or successor generation produces one
+  `closed` with its reason. None of the three carries actor identity or rendered text.
 - A Reaction in `notification_only` produces no `ApplyStep` and no resident notification, only the
   administrator preview. Once authorized, an external-exchange advice member on a manual window
   (`opening_id` facing outside, no Actuator) produces exactly one `ReactionAdvisoryOccurrence` per

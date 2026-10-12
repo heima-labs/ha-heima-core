@@ -526,9 +526,10 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
   responses to Layer 0's authenticated response ingress, and retries delivery. Its renderer must declare finite maximum UTF-8 lengths
   for title and message in every supported locale; Layer-5 staging needs those bounds to
   prove the complete follow-up fact fits Layer 1's depth-two/8 KiB limits.
-  It must also render a resident notice of a completed `safety.weather_protection` securing
-  step and of its `manual_hold_active` occurrence for a held exposed channel (Layer 5 §7.4),
-  from typed Layer-5 outcomes only.
+  It must also render the typed `reaction.action_notice`, `proposal.review_pending`,
+  `reaction.consent_request`, `reaction.advisory` and `recovery.confirmation_request` occurrences
+  (Layer 5 §6.0, Layer 0 §7.4.1) and the `manual_hold_active` availability notice for a held
+  exposed channel, from typed inputs only.
   Its `AvailabilityPublicationGeneration` must be one layer reference of the composed
   configuration generation (Layer 0 §4.7): its publication keys join the dependency index, and
   its reconciliation runs at the same swap as the layers it binds.

@@ -653,7 +653,10 @@ instead of a command. Answers to actionable notifications return through
 one authenticated Layer-0 response ingress that routes a verified response to the request's
 registered owner (initially the power-recovery confirmation); Layer 6 only carries them. A
 recovery confirmation reaches Layer 6 as a typed occurrence when it opens and again when it
-closes, so no stale approve button survives on a phone.
+closes, so no stale approve button survives on a phone. Three further typed occurrences complete
+the inputs: a protective action notice (weather protection, residents), a new-proposal review notice
+(administrators, grouped by the digest) and a household-consent request notice (consent-authorized
+residents, informative only in Initial V3).
 
 The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
 uses Layer 0's unified notification outbox (one durable store for every notification to a person:
