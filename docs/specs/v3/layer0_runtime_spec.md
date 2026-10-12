@@ -1398,8 +1398,8 @@ The short-term buffer (§4.1) and the live current index are not reduced by this
 hot-path windows and current-state admission are unaffected. Discarding emits the
 `durable_queue_overflow` diagnostic with per-stream counts and lost intervals; queue bytes,
 budget and its source are always visible in diagnostics (§10). During a global epoch,
-+diagnostics expose its start, open/closed status and aggregate discarded counts without
-+requiring an unbounded per-stream list. A discarded hold-audit fact
+diagnostics expose its start, open/closed status and aggregate discarded counts without
+requiring an unbounded per-stream list. A discarded hold-audit fact
 follows the same rule as any other event: the live hold is unaffected and the audit stream
 reports the lost interval.
 

@@ -2379,9 +2379,9 @@ class ConsentRequestOccurrence:
     occurred_at: EvidenceInstant
 ```
 
-Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1). The notice is
-actionable: on `opened` the response owner `layer5.household_consent` declares a request to Layer
-0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor category
+Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1); Layer 6 renders it as
+one `reaction.consent_request` event fact per phase. The notice is actionable: on `opened` the
+response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor category
 `resident`, expiring when the request closes. A `VerifiedResponse` is applied only if its
 `actor_ref` is currently in `HouseholdConsentAuthority`: `grant` appends exactly the authority
 transition of `set_reaction_household_consent` against the opening authority transition as its
@@ -2394,8 +2394,8 @@ available; both paths share one authority rule.
 
 Each delivered `ReactionAdvisoryOccurrence` is actionable for feedback only: the owner
 `layer5.advisory_feedback` declares a request with actions `done`, `dismiss` and `not_useful`, actor
-category `resident`, expiring when the activation ends or after the core advisory feedback window,
-whichever comes first. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
+category `resident`, open for as long as the activation lasts and withdrawn when it ends; there is
+no separate feedback window. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
 (`advisory_operation_id`, `action`, `actor_category`, `recorded_at`), once per advisory and
 action. Feedback grants no authority, sends no command, changes no Reaction state and is never a
 correction of Heima. It is bounded explicit evidence for the future
