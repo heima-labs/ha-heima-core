@@ -251,6 +251,7 @@ EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
 class OperationalEventValue:
     notification_key: str                 # non-empty stable delivery dedup/rate-limit key
     severity: EventSeverity                # delivery/diagnostic priority, never fact identity
+    context_version: int                   # >= 1; version of this fact type's context schema
     context: dict[str, EvidenceValue]      # closed fields and stable identifiers only, never text
 ```
 
@@ -267,17 +268,22 @@ class OperationalEventValue:
 | causal context | `how.source.correlation_id`, with ordinary Layer-0 propagation rules |
 
 The event adapter must construct this value at the production boundary and validate the non-empty key,
-allowed severity, `context` shape, and mandatory `Location`; it must never guess a room from
+allowed severity, a `context_version` registered for its `fact_type`, the `context` shape of that
+version, and mandatory `Location`; it must never guess a room from
 unstructured context.
 
 **No stored resident text.** An operational event fact records what was notified, not the words
 sent. `context` holds only closed fields and stable identifiers (Reaction, Actuator, channel,
 opening; the room through `where`), never a display name, rendered text or free text. Layer 6
-renders title and message at each delivery from the fact's `fact_type`, `where` and `context`, the
-core-fixed templates of the running core version, the recipient's locale and the currently
+renders title and message at each delivery from the fact's `fact_type`, `context_version`, `where`
+and `context`, the core-fixed templates of the running core version, the recipient's locale and the currently
 configured names; an identifier that is no longer configured is shown as the identifier. Layer 8
 renders event history the same way. The exact text of a past delivery is therefore not
-reproducible, by design. A V3 `HeimaEvent`, where a delivery/rendering envelope is
+reproducible, by design. `context_version` identifies the shape of the data, not the wording:
+changing only a template's words keeps the version, while adding, removing, renaming or
+redefining a context field requires a new version. The core keeps a template for every
+`(fact_type, context_version)` that its retained history can contain; an unknown version renders
+a generic text with the fact type and its identifiers, never a guessed meaning. A V3 `HeimaEvent`, where a delivery/rendering envelope is
 still useful, is derived from this event fact and cannot be an independently persisted or audited
 channel. Historical V2 events remain outside V3 as archive/rollback material: V3 has no legacy-event
 adapter, type map, or runtime fallback, and every V3 producer must emit an approved V3 fact type.
@@ -1074,8 +1080,8 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   either form (§3; Layer 0 §6.4).
 - An operational `HeimaEvent` maps to exactly one append-only event fact with its approved V3
   `fact_type`, a mandatory `Location`, and `OperationalEventValue` preserving its non-empty delivery
-  key, allowed severity and JSON-compatible context with no stored title, message or display
-  name. It rejects a V2/legacy
+  key, allowed severity, a registered `context_version` and JSON-compatible context of that
+  version with no stored title, message or display name; an unregistered version is rejected. It rejects a V2/legacy
   event at the V3 boundary rather than translating it. Two distinct equal event occurrences are both retained, while exact operation-id retries of
   `manual_hold.lifecycle` and of any notification kind's `(notification_kind, operation_id)`
   (Layer 0 §4.5) retain one fact and conflicting retries fail.
