@@ -2,8 +2,8 @@
 
 **Status:** DRAFT for developer review (2026-10-12). Not approved, not implemented, not yet an
 authoritative layer in `contract_registry.json`.
-**Open corrections:** the upstream changes of §13 and the open points of §14 must be decided
-before approval.
+**Open corrections:** the open points of §14 must be decided before approval; the upstream changes
+of §13 are applied (CA4-73).
 
 **Layer:** 6 of 8. Builds on Layer 0's unified notification delivery outbox (§4.5), authenticated
 response ingress (§5.1.3), Runtime Scheduler, composed configuration generation (§4.7) and
@@ -100,7 +100,7 @@ class NotificationKindDescriptor:
 | `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents | suggestion | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
 | `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents | safety | info | the one notice | none |
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
-| `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened` (`closed` clears) | `layer5.household_consent`: grant / decline |
+| `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened`, `reissued` (`closed` clears) | `layer5.household_consent`: grant / decline |
 | `proposal.review_pending` | `ProposalReviewOccurrence` (Layer 5 §6.0) | administrators | governance | info | `created`, `approvable_again`, grouped by the digest (§6.3) | none; link to the Layer-8 panel |
 
 Every Initial-V3 kind uses `context_version=1`. A future context change registers a new version and
@@ -217,7 +217,7 @@ treats quiet hours as not active, so nothing is held indefinitely.
 During quiet hours, each `reaction.advisory` `opened` record is held. When quiet hours end, Layer 6
 selects the held advisories whose activation is still open (no `closed` phase yet) and delivers them
 per resident as one notification. A closed advisory retires undelivered. A digest that contains one
-advisory is delivered as that advisory's ordinary actionable notification (§14, point 3, for several).
+advisory is delivered as that advisory's ordinary actionable notification (§14, point 2, for several).
 
 ## 7. Delivery
 
@@ -242,10 +242,11 @@ A recipient is reached when at least one of its endpoints accepted the call.
 
 ### 7.3 Retries and fallback
 
-Failed endpoint calls are retried with a core-fixed growing schedule (§14, point 1). When every
-endpoint of every resolved recipient has failed after the last retry, or when the audience has no
-reachable recipient (partial reachability: §14, point 2), Layer 6 creates a `persistent_notification` with `notification_id` equal to the
-item tag. An actionable phase delivered only through the fallback carries no buttons; it remains
+Failed endpoint calls are retried with a core-fixed growing schedule (§14, point 1). When at least
+one resolved recipient is still unreached after the last retry, or when the audience has no
+reachable recipient, Layer 6 creates one `persistent_notification` with `notification_id` equal to
+the item tag. HA cannot address it to one user: every HA user sees it in the panel. This is accepted
+for Initial V3 and revisited if it proves noisy. An actionable phase delivered only through the fallback carries no buttons; it remains
 answerable from the Layer-8 surface through the same ingress (C2). The record becomes `delivered`
 once every resolved recipient was reached or the fallback accepted. A failed fallback keeps the
 record `ready` and is retried with the same schedule; diagnostics expose it.
@@ -380,7 +381,13 @@ generation swap, `binding_deactivated` and the per-run identity are exactly thos
 These adapters map their Layer-5 occurrences one to one. Closing phases (`closed` of an advisory,
 consent request or proposal) append their audit fact, retire any undelivered opening record of the
 same item, and apply §7.4 clearing when the opening phase was delivered. The advisory and consent
-adapters attach the occurrence's response request to the opening delivery.
+adapters build the answer buttons from the occurrence's `response_request_id`.
+
+A consent request goes to every consent authority. The first answer decides for the household: a
+`grant` or a `decline` closes the request (Layer 5 §6.0), and the `closed` phase clears the
+notification on every authority's phone. A consent `reissued` phase (after a restart) replaces the
+earlier notification of the same item through its tag with buttons carrying the new request id; if
+the earlier phase was never delivered, its record retires undelivered.
 
 ### 9.4 `recovery.confirmation_request`
 
@@ -432,42 +439,30 @@ Layer 6 contributes to the existing diagnostics surface:
 
 Diagnostics never contain rendered text or person identities beyond `recipient_id`.
 
-## 13. Required upstream changes
+## 13. Upstream changes (applied, CA4-73)
 
-Before approval these must be applied as a reviewed CA4 item:
-
-- **U1 — Response request id on actionable occurrences.** `ConsentRequestOccurrence` and
-  `ReactionAdvisoryOccurrence` must carry `response_request_id: str | None` (set on `opened`), the
-  id their owner declared to the ingress. `RecoveryConfirmationOccurrence` already carries
-  `request_id`. Without it Layer 6 cannot build the buttons.
-- **U2 — Binding declaration fields.** Layer 5's availability-binding declaration must include the
-  Reaction's descriptor id, used for the family (§6.1).
-- **U3 — Layer-6 generation contents.** Layer 0 §4.7 names only the availability publication
-  bindings as Layer-6 configuration; it must also name recipients and family options, with no
+- **U1** — `ConsentRequestOccurrence` and `ReactionAdvisoryOccurrence` carry
+  `response_request_id`; a consent still open after a restart produces a `reissued` phase with a
+  fresh id (Layer 5 §6.0).
+- **U2** — Layer 5's availability-binding declaration names the Reaction's
+  `reaction_descriptor_id` (Layer 5 §6.0, Layer 3 §6.3.1).
+- **U3** — Layer 0 §4.7 includes recipients and family options in the Layer-6 generation, with no
   dependents.
-- **U4 — Consent authority identities.** Layer 5 §7.1.1 must state that each
-  `HouseholdConsentAuthority` actor reference is an HA user id, the identity Layer 0's ingress
-  verifies, so §5.2 can derive `consent_authorities` from recipients' `ha_user_id`.
+- **U4** — every `HouseholdConsentAuthority` reference is an HA user id (Layer 5 §7.1.1).
 
 ## 14. Open points for the developer
 
 1. **Retry schedule.** Proposed: 30 s, 2 min, 10 min, then fallback; failed fallback retried every
    30 min.
-2. **Fallback scope.** HA's `persistent_notification` cannot target one user. Proposed: the fallback
-   is created once when at least one resolved recipient stays unreachable, and is visible to every
-   HA user.
-3. **Advisory digest with several advisories.** HA allows at most three buttons per notification,
+2. **Advisory digest with several advisories.** HA allows at most three buttons per notification,
    so a grouped advisory notification cannot carry feedback buttons for each item. Proposed: the
    grouped notification has no buttons, and feedback for each advisory remains possible from the
    Layer-8 surface.
-4. **Clearing a delivered advisory when it closes.** Proposed: yes, silently through its tag (no
+3. **Clearing a delivered advisory when it closes.** Proposed: yes, silently through its tag (no
    message), so its feedback buttons do not stay on the phone after the request is withdrawn.
-5. **Availability family.** Proposed: every availability notice bound to a `safety.*` Reaction is
+4. **Availability family.** Proposed: every availability notice bound to a `safety.*` Reaction is
    `safety`, not only `manual_hold_active` (C3 named that case).
-6. **Household consent declined by one of several authorities.** Today one `decline` closes the
-   request for the household; other authorities can still grant from the Layer-8 surface. To be
-   decided whether a decline should close the request or only record that person's answer.
-7. **HA user in mobile action events.** Verify in HA's documentation that
+5. **HA user in mobile action events.** Verify in HA's documentation that
    `mobile_app_notification_action` carries the authenticated HA user of the device, which the
    ingress requires.
 

@@ -2299,6 +2299,7 @@ class ReactionAdvisoryOccurrence:
     actuator_id: str | None
     controlled_channel: str | None
     closed_reason: Literal["activation_ended", "authorization_disabled", "superseded"] | None
+    response_request_id: str | None   # the feedback request id on "opened"; None on "closed"
     occurred_at: EvidenceInstant
 ```
 
@@ -2392,11 +2393,12 @@ gives Layer 6 one occurrence per phase:
 class ConsentRequestOccurrence:
     operation_id: str                 # sha256 of "reaction.consent.operation.v1:" + RFC-8785
                                       # [reaction_id, configuration_generation_id,
-                                      #  authority_transition_id, phase]
-    phase: Literal["opened", "closed"]
+                                      #  authority_transition_id, phase, response_request_id]
+    phase: Literal["opened", "reissued", "closed"]
     reaction_id: str
     configuration_generation_id: str
     authority_transition_id: str      # the transition that opened the request
+    response_request_id: str | None   # the ingress request id; None exactly for "closed"
     reaction_descriptor_id: str
     subject: Location
     closed_reason: Literal["granted", "declined", "authorization_disabled", "superseded"] | None
@@ -2410,14 +2412,22 @@ response owner `layer5.household_consent` declares a request to Layer 0's respon
 `actor_ref` is currently in `HouseholdConsentAuthority`: `grant` appends exactly the authority
 transition of `set_reaction_household_consent` against the opening authority transition as its
 precondition, using the ingress id as the operation id; `decline` changes no authority and closes
-the request with `declined`. A stale precondition, a removed resident or a closed request changes
-nothing. The same `set_reaction_household_consent` command from the Layer-8 surface remains
+the request with `declined` for the whole household, so the first answer from any authorized
+resident decides and every other authority's notification is cleared. A stale precondition, a
+removed resident or a closed request changes nothing.
+
+Ingress declarations do not survive a restart, while a Reaction awaiting consent does. At each
+process start, for every Reaction still in `authorized_awaiting_household_consent`, the owner
+declares a fresh request and gives Layer 6 one `reissued` occurrence carrying the new
+`response_request_id`; Layer 6 replaces the earlier notification of the same request through its
+item tag, so no button with a withdrawn id stays usable. The same `set_reaction_household_consent` command from the Layer-8 surface remains
 available; both paths share one authority rule.
 
 #### Advisory feedback
 
-Each delivered `ReactionAdvisoryOccurrence(opened)` is actionable for feedback only: the owner
-`layer5.advisory_feedback` declares a request with actions `done`, `dismiss` and `not_useful`, actor
+Each `ReactionAdvisoryOccurrence(opened)` is actionable for feedback only: before giving it to
+Layer 6, the owner `layer5.advisory_feedback` declares a request, whose id the occurrence carries
+as `response_request_id`, with actions `done`, `dismiss` and `not_useful`, actor
 category `resident`, open for as long as the activation lasts and withdrawn at its `closed` phase;
 there is no separate feedback window. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
 (`advisory_operation_id`, `action`, `actor_category`, `recorded_at`), once per advisory and
@@ -2690,7 +2700,10 @@ in canonical order. It never maps one of these blocks to a learning-evidence rea
 concurrent cause. It constructs that tuple only through Layer 3's frozen pure
 `canonicalize_suppression_reasons()` helper; Layer 5 does not choose its own sort order. Layer 5 never
 renders, persists or delivers an availability event. The immutable staged
-`AvailabilityPublicationIndex` is queried only by Layer 6's `AvailabilityEpisodeTracker`. Layer 5
+`AvailabilityPublicationIndex` is queried only by Layer 6's `AvailabilityEpisodeTracker`. Each
+availability binding Layer 5 declares names the `automation_scope_id` (the configured Reaction),
+its `reaction_descriptor_id`, and whether it is enabled and resident-visible; Layer 6 derives the
+notification family from the descriptor (Layer 6 §6.1). Layer 5
 sends every typed occurrence to that tracker and never selects resident-visible bindings itself; Layer
 6 alone owns the resident-visible `automation.availability` event/delivery path.
 Before it executes any command, Layer 5 performs the complete member-by-member admissibility pass
@@ -3716,7 +3729,8 @@ descriptor-specific alias of a common authority command is registered.
 
 `HouseholdConsentAuthority` is a Layer-8 household access binding, separate from a trajectory
 prerequisite generation and from the consent value itself. It contains one or more explicitly assigned
-authenticated resident actor references. Only an actor carrying this explicit resident authorization
+authenticated resident actor references; each reference is a Home Assistant user id (`ha_user_id`),
+the identity Layer 0's response ingress verifies (Layer 0 §5.1.3) and Layer 6 matches to recipients. Only an actor carrying this explicit resident authorization
 may issue `set_reaction_household_consent`; an administrator role alone is insufficient, although one person may hold both
 roles through separate grants. A configuration-generation successor starts with consent disabled and
 never inherits it from its predecessor. Retention at authority removal is an explicit administrative
@@ -4126,7 +4140,10 @@ profile or learner, and declares `requires_household_consent=True`,
 - A consent request answered `grant` from a notification by a resident in
   `HouseholdConsentAuthority` appends the same authority transition as the command and closes the
   request `granted`; the same answer from a resident not in the authority, after the request
-  closed, or with a stale opening transition changes nothing. `decline` changes no authority. An
+  closed, or with a stale opening transition changes nothing. `decline` changes no authority and
+  closes the request for every authority. After a restart, a Reaction still awaiting consent
+  produces one `reissued` occurrence with a new `response_request_id`; a button carrying the old
+  id is rejected by the ingress. An
   advisory answered `not_useful` appends one `reaction.advisory_feedback` and nothing else; a
   second identical answer appends none; an unanswered advisory records nothing.
 - A weather-protection activation that secures two channels and skips one held channel produces

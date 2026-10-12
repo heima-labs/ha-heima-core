@@ -3398,8 +3398,8 @@ slow composition phase; no Layer-3/Layer-4/Layer-5 runtime callback or policy qu
 An exact key
 `(suppression_owner_id, suppression_scope_id, exact subject)` resolves to a non-empty, canonical tuple
 of explicit `AvailabilityPublicationBinding`s, ordered by `automation_scope_id`. Each binding names
-one `automation_scope_id` and declares whether that configured automation is enabled and
-resident-visible. The same key may intentionally fan out to several distinct automations; staging
+one `automation_scope_id` and its `reaction_descriptor_id`, and declares whether that configured
+automation is enabled and resident-visible. The same key may intentionally fan out to several distinct automations; staging
 rejects a duplicate `automation_scope_id` for one key, because it would create indistinguishable
 duplicate delivery/audit work. There is no wildcard, live policy query, or Layer-3-to-Layer-5 callback.
 
