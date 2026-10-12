@@ -277,7 +277,8 @@ adapter, type map, or runtime fallback, and every V3 producer must emit an appro
 
 Persistence appends every distinct event occurrence, including otherwise equal payloads. Narrow
 producer-owned operation-id protocols are exceptions: `manual_hold.lifecycle` retries are
-idempotent under Layer 0 §6.4, `reaction.follow_up` retries under §4.5,
+idempotent under Layer 0 §6.4, every Layer-6 notification kind (including `reaction.follow_up`
+and `automation.availability`) is appended once per `(notification_kind, operation_id)` under §4.5,
 and `actuator.target_lifecycle`, `actuator.correction` and
 `actuator.resident_control` deduplicate by their own stable event/edge ids
 under Layer 0 §4.2. None uses
@@ -1055,7 +1056,8 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   `fact_type`, a mandatory `Location`, and `OperationalEventValue` preserving its non-empty delivery
   key, allowed severity, non-empty title/message, and JSON-compatible context. It rejects a V2/legacy
   event at the V3 boundary rather than translating it. Two distinct equal event occurrences are both retained, while exact operation-id retries of
-  `manual_hold.lifecycle` and `reaction.follow_up` retain one fact and conflicting retries fail.
+  `manual_hold.lifecycle` and of any notification kind's `(notification_kind, operation_id)`
+  (Layer 0 §4.5) retain one fact and conflicting retries fail.
   A Layer-6 delivery suppression based on a shared `notification_key` never removes an audit
   record (§3.1; Layer 0 §4.5/§6.4).
 - A `HoldLifecycleValue` carrying two facet expectation sources is copied and

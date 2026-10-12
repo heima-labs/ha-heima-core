@@ -675,7 +675,7 @@ validated start criteria first become true (or its one-shot trigger fires),
 and retains it through re-evaluations and timed steps of that sequence.
 The id is live only during that process activation but is collision-resistant
 across process restarts as well: a new run must never deliberately reuse a
-prior id under the same Reaction/generation. The durable follow-up outbox
+prior id under the same Reaction/generation. The durable follow-up records in Layer 0's notification outbox
 therefore cannot mistake a new post-restart activation for a retry of an old
 channel boundary (§6.0). No live activation is restored from that durable id.
 V3 permits at most one active activation per configured Reaction generation:

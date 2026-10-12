@@ -716,7 +716,7 @@ inline event fact. It enters the short-term buffer and ordinary ordered
 durable queue immediately, independent of background disk latency (§6.4).
 
 **Stored-data boundary.** These tiers, the current index, `PreviousCycleSnapshot`, durable retry queue,
-recovery-target snapshot, and checkpoint retain only complete `HouseFact`s or
+notification delivery outbox, recovery-target snapshot, and checkpoint retain only complete `HouseFact`s or
 their explicitly declared normalized projections. Every such non-fact projection is a Layer-1
 `PersistedProjection`: copied JSON-compatible data, maximum nesting depth 2, finite numbers, and at
 most 8 KiB after canonical UTF-8 serialization. The audit queue retains
@@ -1204,7 +1204,6 @@ class NotificationDeliveryRecord:
     operation_id: str                 # stable per notification; unique with notification_kind
     phase: NotificationDeliveryPhase
     intent: PersistedProjection | None    # "prepared" only; producer-owned typed intent
-    event_fact_ref: str | None        # the committed audit event fact, from "ready" on
     notification_key: str | None      # delivery deduplication key, from "ready" on
     created_at: EvidenceInstant
     updated_at: EvidenceInstant
@@ -1219,7 +1218,9 @@ class NotificationDeliveryRecord:
 - **`delivered`** records the acknowledged delivery attempt; **`retired`** ends the record, either
   after delivery or, for a prepared record, when its boundary needs no notice.
 
-`(notification_kind, operation_id)` is the unique key. An exact retry of a transition returns the
+`(notification_kind, operation_id)` is the unique key of the record and also the durable identity
+of its audit event fact (`fact_type=notification_kind`), so an event fact needs no separate
+reference and is appended at most once per operation. An exact retry of a transition returns the
 existing record; a different payload under the same key is rejected. A `ready` record is retained,
 whatever ordinary fact retention says, until it is delivered or retired. Delivery is recoverable
 at-least-once, not exactly-once display: a crash after the destination accepted a message but before
@@ -1230,12 +1231,10 @@ best effort and is diagnosed; it never blocks an evaluation cycle, an `ApplyStep
 
 #### 4.5.1 Reaction follow-up preparation
 
-Layer 0 provides the durable outbox, operation-id uniqueness, atomic fact/intent transaction,
-and recovery read mechanics in this section. Layer 6 must supply the typed
-`reaction.follow_up` adapter: it validates Layer-5 intent and occurrence payloads,
-renders the resident event, drives the outbox transitions, and retries delivery.
-These Layer-6 obligations are an interface required by this storage protocol;
-Layer 0 does not implement resident rendering or notification delivery.
+This kind adds the `prepared` phase and its bounded preparation wait to the common outbox
+mechanics above. Layer 6 must supply the typed `reaction.follow_up` adapter: it validates
+Layer-5 intent and occurrence payloads, renders the resident event, drives the outbox transitions,
+and retries delivery. Layer 0 does not implement resident rendering or notification delivery.
 
 The Layer-6 `reaction.follow_up` adapter uses the unified outbox (§4.5) with
 `notification_kind="reaction.follow_up"`, keyed by the Layer-5 per-boundary,
@@ -1330,8 +1329,8 @@ canonical UTF-8 bytes of the queued items. The budget is recomputed only when a 
 snapshot is published, never in the evaluation path; a lower recomputed budget applies to the
 next overflow check and never discards an item retroactively merely because the budget changed.
 The 32 MiB floor and the 5% coefficient are operational defaults, revisable from evidence in a
-later release. The follow-up intent outbox (§4.5) is a separate durable store and is not part of
-this queue.
+later release. The notification delivery outbox (§4.5) is a separate durable store and is not part
+of this queue.
 
 When accepting a new item would exceed the budget, Layer 0 frees space in this order and never
 blocks admission, a cycle or an HA command:
@@ -2877,8 +2876,8 @@ concrete checklist rather than re-deriving one:
   overlap during staging. An overlap with differing owner or emission kind — including a Layer-2 state
   claim that reaches Layer 0's reserved manual-hold event namespace — is rejected without an
   evaluation-path lookup; an equivalent-owner/equivalent-kind overlap is accepted. Two distinct event occurrences with identical payload are appended twice; exact retries
-  under the reserved `manual_hold.lifecycle` and `reaction.follow_up` operation ids append
-  once. Event facts have no `FactIdentityKey`/latest-value entry and are rejected when
+  under the reserved `manual_hold.lifecycle` operation ids and every notification kind's
+  `(notification_kind, operation_id)` key (§4.5) append once. Event facts have no `FactIdentityKey`/latest-value entry and are rejected when
   requested as current state or via `FactRef.previous_cycle` (§4).
 - A candidate removing a Sensor used by a Fusion input, a Layer-3 binding, a
   Layer-4 resolver and a Layer-5 guard yields one impact record listing all
