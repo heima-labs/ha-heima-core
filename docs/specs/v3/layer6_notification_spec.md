@@ -14,7 +14,8 @@ Layer 5's typed occurrences (§6.0). It implements the Layer-6 decisions C1–C6
 
 ## 1. Purpose
 
-Layer 6 is the only path by which Heima tells a person something. It turns closed typed
+Layer 6 is the only path by which Heima pushes a notification to a person; configuration, history
+and diagnostics surfaces belong to Layer 8. It turns closed typed
 occurrences from Layers 0, 3, 4 and 5 into audited operational event facts and delivers them to the
 right people through Home Assistant, at the right time, in their language, with buttons when an
 answer is possible.
@@ -54,8 +55,8 @@ Assistant state for a decision, or writes a fact type it does not own.
   fact holds closed fields and identifiers only; text is rendered at delivery (Layer 1 §3.1).
 - **Never silent by misconfiguration.** A notification whose audience has no reachable recipient
   falls back to `persistent_notification`. A notification is only ever not delivered by an
-  explicit rule of this spec (closed item, expired item, family behavior, deduplication), and every
-  such case is counted in diagnostics.
+  explicit rule of this spec (closed item, expired item, family behavior), and every such case is
+  counted in diagnostics.
 - **Home Assistant infrastructure first.** Delivery uses `notify.*` services, mobile notification
   `tag`s, `clear_notification`, the `mobile_app_notification_action` event, `persistent_notification`
   and one `heima_notification` bus event. Heima adds no own push channel, scheduler UI or user store.
@@ -200,8 +201,10 @@ treats quiet hours as not active, so nothing is held indefinitely.
 - Only `proposal.review_pending` is grouped. A proposal is open from its latest `created` or
   `approvable_again` phase until a later `closed` (Layer 5 §6.0).
 - The first open, undelivered proposal starts a core-fixed 30-minute collection window (one
-  elapsed `AtJob`). When it fires, one notification per administrator ("N new proposals to
-  review", link to the Layer-8 panel) covers every proposal still open and undelivered.
+  elapsed `AtJob`). When it fires, one notification per administrator ("N proposals awaiting
+  review, M new", link to the Layer-8 panel) counts every proposal still open and marks the
+  undelivered ones as delivered. Because a digest replaces the previous one, it always counts
+  every open proposal, not only the new ones.
 - At most one proposal digest per recipient every 4 hours; proposals arriving after a digest wait
   for the next allowed one. A digest due during quiet hours is sent when they end.
 - All digests use one fixed tag per audience, so a new digest replaces the previous one on the
@@ -241,7 +244,7 @@ A recipient is reached when at least one of its endpoints accepted the call.
 
 Failed endpoint calls are retried with a core-fixed growing schedule (§14, point 1). When every
 endpoint of every resolved recipient has failed after the last retry, or when the audience has no
-reachable recipient, Layer 6 creates a `persistent_notification` with `notification_id` equal to the
+reachable recipient (partial reachability: §14, point 2), Layer 6 creates a `persistent_notification` with `notification_id` equal to the
 item tag. An actionable phase delivered only through the fallback carries no buttons; it remains
 answerable from the Layer-8 surface through the same ingress (C2). The record becomes `delivered`
 once every resolved recipient was reached or the fallback accepted. A failed fallback keeps the
@@ -257,12 +260,15 @@ The item tag identifies one notified item across its phases:
 | `recovery.confirmation_request` | `request_id` |
 | `reaction.consent_request` | `reaction_id`, `configuration_generation_id`, `authority_transition_id` |
 | `proposal.review_pending` | one fixed digest tag per audience |
+| `automation.availability` | `automation_scope_id`, subject |
 | other kinds | the record's `notification_key` |
 
 The tag is `"heima:" + notification_kind + ":" + sha256(RFC-8785 tag source)[:32]`. A clearing
 phase (§4.1) sends `clear_notification` on the item tag to every recipient that received the
 opening phase and dismisses the fallback `persistent_notification`; it shows no new message.
-Clearing is best effort and never changes the item's state.
+Clearing is best effort and never changes the item's state. Because successive phases of one item
+share its tag, the phone always shows only the item's latest phase: an automation that is blocked,
+restored and blocked again within minutes leaves one notification showing its current state.
 
 ### 7.5 Retirement without delivery
 
@@ -271,19 +277,22 @@ A `ready` record retires undelivered only when:
 - its item closed before delivery (advisory, proposal, recovery confirmation, consent request);
 - its item expired (a recovery request past `expires_at`);
 - its family is silent during quiet hours (§6.2);
-- it is a duplicate under §7.6;
 - it is a pre-restart advisory without a closing phase (Layer 5 §6.0).
 
 The audit fact always remains. Each retirement increments a diagnostic counter by kind and cause.
 
-### 7.6 Notification keys and deduplication
+### 7.6 Notification keys and repeat suppression
 
-`notification_key` is fixed per kind: `reaction.follow_up` uses `"reaction.follow_up:" +
-operation_id` (Layer 5 §6.0); `automation.availability` uses the run identity and the exact
-`(automation_scope_id, subject, reasons)` episode (Layer 3 §6.3.1); every other kind uses
-`notification_kind + ":" + operation_id`. A record whose key was already delivered to the same
-recipient within the core deduplication window is retired undelivered for that recipient
-(§14, point 2). The key is never a fact identity.
+Every kind uses `notification_key = notification_kind + ":" + operation_id`; for
+`reaction.follow_up` this is exactly the key of Layer 5 §6.0. The availability adapter derives its
+`operation_id` as SHA-256 of `"automation.availability.operation.v1:"` + RFC-8785
+`[run_id, automation_scope_id, subject_key, reasons, transition, episode_sequence]`, where `run_id`
+is the tracker's fresh per-process identity and `episode_sequence` counts the episodes of that key
+in the run (Layer 3 §6.3.1). Retries within one run keep the key; a restart creates a new one.
+
+There is no time-based deduplication window: a notification is never delayed or dropped because a
+similar one was sent recently. Repeats are prevented by the outbox's per-operation uniqueness and,
+on the phone, by the item tag (§7.4). The key is never a fact identity.
 
 ### 7.7 Responses
 
@@ -400,8 +409,8 @@ are routed with the new recipients.
 
 ## 11. Restart and recovery
 
-- The scheduler is rebuilt from the outbox: every `ready` record is scheduled again (at-least-once
-  delivery; a repeat on the phone is replaced through its tag).
+- The scheduler is rebuilt from the outbox: every `ready` record is scheduled again unless §7.5
+  retires it (at-least-once delivery; a repeat on the phone is replaced through its tag).
 - Follow-up intents are recovered by Layer 0 §4.5.1.
 - Pre-restart advisories without a closing phase retire undelivered.
 - Recovery confirmations invalidated by the restart arrive as `closed` occurrences from Layer 0.
@@ -436,12 +445,17 @@ Before approval these must be applied as a reviewed CA4 item:
 - **U3 — Layer-6 generation contents.** Layer 0 §4.7 names only the availability publication
   bindings as Layer-6 configuration; it must also name recipients and family options, with no
   dependents.
+- **U4 — Consent authority identities.** Layer 5 §7.1.1 must state that each
+  `HouseholdConsentAuthority` actor reference is an HA user id, the identity Layer 0's ingress
+  verifies, so §5.2 can derive `consent_authorities` from recipients' `ha_user_id`.
 
 ## 14. Open points for the developer
 
 1. **Retry schedule.** Proposed: 30 s, 2 min, 10 min, then fallback; failed fallback retried every
    30 min.
-2. **Deduplication window.** Proposed: 10 minutes per recipient and `notification_key`.
+2. **Fallback scope.** HA's `persistent_notification` cannot target one user. Proposed: the fallback
+   is created once when at least one resolved recipient stays unreachable, and is visible to every
+   HA user.
 3. **Advisory digest with several advisories.** HA allows at most three buttons per notification,
    so a grouped advisory notification cannot carry feedback buttons for each item. Proposed: the
    grouped notification has no buttons, and feedback for each advisory remains possible from the
@@ -450,6 +464,12 @@ Before approval these must be applied as a reviewed CA4 item:
    message), so its feedback buttons do not stay on the phone after the request is withdrawn.
 5. **Availability family.** Proposed: every availability notice bound to a `safety.*` Reaction is
    `safety`, not only `manual_hold_active` (C3 named that case).
+6. **Household consent declined by one of several authorities.** Today one `decline` closes the
+   request for the household; other authorities can still grant from the Layer-8 surface. To be
+   decided whether a decline should close the request or only record that person's answer.
+7. **HA user in mobile action events.** Verify in HA's documentation that
+   `mobile_app_notification_action` carries the authenticated HA user of the device, which the
+   ingress requires.
 
 ## 15. Initial acceptance criteria
 
