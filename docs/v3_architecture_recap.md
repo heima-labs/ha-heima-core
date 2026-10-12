@@ -646,7 +646,10 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
 One pipeline handles every outbound notification — operational events (a reaction fired, a security
 condition, a semantic-claim transition) and review items (a new learned proposal, N new automation
 suggestions) alike — instead of one sophisticated, configurable path for the former and a separate,
-unconfigurable direct-call path for the latter. Answers to actionable notifications return through
+unconfigurable direct-call path for the latter. A Reaction under trial (`notification_only`) never
+notifies residents, only the administrator preview; once authorized, a member configured as
+advice (for example opening a manual window) produces one `reaction.advisory` per activation
+instead of a command. Answers to actionable notifications return through
 one authenticated Layer-0 response ingress that routes a verified response to the request's
 registered owner (initially the power-recovery confirmation); Layer 6 only carries them.
 

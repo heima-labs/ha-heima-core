@@ -478,6 +478,7 @@ class RegisteredReactionDescriptor:
     hold_release_mode: Literal["fixed_duration", "next_reaction_step"]
     safe_direction_intents: frozenset[str]  # intents moving toward the safe physical state (§3.2)
     low_risk_intents: Mapping[str, str]     # intent -> registered rationale for no required guard (§3.2)
+    advisory_intents: frozenset[str]        # intents a member may deliver as resident advice (§3.2)
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
@@ -817,6 +818,27 @@ they never describe an action that reached this phase. An invalid configuration,
 descriptor/Actuator incompatibility found at staging or proposal review is instead a typed staging or
 review diagnostic, never a runtime availability occurrence.
 
+#### Member delivery: command or advice
+
+Every bundle member declares `delivery`: `command` (the default) produces the ordinary `ApplyStep`;
+`advice` produces a resident-facing suggestion instead, through Layer 6, and never an
+`ApplyStep`. An advice member is legal only for an intent in the descriptor version's
+`advisory_intents`. It may name an Actuator the administrator prefers to leave to the resident, or,
+for an opening without an Actuator, only an `opening_id` for which `opening_faces_exterior` holds
+(Layer 1 §7); a command member always needs an Actuator. Advice members pass the same staging,
+trigger, conditions, envelope and guards as command members, but no hold, command-ownership,
+physical-state or arbitration gate, because they move nothing. Initial-V3 `advisory_intents` are
+`open_for_exchange` and `close_to_retain` (`environment.external_exchange`) and `increase_shading`
+and `decrease_shading` (`environment.solar_shading`); every other Initial-V3 descriptor declares
+none.
+
+**Delivery depends on authority, not only on the member.** In `notification_only` a Reaction
+issues no command and no resident-facing notification: its evaluations feed only the
+administrator's read-only preview. Advice is delivered once the Reaction is administratively
+authorized; household consent gates only command members, because advice moves nothing. Each
+eligible advice member produces one `ReactionAdvisoryOccurrence` per activation (§6.0), not one per
+evaluation, and no closing "no longer needed" notice.
+
 #### Program families
 
 A **program family** is a core-owned, versioned set of activation, continuity, exit and restart
@@ -1098,8 +1120,8 @@ An accepted proposal does not become automatic merely because the evidence is st
 a `ConfiguredReaction` in `notification_only` mode. Enabling automatic action is a separate authenticated
 transition that revalidates its current configuration generation against the current registry generation,
 Actuator inventory, Topology and guard profile; it does not rewrite or restage semantic configuration.
-A missing compatible endpoint remains `notification_only` where the descriptor permits it; a descriptor
-requiring an endpoint is rejected.
+A member without a compatible endpoint can only be an advice member where the descriptor lists
+its intent in `advisory_intents` (§3.2); otherwise staging rejects it.
 
 Layer 3 can refresh evidence for the same review item but cannot overwrite its review status, mode,
 action scope, guard profile, or `RelationProfileRef`. An incompatible descriptor or profile version requires Layer-5 selective
@@ -2249,6 +2271,37 @@ both its bounded future-step identity contract and its provable normal-exit
 contract; otherwise the configured channel uses `fixed_duration`. A descriptor
 with no normal-exit contract cannot infer one
 from the completion of an individual command.
+
+#### Resident advisory occurrence
+
+An eligible advice member (§3.2) gives Layer 6 one typed occurrence; Layer 6 alone renders it,
+appends the `reaction.advisory` event fact and its delivery record in the unified outbox (Layer 0
+§4.5), and delivers it.
+
+```python
+@dataclass(frozen=True)
+class ReactionAdvisoryOccurrence:
+    operation_id: str                 # sha256 of "reaction.advisory.operation.v1:" + RFC-8785
+                                      # [reaction_id, configuration_generation_id,
+                                      #  reaction_activation_id, member_index]
+    reaction_id: str
+    configuration_generation_id: str
+    reaction_activation_id: str
+    snapshot_id: str
+    subject: Location
+    member_index: int
+    action_intent: str
+    objective_id: str | None          # the configuration's objective, when it has one
+    opening_id: str | None
+    actuator_id: str | None
+    controlled_channel: str | None
+    occurred_at: EvidenceInstant
+```
+
+The operation id makes the advice at most once per activation and member, across retries and
+re-evaluations. The occurrence carries only these closed fields; Layer 6 owns the text, severity
+`info`, family and quiet-hours behavior. Revocation or a configuration successor stops further
+advice like any future work; an advice already delivered is not withdrawn.
 
 #### Resident follow-up operational event
 
@@ -3888,7 +3941,10 @@ candidate. Valid examples:
   context cells of its eligible `RoutineBundleFrequencyCell`s.
 
 No example requires a placeholder outcome unit, a fictitious measured effect, an invented relation
-profile or a guard outside its registered contract.
+profile or a guard outside its registered contract. Advice members (§3.2) are available only for
+`environment.external_exchange` and `environment.solar_shading` intents; for example, an
+external-exchange Reaction on a manual window has one `open_for_exchange` advice member naming only
+`opening_id` and produces a `reaction.advisory` instead of a command.
 
 ### 7.4 Initial-V3 direct descriptor: `safety.weather_protection`
 
@@ -3944,6 +4000,13 @@ profile or learner, and declares `requires_household_consent=True`,
 
 ## 8. Initial acceptance criteria
 
+- A Reaction in `notification_only` produces no `ApplyStep` and no resident notification, only the
+  administrator preview. Once authorized, an external-exchange advice member on a manual window
+  (`opening_id` facing outside, no Actuator) produces exactly one `ReactionAdvisoryOccurrence` per
+  activation, even across repeated evaluations, and no `ApplyStep`; household consent is not needed
+  for it, while a command member in the same bundle still needs consent. An advice member for an
+  intent outside `advisory_intents`, or without an Actuator and without an exterior-facing opening,
+  is rejected at staging.
 - Arbitration: wind and rain `safety.weather_protection` Reactions that both secure one window in
   one cycle produce one `ApplyStep` from the canonically first Reaction and one
   `coalesced_identical_target` audit for the other; a weather-protection close and an

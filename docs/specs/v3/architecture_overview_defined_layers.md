@@ -521,7 +521,8 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
 - **Layer 6:** Full `AvailabilityEpisodeTracker` implementation, composition/publication of the
   `AvailabilityPublicationGeneration`, and the `reaction.follow_up` adapter that validates typed
   Layer-5 intents and occurrences, renders resident text, drives the Layer-0 unified notification
-  outbox and event-fact transaction for every notification it delivers, carries actionable
+  outbox and event-fact transaction for every notification it delivers (including the
+  `reaction.advisory` adapter for Layer-5 advice members), carries actionable
   responses to Layer 0's authenticated response ingress, and retries delivery. Its renderer must declare finite maximum UTF-8 lengths
   for title and message in every supported locale; Layer-5 staging needs those bounds to
   prove the complete follow-up fact fits Layer 1's depth-two/8 KiB limits.

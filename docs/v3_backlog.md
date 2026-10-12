@@ -5010,10 +5010,10 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | Severity | IDs | TODO | IN_PROGRESS | DONE | NOT_APPLICABLE |
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
-| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–65 | 0 | 0 | 35 | 0 |
+| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66 | 0 | 0 | 36 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63 | 0 | 0 | 24 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **65 findings** | **0** | **0** | **64** | **1** |
+| **Total** | **66 findings** | **0** | **0** | **65** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6133,6 +6133,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-66 — `notification_only` mixed trial mode with resident advice, and advice had no contract
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P1. **Origin:** Layer-6 obligations inventory (B1).
+
+**Problem.** `notification_only` meant both the pre-promotion trial (admin preview, no resident notice) and the permanent state of a policy without an endpoint that should advise residents; a manual-window suggestion had no legal member (every member needs an Actuator) and no typed occurrence for Layer 6; Layer 3 referred to an undefined "Layer-5/6 notification template".
+
+**Approved resolution (2026-10-12).** `notification_only` is only the trial mode: no command, no resident notice, admin preview. Members declare `delivery`: `command` or `advice`; an advice member is legal for a descriptor's `advisory_intents` (Initial V3: external exchange open/close, solar shading increase/decrease) and may name only an exterior-facing `opening_id` when there is no Actuator. Advice passes staging, trigger, envelope and guards but no hold/ownership/physical/arbitration gate, is delivered once the Reaction is administratively authorized (household consent gates only commands), and produces one typed `ReactionAdvisoryOccurrence` per activation and member; Layer 6 renders the new `reaction.advisory` event fact (Layer 0 claim reserved, Layer 1 approved type). See the [CA4-66 review](specs/v3/reviews/CA4-66.md); no V3 runtime test ran.
 
 #### CA4-65 — Layer 0 lacks the shared notification delivery and response foundations Layer 6 needs
 

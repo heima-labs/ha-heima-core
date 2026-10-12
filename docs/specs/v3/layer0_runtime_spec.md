@@ -581,6 +581,9 @@ owner_id="layer6.availability", emission_kind="event")` for the one Layer-6 avai
 adapter. Layer 3, Layer 4 and Layer 5 may emit only their typed transient suppression occurrence;
 none may claim or append this event fact directly. This makes the persistent owner, event semantics and
 delivery boundary unambiguous before any resident-visible availability path is enabled.
+The core likewise reserves `FactTypeClaim(fact_type_pattern="reaction.advisory",
+owner_id="layer6.reaction_advisory", emission_kind="event")` for the Layer-6 adapter of Layer 5's
+typed `ReactionAdvisoryOccurrence` (Layer 5 §6.0); Layer 5 never appends it.
 
 State-history and event-history reads are deliberately different. For a state fact, the query is the
 at-or-before-window-start record plus changes inside the window, as specified below. For an event fact,

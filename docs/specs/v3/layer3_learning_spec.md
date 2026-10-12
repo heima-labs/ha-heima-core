@@ -2208,8 +2208,8 @@ the weaker conditional claim supported by its `thermal_shading` profile. Indoor 
 only for an `admit_daylight` objective; it is not a proxy for glare.
 
 The state of an opening or cover is an observed physical fact, not the last Heima command. An exterior
-opening without an actuator remains eligible evidence: its approved policy can result in a notification
-for a resident, but not an unavailable command. Layer 3 itself neither chooses a target nor commands
+opening without an actuator remains eligible evidence: its approved policy can use an advice member
+(Layer 5 §3.2) that produces a resident-facing `reaction.advisory`, never an unavailable command. Layer 3 itself neither chooses a target nor commands
 HVAC, openings, shutters, or fans.
 
 No profile may invent a physical coefficient or airflow claim when the data cannot identify it.
@@ -3563,8 +3563,10 @@ class NumericOutcomeRequirement:
 
 @dataclass(frozen=True)
 class ActuationMemberCandidate:
-    actuator_id: str                  # one compatible registered endpoint owned by subject
-    controlled_channel: str           # one registered Layer-2 logical channel of that endpoint
+    delivery: Literal["command", "advice"]  # Layer 5 §3.2 member delivery
+    actuator_id: str | None           # one compatible registered endpoint owned by subject; None only
+                                      # for an advice member on an opening without an Actuator
+    controlled_channel: str | None    # one registered Layer-2 logical channel of that endpoint
     opening_id: str | None            # required, optional, or forbidden for this member
     action_intent: str                # closed ReactionDescriptor-owned semantic intent
     semantic_parameters: CanonicalJsonObject
@@ -3580,8 +3582,7 @@ class ReactionDescriptorCandidate:
     descriptor_parameters: CanonicalJsonObject
                                      # root-level closed schema selected by this descriptor/version
     actuation_bundle: tuple[ActuationMemberCandidate, ...]
-                                      # canonical order; non-empty except for a descriptor explicitly
-                                      # declared notification_only by Layer 5
+                                      # canonical order; non-empty; command or advice members
     required_guard_capabilities: frozenset[ReactionGuardCapabilityRef]
     operating_envelope: CanonicalEnvelope
 ```
@@ -3595,10 +3596,14 @@ and bounds, parameter schema/bounds, guard requirements, exact registered
 profile-output compatibility, and Layer-5 translation for each
 `(reaction_descriptor_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
 `open_for_exchange`, `close_to_retain`, `activate_extraction`, `adjust_extraction`,
-`stop_extraction` and `follow_comfort_trajectory`. Notification content belongs to the
-subsequent Layer-5/6 notification template, never to learner-provided text. An empty bundle is legal only for a
-descriptor explicitly declared `notification_only`; a descriptor requiring an endpoint rejects it during
-Layer-5 staging.
+`stop_extraction` and `follow_comfort_trajectory`. Resident-facing text belongs to Layer 6's rendering of
+the typed Layer-5 occurrences, never to learner-provided text. A bundle is never empty; a member
+without an endpoint is legal only as an advice member under Layer 5 §3.2.
+
+A `delivery="advice"` member is legal only for an intent in the descriptor's `advisory_intents`
+(Layer 5 §3.2); it may omit `actuator_id`/`controlled_channel` only when it names an `opening_id`
+that faces an exterior side, and it never becomes an `ApplyStep`. Its measured response, where
+learned, is the same profile evidence as for a commanded member.
 
 Only a member whose registered profile measures a numeric response to that
 member carries `NumericOutcomeRequirement`. Initial environmental-response
@@ -3652,7 +3657,8 @@ stand in for it.
 The candidate concerns exactly one descriptor-defined scope. The initial environmental and routine
 descriptors remain room-scoped, while `environment.planned_comfort_trajectory` accepts only the staged
 `ConditioningScope.location` (`room` or `casa`). A member that acts on an opening requires a
-Layer-1 Opening for which `opening_faces_exterior` holds (Layer 1 §7), owned by a room subject and an endpoint whose `opening_id` matches it. A member that
+Layer-1 Opening for which `opening_faces_exterior` holds (Layer 1 §7), owned by a room subject and an endpoint whose `opening_id` matches it (an advice member may name
+only the opening, Layer 5 §3.2). A member that
 acts on a room device, such as an extraction fan or light, forbids `opening_id` and requires endpoint
 ownership that matches its room subject. The HVAC trajectory member instead requires the one endpoint
 declared by its compatible `HvacTrajectoryBinding`; it has no `opening_id` and cannot derive an endpoint

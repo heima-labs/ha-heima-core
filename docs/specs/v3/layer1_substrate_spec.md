@@ -320,6 +320,10 @@ context, then appends the event fact together with its `ready` delivery record i
 notification outbox (Layer 0 §4.5); neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
 event. Layer 0 reserves its exclusive event claim. Every notification Layer 6 delivers follows this
 same audit-fact-plus-outbox rule.
+`reaction.advisory` is one approved V3 event fact type: a resident-facing suggestion that a
+configured Reaction produced instead of a command (Layer 5 §6.0). Its sole producer is the Layer-6
+advisory adapter, which validates Layer 5's typed `ReactionAdvisoryOccurrence` and maps its fixed
+fields to `context` under the same rule.
 
 ---
 
