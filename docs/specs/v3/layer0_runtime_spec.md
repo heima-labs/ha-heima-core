@@ -1225,7 +1225,7 @@ class NotificationDeliveryRecord:
 
 - **`prepared`** exists only for a kind whose producer must record a boundary before an action
   advances; in Initial V3 only `reaction.follow_up` (below). It holds a bounded producer-owned intent.
-- **`ready`** is written in one durable transaction together with the notification's rendered audit
+- **`ready`** is written in one durable transaction together with the notification's audit
   event fact (Layer 1 §3.1): either both commit or neither. Every delivered notification therefore
   has exactly one audit fact and one ready record, and a crash can never leave an event without its
   delivery record or the reverse.
@@ -1251,7 +1251,7 @@ best effort and is diagnosed; it never blocks an evaluation cycle, an `ApplyStep
 
 This kind adds the `prepared` phase and its bounded preparation wait to the common outbox
 mechanics above. Layer 6 must supply the typed `reaction.follow_up` adapter: it validates
-Layer-5 intent and occurrence payloads, renders the resident event, drives the outbox transitions,
+Layer-5 intent and occurrence payloads, builds the event fact, drives the outbox transitions,
 and retries delivery. Layer 0 does not implement resident rendering or notification delivery.
 
 The Layer-6 `reaction.follow_up` adapter uses the unified outbox (§4.5) with
@@ -1281,7 +1281,7 @@ notice guarantee. The per-channel notification key prevents delivery
 deduplication from merging different channels.
 
 When Layer 5 supplies the final typed occurrence, Layer 6 validates it against the prepared
-intent and renders the Layer-1 `OperationalEventValue`. One durable transaction appends the
+intent and builds the Layer-1 `OperationalEventValue` (no stored text, Layer 1 §3.1). One durable transaction appends the
 event fact and changes that intent to `ready`; a failed transaction leaves it `prepared`, never
 a half-persisted event. The durable key `(fact_type="reaction.follow_up", operation_id)`
 allows one identical event on retry and rejects a different canonical payload; ordinary event
@@ -2474,7 +2474,7 @@ class RecoveryConfirmationOccurrence:
 
 Layer 5 supplies the subject and the bounded proposed-facet projection together with the proposal;
 Layer 0 adds no Actuator lookup. `terminal_state` is `None` exactly for `opened`. The occurrence
-carries no actor identity, raw HA state or service data. Layer 6 alone renders it as the
+carries no actor identity, raw HA state or service data. Layer 6 alone appends it as the
 `recovery.confirmation_request` event fact with its delivery record in the unified outbox (§4.5);
 the operation id appends each phase at most once. A delivery failure does not change the request:
 it still expires at `expires_at`, and a response arriving only through the ingress can approve it.
@@ -2917,7 +2917,7 @@ concrete checklist rather than re-deriving one:
   core deadline durably prepares one bounded intent before its step or normal exit
   advances; an exact retry returns the same id, while
   a changed payload under that id fails. An atomic transaction writes the one Layer-6
-  rendered event fact and marks the intent ready. A crash before the outcome recovers an
+  event fact and marks the intent ready. A crash before the outcome recovers an
   `interrupted_before_outcome` warning without an Actuator call; a crash after event commit
   cannot append another fact. An undelivered ready payload survives ordinary fact retention
   until delivery acknowledgement; lost acknowledgement permits a repeat delivery. Failed

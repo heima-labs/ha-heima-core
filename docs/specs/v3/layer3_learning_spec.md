@@ -3416,8 +3416,8 @@ uses the staged index itself; Layer 3, Layer 4 and Layer 5 never query that inde
 `abstaining` or `reason_changed` occurrence, each currently enabled resident-visible binding that has
 not already received that episode is delivered independently. On `restored`, Layer 6 delivers only to
 bindings recorded as notified and still active for the episode. It groups delivery by
-`(automation_scope_id, subject, reasons)` and, only there, renders the standard
-`automation.availability` event, derives its notification key/severity/title/message and persists its
+`(automation_scope_id, subject, reasons)` and, only there, builds the standard
+`automation.availability` event, derives its notification key/severity and persists its
 Layer-1 audit fact with its delivery record in Layer 0's unified notification outbox (§4.5). Delivery configuration may choose channel and grouping duration, but may not turn
 repeated per-cycle diagnostics into resident-facing spam or suppress the first user-visible failed
 automation without an explicit higher-level policy decision.

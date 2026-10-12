@@ -4,9 +4,9 @@ These are complete value/projection payloads, not complete surrounding `HouseFac
 
 | Case | `HoldLifecycleValue` bytes/depth | `ReactionFollowUpIntent` bytes/depth | `OperationalEventValue` bytes/depth |
 |---|---:|---:|---:|
-| light | 1827 / 2 | 707 / 2 | 909 / 2 |
-| valve (future descriptor shape only) | 1289 / 2 | 638 / 2 | 804 / 2 |
-| hvac (Initial V3) | 1345 / 2 | 681 / 2 | 862 / 2 |
+| light | 1827 / 2 | 707 / 2 | 815 / 2 |
+| valve (future descriptor shape only) | 1289 / 2 | 638 / 2 | 710 / 2 |
+| hvac (Initial V3) | 1345 / 2 | 681 / 2 | 770 / 2 |
 
 The format check rejects a nested `context.expected_facets`, a composite facet inserted directly into a depth-two map, noncanonical facet text, and any staged adapter/Reaction combination whose **worst-case** complete inline audit or follow-up payload exceeds depth 2 or 8 KiB. These small examples do not replace that staging proof. The value-level size excludes `HouseFact` metadata and outbox storage indexes.
 
@@ -27,7 +27,7 @@ Persisted `ReactionFollowUpIntent`:
 `OperationalEventValue` for `reaction.follow_up`:
 
 ```json
-{"context":{"actuator_id":"light.living_1","configuration_generation_id":"gen-7","controlled_channel":"light_state","expected.brightness":"0.7","expected.color":"[255,128,0]","expected.power":"true","hold_id":"hold-light-01","later_step_remains":false,"observation_available":true,"observation_epoch_id":"epoch-9","observed.brightness":"0.4","observed.color":"[255,80,0]","observed.power":"false","observed_at":"2026-10-03T20:00:00.000000+00:00","operation_id":"8ab6a81f49c79d9b268d4de9a3dcfef8f7cf60f5431b40178d2bf6b66c2cc3bc","outcome":"ended_without_final_target","path":"normal_exit","planned_step_id":null,"reaction_activation_id":"activation-42","reaction_id":"presence_simulation"},"message":"light remains different from the confirmed target","notification_key":"reaction.follow_up:8ab6a81f49c79d9b268d4de9a3dcfef8f7cf60f5431b40178d2bf6b66c2cc3bc","severity":"warning","title":"light needs attention"}
+{"context":{"actuator_id":"light.living_1","configuration_generation_id":"gen-7","controlled_channel":"light_state","expected.brightness":"0.7","expected.color":"[255,128,0]","expected.power":"true","hold_id":"hold-light-01","later_step_remains":false,"observation_available":true,"observation_epoch_id":"epoch-9","observed.brightness":"0.4","observed.color":"[255,80,0]","observed.power":"false","observed_at":"2026-10-03T20:00:00.000000+00:00","operation_id":"8ab6a81f49c79d9b268d4de9a3dcfef8f7cf60f5431b40178d2bf6b66c2cc3bc","outcome":"ended_without_final_target","path":"normal_exit","planned_step_id":null,"reaction_activation_id":"activation-42","reaction_id":"presence_simulation"},"notification_key":"reaction.follow_up:8ab6a81f49c79d9b268d4de9a3dcfef8f7cf60f5431b40178d2bf6b66c2cc3bc","severity":"warning"}
 ```
 
 ## valve
@@ -50,7 +50,7 @@ Persisted `ReactionFollowUpIntent`:
 `OperationalEventValue` for `reaction.follow_up`:
 
 ```json
-{"context":{"actuator_id":"valve.garden_1","configuration_generation_id":"gen-3","controlled_channel":"valve_position","expected.position":"1","hold_id":"hold-valve-01","later_step_remains":false,"observation_available":true,"observation_epoch_id":"epoch-9","observed.position":"0.5","observed_at":"2026-10-03T20:00:00.000000+00:00","operation_id":"29185c11d5713df8447cf5228f366d6868594c3e0473d07f22b9f49944ba99a5","outcome":"ended_without_final_target","path":"normal_exit","planned_step_id":null,"reaction_activation_id":"activation-9","reaction_id":"example.future_valve_program"},"message":"valve remains different from the confirmed target","notification_key":"reaction.follow_up:29185c11d5713df8447cf5228f366d6868594c3e0473d07f22b9f49944ba99a5","severity":"warning","title":"valve needs attention"}
+{"context":{"actuator_id":"valve.garden_1","configuration_generation_id":"gen-3","controlled_channel":"valve_position","expected.position":"1","hold_id":"hold-valve-01","later_step_remains":false,"observation_available":true,"observation_epoch_id":"epoch-9","observed.position":"0.5","observed_at":"2026-10-03T20:00:00.000000+00:00","operation_id":"29185c11d5713df8447cf5228f366d6868594c3e0473d07f22b9f49944ba99a5","outcome":"ended_without_final_target","path":"normal_exit","planned_step_id":null,"reaction_activation_id":"activation-9","reaction_id":"example.future_valve_program"},"notification_key":"reaction.follow_up:29185c11d5713df8447cf5228f366d6868594c3e0473d07f22b9f49944ba99a5","severity":"warning"}
 ```
 
 ## hvac
@@ -75,5 +75,5 @@ Persisted `ReactionFollowUpIntent`:
 `OperationalEventValue` for `reaction.follow_up`:
 
 ```json
-{"context":{"actuator_id":"hvac.bedroom_1","configuration_generation_id":"gen-4","controlled_channel":"hvac_state","expected.mode":"\"heating\"","expected.setpoint_c":"21.5","hold_id":"hold-hvac-01","later_step_remains":false,"observation_available":true,"observation_epoch_id":"epoch-9","observed.mode":"\"heating\"","observed.setpoint_c":"19","observed_at":"2026-10-03T20:00:00.000000+00:00","operation_id":"739c1c9f27316249ad18a02f6fb08f85a1f2a860596642506c9022fc56ad7989","outcome":"ended_without_final_target","path":"normal_exit","planned_step_id":null,"reaction_activation_id":"activation-12","reaction_id":"comfort_trajectory_bedroom"},"message":"hvac remains different from the confirmed target","notification_key":"reaction.follow_up:739c1c9f27316249ad18a02f6fb08f85a1f2a860596642506c9022fc56ad7989","severity":"warning","title":"hvac needs attention"}
+{"context":{"actuator_id":"hvac.bedroom_1","configuration_generation_id":"gen-4","controlled_channel":"hvac_state","expected.mode":"\"heating\"","expected.setpoint_c":"21.5","hold_id":"hold-hvac-01","later_step_remains":false,"observation_available":true,"observation_epoch_id":"epoch-9","observed.mode":"\"heating\"","observed.setpoint_c":"19","observed_at":"2026-10-03T20:00:00.000000+00:00","operation_id":"739c1c9f27316249ad18a02f6fb08f85a1f2a860596642506c9022fc56ad7989","outcome":"ended_without_final_target","path":"normal_exit","planned_step_id":null,"reaction_activation_id":"activation-12","reaction_id":"comfort_trajectory_bedroom"},"notification_key":"reaction.follow_up:739c1c9f27316249ad18a02f6fb08f85a1f2a860596642506c9022fc56ad7989","severity":"warning"}
 ```

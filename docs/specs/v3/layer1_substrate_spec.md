@@ -251,9 +251,7 @@ EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
 class OperationalEventValue:
     notification_key: str                 # non-empty stable delivery dedup/rate-limit key
     severity: EventSeverity                # delivery/diagnostic priority, never fact identity
-    title: str                            # rendered event title retained for audit
-    message: str                          # rendered event message retained for audit
-    context: dict[str, EvidenceValue]      # event-specific, JSON-compatible payload
+    context: dict[str, EvidenceValue]      # closed fields and stable identifiers only, never text
 ```
 
 | `HeimaEvent` field | `HouseFact` representation |
@@ -261,7 +259,7 @@ class OperationalEventValue:
 | `type` | `fact_type` in V3's approved stable taxonomy; a V2/legacy type is not admitted to V3 |
 | `key` | `value.notification_key` |
 | `severity` | `value.severity` |
-| `title` / `message` | `value.title` / `value.message` |
+| `title` / `message` | not stored; rendered by Layer 6 at each delivery (below) |
 | `context` | `value.context` |
 | `ts` | `when`, UTC and timezone-aware |
 | `event_id` | transient delivery identifier only; neither fact identity nor a separate durable field |
@@ -269,8 +267,17 @@ class OperationalEventValue:
 | causal context | `how.source.correlation_id`, with ordinary Layer-0 propagation rules |
 
 The event adapter must construct this value at the production boundary and validate the non-empty key,
-allowed severity, non-empty title/message, `context` shape, and mandatory `Location`; it must never
-guess a room from unstructured context. A V3 `HeimaEvent`, where a delivery/rendering envelope is
+allowed severity, `context` shape, and mandatory `Location`; it must never guess a room from
+unstructured context.
+
+**No stored resident text.** An operational event fact records what was notified, not the words
+sent. `context` holds only closed fields and stable identifiers (Reaction, Actuator, channel,
+opening; the room through `where`), never a display name, rendered text or free text. Layer 6
+renders title and message at each delivery from the fact's `fact_type`, `where` and `context`, the
+core-fixed templates of the running core version, the recipient's locale and the currently
+configured names; an identifier that is no longer configured is shown as the identifier. Layer 8
+renders event history the same way. The exact text of a past delivery is therefore not
+reproducible, by design. A V3 `HeimaEvent`, where a delivery/rendering envelope is
 still useful, is derived from this event fact and cannot be an independently persisted or audited
 channel. Historical V2 events remain outside V3 as archive/rollback material: V3 has no legacy-event
 adapter, type map, or runtime fallback, and every V3 producer must emit an approved V3 fact type.
@@ -302,8 +309,8 @@ first valid post-restart observation. Neither record is an operational
 notification or a new live command authority.
 
 `reaction.follow_up` is an approved V3 event fact type. Its sole persistent producer is the
-Layer-6 adapter: it validates Layer 5's typed `ReactionFollowUpOccurrence`, renders the
-resident title/message and maps the occurrence's fixed scalar fields to `context` as defined
+Layer-6 adapter: it validates Layer 5's typed `ReactionFollowUpOccurrence` and maps the
+occurrence's fixed scalar fields to `context` as defined
 by Layer 5 §6.0. Its `expected_facets` and `observed_facets` maps become
 `expected.<facet>` and `observed.<facet>` canonical JSON-text scalar entries, not nested
 context objects. `subject` becomes `where` and `occurred_at` becomes `when`, never duplicate
@@ -315,8 +322,7 @@ never a second event fact.
 core-owned availability-event adapter. Layer 6's transient `AvailabilityEpisodeTracker` receives the
 typed suppression occurrence from its owner, reconciles the current episode against the staged
 publication generation, and invokes this adapter only for a resident-visible delivery. The adapter
-renders the event's title/message and constructs the canonical notification key, severity and bounded
-context, then appends the event fact together with its `ready` delivery record in the unified
+constructs the canonical notification key, severity and bounded context, then appends the event fact together with its `ready` delivery record in the unified
 notification outbox (Layer 0 §4.5); neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
 event. Layer 0 reserves its exclusive event claim. Every notification Layer 6 delivers follows this
 same audit-fact-plus-outbox rule.
@@ -326,12 +332,12 @@ advisory adapter, which validates Layer 5's typed `ReactionAdvisoryOccurrence` a
 fields to `context` under the same rule.
 `recovery.confirmation_request` is one approved V3 event fact type: the opening or closing of a
 power-recovery confirmation request (Layer 0 §7.4.1). Its sole producer is the Layer-6
-recovery-confirmation adapter, which renders the actionable notification from Layer 0's typed
-`RecoveryConfirmationOccurrence`; the answer returns only through Layer 0's response ingress.
+recovery-confirmation adapter, which builds the event from Layer 0's typed
+`RecoveryConfirmationOccurrence` and delivers the actionable notification; the answer returns only through Layer 0's response ingress.
 `reaction.action_notice` (a completed protective action, residents), `proposal.review_pending` (a
 new, again-approvable or closed proposal, administrators) and `reaction.consent_request` (household
 consent needed or no longer needed, consent-authorized residents) are approved V3 event fact types with
-the same sole-Layer-6-producer rule, each rendered from its typed Layer-5 occurrence (Layer 5 §6.0).
+the same sole-Layer-6-producer rule, each built from its typed Layer-5 occurrence (Layer 5 §6.0).
 `reaction.advisory_feedback` is an approved V3 event fact type but not a notification: Layer 5 alone
 appends it when a resident answers an advisory, as non-authoritative learning evidence.
 
@@ -1068,7 +1074,8 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   either form (§3; Layer 0 §6.4).
 - An operational `HeimaEvent` maps to exactly one append-only event fact with its approved V3
   `fact_type`, a mandatory `Location`, and `OperationalEventValue` preserving its non-empty delivery
-  key, allowed severity, non-empty title/message, and JSON-compatible context. It rejects a V2/legacy
+  key, allowed severity and JSON-compatible context with no stored title, message or display
+  name. It rejects a V2/legacy
   event at the V3 boundary rather than translating it. Two distinct equal event occurrences are both retained, while exact operation-id retries of
   `manual_hold.lifecycle` and of any notification kind's `(notification_kind, operation_id)`
   (Layer 0 §4.5) retain one fact and conflicting retries fail.
@@ -1090,9 +1097,8 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   `expected.<facet>`/`observed.<facet>` keys; nested facet maps fail the
   depth-two validator. `subject` maps to `where` and
   `occurred_at` to `when`. A fixture rejects an extra key, an invalid path/outcome,
-  a mismatched prepared identity or activation id, an oversized facet projection, and resident text
-  claiming an interrupted command completed. The resulting fact has a nonempty
-  rendered title/message, `warning` severity, and
+  a mismatched prepared identity or activation id, an oversized facet projection, and a stored
+  title, message or display name. The resulting fact has `warning` severity and
   `notification_key="reaction.follow_up:" + operation_id` (§3.1; Layer 5 §6.0).
 - A shape/size violation on `evidence` never prevents `HouseFact` construction — the fact is still
   created with `evidence={}` and a diagnostic event, verified by a test that triggers each violation

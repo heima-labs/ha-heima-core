@@ -1819,6 +1819,13 @@ Inputs are the closed typed occurrences of CA4-65–68.
   retires undelivered. Open means a latest `created`/`approvable_again` phase without a later
   `closed` (CA4-71). No new fact type, store or schedule.
 
+- **C6 — Languages and text.** Event facts store no resident text (CA4-72): Layer 6 renders title and
+  message at each delivery from the fact's closed fields, core-fixed versioned templates, the
+  recipient's locale and the currently configured names; Layer 8 renders history the same way.
+  The household locale is HA's `hass.config.language`; a `NotificationRecipient` may declare its own
+  `locale`. Initial V3 supports Italian and English, with English as fallback. Administrators
+  cannot edit templates.
+
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
 Revising the earlier framing — it's not 5 unrelated channels, it's **two tiers of the same concern
@@ -5063,9 +5070,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70 | 0 | 0 | 37 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71 | 0 | 0 | 28 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–72 | 0 | 0 | 29 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **71 findings** | **0** | **0** | **70** | **1** |
+| **Total** | **72 findings** | **0** | **0** | **71** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6185,6 +6192,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-72 — Operational event facts stored rendered resident text
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P2. **Origin:** Layer-6 decision C6.
+
+**Problem.** `OperationalEventValue` persisted rendered `title` and `message`. Every notification wrote language-bound text to disk, history could not be shown in another language, and Layer 5 staging had to prove the longest rendered text in every locale fitted the 8 KiB fact bound.
+
+**Approved resolution (2026-10-12).** `OperationalEventValue` keeps `notification_key`, `severity` and `context` only; `context` holds closed fields and stable identifiers, never display names or text. Layer 6 renders title and message at each delivery from core templates, the recipient's locale and current configured names; Layer 8 renders history the same way; an unconfigured identifier is shown as itself. The renderer-bound staging obligation is removed; serialization examples recomputed. No template reference is stored: one template set exists per core version and the fact type plus its closed context select it. See the [CA4-72 review](specs/v3/reviews/CA4-72.md); no V3 runtime test ran.
 
 #### CA4-71 — Digest and quiet-hours grouping lacked closing phases and undelivered retirement
 

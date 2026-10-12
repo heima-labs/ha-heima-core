@@ -454,7 +454,7 @@ action.
 | 3 -> 5 | Review path | Typed `LearningProposalCandidate` | Approval, configuration mutation, or command generation by Layer 3 |
 | 5 -> HA | Execution | Ordered one-endpoint `ApplyStep`s | Raw multi-entity command graph or arbitrary service payload |
 | 3/4/5 -> 6 | Availability | Typed runtime suppression occurrences; own immutable staged publication declarations | Rendering, direct notification, policy lookup, or `automation.availability` persistence |
-| 5 -> 6 | Reaction follow-up | Typed `ReactionFollowUpOccurrence` and a durably prepared intent at the qualifying boundary; Layer 6 renders, persists the existing `reaction.follow_up` event fact, and delivers its derived `HeimaEvent` | Layer-5 rendering, a second delivery envelope, or replaying an Actuator command from the outbox |
+| 5 -> 6 | Reaction follow-up | Typed `ReactionFollowUpOccurrence` and a durably prepared intent at the qualifying boundary; Layer 6 persists the existing `reaction.follow_up` event fact and renders text only when it delivers its derived `HeimaEvent` | Layer-5 rendering, a second delivery envelope, or replaying an Actuator command from the outbox |
 | 6 -> 0/1 | Delivery audit | Sole Layer-6 `automation.availability` and `reaction.follow_up` event producers; the latter uses Layer 0 §4.5 intent and operation-id retry | Any lower-layer claim of these reserved event fact types |
 
 ## 10. Performance and Technology Choices Already Fixed
@@ -524,9 +524,9 @@ The following ownership remains deliberately deferred beyond Layers 0--5:
   Layer-5 intents and occurrences, renders resident text, drives the Layer-0 unified notification
   outbox and event-fact transaction for every notification it delivers (including the
   `reaction.advisory` adapter for Layer-5 advice members), carries actionable
-  responses to Layer 0's authenticated response ingress, and retries delivery. Its renderer must declare finite maximum UTF-8 lengths
-  for title and message in every supported locale; Layer-5 staging needs those bounds to
-  prove the complete follow-up fact fits Layer 1's depth-two/8 KiB limits.
+  responses to Layer 0's authenticated response ingress, and retries delivery. Event facts store
+  no resident text: Layer 6 renders title and message at each delivery from the fact's closed
+  fields, core templates, the recipient's locale and current configured names (Layer 1 §3.1).
   It must also render the typed `reaction.action_notice`, `proposal.review_pending`,
   `reaction.consent_request`, `reaction.advisory` and `recovery.confirmation_request` occurrences
   (Layer 5 §6.0, Layer 0 §7.4.1) and the `manual_hold_active` availability notice for a held

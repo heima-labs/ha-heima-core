@@ -666,10 +666,10 @@ notification actions; Layer 6 uses HA infrastructure throughout (`notify.*`, not
 The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
 uses Layer 0's unified notification outbox (one durable store for every notification to a person:
 `prepared` only for follow-up, then `ready` committed together with the audit event fact, then
-`delivered`), renders and persists the one event fact,
-and retries delivery. Its renderer declares finite maximum UTF-8 title and message
-lengths in every supported locale so Layer-5 staging can prove the complete event
-fits Layer 1's depth-two/8 KiB value contract. A failed or timed-out intent
+`delivered`), persists the one event fact,
+and retries delivery. Event facts store no resident text, only closed fields and identifiers;
+Layer 6 renders title and message at each delivery in the recipient's language with the current
+names of rooms and devices (Layer 1 §3.1). A failed or timed-out intent
 preparation has the diagnosed, best-effort notice guarantee described above;
 the adapter never replays an Actuator command.
 

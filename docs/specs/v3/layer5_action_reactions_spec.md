@@ -2276,8 +2276,8 @@ from the completion of an individual command.
 
 #### Resident advisory occurrence
 
-An eligible advice member (§3.2) gives Layer 6 one typed occurrence; Layer 6 alone renders it,
-appends the `reaction.advisory` event fact and its delivery record in the unified outbox (Layer 0
+An eligible advice member (§3.2) gives Layer 6 one typed occurrence; Layer 6 alone appends the
+`reaction.advisory` event fact and its delivery record in the unified outbox (Layer 0
 §4.5), and delivers it.
 
 ```python
@@ -2340,8 +2340,9 @@ class ReactionActionNoticeOccurrence:
     occurred_at: EvidenceInstant
 ```
 
-Layer 6 renders it as one `reaction.action_notice` event fact with severity `info` (for example
-"windows and awnings secured for rain; living-room window left open by you"). It summarizes and does
+Layer 6 appends it as one `reaction.action_notice` event fact with severity `info` and renders its
+text at delivery (for example "windows and awnings secured for rain; living-room window left open
+by you"). It summarizes and does
 not replace a channel's `manual_hold_active` availability notice or a `reaction.follow_up` warning.
 
 #### Proposal review notice
@@ -2376,7 +2377,7 @@ evidence revision distinct, while a retry of the same change stays one operation
 `approvable_again` receives a not-approvable assessment; a later approvable assessment produces
 `approvable_again`. `closed_reason` is `None` exactly for the other two phases.
 
-Its audience is administrators only; Layer 6 renders `proposal.review_pending` for every phase and
+Its audience is administrators only; Layer 6 appends `proposal.review_pending` for every phase and
 owns grouping into a digest. A proposal is open for review from its latest `created` or
 `approvable_again` phase until a later `closed`; the closing phase is never delivered on its own.
 The occurrence carries no evidence payload, learner text or approval control.
@@ -2402,7 +2403,7 @@ class ConsentRequestOccurrence:
     occurred_at: EvidenceInstant
 ```
 
-Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1); Layer 6 renders it as
+Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1); Layer 6 appends it as
 one `reaction.consent_request` event fact per phase. The notice is actionable: on `opened` the
 response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor category
 `resident`, expiring when the request closes. A `VerifiedResponse` is applied only if its
@@ -2429,7 +2430,7 @@ negative answer.
 
 Layer 5 owns the operational cause, not resident text or event-fact persistence. At a qualifying
 boundary it gives Layer 6 one typed `ReactionFollowUpOccurrence`; Layer 6 alone validates the
-publication mapping, renders and appends the existing `reaction.follow_up` operational event
+publication mapping, appends the existing `reaction.follow_up` operational event
 (`OperationalEventValue`, Layer 1 §3.1), then delivers its derived `HeimaEvent`. There is no
 hold-specific notification envelope, resident control, or second fact type. A later policy
 change cannot edit or clear an append-only outcome; a later material outcome needs its own event.
@@ -2511,15 +2512,14 @@ Facet keys use the staged, nonempty `[a-z][a-z0-9_]*` grammar and at most
 64 UTF-8 bytes; no two facets may normalize to one key. Every target contract
 declares a finite maximum canonical byte length for each possible facet value.
 Staging verifies all supported values are losslessly encodable within that
-bound and that the complete intent, hold audit and rendered follow-up fact
+bound and that the complete intent, hold audit and follow-up fact
 fit Layer 1's depth-two/8 KiB validators under the relevant maximal facet
 sets and bounded identities. The hold proof includes the longest source
 identity for each facet across all staged Reactions that can contribute on
 the same channel, even under selective admission. A contract with an unprovable maximum is
 rejected. Runtime validates the copied actual projection and the final
-Layer-6 event. The Layer-6 renderer declares finite maximum UTF-8 lengths
-for title and message across its supported locales and uses only bounded
-contract fields; it cannot insert unbounded raw HA or user text. Layer 6
+Layer-6 event. The event stores no rendered text (Layer 1 §3.1), so staging
+needs no renderer bounds; Layer 6 renders text only at delivery. Layer 6
 flattens these maps to scalar `expected.<facet>` and
 `observed.<facet>` context keys under Layer 1 §3.1; it never nests a facet
 map inside `OperationalEventValue.context`.
@@ -4112,7 +4112,7 @@ profile or learner, and declares `requires_household_consent=True`,
 - **No confirmation.** Securing runs without a runtime confirmation; the completed or skipped steps
   are reported as ordinary execution audit and follow-up outcomes, and the descriptor's
   `resident_action_notice=True` produces one `ReactionActionNoticeOccurrence` per activation that
-  Layer 6 renders as `reaction.action_notice` (§6.0).
+  Layer 6 appends as `reaction.action_notice` (§6.0).
 - **Valid direct example.** Casa subject, `relation_profile=None`, trigger
   `state_transition(environment.wind_hazard@casa, False -> True)` from a hysteresis over the casa
   wind-speed fact, selected endpoints the living-room awning (`is_external=True`) and the living-room
@@ -4601,7 +4601,7 @@ profile or learner, and declares `requires_household_consent=True`,
   [complete serialized examples](ca4_01_serialization_examples.md)).
 - Given a qualifying follow-up boundary and a preparation acknowledgement before the
   finite core deadline, Layer 5 advances only after the typed intent is durable;
-  Layer 6 alone renders and persists one warning event with
+  Layer 6 alone persists one warning event with
   a key derived from `reaction.follow_up` and its operation id. A crash after preparation
   but before a committed outcome yields one uncertainty warning on recovery and no replayed
   command. A crash after event commit does not create a second fact. A conflicting payload
