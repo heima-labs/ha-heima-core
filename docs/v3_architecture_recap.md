@@ -116,8 +116,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   a transient delivery envelope; its durable audit representation is an event `HouseFact`,
   and delivery deduplication never erases history. During a storage outage the retry queue is
   bounded by `max(32 MiB, 5% of effective memory)`; overflow first collapses superseded state
-  transitions, then drops oldest events, and declares each loss as a `queue_overflow` gap
-  (Layer 0 §4.6). Facts and projections are deeply immutable once constructed (Layer 1 §3). The same bootstrap pass reserves fact-type
+  transitions, then drops oldest events, and declares each loss as a `queue_overflow` gap.
+  If protected items alone exceed the budget, Layer 0 declares a global gap and
+  re-seeds durable current state after fresh HA intake (Layer 0 §4.6). Facts and projections are deeply immutable once constructed (Layer 1 §3). The same bootstrap pass reserves fact-type
   ownership across layers, preventing a registry producer from colliding with a Layer-0-owned
   family such as hold lifecycle events. A "snapshot" (everything true at
   one instant, or in one place, over one window) is never its own stored shape; it's a query
@@ -656,10 +657,7 @@ recovery confirmation reaches Layer 6 as a typed occurrence when it opens and ag
 closes, so no stale approve button survives on a phone. Three further typed occurrences complete
 the inputs: a protective action notice (weather protection, residents), a new-proposal review notice
 (administrators, grouped by the digest) and a household-consent request notice (consent-authorized
-residents). Recovery confirmations, consent requests (grant/decline) and advisories
-(done/dismiss/not useful, recorded as learning feedback) are actionable through HA mobile
-notification actions; Layer 6 uses HA infrastructure throughout (`notify.*`, notification tags,
-`persistent_notification` as fallback, a `heima_notification` bus event).
+residents, informative only in Initial V3).
 
 The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
 uses Layer 0's unified notification outbox (one durable store for every notification to a person:

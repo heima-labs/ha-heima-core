@@ -590,9 +590,6 @@ typed `RecoveryConfirmationOccurrence` (§7.4.1). It likewise reserves `reaction
 (owner `layer6.reaction_action_notice`), `proposal.review_pending` (owner
 `layer6.proposal_review`) and `reaction.consent_request` (owner `layer6.consent_request`) as
 Layer-6 event claims for the typed Layer-5 occurrences of Layer 5 §6.0; Layer 5 never appends them.
-The core reserves `FactTypeClaim(fact_type_pattern="reaction.advisory_feedback",
-owner_id="layer5.advisory_feedback", emission_kind="event")` for the resident feedback that Layer 5
-records from an answered advisory (Layer 5 §6.0); it is not a notification.
 
 State-history and event-history reads are deliberately different. For a state fact, the query is the
 at-or-before-window-start record plus changes inside the window, as specified below. For an event fact,
@@ -1101,7 +1098,7 @@ semantics decide whether a gap exactly on a boundary intersects it. The field
 identifies an observation limit, never the occurrence time of a missing event.
 `complete` requires that the
 requested interval intersects neither a process interruption, a clock discontinuity (§3.5),
-a durable-queue overflow loss of a required stream (§4.6), nor an unavailable interval
+a durable-queue overflow loss of a required stream or a global overflow epoch (§4.6), nor an unavailable interval
 of any required stream, and that continuity metadata is trustworthy. An unknown boundary
 reports `continuity_metadata_unknown`, never optimistic completeness. Per-Actuator/channel
 `available=False` intervals remain ordinary state history and affect only reads that
@@ -1166,7 +1163,9 @@ diagnostic and cannot certify a complete historical interval. The marker is boun
 metadata, not a `HouseFact`, hold journal, or per-Actuator checkpoint.
 A queue item discarded under §4.6 counts as resolved for this rule only after the
 `queue_overflow` gap boundary that declares its loss is durably acknowledged; the watermark
-never certifies a discarded item as written. The same recurrence performs the clock comparison
+never certifies a discarded item as written. An open global overflow epoch prevents the
+watermark from certifying complete observation through that epoch, even if retained items
+have been written. Its end is acknowledged only with the atomic re-seed and closure batch. The same recurrence performs the clock comparison
 of §3.5.
 An attempted hold transition that cannot construct a valid audit fact despite
 its staged proof is also a continuity blocker from that known transition instant
@@ -1337,7 +1336,9 @@ queue_budget_bytes = max(32 MiB, 5% × effective_memory_limit)
 
 `effective_memory_limit` is the enforceable limit in the latest `RuntimeHealthSnapshot` (§9);
 when it is absent or not enforceable the budget is exactly 32 MiB. Queue usage is measured as the
-canonical UTF-8 bytes of the queued items. The budget is recomputed only when a new health
+canonical UTF-8 bytes of queued facts and continuity metadata, including pending loss
+markers. The fixed-size global marker below has reserved space within the budget; a
+single item larger than the available budget is discarded under the same overflow rule. The budget is recomputed only when a new health
 snapshot is published, never in the evaluation path; a lower recomputed budget applies to the
 next overflow check and never discards an item retroactively merely because the budget changed.
 The 32 MiB floor and the 5% coefficient are operational defaults, revisable from evidence in a
@@ -1349,11 +1350,11 @@ blocks admission, a cycle or an HA command:
 
 1. **Collapse superseded state transitions.** For a state `FactIdentityKey` with several queued
    transitions, the oldest queued transitions that are superseded by a later queued transition of
-   the same key are discarded. The latest queued state of every key is always retained, so the
-   durable current state stays correct once storage returns.
+   the same key are discarded. In ordinary overflow the latest queued state of every key
+   remains, so durable current state can be restored once storage returns.
 2. **Discard the oldest queued event facts**, across event streams, in append order.
 
-Continuity and gap boundaries are never discarded. Every discarded item extends one in-memory
+In ordinary overflow, continuity and gap boundaries are retained. Every discarded item extends one in-memory
 lost interval for its own stream (`FactIdentityKey` or event `(fact_type, Location)`) from the
 earliest to the latest discarded `when`; a stream has at most one such merged interval, so this
 metadata is bounded by the registered streams. When storage accepts writes again, the
@@ -1364,10 +1365,38 @@ discarded transition or event as absent evidence, a zero count or continuous sta
 before those boundaries are durable is already covered by the unadvanced continuity watermark
 (§4.4).
 
+If the latest states and pending continuity metadata alone cannot fit after those two stages,
+Layer 0 enters an exceptional **global overflow epoch**. One bounded global `queue_overflow`
+marker replaces the pending per-stream loss markers and starts at the earliest known lost
+instant, including an earlier start from a replaced marker. Layer 0 discards the oldest
+remaining queued items, including latest states or individual boundaries if required, until
+the queue including the global marker fits the budget; an oversized incoming item is discarded
+immediately. Later losses extend the same epoch, never create an unbounded list of markers.
+Every required stream is incomplete for a historical read intersecting this global epoch,
+even if no item from that stream was dropped. The durable latest-value index cannot be used
+as a current-state claim across the epoch. The live current index and short-term buffer remain
+usable during the running process; the global gap changes historical proof, not HA admission.
+
+On storage recovery, the global opening boundary is acknowledged before or atomically with
+retained facts. The epoch stays open until a new complete HA intake snapshot establishes a
+`CycleInputBarrier` with valid source health and an explicit current-cycle availability result
+for every staged binding. At that barrier every staged current-state claim, including an
+unavailable one, is materialized as a new state-epoch fact even when its value equals the last
+durable fact. The complete re-seed and global closing boundary commit atomically in append
+order; a partial re-seed cannot close the epoch. If the writer or HA intake fails, the epoch
+remains open. State reconstruction does not carry an older value across it, and ordinary
+stream-specific unavailability still applies after closure. A crash before the opening
+boundary is durable is covered by the unadvanced watermark/process-interruption rule (§4.4);
+a crash after it is durable leaves an open gap until a valid closure is committed. These
+exceptional state-epoch facts are the sole write-on-change exception for recovery, not a
+periodic duplicate-state stream.
+
 The short-term buffer (§4.1) and the live current index are not reduced by this policy, so
 hot-path windows and current-state admission are unaffected. Discarding emits the
 `durable_queue_overflow` diagnostic with per-stream counts and lost intervals; queue bytes,
-budget and its source are always visible in diagnostics (§10). A discarded hold-audit fact
+budget and its source are always visible in diagnostics (§10). During a global epoch,
++diagnostics expose its start, open/closed status and aggregate discarded counts without
++requiring an unbounded per-stream list. A discarded hold-audit fact
 follows the same rule as any other event: the live hold is unaffected and the audit stream
 reports the lost interval.
 
@@ -1761,9 +1790,8 @@ class VerifiedResponse:
 ```
 
 The frozen `ResponseOwnerRegistry` is closed to administrators, learners and plugins. Initial V3
-registers three owners: `layer0.recovery_confirmation` (§7.4.1), `layer5.household_consent` and
-`layer5.advisory_feedback` (Layer 5 §6.0). A later owner, such as proposal review or disabling an
-automation from a notification, needs its own reviewed registration. An owner declares each request when it
+registers one owner, `layer0.recovery_confirmation` (§7.4.1); a later owner, such as proposal review
+or household consent, needs its own reviewed registration. An owner declares each request when it
 becomes actionable and withdraws it when it closes; only a currently declared, unexpired request
 accepts a response.
 
@@ -2586,7 +2614,8 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
 - **Clock**: last cycle instant, last clock comparison, and every detected discontinuity with
   direction, size, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
 - **Retry queue**: queued bytes, current budget and its source (floor or memory limit), and, after
-  overflow, per-stream discarded counts and `queue_overflow` lost intervals (§4.6).
+  ordinary overflow, per-stream discarded counts and `queue_overflow` lost intervals;
+  for exceptional global overflow, the epoch start/status and aggregate discarded counts (§4.6).
 - **Persistence**: durable-tier size and retention pressure per `fact_type` (§4.3) — how close each
   is to its count ceiling, so a misbehaving sensor's volume is visible before it needs to be
   diagnosed reactively; and, per `fact_type`, its effective retention window and which registered
@@ -2678,8 +2707,13 @@ concrete checklist rather than re-deriving one:
   returns, the boundaries commit with or before the retained items, the
   watermark advances only past declared losses, and reads over a lost
   interval are incomplete with `queue_overflow`, never zero or continuous.
-  An unaffected stream remains complete. With a known 1 GiB memory limit the
-  budget is 51.2 MiB; without a known limit it is 32 MiB; a lower recomputed
+  An unaffected stream remains complete under ordinary overflow. If distinct
+  latest states, boundaries or one oversized item cannot fit, the global fallback
+  keeps the queue within budget, leaves admission nonblocking and makes every
+  intersecting historical read incomplete. After storage recovers, a fresh full
+  HA intake and atomic current-state re-seed plus closing boundary are required;
+  a partial re-seed or crash leaves the gap open. With a known 1 GiB memory limit
+  the budget is 51.2 MiB; without a known limit it is 32 MiB; a lower recomputed
   budget does not retroactively discard items (§4.4/§4.6).
 - One `AtJob`/`CronEntry` execution path, monotonic-safe by construction; no remaining independent
   timer call site anywhere in the codebase.

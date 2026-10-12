@@ -1079,7 +1079,8 @@ create, repair or relabel any of these phases.
 A sample is complete only when the entire observation window is observable and remains attached to its
 anchor. Layer 0 §4.4's typed coverage determines the exclusion: an interval whose
 reasons include `process_interruption`, `clock_discontinuity`, `queue_overflow` or
-`continuity_metadata_unknown` is `censored_by_observation_gap`; otherwise `required_stream_unavailable` for the
+`continuity_metadata_unknown` is `censored_by_observation_gap`; the exceptional global
+`queue_overflow` epoch of Layer 0 §4.6 censors even a sample whose own stream lost no item; otherwise `required_stream_unavailable` for the
 addressed channel is `censored_by_unavailability`. Both exclude the sample from
 training, validation, and the zero-count class. A restart shorter than the
 ordinary freshness bound remains a process gap. `first_incomplete_at` locates
@@ -2387,8 +2388,7 @@ notification priority, quiet-period, channel, or frequency parameter for one dec
 `presentation_scope`. This is a generic presentation scope supplied by a registered Reaction
 descriptor, such as its semantic intent plus explicit Location; it is never a raw HA entity, payload,
 or a ventilation-specific model. The model uses only explicit resident feedback such as useful/not
-useful, postpone, disable, or a declared action response, including the `reaction.advisory_feedback`
-answers recorded by Layer 5 (§6.0 of Layer 5). Missing response is censored evidence, not
+useful, postpone, disable, or a declared action response. Missing response is censored evidence, not
 rejection. Its outcome is a reviewed delivery-parameter candidate only: it cannot change an
 environmental effect estimate, message meaning, guard, safety classification, policy eligibility, or
 actuator policy. A safety-critical notification is never delayed, ranked below another notification,

@@ -85,7 +85,8 @@ Layer 0 standardizes the machinery every higher layer needs:
   pruning is time-based with a 14-day baseline, per-type retention declarations, a 50,000-record
   per-type ceiling, and a 512 MiB global watermark. The durable retry queue is bounded by
   `max(32 MiB, 5% of effective memory)` and declares overflow loss as `queue_overflow` coverage
-  (§4.6).
+  (§4.6), with an exceptional global gap and durable current-state re-seed when
+  protected items alone exceed the budget.
 - **Honest history:** retention coverage is stream-scoped. A noisy stream in one room can make its
   own historical interval truncated without falsely degrading the same fact type in another room.
   Separate durable process-continuity metadata marks restart/outage intervals; a 60-second
