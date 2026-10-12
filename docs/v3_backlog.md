@@ -5010,10 +5010,10 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | Severity | IDs | TODO | IN_PROGRESS | DONE | NOT_APPLICABLE |
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
-| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64 | 0 | 0 | 34 | 0 |
+| P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–65 | 0 | 0 | 35 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63 | 0 | 0 | 24 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **64 findings** | **0** | **0** | **63** | **1** |
+| **Total** | **65 findings** | **0** | **0** | **64** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6133,6 +6133,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-65 — Layer 0 lacks the shared notification delivery and response foundations Layer 6 needs
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P1. **Origin:** Layer-6 obligations inventory, decided before Layer 0/1 implementation.
+
+**Problem.** Layer 0 §4.5 offered a durable outbox only for `reaction.follow_up`, while Layer 6 must also deliver availability notices, notification-only Reaction advice, weather-protection notices, recovery confirmation requests and future review/consent prompts; each would otherwise grow its own store, as V2's two notification paths did. Separately, a resident answer to the recovery confirmation (Layer 0 §7.4.1) had no defined route from the delivery channel back to its owner.
+
+**Approved resolution (2026-10-12).** (D1) Layer 0 §4.5 becomes one unified notification delivery outbox for every notification to a person: `prepared` (only `reaction.follow_up`), `ready` committed in one transaction with the audit event fact, `delivered`, `retired`; unique `(notification_kind, operation_id)`, at-least-once delivery, retention until delivered. Layer 0 owns storage mechanics only; Layer 6 owns every transition decision. (D2) Layer 0 §5.1.3 adds one authenticated response ingress with a closed `ResponseOwnerRegistry` (initially `layer0.recovery_confirmation`): owners declare requests with allowed actions and actor categories; Layer 0 authenticates the HA user, deduplicates and rejects invalid responses before routing a `VerifiedResponse`; Layer 6 only carries answers. No Layer-1 contract changes: new notification fact types are ordinary claims with the existing `OperationalEventValue`. See the [CA4-65 review](specs/v3/reviews/CA4-65.md); no V3 runtime test ran.
 
 #### CA4-64 — Full Layer 0–5 reread (CA5) found cross-section inconsistencies
 

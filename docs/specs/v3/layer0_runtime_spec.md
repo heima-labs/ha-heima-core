@@ -25,7 +25,7 @@ changing mid-cycle, and nothing in Layer 0 depends on a semantic resolver. Six f
 
 1. **Timing** — one execution primitive plus a recurrence policy layer, and non-executing
    comparison types for reasoning about elapsed or absolute time without scheduling anything.
-2. **Persistence** — the two-tier `HouseFact` storage (Layer 1), durable observation-continuity metadata, and the Reaction follow-up intent outbox that support their respective contracts.
+2. **Persistence** — the two-tier `HouseFact` storage (Layer 1), durable observation-continuity metadata, and the unified notification delivery outbox that support their respective contracts.
 3. **`FactSource` / `ApplyStepSource`** — one structured-provenance vocabulary spanning facts and
    actions, and the `correlation_id` rules that make "why did the house do this" answerable.
 4. **Divergence Hold Manager** — process-local, per-channel suppression after a new
@@ -45,7 +45,7 @@ Layer 0 is responsible for:
   absolute time; for `CalendarWindow` specifically, the pre-DAG mechanical extraction of raw
   `start`/`end`/summary event data from a `calendar.*` entity (§3.4) — never the classification of
   that raw text into a named category, which is Layer 2's `CalendarInterpretation`;
-- `HouseFact` storage mechanics (durable + short-term tiers), durable observation-continuity metadata (§4.4), and the Reaction follow-up intent outbox (§4.5) — not the `HouseFact` type itself, which is Layer 1;
+- `HouseFact` storage mechanics (durable + short-term tiers), durable observation-continuity metadata (§4.4), and the unified notification delivery outbox (§4.5) — not the `HouseFact` type itself, which is Layer 1;
 - the non-forgeable provenance vocabulary attached to every `HouseFact` and every `ApplyStep`, and
   the rules for how a `correlation_id` is minted and propagated;
 - representing an internal channel divergence hold and clearing it on restart or an observation break;
@@ -1187,7 +1187,48 @@ remains unreadable, only its commands are suppressed as `actuator_state_unconfir
 dependent historical windows remain incomplete; other readable channels may act. The first
 valid returned state starts a new observation epoch and does not itself create a hold (§6.3).
 
-### 4.5 Durable Reaction follow-up intent and delivery
+### 4.5 Unified notification delivery outbox
+
+Every notification that Layer 6 delivers to a person — resident or administrator — uses one durable
+delivery outbox owned by Layer 0. There is no per-feature delivery store, retry queue or direct
+notification call elsewhere. Layer 0 provides only storage mechanics: record uniqueness, atomic
+transitions, the atomic write with the notification's audit event fact, retention, and recovery
+reads. Layer 6 owns rendering, routing, delivery attempts and every transition decision.
+
+```python
+NotificationDeliveryPhase = Literal["prepared", "ready", "delivered", "retired"]
+
+@dataclass(frozen=True)
+class NotificationDeliveryRecord:
+    notification_kind: str            # the Layer-6-owned event fact type, e.g. "reaction.follow_up"
+    operation_id: str                 # stable per notification; unique with notification_kind
+    phase: NotificationDeliveryPhase
+    intent: PersistedProjection | None    # "prepared" only; producer-owned typed intent
+    event_fact_ref: str | None        # the committed audit event fact, from "ready" on
+    notification_key: str | None      # delivery deduplication key, from "ready" on
+    created_at: EvidenceInstant
+    updated_at: EvidenceInstant
+```
+
+- **`prepared`** exists only for a kind whose producer must record a boundary before an action
+  advances; in Initial V3 only `reaction.follow_up` (below). It holds a bounded producer-owned intent.
+- **`ready`** is written in one durable transaction together with the notification's rendered audit
+  event fact (Layer 1 §3.1): either both commit or neither. Every delivered notification therefore
+  has exactly one audit fact and one ready record, and a crash can never leave an event without its
+  delivery record or the reverse.
+- **`delivered`** records the acknowledged delivery attempt; **`retired`** ends the record, either
+  after delivery or, for a prepared record, when its boundary needs no notice.
+
+`(notification_kind, operation_id)` is the unique key. An exact retry of a transition returns the
+existing record; a different payload under the same key is rejected. A `ready` record is retained,
+whatever ordinary fact retention says, until it is delivered or retired. Delivery is recoverable
+at-least-once, not exactly-once display: a crash after the destination accepted a message but before
+`delivered` commits may repeat it, and `notification_key` lets an idempotent destination suppress the
+repeat. Records are bounded `PersistedProjection`s (Layer 1 §4); the outbox is separate from the
+§4.6 retry queue and from the Recovery checkpoint. A storage failure leaves an affected notification
+best effort and is diagnosed; it never blocks an evaluation cycle, an `ApplyStep` or a revocation.
+
+#### 4.5.1 Reaction follow-up preparation
 
 Layer 0 provides the durable outbox, operation-id uniqueness, atomic fact/intent transaction,
 and recovery read mechanics in this section. Layer 6 must supply the typed
@@ -1196,8 +1237,9 @@ renders the resident event, drives the outbox transitions, and retries delivery.
 These Layer-6 obligations are an interface required by this storage protocol;
 Layer 0 does not implement resident rendering or notification delivery.
 
-The Layer-6 `reaction.follow_up` adapter uses one small durable outbox keyed by the Layer-5
-per-boundary, per-Actuator/channel `operation_id` (Layer 5 §6.0). Its `ReactionFollowUpIntent` schema is owned by Layer 5 §6.0 and validated by Layer 6
+The Layer-6 `reaction.follow_up` adapter uses the unified outbox (§4.5) with
+`notification_kind="reaction.follow_up"`, keyed by the Layer-5 per-boundary,
+per-Actuator/channel `operation_id` (Layer 5 §6.0); it is the only kind that uses `prepared`. Its `ReactionFollowUpIntent` schema is owned by Layer 5 §6.0 and validated by Layer 6
 before persistence. It is a typed `PersistedProjection`, not a `HouseFact`,
 checkpoint, hold journal, or second resident-delivery envelope. Before a qualifying Reaction
 boundary advances, Layer 6 durably inserts its `prepared` intent with the immutable Reaction,
@@ -1508,8 +1550,9 @@ is derived by the code at the boundary that assigns it, never read off the data 
 - a configured reaction can produce `kind="reaction"`, but cannot declare itself `admin_command`;
 - an admin-panel action can produce `kind="admin_command"` only after Home Assistant confirms the
   connection's user is an admin;
-- a resident's response can produce `kind="resident_response"` only after it matches an active
-  runtime confirmation request and passes the current-proposal recheck in §7.4.1 — this is the
+- a resident's response can produce `kind="resident_response"` only after it arrives through the
+  authenticated response ingress (§5.1.3), matches an active request of its registered owner and,
+  for a recovery confirmation, passes the current-proposal recheck in §7.4.1 — this is the
   boundary for one of the two `resident_response` cases;
 - a third-party plugin (Layer 7) can produce `kind="third_party_plugin"`, but nothing it returns can
   make the core treat it as `kind="sensor"` or `kind="recovery"`.
@@ -1678,6 +1721,49 @@ post-`ApplyStep` target window with such an interruption as `censored_by_unavail
 resident corrections. Independent registered evidence, such as a power sensor upstream of the device
 or a verified physical-control event, may state its own fact; it must never be fabricated from the
 unavailable channel.
+
+### 5.1.3 Authenticated response ingress
+
+A person answers an actionable notification (for example "approve" or "dismiss") through one
+generic Layer-0 ingress; there is no per-request-type response path. Layer 6 only carries the
+answer from its delivery channel to this ingress and never interprets it.
+
+```python
+@dataclass(frozen=True)
+class ResponseRequestDeclaration:
+    request_id: str                   # core-minted, unguessable, unique across process runs
+    owner_id: str                     # registered response owner
+    allowed_actions: frozenset[str]   # closed per owner, e.g. {"approve", "dismiss"}
+    allowed_actor_categories: frozenset[Literal["resident", "ha_admin"]]
+    expires_at: EvidenceInstant
+
+@dataclass(frozen=True)
+class VerifiedResponse:
+    request_id: str
+    owner_id: str
+    action: str
+    actor_category: Literal["resident", "ha_admin"]
+    actor_ref: str                    # for the owner's governance record only
+    ingress_id: str                   # non-forgeable, deduplicated
+    received_at: EvidenceInstant
+    correlation_id: str
+```
+
+The frozen `ResponseOwnerRegistry` is closed to administrators, learners and plugins. Initial V3
+registers one owner, `layer0.recovery_confirmation` (§7.4.1); a later owner, such as proposal review
+or household consent, needs its own reviewed registration. An owner declares each request when it
+becomes actionable and withdraws it when it closes; only a currently declared, unexpired request
+accepts a response.
+
+At ingress Layer 0 verifies the Home Assistant user through HA's own authentication, maps it to
+`resident` or `ha_admin`, assigns a fresh non-forgeable `ingress_id`, mints the causal
+`correlation_id` (§5.2), and drops a duplicate report of the same ingress. It then rejects an unknown,
+withdrawn or expired `request_id`, an action outside `allowed_actions` and an actor outside
+`allowed_actor_categories`, all without calling the owner. Only a fully verified `VerifiedResponse`
+reaches the owner, which alone decides the outcome under its own contract (for a recovery
+confirmation, the compare-and-swap of §7.4.1). The actor reference reaches only the owner's
+governance record; operational facts and `ApplyStep`s carry only the actor category (§5). A request
+id, action or response arriving by any other path is never a response. Rejections are diagnostics.
 
 ### 5.2 `correlation_id`: generation and propagation
 
@@ -2312,7 +2398,9 @@ accepted. If the current complete observation already satisfies the target, it c
 `cancelled` with reason `already_satisfied`; no command is sent. A newly admissible,
 different proposal may create a fresh request after the current-cycle checks.
 
-Response ingress authenticates the resident and matches `request_id` to the current
+The request is declared to the authenticated response ingress (§5.1.3) when it becomes `open`,
+with actions `approve` and `dismiss` and actor category `resident`, and withdrawn on every
+terminal transition. A `VerifiedResponse` from that ingress matches `request_id` to the current
 `open` request. Approval then takes a fresh cycle input barrier and reruns the same
 read/evaluate/compare and dispatch admission under a serialized compare-and-swap on
 request state, proposal fingerprint and active generation. If unchanged, it records
@@ -2383,6 +2471,11 @@ Silent failure is not acceptable anywhere in this section.
   checkpoint remains dirty for retry. The failure does not change the cycle's `RecoveryState`,
   which is classified from current recovery inputs (§7.1). A missing or unusable prior projection
   still supplies no baseline for that entity (§7.3), never evidence that nothing changed.
+- **Notification outbox write failure** (§4.5): the affected notification becomes best effort with a
+  diagnostic; a `ready` record is never claimed without its committed audit fact, and no cycle,
+  command or revocation waits on the outbox.
+- **Response ingress rejection** (§5.1.3): an unauthenticated, duplicate, unknown, expired,
+  out-of-vocabulary or unauthorized response reaches no owner and is a diagnostic.
 - **Follow-up outbox preparation/finalization failure** (§4.5): surface `follow_up_durability_degraded` when preparation fails or misses its finite acknowledgement deadline; do not indefinitely block a scheduled step or immediate revocation. Reconcile an uncertain write under the same operation id, and keep a prepared or ready intent for the prescribed recovery and delivery retry. A failed finalization must not claim that the event fact was committed.
 - **Hold-audit validation or durable write failure** (§6.1/§6.4): a violated staged depth/size bound is a producer-contract diagnostic and blocks the continuity watermark, never a truncated fact or permission to bypass the live hold. An already valid fact whose durable write fails remains queued with `durability_pending`, subject to the §4.6 budget and overflow rule. A crash can leave an audit gap bounded by §4.4; restart never restores the hold from audit.
 - **Observation-continuity metadata failure** (§4.4): do not acknowledge a historical watermark or report complete coverage across an uncommitted interruption boundary. Surface degraded continuity and use the conservative incomplete/unknown coverage result for affected historical reads; current-cycle action admission still uses fresh inputs.
@@ -2445,6 +2538,9 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   post-break observation against the last known expectation, with current RecoveryState and
   known break context. This comparison is not a hold event, persisted fact, or claim about an
   offline resident action (§6.3).
+- **Notification outbox**: record counts per kind and phase, oldest undelivered `ready` age,
+  delivery retries and write failures (§4.5).
+- **Response ingress**: declared open requests per owner and rejected responses by reason (§5.1.3).
 - **Clock**: last cycle instant, last clock comparison, and every detected discontinuity with
   direction, size, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
 - **Retry queue**: queued bytes, current budget and its source (floor or memory limit), and, after
@@ -2485,6 +2581,17 @@ by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3
 
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
+
+- Every delivered notification of any kind has exactly one audit event fact and one outbox record
+  written in the same transaction; a crash between them is impossible by construction. A `ready`
+  record survives fact retention until delivered or retired; an exact transition retry is
+  idempotent and a different payload under the same `(notification_kind, operation_id)` is
+  rejected. Only `reaction.follow_up` uses `prepared`. A storage failure blocks no cycle (§4.5).
+- A response to a recovery confirmation through the ingress reaches the owner only with a valid HA
+  user of an allowed category, a declared unexpired request and an allowed action; a forged,
+  duplicate, expired or withdrawn request, an admin-only actor where only `resident` is allowed, or
+  an action outside the vocabulary reaches no owner. The owner's record keeps the actor reference;
+  the resulting `ApplyStep` carries only the actor category (§5.1.3, §7.4.1).
 
 - A `HistoryViewRequirement` stages only for a registered state/event stream
   with its matching slice kind, unique id and retained positive `Window`.

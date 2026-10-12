@@ -646,10 +646,14 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
 One pipeline handles every outbound notification — operational events (a reaction fired, a security
 condition, a semantic-claim transition) and review items (a new learned proposal, N new automation
 suggestions) alike — instead of one sophisticated, configurable path for the former and a separate,
-unconfigurable direct-call path for the latter.
+unconfigurable direct-call path for the latter. Answers to actionable notifications return through
+one authenticated Layer-0 response ingress that routes a verified response to the request's
+registered owner (initially the power-recovery confirmation); Layer 6 only carries them.
 
 The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence values,
-uses Layer 0's per-channel durable outbox, renders and persists the one event fact,
+uses Layer 0's unified notification outbox (one durable store for every notification to a person:
+`prepared` only for follow-up, then `ready` committed together with the audit event fact, then
+`delivered`), renders and persists the one event fact,
 and retries delivery. Its renderer declares finite maximum UTF-8 title and message
 lengths in every supported locale so Layer-5 staging can prove the complete event
 fits Layer 1's depth-two/8 KiB value contract. A failed or timed-out intent

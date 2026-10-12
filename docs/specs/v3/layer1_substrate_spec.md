@@ -315,8 +315,10 @@ core-owned availability-event adapter. Layer 6's transient `AvailabilityEpisodeT
 typed suppression occurrence from its owner, reconciles the current episode against the staged
 publication generation, and invokes this adapter only for a resident-visible delivery. The adapter
 renders the event's title/message and constructs the canonical notification key, severity and bounded
-context before appending the event fact; neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
-event. Layer 0 reserves its exclusive event claim.
+context, then appends the event fact together with its `ready` delivery record in the unified
+notification outbox (Layer 0 §4.5); neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
+event. Layer 0 reserves its exclusive event claim. Every notification Layer 6 delivers follows this
+same audit-fact-plus-outbox rule.
 
 ---
 
