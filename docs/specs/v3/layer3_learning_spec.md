@@ -2387,7 +2387,8 @@ notification priority, quiet-period, channel, or frequency parameter for one dec
 `presentation_scope`. This is a generic presentation scope supplied by a registered Reaction
 descriptor, such as its semantic intent plus explicit Location; it is never a raw HA entity, payload,
 or a ventilation-specific model. The model uses only explicit resident feedback such as useful/not
-useful, postpone, disable, or a declared action response. Missing response is censored evidence, not
+useful, postpone, disable, or a declared action response, including the `reaction.advisory_feedback`
+answers recorded by Layer 5 (§6.0 of Layer 5). Missing response is censored evidence, not
 rejection. Its outcome is a reviewed delivery-parameter candidate only: it cannot change an
 environmental effect estimate, message meaning, guard, safety classification, policy eligibility, or
 actuator policy. A safety-critical notification is never delayed, ranked below another notification,

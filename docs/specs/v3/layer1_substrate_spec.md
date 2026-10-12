@@ -332,6 +332,8 @@ recovery-confirmation adapter, which renders the actionable notification from La
 new or again-approvable proposal, administrators) and `reaction.consent_request` (household consent
 needed or no longer needed, consent-authorized residents) are approved V3 event fact types with
 the same sole-Layer-6-producer rule, each rendered from its typed Layer-5 occurrence (Layer 5 §6.0).
+`reaction.advisory_feedback` is an approved V3 event fact type but not a notification: Layer 5 alone
+appends it when a resident answers an advisory, as non-authoritative learning evidence.
 
 ---
 

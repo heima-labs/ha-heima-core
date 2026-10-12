@@ -2375,14 +2375,32 @@ class ConsentRequestOccurrence:
     authority_transition_id: str      # the transition that opened the request
     reaction_descriptor_id: str
     subject: Location
-    closed_reason: Literal["granted", "authorization_disabled", "superseded"] | None
+    closed_reason: Literal["granted", "declined", "authorization_disabled", "superseded"] | None
     occurred_at: EvidenceInstant
 ```
 
-Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1). In Initial V3 the
-notice is informative: consent is granted through the existing `set_reaction_household_consent`
-command, not through the notification. An actionable consent answer would need its own registered
-owner in Layer 0's response ingress (§5.1.3) and is a later extension.
+Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1). The notice is
+actionable: on `opened` the response owner `layer5.household_consent` declares a request to Layer
+0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor category
+`resident`, expiring when the request closes. A `VerifiedResponse` is applied only if its
+`actor_ref` is currently in `HouseholdConsentAuthority`: `grant` appends exactly the authority
+transition of `set_reaction_household_consent` against the opening authority transition as its
+precondition, using the ingress id as the operation id; `decline` changes no authority and closes
+the request with `declined`. A stale precondition, a removed resident or a closed request changes
+nothing. The same `set_reaction_household_consent` command from the Layer-8 surface remains
+available; both paths share one authority rule.
+
+#### Advisory feedback
+
+Each delivered `ReactionAdvisoryOccurrence` is actionable for feedback only: the owner
+`layer5.advisory_feedback` declares a request with actions `done`, `dismiss` and `not_useful`, actor
+category `resident`, expiring when the activation ends or after the core advisory feedback window,
+whichever comes first. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
+(`advisory_operation_id`, `action`, `actor_category`, `recorded_at`), once per advisory and
+action. Feedback grants no authority, sends no command, changes no Reaction state and is never a
+correction of Heima. It is bounded explicit evidence for the future
+`ResidentPresentationPreferenceModel` (Layer 3 §4.8.3); an unanswered advisory is censored, not a
+negative answer.
 
 #### Resident follow-up operational event
 
@@ -4082,6 +4100,12 @@ profile or learner, and declares `requires_household_consent=True`,
 
 ## 8. Initial acceptance criteria
 
+- A consent request answered `grant` from a notification by a resident in
+  `HouseholdConsentAuthority` appends the same authority transition as the command and closes the
+  request `granted`; the same answer from a resident not in the authority, after the request
+  closed, or with a stale opening transition changes nothing. `decline` changes no authority. An
+  advisory answered `not_useful` appends one `reaction.advisory_feedback` and nothing else; a
+  second identical answer appends none; an unanswered advisory records nothing.
 - A weather-protection activation that secures two channels and skips one held channel produces
   one `ReactionActionNoticeOccurrence` with three channel outcomes, once, after every confirmation
   window; a descriptor with `resident_action_notice=False` produces none. A new proposal produces

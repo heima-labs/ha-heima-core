@@ -1781,6 +1781,19 @@ Inputs are the closed typed occurrences of CA4-65–68.
   through `ha_user_id`, never configured by hand. Audience membership is a delivery preference,
   never authority. An audience with no reachable recipient never drops a notification silently
   (fallback channel: C2).
+- **C2 — Channels (use Home Assistant infrastructure wherever possible).** Primary delivery is the
+  recipients' `notify.*` endpoints; closing/replacing a notification uses the mobile notification
+  `tag` set to `notification_key`; button answers arrive through HA's `mobile_app_notification_action`
+  event, which Layer 6 forwards to Layer 0's response ingress. `persistent_notification` is the
+  fallback when an audience has no reachable recipient or every endpoint failed after retries; the
+  outbox records the delivery channel. Retries use core-fixed attempts and growing intervals. An
+  actionable notification goes only to `supports_actions` endpoints; without one it is sent without
+  buttons and stays answerable from the Layer-8 surface through the same ingress. Every delivered
+  notification also fires a `heima_notification` HA bus event with closed fields (type, audience,
+  operation id), no text or identity, for users' own automations. Actionable types: recovery
+  confirmation (approve/dismiss), household consent (grant/decline, CA4-69), advisory feedback
+  (done/dismiss/not_useful, CA4-69); proposal review links to the Layer-8 panel; follow-up,
+  availability and action notices are informative.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
@@ -5026,9 +5039,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66 | 0 | 0 | 36 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–68 | 0 | 0 | 26 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69 | 0 | 0 | 27 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **68 findings** | **0** | **0** | **67** | **1** |
+| **Total** | **69 findings** | **0** | **0** | **68** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6148,6 +6161,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-69 — Consent and advisory notices could not be answered
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P2. **Origin:** Layer-6 decision C2.
+
+**Problem.** Only the recovery confirmation had a response owner; household consent could be given only from the admin surface, and advisories collected no feedback although Layer 3 plans a presentation-preference model trained on explicit resident feedback.
+
+**Approved resolution (2026-10-12).** Layer 0's response ingress registers `layer5.household_consent` (grant/decline; applied only for a resident currently in `HouseholdConsentAuthority`, through the same authority transition and precondition as `set_reaction_household_consent`; decline changes no authority) and `layer5.advisory_feedback` (done/dismiss/not_useful; appends a non-authoritative `reaction.advisory_feedback` event fact, reserved for Layer 5). Unanswered advisories are censored, not negative. See the [CA4-69 review](specs/v3/reviews/CA4-69.md); no V3 runtime test ran.
 
 #### CA4-68 — Protective-action, proposal-review and consent notices had no contracts
 
