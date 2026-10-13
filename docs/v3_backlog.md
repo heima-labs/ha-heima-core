@@ -1918,6 +1918,13 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   templates, entities and user documentation. Internal concepts (generation, binding, envelope)
   never appear in the resident view and appear in the administrator view only with a glossary
   explanation. The panel follows the HA user's language.
+- **L8-C8 — First start and V2 cutover.** The config flow only creates the integration. The panel
+  then opens a guided first-start procedure: rooms, topology, devices, people and notifications,
+  suggested automations. Each step is an ordinary session change set (L8-C4) with its preview;
+  applied steps stay applied, and on return the procedure derives its progress from what is
+  already configured (only the unapplied changes of the current step are lost). V2 cutover follows
+  Layer 2 §1.1 unchanged: nothing is imported, and the panel never reads, displays or interprets a
+  V2 export; the administrator may consult it outside Heima.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
