@@ -1884,6 +1884,15 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   the current core; anything no longer valid appears as a preview error. Partial restore: any entry
   of a restore change set can be removed before applying, and every object page offers "restore
   this version" for that object alone.
+- **L8-C5 — Explainability.** (1) Every object (room, actuator, automation, notification) has a
+  "Why?" panel with a readable causal chain: effect <- decision (Reaction, outcome, reasons) <-
+  trigger <- semantic conclusion <- sensor readings, stitched by `correlation_id` and links. (2) A
+  durable `reaction.decision` event per evaluation whose trigger fired (CA4-79) answers "why did it
+  not act at that time"; when no decision exists, the trigger fact's own state history explains
+  that nothing fired, and the thresholds and bindings come from the generation active at that time
+  (CA4-78). Beyond fact retention the panel says the data is no longer available. (3)
+  Administrators see the full chain with codes and links; residents see the same chain in plain
+  language with the localized Layer-6 templates and no technical identifiers.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
@@ -5129,9 +5138,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70 | 0 | 0 | 37 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76 | 0 | 0 | 33 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79 | 0 | 0 | 34 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78 | 0 | 0 | 6 | 0 |
-| **Total** | **78 findings** | **0** | **0** | **77** | **1** |
+| **Total** | **79 findings** | **0** | **0** | **78** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6251,6 +6260,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-79 — "Why did it not act?" had no durable answer
+
+**Status:** DONE (2026-10-13; specification readiness). **Severity:** P2. **Origin:** Layer 8 decision L8-C5.
+
+**Problem.** `ReactionEvaluationResult` (outcome and reasons) was "recorded for each snapshot" without a defined store or lifetime; only resident-notified blocks were durable (`automation.availability`). An explanation of a past non-action, the most common user question, was not guaranteed, and the evaluation reasons did not say which guard failed.
+
+**Approved resolution (2026-10-13).** Layer 5 appends one `reaction.decision` event fact (owner `layer5.reaction_decision`, reserved in Layer 0, approved in Layer 1) for every evaluation whose outcome is not `not_triggered`: outcome, reasons, failed guard binding ids, execution mode and admission result, keyed by the evaluation identity; trial mode is recorded too. Not-triggered evaluations write nothing (the trigger fact history explains them). Ordinary asynchronous persistence and default 14-day retention; estimated 300-2,000 facts/day, a few MB, under the per-type ceiling. See the [CA4-79 review](specs/v3/reviews/CA4-79.md); no V3 runtime test ran.
 
 #### CA4-78 — Past configuration generations had no retention rule
 

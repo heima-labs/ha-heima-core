@@ -1917,6 +1917,42 @@ reasons; `guards_unsatisfied` has exactly `("semantic_guard_unsatisfied",)`; `ab
 evaluation reason and a non-empty canonical Layer-3 `AutomationSuppressionReason` tuple; `eligible`
 has both tuples empty. No `ReactionEvaluationResult` may carry an arbitrary string.
 
+#### Decision record
+
+Every evaluation whose outcome is not `not_triggered` — a fired trigger or a program evaluation —
+appends one `reaction.decision` event fact, so "why did it act, or not act, at that time" has an
+exact durable answer. A `not_triggered` evaluation appends nothing: the history of the trigger's
+own state fact already explains why nothing fired.
+
+```python
+@dataclass(frozen=True)
+class ReactionDecisionValue:
+    reaction_id: str
+    reaction_descriptor_id: str
+    configuration_generation_id: str
+    reaction_activation_id: str | None
+    snapshot_id: str
+    execution_mode: ReactionExecutionMode       # at evaluation; trial mode is recorded too
+    outcome: Literal["guards_unsatisfied", "abstained", "eligible"]
+    evaluation_reason_codes: tuple[ReactionEvaluationReasonCode, ...]
+    suppression_reason_codes: tuple[AutomationSuppressionReason, ...]
+    failed_guard_ids: tuple[str, ...]           # canonical staged guard binding ids that failed
+    admission: Literal["admitted", "blocked", "not_reached"]
+    admission_suppression_codes: tuple[AutomationSuppressionReason, ...]  # empty unless blocked
+```
+
+`failed_guard_ids` names the semantic guards of a `guards_unsatisfied` evaluation and the action
+guards behind an `action_guard_active` admission block, so the explanation never has to guess
+which guard failed. `admission` is `not_reached` unless the outcome is `eligible` in `automatic`
+mode. The fact uses `where=subject`, the cycle instant as `when`, and
+`FactSource(kind="system", source_id="layer5.reaction_decision")`; its identity is the evaluation
+identity `(reaction_id, configuration_generation_id, snapshot_id, reaction_activation_id)`, so a
+retried evaluation appends it once. It is audit and explanation evidence only: never a
+notification, a command, a learning outcome or an authority input. It is appended with the
+cycle's other facts through ordinary Layer-0 persistence (an in-memory append, durable write
+asynchronous) and keeps the default 14-day retention. Its value is bounded by the staged guard
+and reason vocabularies and fits Layer 1's depth-two/8 KiB limits.
+
 ## 6. Action admissibility and execution
 
 ### 6.0 Shared hold and command-ownership admission
@@ -4784,6 +4820,11 @@ profile or learner, and declares `requires_household_consent=True`,
   scope. The availability occurrence contains neither rendered text nor an
   Actuator/HA id and does not use `reaction.follow_up`'s prepared-intent
   write (§3.2; Layer 3 §6.3.1).
+- An evaluation whose trigger fires and whose wind guard blocks admission appends one
+  `reaction.decision` with `outcome="eligible"`, `admission="blocked"`,
+  `admission_suppression_codes=("action_guard_active",)` and the wind guard binding id; a
+  `not_triggered` evaluation appends none; a retried evaluation appends no second fact; a Reaction
+  in `notification_only` records `admission="not_reached"`.
 - Both Initial-V3 planned-absence descriptors declare
   `program_family=("planned_absence_program", "1")`, and staging rejects either one if its
   configuration lacks the `planned_absence` calendar binding, its casa presence fusion has a null
