@@ -116,7 +116,9 @@ technical identifiers. Every configuration section shows the pending-changes bar
   promotion, disablement, consent grant or revoke, consent-authority changes, proposal review,
   artifact adoption mode, answers to requests, finding acknowledgement, house-map layout edits.
   They take effect at once after a confirmation dialog that states their consequence, and never
-  enter the change set.
+  enter the change set. Accepting a learned proposal is the one immediate action that creates
+  configuration: it may name the new Reaction and commits it as one composed generation with an
+  empty impact record (Layer 5 §4.1); an open change set is then rebased (§6.4).
 
 ### 6.2 Session change set
 

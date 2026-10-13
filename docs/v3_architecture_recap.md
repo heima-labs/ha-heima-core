@@ -495,7 +495,8 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   suppression. Reaction guards use one bootstrap-frozen core capability registry and typed,
   versioned household guard-profile generations, not per-descriptor condition expressions.
 - **Review and application**: `ReactionProposal` governs learned configuration only. Accepted
-  proposals first stage a `ConfiguredReaction` in `notification_only` mode; automatic action is a
+  proposals first stage a `ConfiguredReaction` in `notification_only` mode, committed at once as one
+  composed generation with an empty impact record (Layer 5 §4.1); automatic action is a
   separate authenticated transition. An admitted semantic channel target compiles through one closed
   intent/channel/adapter translation into one endpoint-owned `ApplyStep`, with ordered `ApplyCall`s
   when HA requires several services. Every step retains its exact configuration generation, so retry,

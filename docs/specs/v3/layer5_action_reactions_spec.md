@@ -986,7 +986,9 @@ registry canonical order; `approvable` readiness has an empty tuple.
 #### Governance command results
 
 Every common §4.2 command and every registered descriptor-specific preparation command, such as
-`stage_comfort_trajectory_prerequisite_generation`, returns exactly one typed result to its caller:
+`stage_comfort_trajectory_prerequisite_generation`, returns exactly one typed result to its caller.
+For a staging contribution (§4.2) the result reports its validation when the edit is checked, and
+`resulting_ref` is set only once the change set commits:
 
 ```python
 @dataclass(frozen=True)
@@ -1287,11 +1289,20 @@ discarding an item that Layer 3 can still substantiate. Layer 5 records this, an
 non-transitioning revalidation result, as a `ProposalReadinessAssessment`; it never overloads a review
 transition to record a failed attempt.
 
-An authenticated acceptance is one transaction: Layer 5 revalidates the immutable admitted payload
-against the current registry generation, Actuator inventory, Topology, and guard profile; creates the
-resulting `ConfiguredReaction` in `notification_only` mode; and records the accepting actor, time,
-decision reason, evidence revision, and resulting reaction identity in the one `accepted`
-`ProposalReviewTransition`. A recoverable current staging failure leaves the proposal `pending` with a
+An authenticated acceptance is an immediate governance command that commits one composed
+configuration generation (Layer 0 §4.7). Layer 5 revalidates the immutable admitted payload against
+the current registry generation, Actuator inventory, Topology, and guard profile, and stages a
+candidate composition that adds the resulting `ConfiguredReaction` (root and generation index `0`,
+in `notification_only` mode), its Reaction-catalog entry with the optional `display_name` supplied
+with the command, and the availability publication bindings Layer 6 derives from it (disabled,
+since the Reaction is not `automatic`). A new Reaction is only a new consumer, so its impact record
+is empty and needs no confirmation. One durable transaction writes the manifest, the new layer
+generations and the one `accepted` `ProposalReviewTransition`, which records the accepting actor,
+time, decision reason, evidence revision, and resulting reaction identity; a crash reveals all or
+none of them. A catalog name collision (§4.2) rejects the command with `validation_failed` and
+changes nothing; the proposal stays `pending` and the administrator may retry with an explicit
+`display_name`. An administrator's open change set based on the previous generation is rebased
+under Layer 8 §6.4. A recoverable current staging failure leaves the proposal `pending` with a
 typed non-approvability `ProposalReadinessAssessment`. A candidate-kind/version incompatibility instead
 moves the still-pending proposal to the terminal
 `proposal_incompatible` disposition under §4's selective reconciliation rule.
@@ -1684,7 +1695,12 @@ governance ledger.
 #### Common Layer-8 command surface
 
 Layer 8 renders descriptor-specific forms but sends only these shared typed
-Reaction governance commands to Layer 5. Every command carries an
+Reaction commands to Layer 5. Command 1 and the descriptor-specific
+preparation inputs are configuration staging: Layer 8 submits them as edits of
+its session change set, Layer 5 validates them as its contribution to the
+candidate composition, and they take effect only when that change set commits
+through Layer 0 §4.7. Commands 2 to 7 are immediate actions; only an accepting
+`review_proposal` also commits a composed generation, as §4.1 defines. Every command carries an
 authenticated `actor_ref`, stable `operation_id`, `correlation_id`, exact
 target identity and stated optimistic-concurrency precondition. Layer 5
 validates the actor and current descriptor/generation, applies the whole
@@ -1695,9 +1711,10 @@ rejected. A stale precondition, unauthorized actor, or failed validation
 changes nothing. Command results and rejections use `GovernanceCommandResult`
 and the closed codes of §4.0, never a descriptor-invented string.
 
-1. `stage_admin_direct_reaction` creates a root plus generation `0`, or
-   appends one complete successor generation to an existing admin-direct
-   Reaction. An authenticated administrator supplies the exact descriptor
+1. `stage_admin_direct_reaction` stages a root plus generation `0`, or
+   one complete successor generation of an existing admin-direct
+   Reaction, into the candidate composition; the commit of the change set
+   appends it. An authenticated administrator supplies the exact descriptor
    id/version, complete typed configuration and expected current generation
    id, with an explicit empty-current sentinel for creation. The descriptor
    must permit `admin_direct`; staging compiles and validates the full plan
@@ -1712,8 +1729,9 @@ and the closed codes of §4.0, never a descriptor-invented string.
    authenticated administrator names the exact proposal and expected
    evidence revision; initial acceptance also names one permitted
    administrator-selected adoption mode for each selected artifact role.
-   Acceptance revalidates and creates the
-   learner-origin `ConfiguredReaction` in `notification_only` mode, or,
+   Acceptance may name an optional `display_name`; it revalidates and
+   commits the learner-origin `ConfiguredReaction` in `notification_only`
+   mode through one composed generation (§4.1), or,
    for a `ReactionArtifactAdoptionProposal`, appends only the reviewed
    revision's adoption transition to the existing Reaction. A rejected or
    incompatible proposal changes no Reaction or adoption. Neither acceptance
@@ -3790,9 +3808,11 @@ administrator submits the complete `ConditioningScope`,
 `HvacTrajectoryBinding`, `DesiredConditioningMode`,
 `ComfortTrajectoryGuardProfile` and `CalendarPlanBinding`, plus
 `expected_current_generation_id` (or the explicit empty-current sentinel),
-`operation_id` and `correlation_id`. Layer 5 appends exactly one validated
-`ComfortTrajectoryPrerequisiteGeneration` and returns its id/fingerprint, or
-changes nothing. It never accepts a field-level patch.
+`operation_id` and `correlation_id`, as one edit of the Layer-8 change set
+(§4.2). Layer 5 validates exactly one `ComfortTrajectoryPrerequisiteGeneration`
+into the candidate composition; the change-set commit (Layer 0 §4.7) appends it
+and returns its id/fingerprint, or changes nothing. It never accepts a
+field-level patch.
 
 Proposal review and all Reaction promotion, consent, disablement and
 resident-authority changes use the common §4.2 commands, with the exact
@@ -4476,6 +4496,12 @@ profile or learner, and declares `requires_household_consent=True`,
   or `review_proposal`, and uses the same `promote_reaction_automatic_action`,
   `set_reaction_household_consent` when its consent property is true,
   `disable_reaction_automatic_action`, and household authority commands.
+- Accepting a learned proposal commits one composed generation containing the new Reaction, its
+  catalog entry and its disabled availability bindings, with an empty impact record and the
+  `accepted` review transition in the same transaction; a crash leaves all or none. A composed-name
+  collision rejects it with `validation_failed`, no mutation and the proposal still `pending`; a
+  retry with an explicit `display_name` succeeds. `stage_admin_direct_reaction` and the
+  comfort-trajectory prerequisite change nothing until their change set commits (§4.1–4.2).
   A stale configuration or authority precondition, unauthorized actor,
   changed request under one operation id, or invalid descriptor configuration
   causes no partial mutation. A retry with the same operation id returns the

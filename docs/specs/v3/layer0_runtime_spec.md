@@ -1487,10 +1487,12 @@ reports the lost interval.
 Every configuration mutation in any layer — a Layer-2 registry change (including the room
 inventory attributes, Zones, `ZoneRoleBinding`s and Topology staged with it), a Layer-3 learning
 definition, a Layer-4 semantic resolver definition, a Layer-5 Reaction configuration generation,
-guard-profile or prerequisite generation, and the Layer-6 generation (the availability publication
+Reaction-catalog entry, guard-profile or prerequisite generation, and the Layer-6 generation (the availability publication
 bindings that follow from them, plus notification recipients and family options) — activates only as part of one **composed configuration generation**. Runtime
 authority transitions (promotion, consent, disablement) and artifact-adoption transitions are not
-configuration mutations and do not use this path.
+configuration mutations and do not use this path. Accepting a learned Reaction proposal is the one
+governance command that creates configuration: it commits its new Reaction through this path as
+one composed generation with an empty impact record (Layer 5 §4.1).
 
 ```python
 @dataclass(frozen=True)
@@ -1541,8 +1543,9 @@ receives a fresh preview. An empty impact record needs no confirmation. Renderin
 issuing the confirmation are Layer-8 obligations.
 
 **Commit and activation.** One durable atomic transaction writes the manifest, every new layer
-generation record and the dependent invalidations that each owning layer defines (Layer 2 §2.5,
-Layer 3 §4.1.2, Layer 4 §8, Layer 5 §4.2), or writes none of them. That durable write is the
+generation record, the dependent invalidations that each owning layer defines (Layer 2 §2.5,
+Layer 3 §4.1.2, Layer 4 §8, Layer 5 §4.2) and, for an accepted proposal, its review transition
+(Layer 5 §4.1), or writes none of them. That durable write is the
 activation: `effective_at` is its cycle-clock instant, and the engine swaps every layer's active
 pointer together at the next cycle boundary. No cycle observes a mix of old and new layer
 generations. Each produced fact carries its producer's generation fingerprint in `FactSource`, so
