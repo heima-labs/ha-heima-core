@@ -1,0 +1,9 @@
+# Pure V3 development tooling. HA integration dependencies are selected later.
+pytest
+pytest-asyncio
+pytest-cov
+hypothesis
+mutmut
+ruff
+mypy
+pip-tools

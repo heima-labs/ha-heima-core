@@ -25,7 +25,22 @@ Status: mixed. The user approved the five-method testing requirement and the con
 - **Property-Based Testing:** define invariants or relations that should hold across generated valid and invalid inputs, with reproducible seeds and shrinking where the chosen tool supports them. Properties must assert contract behavior, not reimplement the same algorithm as an oracle.
 - **Mutation Testing:** mutate the changed code and run the relevant test subset. Investigate surviving non-equivalent mutants and strengthen tests or explain the contract gap before calling the slice ready. Record tool, scope, command, killed/surviving results, and any equivalent-mutant assessment.
 
-If a technique has no applicable construct in a particular code slice (for example, MC/DC when no compound decision exists), record that specific reason in the task's test evidence. Do not silently omit a technique. Tool selection, coverage thresholds, and mutation score gates remain to be agreed with the developer; do not present an arbitrary threshold as approved policy. A green structural check is not proof of semantic behavior.
+If a technique has no applicable construct in a particular code slice (for example, MC/DC when no compound decision exists), record that specific reason in the task's test evidence. Do not silently omit a technique. The initial toolchain is recorded below; coverage thresholds and mutation score gates remain to be agreed with the developer; do not present an arbitrary threshold as approved policy. A green structural check is not proof of semantic behavior.
+
+## V3 test environment
+
+Python 3.14.5 is approved for the dedicated `.venv-v3` environment, aligned with
+Home Assistant's current minimum of Python 3.14.2. Use `requirements-v3-dev.txt`
+with hash checking and the dedicated `pytest-v3.ini`/`ruff-v3.toml`/`mypy-v3.ini` files.
+The initial toolchain is pytest, pytest-asyncio, pytest-cov, Hypothesis, mutmut,
+Ruff and mypy; pip-tools generates the pinned dependency file. See
+`TEST_ENVIRONMENT.md` for exact versions, verification and reproduction commands.
+Decision-table/boundary/MC/DC evidence is expressed through pytest cases mapped to
+specified rules; coverage.py measures line/branch coverage and does not certify
+MC/DC. Mutmut's scope limits must be recorded and any executable logic outside
+its function scope needs targeted supplementary mutation evidence. Numerical
+coverage/mutation thresholds remain undecided. The HA integration release and
+its harness are selected at the HA-adapter phase, not inherited from V2's pins.
 
 ## Git — proposal pending developer review
 
@@ -41,4 +56,4 @@ If a technique has no applicable construct in a particular code slice (for examp
 
 ## Decisions still requiring implementation design
 
-The package boundary, SQLite engine, serialized writer, specified atomic transaction units and WAL/FULL starting design are approved. Concrete schema, queue/worker implementation, checkpoint cadence, scheduler/clock adapter, canonical serializer, HA lifecycle adapter and test tools remain implementation design work. Implement Layer 0's approved overflow and progressive recovery contracts. As checked on 2026-10-13, the planning map has 77 CA4 issues and none open. See `IMPLEMENTATION_READINESS.md` for the scoped audit and distinguish first-contract-slice prerequisites from later storage, integration and deployment work. No new tool, numerical test threshold, Git or deployment policy is approved by this note.
+The package boundary, SQLite engine, serialized writer, specified atomic transaction units and WAL/FULL starting design are approved. Concrete schema, queue/worker implementation, checkpoint cadence, scheduler/clock adapter, canonical serializer and HA lifecycle adapter remain implementation design work. The initial test environment/toolchain is recorded above. Implement Layer 0's approved overflow and progressive recovery contracts. As checked on 2026-10-13, the planning map has 78 CA4 issues and none open. See `IMPLEMENTATION_READINESS.md` for the scoped audit and distinguish first-contract-slice prerequisites from later storage, integration and deployment work. No new tool, numerical test threshold, Git or deployment policy is approved by this note.

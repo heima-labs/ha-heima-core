@@ -7,7 +7,7 @@ before implementing a specific contract.
 ## Result and evidence
 
 No open CA4 correction blocks a narrow pure Layer-0/1 contract slice. The planning checker
-reports 7 authoritative layer files, 114 mapped contracts, 77 CA4 issues, 0 open and 53
+reports 7 authoritative layer files, 114 mapped contracts, 78 CA4 issues, 0 open and 54
 reviewed slices. That establishes the tracked specification status and structural map,
 not a proof that every V3 behavior is implemented or free of undiscovered contradictions.
 
@@ -21,15 +21,16 @@ worktree and a reviewed commit reference instead of trusting these old copies.
 - Agree a small slice and its concrete module/API boundaries. A possible first slice is
   canonical instants, Location, FactSource/Provenance and immutable HouseFact construction
   and payload validation. This is a proposal, not an authorization to implement all of them.
-- Establish a reproducible Python/test environment. `pyproject.toml` targets Python 3.13;
-  inherited `requirements-dev.txt` pins HA 2025.1.0 and its associated harness. The session's
-  `python3` is 3.14.5; no `.venv` is present here. The V3 HA release target remains to be
-  decided before HA integration. Do not install the old complete V2 dependency set blindly.
-- Choose the concrete tools needed for the approved five testing methods. Existing files
-  contain pytest/pytest-cov, Ruff and mypy, but no V3 property-generation or mutation
-  configuration. Decision Tables, Boundary Value Analysis and MC/DC need behavioral
-  evidence mapped to each changed rule; a branch/line coverage score is insufficient.
-  No tool or score threshold was selected by this audit.
+- **Environment completed on 2026-10-13:** dedicated `.venv-v3` on workspace-local
+  CPython 3.14.5 arm64 for Apple M1, with hashed pinned dependencies and dedicated
+  pytest/Ruff/mypy configs. The inherited Python 3.13/HA 2025.1.0 V2 configuration
+  remains separate; the V3 HA integration release/harness is selected later.
+  See `TEST_ENVIRONMENT.md` for reproduction and actual local probe results.
+- **Initial toolchain verified:** pytest/pytest-asyncio/pytest-cov, Hypothesis,
+  mutmut, Ruff and mypy. Temporary decisions/boundaries/properties/async probes passed
+  and all 3 generated mutants were killed. Decision Tables and MC/DC still require
+  behavior-derived evidence for each actual code slice; coverage is not MC/DC.
+  Numerical thresholds remain undecided.
 - Resolve import isolation for pure tests. Python imports the parent
   `custom_components.heima.__init__`, which currently imports HA and the V2 coordinator.
   A pure V3 test must not initialize that runtime as a side effect. Choose a deliberate
@@ -67,5 +68,6 @@ the eventual target before choosing release-dependent behavior.
 ## Validation of this audit task
 
 Reviewed only the owned pending changes before explicit-path staging. Planning
-`scripts/check_v3_specs.py` and patch hygiene checks pass. No V3 runtime, behavioral,
-mutation, crash, performance or live test ran: this task changes documentation only.
+`scripts/check_v3_specs.py` and patch hygiene checks pass. No V3 runtime, behavioral, crash, performance or live test ran. The subsequent
+environment task ran temporary test/property/mutation probes outside the repository;
+those results validate the tooling and are documented in `TEST_ENVIRONMENT.md`.

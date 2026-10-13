@@ -1,0 +1,12 @@
+# V3-only configuration; invoke with --config ruff-v3.toml.
+line-length = 100
+target-version = "py314"
+
+[lint]
+select = ["F", "E", "W", "I"]
+ignore = ["E501", "E402"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

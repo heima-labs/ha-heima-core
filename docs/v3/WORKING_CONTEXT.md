@@ -7,31 +7,37 @@ instructions override the next action below.
 ## Verified state — 2026-10-13
 
 - Implementation workspace: `ha-heima-component-v3-implementation`, branch
-  `feat/v3-implementation`, HEAD before this task's instruction commit `ede4fe5`, branched from planning `0063da4`;
-  use `git log -1` for the latest committed handoff.
-  No V3 implementation code, runtime, tests or deployment exists here.
+  `feat/v3-implementation`, branched from planning `0063da4`; the previous instruction commit is `6fe67b8`.
+  The current environment/tooling files are included in the developer-requested commit;
+  use `git log -1` and status for the latest revision each session.
+  No V3 application code, runtime, application tests or deployment exists here.
+  The dedicated native Python/test-tool environment is ready; its probes ran in /private/tmp.
 - Authoritative specs: sibling `../ha-heima-component-v3-planning`, branch
-  `feat/v3-planning`, CA4-70 progressive recovery committed as `f84d4e7`. Its Layer 0–6 specs supersede this checkout's older copies.
+  `feat/v3-planning`, CA4-70 progressive recovery committed as `f84d4e7`; latest planning HEAD
+  checked for this task is `64d2105` (clean). Its Layer 0–6 specs supersede this checkout's older copies.
   Layer 6 is now authoritative; later Layer 7/8 design work is separate. Recheck HEAD,
   status and current contracts each session because another session is developing specs.
-- Planning structural check passes: 7 layer files, 114 mapped contracts, 77 CA4 issues,
-  0 open, 53 reviewed slices. Specification status does not demonstrate runtime behavior.
+- Planning structural check passes: 7 layer files, 114 mapped contracts, 78 CA4 issues,
+  0 open, 54 reviewed slices. Specification status does not demonstrate runtime behavior.
 - The implemented V2 integration and its CI/live scripts remain separate. V3 is a clean
   start with no V2 migration; protect V3 public contracts once introduced.
 - CT-4 still has an implementation release gate for frozen numerical calibration and
   reproducible evidence before automatic comfort-trajectory action.
-- This task commits the previously pending instruction files (`AGENTS.md`,
-  `DEVELOPMENT_POLICY.md`, `RESUME_PROMPT.md`, this file, `CODE_RULES.md`,
-  `QUEUE_OVERFLOW_DECISION.md`) and the scoped `IMPLEMENTATION_READINESS.md` audit.
-  Check status each session and preserve any later unrelated edits.
+- Previously pending instructions/readiness were committed as `6fe67b8`. The requested
+  subsequent environment commit establishes `.venv-v3`/`.python-v3` ignores, the pinned tooling
+  requirements, dedicated V3 configs and `TEST_ENVIRONMENT.md`, plus handoff updates.
+  Runtime directories are local artifacts, not Git content.
 
 ## Current task and approved decisions
 
-The developer authorized updating CA4-70 to progressive recovery after discussing bounded
-queues, HA unknown states and the distinction between stored observations and desired targets.
-The correction is committed in planning as `f84d4e7`. The developer subsequently requested
-commits of our changes and a readiness audit; findings are in `IMPLEMENTATION_READINESS.md`.
-No code implementation was authorized by that audit request.
+The developer requested the three readiness points in order, one at a time. Point 1
+is complete: Python 3.14.5 aligned with HA's minimum and running natively arm64 on the
+Apple M1; tooling dependencies are pinned with hashes and verified by local probes.
+The initial Intel/Rosetta venv was retired to /private/tmp after the user's correction.
+The native runtime is workspace-local (uv 0.13.0/CPython standalone), avoiding a global
+Homebrew update. Point 2 is under discussion: propose a pytest-only namespace parent plus a guard against
+  HA/V2 imports for pure V3 tests, retaining the approved production package path. This
+  proposal is not yet implemented or approved. No V3 application code was written.
 
 - Package boundary approved: `custom_components/heima/v3/` with `contracts/`, `runtime/`,
   `storage/`, `adapters/ha/`. Domain contracts contain no Home Assistant imports. Individual
@@ -62,7 +68,8 @@ No code implementation was authorized by that audit request.
   active reading cannot reconstruct an invalidated opening. Recovery-only unchanged seeds
   do not create live-buffer transitions, physical edges, holds or §4.8 observer deliveries.
 - Testing approved: real behavioral verification using Decision Tables, Boundary Value
-  Analysis, MC/DC, Property-Based Testing and Mutation Testing. Tool choices and thresholds
+  Analysis, MC/DC, Property-Based Testing and Mutation Testing. The initial pytest,
+  Hypothesis, mutmut, Ruff and mypy toolchain is installed/verified; numerical thresholds
   remain open. `CODE_RULES.md` contains the approved permanent code principles; no V2
   compatibility/migration requirement is implied.
 - Git and deployment sections of `DEVELOPMENT_POLICY.md` remain proposals pending review.
@@ -90,16 +97,19 @@ No code implementation was authorized by that audit request.
   specification work and was not edited. Use contextual patches against the latest worktree, avoid whole-file
   overwrites from stale copies, and recheck concurrent changes before writing.
 
+- Environment verification: hash-checked wheel installation and `pip check` passed;
+  Python/executable architecture is arm64, version 3.14.5. A temporary probe passed
+  9 pytest cases including generated properties and asyncio; Ruff/mypy passed and
+  mutmut killed 3/3 mutants. This is tool evidence, not Heima behavior validation.
+  Commands, versions and limitations are in `TEST_ENVIRONMENT.md`.
+
 ## Next action
 
-Agree the first code slice and its reproducible test environment/tooling. The audit found
-no open CA4 blocker for a narrow pure Layer-0/1 contract slice. Repository tooling targets
-Python 3.13 and inherited HA 2025.1.0 dependencies; this session's `python3` is 3.14.5 and
-this worktree has no `.venv`. Do not assume those are a verified V3 target or environment.
-Tests must avoid initializing the V2 parent integration when importing V3 contracts.
-Then design the concrete bounded queue/writer/schema and crash/WAL checkpoints before
-implementing storage. Scheduler/clock, HA lifecycle and test lab decisions belong to their
-later slices. Git/deploy policies still need developer review; the explicit commits in
-this task are not blanket approval. Do not merge/sync the complete planning branch as an
-incidental action; use planning `f84d4e7` and current later commits as the authoritative
-read path until a bounded spec sync is requested. See `IMPLEMENTATION_READINESS.md`.
+Discuss and agree point 2: a test-only package-parent shim plus an import guard, so
+V3 contracts retain their qualified names without executing the V2 parent initializer.
+No change to the production parent initializer is proposed at this stage.
+Then discuss point 3: the exact first code slice and its modules/APIs. Point 1 is done;
+use `.venv-v3` and the dedicated configs/requirements, not the Intel system Python or
+V2 dependency pins. HA release/harness selection, concrete queue/writer/schema,
+scheduler/clock, test lab and proposed Git/deploy policies remain later work. Do not
+implement application code or move to point 3 before the developer's discussion.
