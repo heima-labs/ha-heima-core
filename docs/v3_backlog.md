@@ -1844,6 +1844,20 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   role is resolved server-side for every request from the authenticated HA user (administrator:
   HA admin user; resident: HA user linked to a Layer-6 recipient or a `HouseholdConsentAuthority`
   actor); the UI only hides what the role cannot use, and every backend command enforces it.
+- **L8-C3 — Navigation by user question.** Administrator: Overview, House, Devices,
+  Understanding (Layer-4 resolvers), Automations, Learning, Notifications, System. Resident:
+  Overview, To do (consent, recovery confirmations, advisories, including requests delivered
+  without buttons), Automations (read-only, why they acted or not, own consents with revoke),
+  Notifications (own history). A pending-changes bar in every configuration section leads to the
+  impact preview; every object shows its state and its reason; one shared terminology.
+- **L8-C3a — Native house map in the Overview.** Heima renders its own map, never a third-party
+  card: (1) an automatic schematic from `Topology` (rooms laid out by connections, one tab per floor,
+  exterior rooms distinct) with occupancy and presence, light and actuator state, opening state and
+  active or blocked automations with their reason; (2) an optional real plan: the administrator
+  uploads an image or SVG and places rooms (area or SVG element) and devices on it. Placement is
+  Layer-8 presentation data, not Layer-1 `Topology`; rooms and devices stay Heima's own, so renames
+  and removals propagate. Users who want `floorplan-card` in their own dashboards bind it to the
+  HA entities Heima exposes (L8 decision on exposed entities); Heima neither bundles nor depends on it.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
