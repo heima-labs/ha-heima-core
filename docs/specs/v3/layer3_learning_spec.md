@@ -343,7 +343,10 @@ interpolated.
   weight, while `minimum` and `maximum` range over every value held during the interval including
   the value at `T`. If the source is unavailable, stale or invalid anywhere in the interval, lacks
   an as-of state at `T - window`, or crosses an incomplete retention or observation interval, the
-  feature is missing; it is never computed over the valid part only.
+  feature is missing; it is never computed over the valid part only. A closed global
+  overflow gap does not restore an unseeded source key (Layer 0 §4.6): the as-of state
+  remains unknown until its acknowledged baseline, and that later seed never fills
+  the earlier interval. Recovery of unrelated keys does not affect this feature.
 - **Event aggregates** (`event_count`) cover the half-open interval `(T - window, T]`, so adjacent
   windows never count one occurrence twice; the concurrent group at `T` is included. A complete
   interval with no occurrence counts zero; an incomplete one makes the feature missing.
@@ -1080,7 +1083,10 @@ A sample is complete only when the entire observation window is observable and r
 anchor. Layer 0 §4.4's typed coverage determines the exclusion: an interval whose
 reasons include `process_interruption`, `clock_discontinuity`, `queue_overflow` or
 `continuity_metadata_unknown` is `censored_by_observation_gap`; the exceptional global
-`queue_overflow` epoch of Layer 0 §4.6 censors even a sample whose own stream lost no item; otherwise `required_stream_unavailable` for the
+`queue_overflow` epoch of Layer 0 §4.6 censors even a sample whose own stream lost no item.
+After its global closure, an unseeded required state key still contributes `queue_overflow`
+and censors only dependent samples until its baseline is durably acknowledged; an unrelated
+unseeded key does not censor a now-complete window. Otherwise `required_stream_unavailable` for the
 addressed channel is `censored_by_unavailability`. Both exclude the sample from
 training, validation, and the zero-count class. A restart shorter than the
 ordinary freshness bound remains a process gap. `first_incomplete_at` locates

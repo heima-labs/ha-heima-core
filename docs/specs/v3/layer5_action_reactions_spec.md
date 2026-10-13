@@ -715,7 +715,11 @@ configuration-generation replacement or authority revocation. The live
 activation and its jobs still end under the existing rules.
 
 After restart, Layer 5 reads only the latest committed managed-episode
-projection for the staged channel. An `open` value is usable only if its
+projection for the staged channel through Layer 0's per-key durable validity check
+(§4.6), not by selecting a raw old record. A projection invalidated by global queue
+overflow supplies no managed-episode proof even after the global gap closes;
+a fresh active HA reading alone cannot re-seed its opening identity.
+An `open` value is usable only if its
 Reaction and generation are still configured and authorized, the current
 descriptor still permits resumption, a fresh current channel reading is
 active and valid, and the current continuation/end rules still select an
@@ -727,7 +731,8 @@ the stored episode is closed using its stored opening identity and ordinary
 current start evaluation applies. Any later fresh inactive-to-active Heima
 start creates a new opening identity; it cannot overwrite an old open episode
 without closing it first.
-If the marker is absent, closed, malformed, uncommitted or fails the current
+If the marker is absent, closed, malformed, uncommitted, invalidated by global queue
+overflow or fails the current
 continuation checks, an active channel is not claimed or changed by this
 descriptor. Under that no-proof condition, at every process restart, if the
 first fresh valid channel observation is active, an automatically authorized
@@ -4716,6 +4721,11 @@ profile or learner, and declares `requires_household_consent=True`,
   program step trying to consume another class's estimate. An extraction
   profile cannot pool physical start, modification and termination effects;
   the same rule applies to bounded valve or cover target changes (§3.1, §7).
+- A managed-episode `open` record invalidated by global queue overflow supplies
+  no resumption proof after restart, even when the global gap is now closed
+  and HA freshly observes an active channel. The descriptor abstains and uses
+  its existing no-proof availability notice. A valid new owner-proved baseline
+  remains subject to all ordinary resumption checks (§3.2; Layer 0 §4.6).
 - A step requiring an exact-class estimate suppresses only that step when
   its class/context/horizon cell is ineligible. An independently declared
   deterministic step remains evaluable through the same `evaluate_program`

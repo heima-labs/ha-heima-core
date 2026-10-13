@@ -709,7 +709,12 @@ at that instant is the reconstructed current value.
 If no at-or-before record survives, the state at `t1` is unknown: a later record cannot
 seed the earlier portion of the interval. The read reports truncated retention rather
 than treating that portion as an unchanged value. A pruned transition may also make a
-retained predecessor unreliable (§4.3).
+retained predecessor unreliable (§4.3). A predecessor invalidated by global queue overflow
+is instead an observation-coverage limit (§4.4/§4.6), not retention pruning. It cannot
+seed a post-gap interval merely because its bytes remain on disk. Until a valid new
+baseline for that key is acknowledged, durable reconstruction returns unknown and
+`queue_overflow` incomplete coverage for the unseeded interval; a later baseline
+never fills an earlier part of the interval retroactively.
 
 ### 4.1 Two storage tiers
 
@@ -932,6 +937,13 @@ The first valid per-channel `actuator.channel_state.*` observation after
 process restart is the narrow §5.1.1.1 exception: it force-writes one
 new-epoch boundary record even if the old durable state fingerprint
 matches, never one record per identical read.
+After the global baseline invalidation of §4.6, a fresh producer assertion may also
+force one durable baseline record despite an unchanged live fingerprint. This record
+uses its actual validation-cycle instant and coordinator-assigned `AppendOrder`;
+it joins the same ordered end-of-cycle batch and `CycleCommitMarker` transaction.
+It does not append a duplicate transition to the live short-term buffer, change the
+live current index or `PreviousCycleSnapshot`, or notify §4.8 subscribers. A genuine
+state change still takes the ordinary path exactly once and may supply the new baseline.
 
 Multiple changed candidates for one `FactIdentityKey` in one cycle are each accepted and appended in
 their coordinator order; only the last becomes the index's current value. Persistence must not coalesce
@@ -1102,7 +1114,8 @@ semantics decide whether a gap exactly on a boundary intersects it. The field
 identifies an observation limit, never the occurrence time of a missing event.
 `complete` requires that the
 requested interval intersects neither a process interruption, a clock discontinuity (§3.5),
-a durable-queue overflow loss of a required stream or a global overflow epoch (§4.6), nor an unavailable interval
+a durable-queue overflow loss or unseeded post-overflow baseline of a required stream,
+a global overflow epoch (§4.6), nor an unavailable interval
 of any required stream, and that continuity metadata is trustworthy. An unknown boundary
 reports `continuity_metadata_unknown`, never optimistic completeness. Per-Actuator/channel
 `available=False` intervals remain ordinary state history and affect only reads that
@@ -1167,10 +1180,13 @@ diagnostic and cannot certify a complete historical interval. The marker is boun
 metadata, not a `HouseFact`, hold journal, or per-Actuator checkpoint.
 A queue item discarded under §4.6 counts as resolved for this rule only after the
 `queue_overflow` gap boundary that declares its loss is durably acknowledged; the watermark
-never certifies a discarded item as written. An open global overflow epoch prevents the
-watermark from certifying complete observation through that epoch, even if retained items
-have been written. Its end is acknowledged only with the atomic re-seed and closure batch. The same recurrence performs the clock comparison
-of §3.5.
+never certifies a discarded item as written. An open global overflow epoch prevents
+complete observation coverage through that epoch even if retained items have been written.
+Its closure follows the acknowledged intake/accounting boundary of §4.6, not an
+all-key re-seed transaction. The watermark may then advance under its ordinary accounting
+rule while individual state keys still lack a valid durable baseline: it cannot erase
+their `queue_overflow` coverage limits or certify an old value as current. The same
+recurrence performs the clock comparison of §3.5.
 An attempted hold transition that cannot construct a valid audit fact despite
 its staged proof is also a continuity blocker from that known transition instant
 (§6.4): the watermark cannot cross it. Reads requiring that audit stream
@@ -1385,19 +1401,74 @@ even if no item from that stream was dropped. The durable latest-value index can
 as a current-state claim across the epoch. The live current index and short-term buffer remain
 usable during the running process; the global gap changes historical proof, not HA admission.
 
-On storage recovery, the global opening boundary is acknowledged before or atomically with
-retained facts. The epoch stays open until a new complete HA intake snapshot establishes a
-`CycleInputBarrier` with valid source health and an explicit current-cycle availability result
-for every staged binding. At that barrier every staged current-state claim, including an
-unavailable one, is materialized as a new state-epoch fact even when its value equals the last
-durable fact. The complete re-seed and global closing boundary commit atomically in append
-order; a partial re-seed cannot close the epoch. If the writer or HA intake fails, the epoch
-remains open. State reconstruction does not carry an older value across it, and ordinary
-stream-specific unavailability still applies after closure. A crash before the opening
-boundary is durable is covered by the unadvanced watermark/process-interruption rule (§4.4);
-a crash after it is durable leaves an open gap until a valid closure is committed. These
-exceptional state-epoch facts are the sole write-on-change exception for recovery, not a
-periodic duplicate-state stream.
+**Global invalidation and per-key recovery.** The global opening records a baseline-invalidation boundary
+at the coordinator instant and append position of the irreducible overflow, separate
+from the earlier first-loss instant used for historical coverage. Every state key
+requires a fresh acknowledged assertion after that invalidation boundary; no retained
+older baseline is exempt merely because it postdates the first lost historical item. This validity is
+Persistence metadata, separate from `HouseFact.how.available`: missing durable proof
+does not make the live producer or device unavailable. Pending validity bookkeeping
+uses the existing staged state-key/current-index inventory, not a second payload queue
+or a growing list of recovery snapshots. A further irreducible loss of protected states
+or continuity boundaries during recovery advances the invalidation boundary in the
+same bounded global marker; seeds preceding that new boundary cannot validate the new
+baseline generation. Invalidation is durable before or atomically with records that
+rely on it. Closing a global gap never revives an invalidated older baseline.
+
+**Progressive re-seed.** On storage recovery, the global opening boundary is acknowledged
+before or atomically with retained facts, which keep their original order and timestamps.
+A new complete HA intake establishes a `CycleInputBarrier` with valid source health
+and an explicit current-cycle availability result for every staged binding. This is a
+new read of HA's state, not a requirement for every device to report a new measurement:
+Layer 2's existing source-validity rules apply. An undefined or expired source produces
+`available=False`; the intake does not wait until every source is readable.
+
+Over successive evaluation cycles, each owning producer can supply a fresh valid
+current-state assertion for its key, including a genuinely unavailable assertion.
+Only assertions that fit the available queue capacity are admitted as recovery baselines;
+otherwise recovery of that key waits for a later fresh assertion. The coordinator must
+schedule pending eligible keys fairly as capacity becomes available. It never assembles
+all keys into another full snapshot or evicts ordinary queued facts just to admit an
+unchanged recovery baseline. Changed facts retain ordinary admission/overflow semantics.
+A lifecycle state requires its owner's current proof; HA active state alone cannot
+recreate a managed episode, and an older stored fact cannot be copied and redated as
+proof. Already retained pre-recovery facts remain historical records, not a replacement
+for a fresh post-invalidation assertion.
+
+A baseline is a complete producer-validated `HouseFact`, using that validation cycle's
+instant and `AppendOrder`. Under §4.2 it may be written despite an unchanged live
+fingerprint, through the same bounded queue, serialized writer and atomic per-cycle
+transaction. No synchronous write, second queue or whole-re-seed transaction is added.
+Queue admission alone does not recover a key: its baseline and validity metadata must
+be durably acknowledged together. A failed or discarded baseline leaves the key pending.
+A newer state assertion stays after an older seed in append order; a late acknowledgement
+cannot roll the key back, and no latest assertion lost under a subsequent invalidation
+can be certified by an earlier seed. An acknowledged unavailable baseline restores the
+key's durable starting point but its stream remains unavailable under §4.4. A seed never
+backdates knowledge across the preceding uncertain interval.
+
+**Global closure.** The global gap may close before all state keys have baselines.
+Choose a fresh complete HA intake barrier and the full append boundary of its
+completed evaluation cycle, including later DAG facts that share its cycle instant.
+Every accepted fact, audit item and continuity boundary through that full boundary
+must be durably acknowledged or have its loss durably declared; the intake
+`max_append_ordinal` alone cannot certify later same-cycle facts. A failed write or a further overflow loss while this boundary is being
+established leaves the global gap open and requires a new closure attempt. Persist the
+closing boundary and its intake identity/accounting acknowledgement atomically, after
+or with the ordered writes they certify. Ordinary cycle batches retain their own
+`CycleCommitMarker` atomicity; the final boundary need not contain all recovery baselines.
+
+After closure, event reads can regain complete coverage under §4.4 and state reads can
+regain it independently for seeded keys. A state read requiring an unseeded key remains
+incomplete with `queue_overflow` from the request's first intersecting uncertain instant
+until a valid acknowledged baseline, even outside the now-closed global interval. Other
+keys' unrecovered status does not affect it. Ordinary source unavailability still applies
+and is not relabeled as storage loss. Durable validity survives restart. A crash before
+the opening boundary is durable uses the unadvanced watermark/process-interruption rule;
+a durable open gap stays open until a valid closure, and a crash after closure cannot
+restore an unseeded key from pre-invalidation history. No recovery action changes the
+live current index, short-term history, holds or §4.8 observers solely because storage
+validity changed.
 
 The short-term buffer (§4.1) and the live current index are not reduced by this policy, so
 hot-path windows and current-state admission are unaffected. Discarding emits the
@@ -1728,7 +1799,13 @@ current state, not an intervention during the gap. A later physical edge
 uses the exact normalized changed-facet set, non-forgeable edge id and
 verified origin class from this ingress. The projected `HouseFact.when` is
 the observation edge instant, or the first valid barrier instant for an
-initial state. On unavailable input it emits `available=False`; its value is
+initial state. A durable-only re-seed after global queue overflow (§4.6) uses a fresh
+validated current observation projected with `changed_facets=[]`, `control_edge_id=None`
+and `origin="initial"` at its validation-cycle instant. It does not mint a physical
+edge, change the live observation epoch/revision, emit resident-control/correction
+or reset a live hold. A real newly observed physical change retains its ordinary
+edge projection exactly once and can establish the baseline itself.
+On unavailable input it emits `available=False`; its value is
 undefined and no edge id or resident event is fabricated. If a verified
 resident control changes the channel, the state fact and unchanged
 three-field `actuator.resident_control` event share the same
@@ -1784,8 +1861,11 @@ per-command flush, journal, periodic refresh or write for a speed change.
 Write-on-change emits only the opening and closure transitions; the latest
 state record per channel is retained under §4.3, even after older event
 history is pruned. A failed batch remains queued while Heima runs. A crash
-before a committed opening leaves no durable proof; a malformed or absent
-projection likewise supplies no proof. A committed `open` value is only a
+before a committed opening leaves no durable proof; a malformed, absent or globally invalidated
+projection likewise supplies no proof. The §4.6 per-key durable validity check
+applies even when the global gap has closed; an HA active reading cannot
+recreate the stored opening identity or certify an invalidated old marker.
+A committed `open` value is only a
 candidate for Layer-5 current-policy revalidation after restart, never an
 independent command permission, restored activation, timer or hold. The first
 fresh physical channel observation is required before that revalidation;
@@ -2667,7 +2747,8 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   direction, size, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
 - **Retry queue**: queued bytes, current budget and its source (floor or memory limit), and, after
   ordinary overflow, per-stream discarded counts and `queue_overflow` lost intervals;
-  for exceptional global overflow, the epoch start/status and aggregate discarded counts (§4.6).
+  for exceptional global overflow, the epoch start/status, latest baseline invalidation,
+  aggregate discarded counts and pending/acknowledged recovery-key counts (§4.6).
 - **Persistence**: durable-tier size and retention pressure per `fact_type` (§4.3) — how close each
   is to its count ceiling, so a misbehaving sensor's volume is visible before it needs to be
   diagnosed reactively; and, per `fact_type`, its effective retention window and which registered
@@ -2769,8 +2850,16 @@ concrete checklist rather than re-deriving one:
   latest states, boundaries or one oversized item cannot fit, the global fallback
   keeps the queue within budget, leaves admission nonblocking and makes every
   intersecting historical read incomplete. After storage recovers, a fresh full
-  HA intake and atomic current-state re-seed plus closing boundary are required;
-  a partial re-seed or crash leaves the gap open. With a known 1 GiB memory limit
+  HA intake and an acknowledged closure boundary are required. Re-seeding proceeds
+  through bounded successive cycle batches; total seed volume above the queue budget
+  never creates a full snapshot queue or blocks admission. Closure may precede all
+  seeds: a post-closure read requiring an unseeded key stays incomplete, while a
+  seeded unrelated key or an event stream can regain complete coverage. A discarded
+  seed does not recover its key; an unchanged seed creates no duplicate buffer edge
+  or §4.8 delivery. Unavailable HA input is acknowledged as unavailable, not replaced
+  by an old available value. Another irreducible loss invalidates earlier recovery
+  baselines; crashes before/during/after closure preserve conservative per-key validity.
+  With a known 1 GiB memory limit
   the budget is 51.2 MiB; without a known limit it is 32 MiB; a lower recomputed
   budget does not retroactively discard items (§4.4/§4.6).
 - One `AtJob`/`CronEntry` execution path, monotonic-safe by construction; no remaining independent
