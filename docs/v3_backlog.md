@@ -1833,7 +1833,8 @@ Inputs are the closed typed occurrences of CA4-65–68.
 
 ### Layer 8 specification decisions (approved, 2026-10-13)
 
-Decisions recorded before the Layer-8 specification is written; the spec will own them.
+Decisions recorded before the Layer-8 specification was written. The approved
+[Layer 8 spec](specs/v3/layer8_administration_spec.md) (2026-10-13) now owns them; this list is history.
 
 - **L8-C1 — One configuration surface.** Every Heima configuration, review and diagnostic lives in
   one Heima panel. The HA config flow is limited to the initial installation and, if ever added,

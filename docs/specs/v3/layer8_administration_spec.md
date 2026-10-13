@@ -1,17 +1,17 @@
 # Heima v3 - Layer 8: Administration and Resident Surface
 
-**Status:** DRAFT for developer review (2026-10-13). Not approved, not implemented, not yet an
-authoritative layer in `contract_registry.json`.
-**Open corrections:** none; §15 records the decisions taken on the draft's open points. The draft
-still needs the developer's explicit approval before it becomes authoritative.
+**Status:** Defined V3 administration contract, approved 2026-10-13. Not implemented.
+**Open corrections:** none.
 
 **Layer:** 8 of 8. Presents and edits what Layers 0–6 define: Layer 0's composed configuration
 generation, configuration history, response ingress, committed-state observers and diagnostics;
 Layer 1's places and topology; Layer 2's registries; Layer 3's learning definitions and findings;
 Layer 4's semantic resolver definitions; Layer 5's Reactions, proposals, governance commands and
 decision records; Layer 6's recipients, notification history and request answers. It implements the
-Layer-8 decisions L8-C1 to L8-C8 recorded in `docs/v3_backlog.md` ("Layer 8 specification
-decisions").
+Layer-8 decisions L8-C1 to L8-C9 first recorded in `docs/v3_backlog.md` ("Layer 8 specification
+decisions"); this spec now owns them. Upstream contracts introduced for it: CA4-78 (configuration
+history), CA4-79 (decision record), CA4-80 (derived observer subscriptions), CA4-82 (owner changes
+handed to Layer 8), CA4-83 (`Room` registry), CA4-84 (opening names), CA4-85 (Reaction names).
 
 ## 1. Purpose
 
@@ -405,7 +405,7 @@ retry queue, committed-state observers, generation and impact history, learning 
 notification delivery. It also shows Layer 8's own counters: rejected commands by reason, preview
 and apply outcomes, rebases and conflicts, published entities and their availability.
 
-## 15. Decisions on the draft's open points (2026-10-13)
+## 15. Decisions taken on the draft (2026-10-13)
 
 1. **Users with no role** see only "Heima is not set up for you" (§4).
 2. **Map plan assets** are stored in HA's storage directory, at most 2 MiB per floor; an SVG is

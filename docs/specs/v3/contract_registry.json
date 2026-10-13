@@ -8,7 +8,8 @@
     "docs/specs/v3/layer3_learning_spec.md",
     "docs/specs/v3/layer4_domain_spec.md",
     "docs/specs/v3/layer5_action_reactions_spec.md",
-    "docs/specs/v3/layer6_notification_spec.md"
+    "docs/specs/v3/layer6_notification_spec.md",
+    "docs/specs/v3/layer8_administration_spec.md"
   ],
   "orientation_only": [
     "docs/specs/v3/architecture_overview_defined_layers.md",
@@ -735,6 +736,66 @@
       "owner": "docs/specs/v3/layer2_registries_spec.md",
       "heading": "2.6 `Room` registry",
       "depends_on": ["L1-TOPOLOGY"]
+    },
+    {
+      "id": "L8-ROLES",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "4. Roles and access",
+      "depends_on": ["L5-REACTION-AUTHORITY", "L6-RECIPIENTS"]
+    },
+    {
+      "id": "L8-CHANGE-SET",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "6.2 Session change set",
+      "depends_on": ["L0-COMPOSED-GENERATION"]
+    },
+    {
+      "id": "L8-PREVIEW-APPLY",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "6.4 Apply",
+      "depends_on": ["L8-CHANGE-SET", "L0-COMPOSED-GENERATION"]
+    },
+    {
+      "id": "L8-HISTORY-RESTORE",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "7. History and restore (L8-C4a)",
+      "depends_on": ["L8-CHANGE-SET", "L0-COMPOSED-GENERATION", "L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L8-EXPLANATIONS",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "8. Explanations (L8-C5)",
+      "depends_on": ["L5-DECISION-RECORD", "L0-COMPOSED-GENERATION"]
+    },
+    {
+      "id": "L8-HOUSE-MAP",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "9. House map (L8-C3a)",
+      "depends_on": ["L1-TOPOLOGY", "L2-ROOM-REGISTRY", "L0-COMMITTED-STATE-OBSERVERS"]
+    },
+    {
+      "id": "L8-PUBLISHED-ENTITIES",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "10.1 Contract",
+      "depends_on": ["L0-COMMITTED-STATE-OBSERVERS"]
+    },
+    {
+      "id": "L8-PROJECTIONS",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "10.3 Feeding",
+      "depends_on": ["L0-COMMITTED-STATE-OBSERVERS", "L5-REACTION-AUTHORITY", "L6-AVAILABILITY-PUBLICATION"]
+    },
+    {
+      "id": "L8-LANGUAGES",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "12. Languages and terminology (L8-C7)",
+      "depends_on": ["L6-RENDERING"]
+    },
+    {
+      "id": "L8-BACKEND",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "13. Backend contract",
+      "depends_on": ["L8-ROLES", "L0-RESPONSE-INGRESS"]
     }
   ],
   "reviewed_slices": [

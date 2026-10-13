@@ -8,8 +8,9 @@ specification. **Reviewed through:** 2026-10-12 for every CA4 correction closed 
 `docs/v3_backlog.md`, including the CA4-64 full-reread (CA5) corrections; no CA4 item is open. Where it differs from an
 authoritative specification, that specification wins.
 
-**Scope:** Layers 0 to 6 are defined in detail today; Layer 6 (notification) was approved on
-2026-10-13. Layers 7 and 8 are outside this document except for their interface obligations.
+**Scope:** Layers 0 to 6 and Layer 8 are defined in detail today; Layer 6 (notification) and
+Layer 8 (administration) were approved on 2026-10-13. Layer 7 is outside this document except for
+its interface obligations.
 
 For bounded change work, start with the [contract registry](contract_registry.json) and
 [specification workflow](spec_workflow.md). They record ownership and review evidence without
@@ -34,6 +35,7 @@ The authoritative sources remain:
 - [Layer 4 - Semantic Resolution](layer4_domain_spec.md)
 - [Layer 5 - Action and Reaction Generation](layer5_action_reactions_spec.md)
 - [Layer 6 - Notification and Communication](layer6_notification_spec.md)
+- [Layer 8 - Administration and Resident Surface](layer8_administration_spec.md)
 
 Where this overview and an authoritative specification differ, the authoritative specification wins.
 
@@ -534,7 +536,17 @@ growing retries and a single `persistent_notification` fallback; buttons go thro
 locale. The `AvailabilityPublicationGeneration`, recipients and family options form the Layer-6
 generation of the composed configuration generation.
 
-The following ownership remains deliberately deferred beyond Layers 0--6:
+**Layer 8 (defined).** [Layer 8](layer8_administration_spec.md) is the single Heima panel, with
+content by role resolved server-side from the HA user (administrator, resident, or no access). The
+config flow only creates the integration. Configuration edits accumulate in a session change set
+and apply atomically after a preview of changes, effects and errors; governance actions and answers
+are immediate. One history timeline with restore, a "Why?" chain on every object (built on
+`reaction.decision`, trigger history and the generation of that time), a native house map,
+read-only published HA entities fed by committed-state observers and owner projections, a guided
+first start, and fully translated text (English source, `en` and `it` shipped). The panel is a Lit
+custom panel talking to typed websocket messages; nothing runs in an evaluation cycle.
+
+The following ownership remains deliberately deferred beyond Layers 0--6 and 8:
 
 - **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers,
   diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
@@ -542,16 +554,6 @@ The following ownership remains deliberately deferred beyond Layers 0--6:
   A plugin's staged producer claims and consumer bindings must enter the composed-generation
   dependency index like core ones; adding, upgrading or removing a plugin is a configuration
   mutation with the same impact preview, confirmation and invalidation rules (Layer 0 §4.7).
-- **Layer 8:** Administrative configuration, review, diagnostics and cutover user experience.
-  It renders the composed-generation impact record (breaking and semantic-only dependents with
-  cause) and sends the commit with the reviewed base generation and `impact_fingerprint`; it
-  never commits a partial layer edit or bypasses the confirmation (Layer 0 §4.7). It renders each
-  Layer-5 `GovernanceCommandResult` and execution-audit code from the closed §4.0 vocabularies and
-  never turns them into resident notifications. For Layer 6 it edits recipients and family options,
-  renders notification history with the Layer-6 templates in the viewer's locale, and offers an
-  answer path through Layer 0's ingress for requests delivered without buttons (fallback channel,
-  advisory digest).
-
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.
 

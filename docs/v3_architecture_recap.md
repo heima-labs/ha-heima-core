@@ -6,7 +6,7 @@ familiarity with any earlier version of Heima. Each block links to the backlog s
 where the full reasoning/evidence trail lives, for anyone who wants to go deeper — but the recap
 itself should be enough to understand the system on its own.
 
-**Authority and maintenance.** The Layer 0--6 specifications are authoritative; where this recap
+**Authority and maintenance.** The Layer 0--6 and Layer 8 specifications are authoritative; where this recap
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
 through:** 2026-10-12 for every CA4 correction closed in `docs/v3_backlog.md`, including the
@@ -728,21 +728,17 @@ the adapter never replays an Actuator command.
 
 ## Layer 8 — Admin / configuration surface
 
-Two UI surfaces, each with a clear job. A linear, step-based config flow for settings that are
-genuinely occasional and don't benefit from a registry-style editor (notification delivery policy,
-plugin registration/diagnostic settings, general settings). An admin panel for everything registry- or
-review-shaped, itself with two mutation patterns: a dedicated CRUD endpoint per registry
-(`Sensor`/`Zone`/`FusionRule`/`Actuator`/`Topology`, full structural editing — the right tool for
-relational/graph-shaped data that a linear form doesn't fit well) and a generic action dispatcher
-for point-actions on existing objects (accept/reject/remove one proposal — a discriminated
-action call, not full CRUD). Holds remain internal and have no manual clear action. Proposal
-review, including new learned Reaction proposals, goes through the generic-dispatcher pattern. `environment.planned_comfort_trajectory` belongs entirely
-to the panel: one atomic prerequisite-generation staging action, generic proposal review, read-only
-shadow/audit, and version-checked promotion/disablement actions. Household consent is a distinct
-resident-authorized action; it never appears in the prerequisite generation or proposal review. If an
-admin removes a resident authorized to consent, they explicitly retain or revoke each consent that
-resident previously granted.
-→ `v3_backlog.md` §Configuration surface.
+Specified and approved (2026-10-13) in the [Layer 8 spec](specs/v3/layer8_administration_spec.md),
+superseding the 2026-08-31 split between config flow and panel. One Heima panel holds every
+configuration, review and diagnostic, with content by role (administrator, resident) enforced in
+the backend; the config flow only creates the integration. Configuration edits form a session
+change set applied atomically after a preview of changes, effects and errors, so a multi-object
+change never passes through states that invalidate dependents; governance actions (promotion,
+consent, proposal review) are immediate. A single history timeline offers restore as a new change
+set; a "Why?" view explains every object from durable records; a native house map shows occupancy,
+devices and blocked automations; Heima publishes read-only HA entities for dashboards and user
+automations; a guided first start replaces any V2 import. All user-facing text is translated.
+Holds remain internal and have no manual clear action.
 
 ---
 
@@ -763,14 +759,13 @@ explainability system built on top.
 2. The digest notification capability — specified (Layer 6 §6.3), not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
    path — specified (Layer 6), not built.
-4. The Layer-8 rendering of the common Reaction commands and their closed `GovernanceCommandResult`
-   and execution-audit codes (Layer 5 §4.0, §4.2) and of the composed-generation impact preview
-   and confirmation (Layer 0 §4.7).
-5. Whether Reactions configuration moves fully into the admin panel (Layer 8).
+4. The Layer-8 rendering of Reaction commands, results and the impact preview — specified
+   (Layer 8 §6, §13), not built.
+5. Reactions configuration moves fully into the admin panel — decided (Layer 8 §6).
 6. The "no backward compatibility" project rule vs. a public plugin API (Layer 7) — needs a
    conscious amendment, not a silent exception.
 7. A namespacing convention for third-party-registered identifiers
    (`"plugin.<plugin_id>.<name>"`) — still to be reviewed for Layer 7; the current
    cross-layer claims and candidate-kind/Reaction-descriptor references must remain collision-free.
-8. Layer 0–6 have no open CA4 correction after the CA5 full reread; any new finding is tracked as
+8. Layer 0–6 and Layer 8 have no open CA4 correction after the CA5 full reread; any new finding is tracked as
    a CA4 backlog item. The retired domain drafts are historical context, not pending decisions.
