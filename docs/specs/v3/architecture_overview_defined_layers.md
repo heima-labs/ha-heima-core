@@ -8,9 +8,8 @@ specification. **Reviewed through:** 2026-10-12 for every CA4 correction closed 
 `docs/v3_backlog.md`, including the CA4-64 full-reread (CA5) corrections; no CA4 item is open. Where it differs from an
 authoritative specification, that specification wins.
 
-**Scope:** Layers 0, 1, 2, 3, 4, and 5 are defined in detail today. Layer 6 appears only where an
-already-defined layer has a deliberately narrow future interface to it. Layers 7 and 8 are outside this
-document.
+**Scope:** Layers 0 to 6 are defined in detail today; Layer 6 (notification) was approved on
+2026-10-13. Layers 7 and 8 are outside this document except for their interface obligations.
 
 For bounded change work, start with the [contract registry](contract_registry.json) and
 [specification workflow](spec_workflow.md). They record ownership and review evidence without
@@ -24,7 +23,7 @@ questions:
 1. Which layer owns each kind of data, decision, and side effect?
 2. Which paths are synchronous engine work, and which are slow/background work?
 3. Which cross-layer communications are allowed, and which are deliberately forbidden?
-4. Which decisions are already fixed before Layer 6 and the remaining layers are specified?
+4. Which decisions are already fixed before Layers 7 and 8 are specified?
 
 The authoritative sources remain:
 
@@ -34,6 +33,7 @@ The authoritative sources remain:
 - [Layer 3 - Learning / Pattern Recognition](layer3_learning_spec.md)
 - [Layer 4 - Semantic Resolution](layer4_domain_spec.md)
 - [Layer 5 - Action and Reaction Generation](layer5_action_reactions_spec.md)
+- [Layer 6 - Notification and Communication](layer6_notification_spec.md)
 
 Where this overview and an authoritative specification differ, the authoritative specification wins.
 
@@ -520,25 +520,20 @@ handling, normal exit, next-step hold release, restart and consent rules once:
   command. Preview shadow is optional rather than an evidence gate; a future learned or
   imported temporal profile needs its own contract before it can replace the core generator.
 
-The following ownership remains deliberately deferred beyond Layers 0--5:
+**Layer 6 (defined).** [Layer 6](layer6_notification_spec.md) is the one path for pushed
+notifications. A closed registry of seven kinds turns typed occurrences into one audited event fact
+per phase with no stored text, committed with its outbox record. Recipients are people with HA
+users, endpoints and closed audiences (`consent_authorities` derived from
+`HouseholdConsentAuthority`). Closed families drive quiet hours (`safety` bypasses; Reaction notices
+take their family from the descriptor namespace), proposal and advisory digests group low-urgency
+items, and item tags let later phases replace or clear a notification. Delivery uses `notify.*`,
+growing retries and a single `persistent_notification` fallback; buttons go through
+`mobile_app_notification_action` to Layer 0's ingress. Text is rendered at delivery per recipient
+locale. The `AvailabilityPublicationGeneration`, recipients and family options form the Layer-6
+generation of the composed configuration generation.
 
-- **Layer 6:** Full `AvailabilityEpisodeTracker` implementation, composition/publication of the
-  `AvailabilityPublicationGeneration`, and the `reaction.follow_up` adapter that validates typed
-  Layer-5 intents and occurrences, renders resident text, drives the Layer-0 unified notification
-  outbox and event-fact transaction for every notification it delivers (including the
-  `reaction.advisory` adapter for Layer-5 advice members), carries actionable
-  responses to Layer 0's authenticated response ingress, and retries delivery. Event facts store
-  no resident text: Layer 6 renders title and message at each delivery from the fact's closed
-  fields, core templates, the recipient's locale and current configured names (Layer 1 §3.1).
-  It must also render the typed `reaction.action_notice`, `proposal.review_pending`,
-  `reaction.consent_request`, `reaction.advisory` and `recovery.confirmation_request` occurrences
-  (Layer 5 §6.0, Layer 0 §7.4.1) and the `manual_hold_active` availability notice for a held
-  exposed channel, from typed inputs only.
-  Its `AvailabilityPublicationGeneration` must be one layer reference of the composed
-  configuration generation (Layer 0 §4.7): its publication keys join the dependency index, and
-  its reconciliation runs at the same swap as the layers it binds.
-  Notification routing, rendering, repeat replacement through item tags,
-  delivery/audit storage, and resident channel behavior also belong here.
+The following ownership remains deliberately deferred beyond Layers 0--6:
+
 - **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers,
   diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
   plugins to extend core hot-path semantic registries or create `ApplyStep`s/invoke Actuators.

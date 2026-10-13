@@ -7,7 +7,8 @@
     "docs/specs/v3/layer2_registries_spec.md",
     "docs/specs/v3/layer3_learning_spec.md",
     "docs/specs/v3/layer4_domain_spec.md",
-    "docs/specs/v3/layer5_action_reactions_spec.md"
+    "docs/specs/v3/layer5_action_reactions_spec.md",
+    "docs/specs/v3/layer6_notification_spec.md"
   ],
   "orientation_only": [
     "docs/specs/v3/architecture_overview_defined_layers.md",
@@ -656,6 +657,66 @@
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "4.8 Committed-state observers",
       "depends_on": ["L1-HOUSE-FACT-TIME", "L1-LOCATION"]
+    },
+    {
+      "id": "L6-NOTIFICATION-KINDS",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "4.1 `NotificationKindRegistry`",
+      "depends_on": ["L1-OPERATIONAL-EVENT", "L0-NOTIFICATION-OUTBOX"]
+    },
+    {
+      "id": "L6-RECIPIENTS",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "5.1 Recipient model (C1)",
+      "depends_on": ["L5-REACTION-AUTHORITY"]
+    },
+    {
+      "id": "L6-FAMILIES",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "6.1 Families (C3)",
+      "depends_on": ["L6-NOTIFICATION-KINDS"]
+    },
+    {
+      "id": "L6-QUIET-HOURS",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "6.2 Quiet hours",
+      "depends_on": ["L6-FAMILIES", "L0-COMMITTED-STATE-OBSERVERS", "L5-REACTION-GUARDS"]
+    },
+    {
+      "id": "L6-DIGESTS",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "6.3 Proposal digest (C4)",
+      "depends_on": ["L6-QUIET-HOURS", "L0-NOTIFICATION-OUTBOX"]
+    },
+    {
+      "id": "L6-DELIVERY",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "7.3 Retries and fallback",
+      "depends_on": ["L6-RECIPIENTS", "L0-NOTIFICATION-OUTBOX"]
+    },
+    {
+      "id": "L6-RESPONSES",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "7.7 Responses",
+      "depends_on": ["L0-RESPONSE-INGRESS"]
+    },
+    {
+      "id": "L6-RENDERING",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "8.1 Templates",
+      "depends_on": ["L1-OPERATIONAL-EVENT"]
+    },
+    {
+      "id": "L6-AVAILABILITY-PUBLICATION",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "9.2 `automation.availability`",
+      "depends_on": ["L6-FAMILIES"]
+    },
+    {
+      "id": "L6-GENERATION",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "10. Configuration generation",
+      "depends_on": ["L6-RECIPIENTS", "L6-AVAILABILITY-PUBLICATION"]
     }
   ],
   "reviewed_slices": [

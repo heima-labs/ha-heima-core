@@ -1769,7 +1769,8 @@ why the developer's day-to-day experience is "I only ever see house-state notifi
 
 ### Layer 6 specification decisions (approved, 2026-10-12)
 
-Decisions recorded before the Layer-6 specification is written; the spec will be their owner.
+Decisions recorded before the Layer-6 specification was written. The approved
+[Layer 6 spec](specs/v3/layer6_notification_spec.md) (2026-10-13) now owns them; this list is history.
 Inputs are the closed typed occurrences of CA4-65–68.
 
 - **C1 — Recipients.** A `NotificationRecipient` is one person: stable `recipient_id`, optional

@@ -1,9 +1,7 @@
 # Heima v3 - Layer 6: Notification and Communication
 
-**Status:** DRAFT for developer review (2026-10-12). Not approved, not implemented, not yet an
-authoritative layer in `contract_registry.json`.
-**Open corrections:** none; the upstream changes of §13 are applied (CA4-73) and §14 has no open
-point. The draft still needs the developer's explicit approval before it becomes authoritative.
+**Status:** Defined V3 notification contract, approved 2026-10-13. Not implemented.
+**Open corrections:** none.
 
 **Layer:** 6 of 8. Builds on Layer 0's unified notification delivery outbox (§4.5), committed-state
 observers (§4.8), authenticated
@@ -467,9 +465,9 @@ Layer 6 contributes to the existing diagnostics surface:
 
 Diagnostics never contain rendered text or person identities beyond `recipient_id`.
 
-## 13. Upstream changes (applied, CA4-73)
+## 13. Upstream contracts introduced for this layer
 
-- **U1** — `ConsentRequestOccurrence` and `ReactionAdvisoryOccurrence` carry
+- **U1 (CA4-73)** — `ConsentRequestOccurrence` and `ReactionAdvisoryOccurrence` carry
   `response_request_id`; a consent still open after a restart produces a `reissued` phase with a
   fresh id (Layer 5 §6.0).
 - **U2** — Layer 5's availability-binding declaration names the Reaction's
@@ -477,14 +475,10 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - **U3** — Layer 0 §4.7 includes recipients and family options in the Layer-6 generation, with no
   dependents.
 - **U4** — every `HouseholdConsentAuthority` reference is an HA user id (Layer 5 §7.1.1).
+- **CA4-74** — follow-up and action-notice occurrences carry `reaction_descriptor_id` (§6.1).
+- **CA4-75** — Layer 0 committed-state observers (Layer 0 §4.8), used by §6.2.
 
-## 14. Open points for the developer
-
-None. The retry schedule (§7.3), the advisory digest without buttons (§6.4), silent clearing of a
-closed advisory (§7.4, §9.3) and the namespace-based availability family (§6.1) were approved on
-2026-10-12.
-
-## 15. Initial acceptance criteria
+## 14. Initial acceptance criteria
 
 - Each Initial-V3 kind: a valid occurrence produces exactly one fact and one `ready` record under
   its operation id; an exact retry produces none; a conflicting retry is rejected; an invalid

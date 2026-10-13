@@ -46,7 +46,8 @@ Related reference docs also live outside this tree, under `docs/`:
   reading order; [architecture recap](../v3_architecture_recap.md) summarizes the V2-to-V3 rationale.
 - [Layer 0 runtime](v3/layer0_runtime_spec.md), [Layer 1 substrate](v3/layer1_substrate_spec.md),
   [Layer 2 registries](v3/layer2_registries_spec.md), [Layer 3 learning](v3/layer3_learning_spec.md),
-  [Layer 4 semantics](v3/layer4_domain_spec.md), [Layer 5 Reactions](v3/layer5_action_reactions_spec.md)
+  [Layer 4 semantics](v3/layer4_domain_spec.md), [Layer 5 Reactions](v3/layer5_action_reactions_spec.md),
+  [Layer 6 notifications](v3/layer6_notification_spec.md)
   — authoritative defined contracts, with unresolved CA4 corrections tracked in the backlog.
 
 ## Core

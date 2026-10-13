@@ -6,7 +6,7 @@ familiarity with any earlier version of Heima. Each block links to the backlog s
 where the full reasoning/evidence trail lives, for anyone who wants to go deeper — but the recap
 itself should be enough to understand the system on its own.
 
-**Authority and maintenance.** The Layer 0--5 specifications are authoritative; where this recap
+**Authority and maintenance.** The Layer 0--6 specifications are authoritative; where this recap
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
 through:** 2026-10-12 for every CA4 correction closed in `docs/v3_backlog.md`, including the
@@ -675,18 +675,17 @@ names of rooms and devices (Layer 1 §3.1). A failed or timed-out intent
 preparation has the diagnosed, best-effort notice guarantee described above;
 the adapter never replays an Actuator command.
 
-- **Quiet hours are resolved per closed notification family** (decided 2026-10-12, C3/C4 in
-  `v3_backlog.md`, to be owned by the Layer-6 spec): `safety` bypasses; `attention` is deferred to
+- **Quiet hours are resolved per closed notification family** (Layer 6 §6, approved 2026-10-13): `safety` bypasses; `attention` is deferred to
   the end of quiet hours; `suggestion` advisories are held and delivered as one digest at the end
   of quiet hours, only those whose activation is still open; `governance` is deferred, with
   proposal reviews grouped by the digest. Quiet hours are the existing casa
   `quiet_hours.active` fact, one source for the Layer-5 guard and Layer 6; room-scoped
   `activity.sleeping` alone does not establish a casa-wide quiet context.
-- **Digest** (decided, not built): new-proposal notices for administrators are collected for
+- **Digest** (specified in Layer 6 §6.3, not built): new-proposal notices for administrators are collected for
   30 minutes after the first one and sent as one notification ("N new proposals to review") at
   most every 4 hours, replacing the previous one on the phone through a fixed HA notification tag
   and cleared when no proposal remains open. Only proposals still open for review are counted.
-  → `v3_backlog.md` §Layer 6 specification decisions.
+  → [Layer 6 spec](specs/v3/layer6_notification_spec.md).
 
 ---
 
@@ -759,9 +758,9 @@ explainability system built on top.
 ## What's still genuinely open across all layers
 
 1. Third-party plugin discovery mechanism (entry points vs. an `hass.data` handshake) — not chosen.
-2. The digest notification capability — decided (C4), not built.
+2. The digest notification capability — specified (Layer 6 §6.3), not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
-   path — depends on the digest existing first.
+   path — specified (Layer 6), not built.
 4. The Layer-8 rendering of the common Reaction commands and their closed `GovernanceCommandResult`
    and execution-audit codes (Layer 5 §4.0, §4.2) and of the composed-generation impact preview
    and confirmation (Layer 0 §4.7).
@@ -771,5 +770,5 @@ explainability system built on top.
 7. A namespacing convention for third-party-registered identifiers
    (`"plugin.<plugin_id>.<name>"`) — still to be reviewed for Layer 7; the current
    cross-layer claims and candidate-kind/Reaction-descriptor references must remain collision-free.
-8. Layer 0–5 have no open CA4 correction after the CA5 full reread; any new finding is tracked as
+8. Layer 0–6 have no open CA4 correction after the CA5 full reread; any new finding is tracked as
    a CA4 backlog item. The retired domain drafts are historical context, not pending decisions.
