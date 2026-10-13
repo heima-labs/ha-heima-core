@@ -1502,6 +1502,17 @@
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-88",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-88.md",
+      "contracts": ["L8-PUBLISHED-ENTITIES", "L8-PROJECTIONS", "L4-ACTIVITY-SLOTS"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

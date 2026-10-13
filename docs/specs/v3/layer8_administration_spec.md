@@ -287,17 +287,24 @@ that Heima reads (Sensors) and commands (Actuators). They are read-only: Heima p
 | Entity | HA platform / class | Source | Default |
 |---|---|---|---|
 | Casa presence | `binary_sensor` / presence | Layer 4 `presence@casa` | enabled |
-| Room occupancy (one per room) | `binary_sensor` / occupancy | Layer 4 room occupancy | enabled |
-| Room activity (one per room with an activity resolver) | `sensor` / enum | Layer 4 activity | enabled |
+| Room occupancy (one per room with an occupancy resolver) | `binary_sensor` / occupancy | Layer 4 room occupancy | enabled |
+| Activity (one per activity resolver: scope × `activity_id`) | `binary_sensor` | Layer 4 `activity.<activity_id>` | enabled |
 | Automation state (one per Reaction) | `sensor` / enum: `automatic`, `trial`, `awaiting_consent`, `blocked`, `invalid` | Layer 5 mode and current block | diagnostic, disabled |
-| Pending items | `sensor` / count, attributes `proposals`, `requests` | Layer 5 and Layer 6 | enabled |
+| Pending items | `sensor` / count, attributes `proposals`, `requests` | Layer 5 and Layer 0 (§10.3) | enabled |
 | Heima health | `sensor` / enum: `ok`, `degraded`, `error` | Layer 0 health | enabled |
 
 ### 10.2 Rules
 
-- Unique ids derive from Heima identities (room id, reaction id); names come from configuration
-  and translation keys, so renames propagate.
-- A fact-backed entity is `unavailable` whenever its Heima fact is unavailable; a projection-backed
+- Unique ids derive from Heima identities (room id, resolver id, reaction id); names come from
+  configuration and translation keys, so renames propagate. An activity entity's name combines its
+  scope name with the translated activity label.
+- A fact-backed entity is `unavailable` whenever its Heima fact is unavailable, with one declared
+  exception: an activity entity is `on` when its claim is `active` and `off` otherwise, including
+  `available=False`. Activities are independent claims (Layer 4 §3.1), so each has its own entity
+  and none is merged into a per-room value. A `positive_only` profile publishes `available=False`
+  for "no positive evidence" (Layer 4 §9.4); `off` therefore means "not detected now", the HA
+  convention for detection sensors, never "proven inactive". A future `bipolar` profile declares its
+  own mapping when reviewed; a projection-backed
   entity (§10.3) is `unavailable` until its projection is rebuilt after start. None shows a stale
   value.
 - Attributes contain closed fields only (for example the block reason code), never free text or a
@@ -436,8 +443,10 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   `data_unavailable` beyond retention.
 - The house map shows occupancy within one committed cycle of a change, with no polling; a room
   removed from configuration disappears from the map and its entity from HA.
-- Every published entity is read-only, `unavailable` when its fact is unavailable, translated, and
-  carries no free text or person identity.
+- Every published entity is read-only, `unavailable` when its fact is unavailable (an activity
+  entity is `off` instead), translated, and carries no free text or person identity. A room where
+  `relax` and `working` are both active shows two activity entities `on`; a cooking entity is `off`,
+  never `unavailable`, while the hob is off or unreadable.
 - No user-facing literal string exists outside translation resources; switching the HA user's
   language to an unshipped locale shows English.
 - No panel query or command delays an evaluation cycle.
