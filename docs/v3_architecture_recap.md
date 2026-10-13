@@ -21,7 +21,7 @@ their own). V3 uses a deliberate clean-start cutover: it does not migrate V2 con
 runtime state, or learning; a V2 export can exist only outside V3 as rollback/reference material.
 
 ```
-Layer 8  Admin / config surface        config_flow forms + admin panel (registries + actions)
+Layer 8  Admin / config surface        one role-based panel, atomic change sets, history, why
 Layer 7  Extensibility                 third-party extensions, pull-only, core-mediated contracts
 Layer 6  Notification / communication  one pipeline, family quiet hours, digests
 Layer 5  Action / reaction generation  Reaction descriptors, review and safe application
