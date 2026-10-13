@@ -145,7 +145,7 @@ class NotificationEndpoint:
 class NotificationRecipient:
     recipient_id: str                 # stable, administrator-chosen, e.g. "stefano"
     ha_user_id: str | None            # links the person to HA authentication
-    locale: Literal["it", "en"] | None    # None: household locale (§8.2)
+    locale: str | None                # HA language code with an available translation; None: household locale (§8.2)
     endpoints: tuple[NotificationEndpoint, ...]
     audiences: frozenset[Literal["residents", "administrators"]]
 ```
@@ -348,9 +348,11 @@ own automations on it; Heima never consumes it.
 
 ### 8.1 Templates
 
-Each `(notification_kind, context_version)` has one core-fixed template per supported locale,
-selected further by the closed `context` fields (phase, intent, closing reason, outcome). Templates
-are versioned with the core and not editable by administrators. A template uses only closed context
+Each `(notification_kind, context_version)` has one core-fixed template, selected further by the
+closed `context` fields (phase, intent, closing reason, outcome). A template is a set of
+translation keys, never a literal string in code; its texts live in per-locale translation
+resources (English is the source locale), so adding a language adds a resource file and no code.
+Templates are versioned with the core and not editable by administrators. A template uses only closed context
 fields, the subject Location, names resolved from the current configuration (room, opening,
 Actuator) and the core-owned localized label of the Reaction's descriptor. A name longer than 64 characters is truncated; an identifier that is no longer
 configured is shown as the identifier. An unknown `context_version` renders a generic text with the
@@ -364,8 +366,10 @@ the device off (Layer 3 §6.3.1).
 
 ### 8.2 Locale
 
-The household locale is HA's `hass.config.language`; a recipient may declare its own `locale`.
-Initial V3 supports `it` and `en`; any other language falls back to `en`. A digest covering several
+The household locale is HA's `hass.config.language`; a recipient may declare its own `locale`,
+which staging accepts only if a translation resource exists for it. Initial V3 ships `en` and `it`
+resources; a locale without a resource, or a key missing from one, falls back to `en`. Dates,
+times, numbers and units are formatted with the locale and HA's unit system, never hard-coded. A digest covering several
 recipients is rendered per recipient. The fallback channel uses the household locale. Layer 8
 renders event history with the same templates in the viewer's locale.
 
@@ -521,7 +525,8 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   its operation id; an exact retry produces none; a conflicting retry is rejected; an invalid
   occurrence produces neither and one diagnostic.
 - No event fact contains a title, message, display name or person identity; a template test
-  renders every kind, phase and `context_version` in `it` and `en` within the length bounds.
+  renders every kind, phase and `context_version` in every shipped locale within the length
+  bounds, and finds no user-facing literal string outside translation resources.
 - An installation with no recipients delivers a follow-up warning through `persistent_notification`.
 - A recipient with two endpoints, one failing, is reached through the other; all endpoints failing
   through every retry produces the fallback; a failed fallback stays `ready`.
