@@ -118,7 +118,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   bounded by `max(32 MiB, 5% of effective memory)`; overflow first collapses superseded state
   transitions, then drops oldest events, and declares each loss as a `queue_overflow` gap.
   If protected items alone exceed the budget, Layer 0 declares a global gap and
-  re-seeds durable current state after fresh HA intake (Layer 0 §4.6). Facts and projections are deeply immutable once constructed (Layer 1 §3). The same bootstrap pass reserves fact-type
+  re-seeds durable current state after fresh HA intake (Layer 0 §4.6). A core component outside the
+  DAG learns of a committed state change through a bootstrap-declared subscription to exact keys,
+  delivered after the cycle (Layer 0 §4.8). Facts and projections are deeply immutable once constructed (Layer 1 §3). The same bootstrap pass reserves fact-type
   ownership across layers, preventing a registry producer from colliding with a Layer-0-owned
   family such as hold lifecycle events. A "snapshot" (everything true at
   one instant, or in one place, over one window) is never its own stored shape; it's a query

@@ -5,7 +5,8 @@ authoritative layer in `contract_registry.json`.
 **Open corrections:** none; the upstream changes of §13 are applied (CA4-73) and §14 has no open
 point. The draft still needs the developer's explicit approval before it becomes authoritative.
 
-**Layer:** 6 of 8. Builds on Layer 0's unified notification delivery outbox (§4.5), authenticated
+**Layer:** 6 of 8. Builds on Layer 0's unified notification delivery outbox (§4.5), committed-state
+observers (§4.8), authenticated
 response ingress (§5.1.3), Runtime Scheduler, composed configuration generation (§4.7) and
 recovery confirmation (§7.4.1); Layer 1's operational event mapping (§3.1); Layer 3's
 availability-suppression contract (§6.3.1); Layer 4's availability-owner declarations (§7); and
@@ -194,8 +195,10 @@ Heima never uses the iOS critical-alert level.
 ### 6.2 Quiet hours
 
 Quiet hours are the casa `quiet_hours.active` fact already used by the Layer-5 `quiet_hours.v1`
-guard. Layer 6 reads its latest committed value; it has no own schedule. If the fact is not
-configured there are no quiet hours.
+guard. Layer 6 registers one Layer-0 committed-state subscription to it at bootstrap (Layer 0 §4.8)
+and keeps the latest delivered value; the change to `False` (or to unavailable) releases held
+items at once. It has no own schedule and does not poll. If the fact is not configured there are
+no quiet hours.
 
 | Family | During quiet hours | Administrator option |
 |---|---|---|
@@ -439,7 +442,9 @@ are routed with the new recipients.
 ## 11. Restart and recovery
 
 - The scheduler is rebuilt from the outbox: every `ready` record is scheduled again unless §7.5
-  retires it (at-least-once delivery; a repeat on the phone is replaced through its tag).
+  retires it (at-least-once delivery; a repeat on the phone is replaced through its tag). Records
+  whose family depends on quiet hours wait for the initial `quiet_hours.active` delivery after the
+  first cycle (Layer 0 §4.8); `safety` records do not wait.
 - Follow-up intents are recovered by Layer 0 §4.5.1.
 - Pre-restart advisories without a closing phase retire undelivered.
 - Recovery confirmations invalidated by the restart arrive as `closed` occurrences from Layer 0.
@@ -507,3 +512,6 @@ closed advisory (§7.4, §9.3) and the namespace-based availability family (§6.
 - After a restart every `ready` record is delivered again with the same tag, a pre-restart
   advisory without closure retires undelivered, and no delivery blocks an evaluation cycle.
 - Every delivery fires one `heima_notification` event with closed fields only.
+- Items held during quiet hours are released by the committed-state delivery of
+  `quiet_hours.active=False`, with no polling job; after a restart the initial delivery of the
+  current value decides whether ready records are held.

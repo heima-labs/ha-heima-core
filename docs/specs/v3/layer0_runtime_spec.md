@@ -46,6 +46,7 @@ Layer 0 is responsible for:
   `start`/`end`/summary event data from a `calendar.*` entity (§3.4) — never the classification of
   that raw text into a named category, which is Layer 2's `CalendarInterpretation`;
 - `HouseFact` storage mechanics (durable + short-term tiers), durable observation-continuity metadata (§4.4), and the unified notification delivery outbox (§4.5) — not the `HouseFact` type itself, which is Layer 1;
+- post-commit notification of declared state keys to core components outside the DAG (§4.8);
 - the non-forgeable provenance vocabulary attached to every `HouseFact` and every `ApplyStep`, and
   the rules for how a `correlation_id` is minted and propagated;
 - representing an internal channel divergence hold and clearing it on restart or an observation break;
@@ -1485,6 +1486,46 @@ invalidated dependent as a diagnostic; there is no administrator to confirm at b
 If that manifest cannot be written, the invalid consumers are still excluded from evaluation in
 memory, the write is retried, and a persistence diagnostic is raised; no invalid consumer runs.
 
+### 4.8 Committed-state observers
+
+A core component outside the evaluation DAG that must react when a house state changes (for
+example Layer 6 waiting for the end of quiet hours) observes it through one generic Layer-0
+mechanism instead of polling or a mirrored event fact.
+
+```python
+@dataclass(frozen=True)
+class CommittedStateSubscription:
+    subscriber_id: str                # registered core component, e.g. "layer6.quiet_hours"
+    fact_key: FactIdentityKey         # exact state key; never a pattern, an event type or a scope query
+
+@dataclass(frozen=True)
+class CommittedStateChange:
+    fact_key: FactIdentityKey
+    fact: HouseFact | None            # the committed latest state; None if the key has none yet
+    cycle_when: EvidenceInstant       # cycle instant of the commit that produced it (§3.5)
+```
+
+- **Closed and declared at bootstrap.** Only core components register subscriptions, all during
+  bootstrap; administrators, learners and plugins cannot. A subscription names one exact state
+  `FactIdentityKey`, so the set is finite and known before the first cycle. A key with no
+  registered producer is accepted and simply never changes.
+- **After the commit, never inside evaluation.** When a cycle's results become the in-memory
+  current index (§4.2), Layer 0 schedules one delivery per subscription whose key changed
+  fingerprint in that cycle, including a change of availability. Delivery runs asynchronously
+  after the cycle; the cycle never waits for a subscriber, and a subscriber never sees a value
+  that is not committed. It is not tied to durable persistence: a value waiting in the §4.6 retry
+  queue is already the current state.
+- **Coalescing and order.** Per subscription at most one delivery is pending; a newer change
+  replaces the pending one, so a subscriber receives the latest committed state in cycle order and
+  may miss intermediate values, never receive an older one after a newer one.
+- **Initial value.** After the first cycle of a process run each subscriber receives the current
+  value of its key once, whether or not it changed, so it never depends on history.
+- **Failures.** A subscriber exception is isolated and diagnosed; it does not affect the cycle,
+  other subscribers or later deliveries.
+
+This is read-only notification of committed state. It writes no fact, creates no `HouseFact`
+event, grants no authority and is not a dependency edge of the semantic DAG (§11).
+
 ---
 
 ## 5. `FactSource` / `ApplyStepSource`
@@ -2602,6 +2643,8 @@ Layer 0 state must be inspectable, consistent with the project's broader diagnos
 runtime/plugins/event-store diagnostics surface already exists for other layers):
 
 - **Timing**: every pending `AtJob` and `CronEntry` (id, owner, due, label), queryable at any time.
+- **Committed-state observers**: each subscription, its last delivered `cycle_when`, whether a
+  delivery is pending, and subscriber failures (§4.8).
 - **Observation continuity**: last durable watermark, any open process interruption, its
   start/end and write failure, plus per-stream availability and incomplete-window reasons.
 - **Recovery**: current `RecoveryState`, age of the last checkpoint write, count and identity of
@@ -2662,6 +2705,11 @@ by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
 
+- A subscription to `quiet_hours.active@casa` receives its current value once after the first cycle,
+  then one delivery per committed change in cycle order; three changes before the subscriber runs
+  yield only the latest; an unchanged cycle yields none; a slow or failing subscriber never delays
+  a cycle or another subscriber; registration after bootstrap, a pattern key or an event key is
+  rejected (§4.8).
 - A recovery confirmation produces one `opened` occurrence with `approve`/`dismiss` and one
   `closed` occurrence with its terminal state, each appended once as
   `recovery.confirmation_request`; an identical proposal on a later cycle produces neither again.

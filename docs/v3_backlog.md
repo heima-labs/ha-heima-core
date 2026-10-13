@@ -5070,9 +5070,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70 | 0 | 0 | 37 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–74 | 0 | 0 | 31 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–75 | 0 | 0 | 32 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60 | 0 | 0 | 4 | 0 |
-| **Total** | **74 findings** | **0** | **0** | **73** | **1** |
+| **Total** | **75 findings** | **0** | **0** | **74** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6192,6 +6192,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-75 — Components outside the DAG could not learn of a committed state change
+
+**Status:** DONE (2026-10-12; specification readiness). **Severity:** P2. **Origin:** Layer 6 draft review.
+
+**Problem.** Layer 6 holds notifications during quiet hours but sits outside the evaluation DAG; Layer 0 offered no way to notify such a component when `quiet_hours.active` changes, so held items had no release trigger. Polling would add latency and a second change-detection path; start/end events would put a domain concept into Layer 0 and mirror a state as events.
+
+**Approved resolution (2026-10-12).** Layer 0 §4.8 adds committed-state observers: core components declare at bootstrap subscriptions to exact state `FactIdentityKey`s; after a cycle commits to the current index, Layer 0 delivers each changed key asynchronously, coalesced to the latest value in cycle order, plus one initial value after the first cycle; subscriber failures are isolated. No fact is written and no DAG edge is created. Layer 6 §6.2 uses one subscription to `quiet_hours.active@casa`. See the [CA4-75 review](specs/v3/reviews/CA4-75.md); no V3 runtime test ran.
 
 #### CA4-74 — Reaction notices could not take their family from the descriptor; Layer-6 review residues
 

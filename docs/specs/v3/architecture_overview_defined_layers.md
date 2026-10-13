@@ -87,6 +87,9 @@ Layer 0 standardizes the machinery every higher layer needs:
   `max(32 MiB, 5% of effective memory)` and declares overflow loss as `queue_overflow` coverage
   (§4.6), with an exceptional global gap and durable current-state re-seed when
   protected items alone exceed the budget.
+- **Committed-state observers:** a core component outside the DAG (for example Layer 6 waiting for
+  quiet hours to end) subscribes at bootstrap to exact state keys and is notified asynchronously
+  after the cycle commit, coalesced to the latest value; no polling and no mirrored events (§4.8).
 - **Honest history:** retention coverage is stream-scoped. A noisy stream in one room can make its
   own historical interval truncated without falsely degrading the same fact type in another room.
   Separate durable process-continuity metadata marks restart/outage intervals; a 60-second
