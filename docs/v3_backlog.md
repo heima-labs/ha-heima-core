@@ -1925,6 +1925,9 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   already configured (only the unapplied changes of the current step are lost). V2 cutover follows
   Layer 2 §1.1 unchanged: nothing is imported, and the panel never reads, displays or interprets a
   V2 export; the administrator may consult it outside Heima.
+- **L8-C9 — Frontend technology.** The panel is a Lit web component (HA's own frontend base),
+  registered as an HA custom panel, served by the integration with its build in the package; no
+  external CDN; the V2 panel code is not reused.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 

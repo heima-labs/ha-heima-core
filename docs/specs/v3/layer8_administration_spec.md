@@ -356,6 +356,10 @@ displays or interprets a V2 export.
 
 ## 13. Backend contract
 
+**Frontend technology (L8-C9).** The panel is a Lit web component, the same base as HA's own
+frontend, registered as an HA custom panel and served by the integration with its build included
+in the package. It loads no library from an external CDN and does not reuse the V2 panel code.
+
 - The panel talks to Heima through HA's websocket API with typed commands and queries; every
   message carries the authenticated HA user, which §4 resolves.
 - Queries: current state from the in-memory current index; history, timelines, diffs and
