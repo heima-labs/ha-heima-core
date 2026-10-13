@@ -207,8 +207,11 @@ no quiet hours.
 | `suggestion` | held; one end-of-quiet-hours digest of the still-open advisories (§6.4) | none |
 | `governance` | held; delivered when quiet hours end, proposals through their digest | may be set to silent |
 
-"Silent" for a family means its notifications produced during quiet hours are retired undelivered
-when quiet hours end; their audit facts remain. While `quiet_hours.active` is unavailable, Layer 6
+"Silent" for a family means its informative notifications produced during quiet hours are retired
+undelivered when quiet hours end; their audit facts remain. A phase with answer buttons whose request
+is still open (a recovery confirmation, a consent request) is never silenced: it is held and
+delivered when quiet hours end, and retires undelivered only if its request closes or expires
+first (§7.5). While `quiet_hours.active` is unavailable, Layer 6
 treats quiet hours as not active, so nothing is held indefinitely.
 
 ### 6.3 Proposal digest (C4)
@@ -301,7 +304,7 @@ A `ready` record retires undelivered only when:
   action (§7.4);
 - its item closed before delivery (advisory, proposal, recovery confirmation, consent request);
 - its item expired (a recovery request past `expires_at`);
-- its family is silent during quiet hours (§6.2);
+- its family is silent during quiet hours and the phase is informative (§6.2);
 - it is a pre-restart advisory without a closing phase (Layer 5 §6.0);
 - it is a consent opening superseded by a `reissued` phase of the same request (§9.3).
 
@@ -509,6 +512,7 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - **U4** — every `HouseholdConsentAuthority` reference is an HA user id (Layer 5 §7.1.1).
 - **CA4-74** — follow-up and action-notice occurrences carry `reaction_descriptor_id` (§6.1).
 - **CA4-75** — Layer 0 committed-state observers (Layer 0 §4.8), used by §6.2.
+- **CA4-77** — actionable phases with an open request are never silenced (§6.2).
 - **CA4-76** — authority transitions push `BindingEnablementChange` to Layer 6 (Layer 5 §4.2, §9.2).
 
 ## 14. Initial acceptance criteria
@@ -525,7 +529,8 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   it has none. A button press reaches Layer 0's ingress with the request id, action and HA user,
   and Layer 6 neither validates nor decides it.
 - During quiet hours: an action notice is delivered at once; a follow-up is delivered when they end;
-  with `attention` silenced it is retired undelivered and its fact remains; two advisories opened at
+  with `attention` silenced it is retired undelivered and its fact remains, while a recovery
+  confirmation still open is delivered when quiet hours end; two advisories opened at
   night, one still open in the morning, produce one morning notification for the open one and a
   retired record for the other.
 - Three proposals within 30 minutes produce one digest; one approved before the window ends is not
