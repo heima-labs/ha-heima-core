@@ -61,7 +61,9 @@ Layer 2 is responsible for:
   Layer 1's confidence functions (§4.2 of the Layer 1 spec) each strategy uses, and the
   registration-time ordering that lets a `FusionRule` consume another `FusionRule`'s output (§5.6);
 - the separate, core-owned formula registry `FormulaStrategy` (one of the five) points into;
-- `Actuator` — the commandable-entity inventory.
+- `Actuator` — the commandable-entity inventory;
+- the `Room` registry (§2.6) — the place records that `Location(room=...)`, `Zone`, and `Topology`
+  reference.
 
 Layer 2 is **not** responsible for:
 - the `HouseFact`/`Provenance` shape, or the confidence/availability rules that govern them — those
@@ -276,6 +278,38 @@ Layer 0 receives this resolved policy/fingerprint/entity delta
 at composition commit; it never queries Layer 2’s live registry during recovery.
 
 ---
+
+### 2.6 `Room` registry
+
+A room is the place record that `Location(room=...)`, `Zone` membership and `Topology` reference.
+It is staged with the rest of the registry generation (§2.5).
+
+```python
+@dataclass(frozen=True)
+class Room:
+    room_id: str                     # stable Heima identity used by Location(room=...); never changes
+    ha_area_id: str | None           # linked HA area: default name, floor suggestion, entity discovery
+    display_name: str | None         # None -> the linked HA area's current name; required without an area
+    floor: int                       # stored in Heima; suggested from the area's HA floor level
+    enclosure: Literal["interior", "exterior"] = "interior"
+```
+
+- **Semantic attributes are stored, never read live.** `floor` and `enclosure` drive `Topology`
+  (`floor_by_room`, `enclosure_by_room`), thermal-envelope membership and exposure (Layer 1 §6.1,
+  §7). They are stored in Heima so that moving an area in HA can never change Heima's behavior
+  without a commit, impact preview and history. The area's HA floor `level` is only a suggestion
+  when the room is created.
+- **The name is presentation.** With `display_name=None` the panel, templates and published
+  entities show the linked HA area's current name, read at render time; an explicit
+  `display_name` replaces it. A room without an area requires a non-empty `display_name`.
+- **One room per HA area.** `ha_area_id` is unique among rooms, so entity discovery by area is
+  never ambiguous.
+- **Fingerprints.** The semantic fingerprint is `(room_id, floor, enclosure)`; `display_name` and
+  `ha_area_id` are metadata, so changing them invalidates no dependent.
+- **Validation** rejects an empty or duplicate `room_id`, a duplicate `ha_area_id`, an
+  `ha_area_id` absent from HA's area registry at staging, and a missing name without an area.
+  Removing a room is a configuration edit whose impact record lists every dependent (Sensors,
+  Actuators, openings, zones, semantic resolvers, Reactions).
 
 ## 3. `Sensor`
 
@@ -2088,6 +2122,11 @@ this layer.
 
 ## 9. Acceptance criteria (for the eventual implementation phase)
 
+- A `Room` with a linked HA area and no `display_name` shows the area's current name; renaming the
+  area in HA changes the shown name and no fingerprint. Moving the area to another HA floor
+  changes nothing in Heima until an administrator edits `floor` and commits. A duplicate
+  `ha_area_id`, an unknown area or a room with neither area nor name is rejected at staging
+  (§2.6).
 - An Actuator with `is_external=True`, in an `exterior` room, or with `is_external=None` on an
   opening facing an exterior side (including a plain window with default `other_side`) is
   `weather_exposed`; one with `is_external=False` in an `interior` room, or on a window toward an

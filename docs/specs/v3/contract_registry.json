@@ -729,6 +729,12 @@
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "Decision record",
       "depends_on": ["L5-REACTION-AUTHORITY", "L1-HOUSE-FACT-TIME"]
+    },
+    {
+      "id": "L2-ROOM-REGISTRY",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "2.6 `Room` registry",
+      "depends_on": ["L1-TOPOLOGY"]
     }
   ],
   "reviewed_slices": [
@@ -1376,6 +1382,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-82.md",
       "contracts": ["L5-REACTION-AUTHORITY", "L6-AVAILABILITY-PUBLICATION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-83",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-83.md",
+      "contracts": ["L2-ROOM-REGISTRY", "L1-TOPOLOGY"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",

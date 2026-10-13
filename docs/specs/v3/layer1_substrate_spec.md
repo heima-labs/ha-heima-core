@@ -64,9 +64,9 @@ Layer 1 is **not** responsible for:
 - learning artifacts/results, typed transient signals, or proposal/review workflow records — Layer 3
   and Layer 5 own their respective contracts. A later authorized `SemanticResolver` may resolve their evidence
   into a declared `HouseFact`, but the hand-off object itself is not one.
-- the `Room` registry itself (a room's name, type, floor as an inventory record) — `room_id` here is
-  a stable reference into that registry, carried forward from today's existing room-inventory model
-  unchanged; Layer 1 consumes `room_id` as an opaque identifier, it does not define what a room is.
+- the `Room` registry itself (a room's name, floor and enclosure as an inventory record), defined by
+  Layer 2 §2.6 — `room_id` here is a stable reference into that registry; Layer 1 consumes `room_id`
+  as an opaque identifier, it does not define what a room is.
   Topology (§7) requires only two attributes of that inventory: `floor` and `enclosure`
   (`interior` | `exterior`, default `interior`; CA4-62).
 
@@ -768,7 +768,7 @@ zone-scoped fact. Layer 2's reload impact comparison uses the latter, while reta
 historical configuration metadata. `room_ids` serializes as a
 Unicode-code-point-sorted array, while in memory it remains a `frozenset`. Zone construction rejects an
 empty `zone_id`, empty `display_name`, empty membership, or empty room id; Zone registration resolves
-every member against the Room registry and rejects a duplicate `zone_id`.
+every member against the `Room` registry (Layer 2 §2.6) and rejects a duplicate `zone_id`.
 
 A changed definition is a new **configuration generation**, even though `ZoneKey` remains the same.
 The generation snapshot and both fingerprints are durably retained by Layer 2's atomic reload
@@ -844,10 +844,10 @@ class Topology:
                                                      # side (derived from `openings`, not
                                                      # independently authored; CA5)
     enclosure_by_room: dict[str, Literal["interior", "exterior"]]
-                                                     # room_id -> enclosure, read from the Room registry's
+                                                     # room_id -> enclosure, read from the `Room` registry's
                                                      # own `enclosure` attribute (default "interior");
                                                      # added 2026-10-11, CA4-62
-    floor_by_room: dict[str, int]                   # room_id -> floor, read from the Room registry's
+    floor_by_room: dict[str, int]                   # room_id -> floor, read from the `Room` registry's
                                                      # own `floor` attribute (added 2026-09-08: this
                                                      # is not derived from `openings`/`connections` the
                                                      # way `exposure_by_room` is — it's a read-only
