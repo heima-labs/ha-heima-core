@@ -398,6 +398,32 @@ class AvailabilityPublicationGeneration:
     index: Mapping[SuppressionKey, tuple[AvailabilityPublicationBinding, ...]]
 ```
 
+```python
+@dataclass(frozen=True)
+class BindingEnablementChange:
+    automation_scope_id: str
+    enabled: bool                     # True exactly while the Reaction's mode is `automatic`
+    authority_transition_id: str      # the committed Layer-5 transition that caused it
+```
+
+**Enablement revisions.** `enabled` changes through Layer-5 authority transitions, which are not
+configuration mutations (Layer 0 §4.7), so they do not create a new generation. Layer 5 pushes one
+`BindingEnablementChange` after the transition commits (Layer 5 §4.2). Layer 6 applies it as a
+revision of the current publication index: same `generation_id`, a new revision number, the same
+swap reconciliation as Layer 3 §6.3.1 (a newly enabled binding receives an already active
+abstention; a disabled notified binding closes with `binding_deactivated`). A change whose
+`authority_transition_id` is already applied, or that names a Reaction of another generation, is
+ignored.
+
+Performance is bounded by construction:
+- the change is processed in the tracker's own serialized slow path, never in an evaluation cycle,
+  never by Layer 0 or Layer 1, and the authority transition never waits for it;
+- the generation keeps a reverse index from `automation_scope_id` to its keys, built once at
+  staging, so a revision copies only the affected keys (copy-on-write) and swaps one reference;
+  its cost is proportional to that Reaction's bindings, not to the index size;
+- nothing is persisted: at process start the index is built from the active generation and the
+  current Layer-5 authority projection.
+
 Layer 6 composes the generation at staging from the exact owner keys declared by Layers 3, 4 and 5
 and the bindings declared by Layer 5. It rejects a binding whose key has no declared owner, a
 duplicate `automation_scope_id` for one key, and an automatically authorized resumable Reaction
@@ -483,6 +509,7 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - **U4** — every `HouseholdConsentAuthority` reference is an HA user id (Layer 5 §7.1.1).
 - **CA4-74** — follow-up and action-notice occurrences carry `reaction_descriptor_id` (§6.1).
 - **CA4-75** — Layer 0 committed-state observers (Layer 0 §4.8), used by §6.2.
+- **CA4-76** — authority transitions push `BindingEnablementChange` to Layer 6 (Layer 5 §4.2, §9.2).
 
 ## 14. Initial acceptance criteria
 
@@ -512,6 +539,10 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - After a restart every `ready` record is delivered again with the same tag, a pre-restart
   advisory without closure retires undelivered, and no delivery blocks an evaluation cycle.
 - Every delivery fires one `heima_notification` event with closed fields only.
+- Promoting a Reaction to `automatic` while its suppression episode is active delivers that
+  abstention once through a `BindingEnablementChange` revision; disabling it closes a notified
+  binding with `binding_deactivated`; a repeated change is ignored; neither the authority
+  transition nor any evaluation cycle waits, and the revision touches only that Reaction's keys.
 - Items held during quiet hours are released by the committed-state delivery of
   `quiet_hours.active=False`, with no polling job; after a restart the initial delivery of the
   current value decides whether ready records are held.

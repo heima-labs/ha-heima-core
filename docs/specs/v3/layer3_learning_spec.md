@@ -3452,7 +3452,10 @@ episode against the old and new binding tuples:
 - a subsequent `restored` reaches only sub-episodes that were actually notified and remain active.
 
 This resolves a changed configuration without requesting a Layer-3/Layer-5 callback or a live policy
-query. The tracker is an in-memory delivery coordination cache, not a house-state store and not a new
+query. A binding's enabled state also changes through Layer-5 authority transitions, which are not
+configuration mutations (Layer 0 §4.7). Layer 5 pushes each such change to Layer 6 as a typed
+`BindingEnablementChange`, and Layer 6 applies it as a revision of the current publication index
+with exactly the reconciliation above (Layer 6 §9.2); the tracker still never queries Layer 5. The tracker is an in-memory delivery coordination cache, not a house-state store and not a new
 Layer-0 persistence projection: it is bounded by current registered suppression keys and configured
 bindings, performs O(1) episode/index access plus finite binding iteration only on a transition or
 generation swap, and performs no I/O in an engine evaluation. It is empty after a process restart.

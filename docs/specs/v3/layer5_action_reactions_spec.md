@@ -1643,6 +1643,11 @@ always `None`, resident consent commands are inapplicable, and administrative
 authorization alone can produce `automatic`. Staging and projection reject a
 transition whose consent field disagrees with the frozen descriptor property.
 
+An availability binding (Layer 3 §6.3.1) is enabled exactly while its Reaction's mode is
+`automatic`. After an authority transition that enters or leaves `automatic` commits, Layer 5
+hands Layer 6 one typed `BindingEnablementChange` (Layer 6 §9.2) for that Reaction's bindings,
+asynchronously and outside evaluation; the transition never waits for it.
+
 `actor_ref`, `created_by` and `staged_by` are restricted to common Layer-5 governance or immutable
 administrator-configuration records: proposal-review transitions; Reaction creation/configuration
 generations; authority and artifact-adoption transitions; `ReactionGuardProfileGeneration`; and
