@@ -1408,6 +1408,17 @@
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-85",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-85.md",
+      "contracts": ["L5-REACTION-AUTHORITY", "L0-COMPOSED-GENERATION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

@@ -1616,6 +1616,20 @@ that permits administrator selection of direct cells stages a bounded subset
 of its versioned permitted set; a later expansion is a semantic configuration
 successor with ordinary authority review, not a live edit.
 
+**Reaction catalog and display names.** The Layer-5 layer generation referenced by the composed
+configuration generation (Layer 0 §4.7) is the catalog of configured Reactions: each entry maps a
+`reaction_id` to its current configuration generation and carries presentation metadata,
+`display_name: str | None`. As for every other registry name, `display_name` is excluded from every
+semantic fingerprint and changes through an ordinary composed commit. A metadata-only edit creates
+a new Layer-5 layer generation whose entry points to the **same** configuration generation: no
+successor configuration generation, no return to `notification_only`, no job cancellation, and an
+empty impact record. It applies to learner-origin Reactions too, whose configuration remains
+editable only through a new proposal. With `display_name=None`, presentation composes a name from
+the descriptor's translated label and the subject (for example "Shading · Living room").
+Effective names are unique: staging normalizes each Reaction's explicit or composed name (trimmed,
+Unicode NFC, case-folded) and rejects a catalog in which two Reactions share one; a Reaction whose
+composed name would collide needs an explicit `display_name`.
+
 **Composed-generation dependency.** Every Reaction configuration, guard-profile and prerequisite
 generation activates only through the composed configuration generation of Layer 0 §4.7, and is a
 consumer in its dependency index. When a confirmed change elsewhere makes the current generation's
@@ -4834,6 +4848,11 @@ profile or learner, and declares `requires_household_consent=True`,
   `admission_suppression_codes=("action_guard_active",)` and `failed_guard_capabilities=("wind",)`; a
   `not_triggered` evaluation appends none; a retried evaluation appends no second fact; a Reaction
   in `notification_only` records `admission="not_reached"`.
+- Renaming an `automatic` Reaction commits a new Layer-5 layer generation pointing to the same
+  configuration generation: mode, consent, activations and jobs are unchanged and the impact record
+  is empty. Two Reactions named "Bathroom fan" and "bathroom fan " are rejected; a second
+  solar-shading Reaction in the same room without a `display_name` is rejected because its composed
+  name collides.
 - Both Initial-V3 planned-absence descriptors declare
   `program_family=("planned_absence_program", "1")`, and staging rejects either one if its
   configuration lacks the `planned_absence` calendar binding, its casa presence fusion has a null

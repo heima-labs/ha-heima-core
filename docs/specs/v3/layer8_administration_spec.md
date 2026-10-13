@@ -108,8 +108,10 @@ technical identifiers. Every configuration section shows the pending-changes bar
   place or registry object, a learning definition, a semantic resolver definition, a Reaction
   configuration (including descriptor-specific preparation inputs such as the comfort-trajectory
   prerequisite generation), Layer-6 recipients and family options. They enter the session change
-  set. A learner-origin Reaction is not editable from the panel (Layer 5 §4.2): its configuration
-  changes only through a new reviewed proposal; the panel offers disablement and shows why.
+  set. A learner-origin Reaction's configuration is not editable from the panel (Layer 5 §4.2): it
+  changes only through a new reviewed proposal; the panel offers disablement and shows why. Any
+  Reaction can be renamed: `display_name` is catalog metadata, unique across Reactions, and a
+  rename never creates a configuration generation (Layer 5 §4.2).
 - **Immediate actions** are governance or answer commands that are not configuration mutations:
   promotion, disablement, consent grant or revoke, consent-authority changes, proposal review,
   artifact adoption mode, answers to requests, finding acknowledgement, house-map layout edits.
@@ -144,7 +146,7 @@ the Layer-2 generation, Layer 0 §4.7):
 | `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `sensor`, `fusion_rule`, `actuator` |
 | `layer3` | `learning_definition` (including its family enabled state) |
 | `layer4` | `semantic_resolver_definition` |
-| `layer5` | `reaction` (admin-direct configuration), `guard_profile`, `comfort_trajectory_prerequisite` |
+| `layer5` | `reaction` (admin-direct configuration, or `display_name` only for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
 | `layer6` | `recipient`, `family_options` |
 
 `expected_fingerprint` is the SHA-256 of the RFC-8785 canonical definition of that object in the
