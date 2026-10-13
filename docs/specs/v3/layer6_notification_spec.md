@@ -437,6 +437,8 @@ duplicate `automation_scope_id` for one key, and an automatically authorized res
 without an enabled resident-visible binding for `active_channel_unmanaged_after_restart` (Layer 5
 §3.2). The `AvailabilityEpisodeTracker`, its episode/sub-episode rules, the reconciliation at a
 generation swap, `binding_deactivated` and the per-run identity are exactly those of Layer 3 §6.3.1.
+The tracker hands each episode change (start, reason change, restoration) read-only to Layer 8's
+automation-state projection (Layer 8 §10.3), whether or not a binding is resident-visible.
 
 ### 9.3 Advisory, action notice, consent and proposal adapters
 

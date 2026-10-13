@@ -1651,7 +1651,9 @@ transition whose consent field disagrees with the frozen descriptor property.
 An availability binding (Layer 3 §6.3.1) is enabled exactly while its Reaction's mode is
 `automatic`. After an authority transition that enters or leaves `automatic` commits, Layer 5
 hands Layer 6 one typed `BindingEnablementChange` (Layer 6 §9.2) for that Reaction's bindings,
-asynchronously and outside evaluation; the transition never waits for it.
+asynchronously and outside evaluation; the transition never waits for it. Layer 5 hands every
+committed authority transition, in the same way, to Layer 8's read-only automation-state
+projection (Layer 8 §10.3).
 
 `actor_ref`, `created_by` and `staged_by` are restricted to common Layer-5 governance or immutable
 administrator-configuration records: proposal-review transitions; Reaction creation/configuration
@@ -2322,6 +2324,10 @@ both its bounded future-step identity contract and its provable normal-exit
 contract; otherwise the configured channel uses `fixed_duration`. A descriptor
 with no normal-exit contract cannot infer one
 from the completion of an individual command.
+
+Every typed occurrence of this section is also handed, read-only and outside evaluation, to Layer
+8's in-memory projections (pending items, automation state; Layer 8 §10.3). Layer 8 never answers,
+persists or reinterprets one, and a slow consumer never delays Layer 5 or Layer 6.
 
 #### Resident advisory occurrence
 

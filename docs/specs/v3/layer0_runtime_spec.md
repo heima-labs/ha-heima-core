@@ -2614,6 +2614,8 @@ carries no actor identity, raw HA state or service data. Layer 6 alone appends i
 `recovery.confirmation_request` event fact with its delivery record in the unified outbox (§4.5);
 the operation id appends each phase at most once. A delivery failure does not change the request:
 it still expires at `expires_at`, and a response arriving only through the ingress can approve it.
+Layer 0 hands the same occurrence, read-only and outside evaluation, to Layer 8's pending-items
+projection (Layer 8 §10.3).
 After restart the invalidated pre-restart requests (below) produce their `closed` occurrence. A `VerifiedResponse` from that ingress matches `request_id` to the current
 `open` request. Approval then takes a fresh cycle input barrier and reruns the same
 read/evaluate/compare and dispatch admission under a serialized compare-and-swap on
@@ -2726,7 +2728,10 @@ integration's required dependency surface.
 The probe is refreshed asynchronously/background outside a cycle and must be bounded, allocation-light,
 and failure-contained. Layer 0 exposes its last complete snapshot even if a refresh fails, marking the
 staleness/failure capability; it never blocks an event cycle, applies a threshold, schedules a learner,
-or changes a learning profile. Thus it supplies the measurement contract while Layer 3 owns every
+or changes a learning profile. Each published snapshot, and each change of a degradation
+diagnostic of §10 (process interruption, storage or queue-overflow state, follow-up durability,
+recovery state, probe staleness), is also handed read-only to Layer 8's health projection (Layer 8
+§10.3), outside any cycle. Thus it supplies the measurement contract while Layer 3 owns every
 admission, capacity, and degradation decision.
 
 ---

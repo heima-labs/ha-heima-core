@@ -2,7 +2,8 @@
 
 **Status:** DRAFT for developer review (2026-10-13). Not approved, not implemented, not yet an
 authoritative layer in `contract_registry.json`.
-**Open corrections:** the open points of §15 must be decided before approval.
+**Open corrections:** none; §15 records the decisions taken on the draft's open points. The draft
+still needs the developer's explicit approval before it becomes authoritative.
 
 **Layer:** 8 of 8. Presents and edits what Layers 0–6 define: Layer 0's composed configuration
 generation, configuration history, response ingress, committed-state observers and diagnostics;
@@ -178,7 +179,8 @@ System → History is one timeline built only from existing durable records:
 | System commit | Layer 0 bootstrap manifest after a code upgrade |
 
 Each configuration entry shows who, when, the field-level diff against the previous generation and
-the effects that were confirmed. Filters: section, object, person. Every object page shows its own
+the effects that were confirmed. Filters: section, object, person. Administrators see the actor's
+HA display name; residents see names only for their own actions and "an administrator" otherwise. Every object page shows its own
 slice.
 
 **Restore** never applies anything. It loads into the session change set the edits that turn the
@@ -243,7 +245,9 @@ class HouseMapLayout:
     placements: tuple[MapPlacement, ...]
 ```
 
-The layout is Layer-8 presentation data stored with HA's storage helper, not Layer-1 `Topology`
+Plans are stored in HA's storage directory, at most 2 MiB per floor, and an SVG is sanitized (no
+scripts, no external references) before storage. The layout is Layer-8 presentation data stored
+with HA's storage helper, not Layer-1 `Topology`
 and not part of the composed generation; editing it is an immediate action. A placement whose
 target no longer exists is hidden and listed for cleanup; a renamed object updates on the map.
 
@@ -287,13 +291,27 @@ Layer 8 derives from the active composed generation and re-declares at each gene
 Updates are asynchronous after the cycle commit and coalesced; nothing polls and nothing runs in
 the cycle.
 
-Automation state, pending items and Heima health are not state facts, so observers cannot feed
-them; their feeding mechanism is open point 5 of §15.
+Automation state, pending items and Heima health are not state facts. Layer 8 keeps them in
+in-memory projections fed by typed changes their owners already produce off the hot path, handed
+read-only to Layer 8 as an additional consumer:
+
+| Projection | Inputs |
+|---|---|
+| Automation state | Layer 5 authority transitions (mode), Layer-6 availability tracker episodes (block and reason) |
+| Pending items | Layer 5 proposal-review and consent occurrences, Layer 6 advisory occurrences, Layer 0 recovery-confirmation occurrences |
+| Heima health | Layer 0 health snapshots and degradation-diagnostic changes |
+
+Health is `error` when no committed manifest is active or persistence writes are failing,
+`degraded` when any degradation diagnostic is active, `ok` otherwise. At process start every
+projection is rebuilt from the owners' current state (authority projection, open proposals and
+requests, current diagnostics), so nothing is persisted and nothing polls.
 
 ## 11. First start (L8-C8)
 
 The config flow creates the integration only. On first opening, the panel runs a guided procedure:
-rooms → topology → devices → people and notifications → suggested automations. Each step is an
+rooms → topology → devices → people and notifications → suggested automations. Suggested
+automations are only the descriptors whose staged prerequisites are met by what is configured; each
+opens an ordinary direct-staging form, and nothing is created without apply. Each step is an
 ordinary change set with its preview. Applied steps stay applied; on return the procedure derives
 its progress from what is configured, so only the unapplied edits of the current step can be lost.
 
@@ -336,27 +354,18 @@ retry queue, committed-state observers, generation and impact history, learning 
 notification delivery. It also shows Layer 8's own counters: rejected commands by reason, preview
 and apply outcomes, rebases and conflicts, published entities and their availability.
 
-## 15. Open points for the developer
+## 15. Decisions on the draft's open points (2026-10-13)
 
-1. **Users with no role.** Proposed: a non-administrator HA user not linked to a recipient or to
-   consent authority sees only "Heima is not set up for you"; alternative: a read-only resident
-   Overview for every HA user.
-2. **Map plan assets.** Proposed: uploaded plans stored in HA's storage directory, limited to 2 MiB
-   per floor, SVG sanitized (no scripts or external references).
-3. **History actor names.** Proposed: administrators see the HA display name of the actor; residents
-   see names only for their own actions and "an administrator" otherwise.
-4. **Suggested automations at first start.** Proposed: the last step lists only descriptors whose
-   staged prerequisites are met by what was configured, each opening an ordinary direct-staging
-   form; no automation is created without the administrator's apply.
-
-5. **Feeding non-fact entities.** Automation state (Layer 5 authority mode plus current block),
-   pending items (open proposals and requests) and Heima health (Layer 0 health snapshot) are not
-   state facts. Proposed: Layer 8 becomes an additional consumer of the typed changes the owners
-   already produce off the hot path — Layer 5 authority transitions (as for
-   `BindingEnablementChange`), proposal and request occurrences (Layer 5 §6.0, Layer 0 §7.4.1),
-   the Layer-6 availability tracker's episodes and Layer 0's published health snapshots — and keeps
-   an in-memory projection; no polling and no new persisted record. This needs one sentence in
-   each owner naming Layer 8 as a consumer.
+1. **Users with no role** see only "Heima is not set up for you" (§4).
+2. **Map plan assets** are stored in HA's storage directory, at most 2 MiB per floor; an SVG is
+   sanitized (no scripts, no external references) before storage (§9).
+3. **History actor names:** administrators see the actor's HA display name; residents see names
+   only for their own actions and "an administrator" otherwise (§7).
+4. **Suggested automations at first start** list only descriptors whose staged prerequisites are
+   met by what is configured; each opens an ordinary direct-staging form, and nothing is created
+   without the administrator's apply (§11).
+5. **Non-fact entities** are fed by owner-produced typed changes into in-memory projections
+   (§10.3); the owners name Layer 8 as a consumer (CA4-82).
 
 ## 16. Initial acceptance criteria
 
