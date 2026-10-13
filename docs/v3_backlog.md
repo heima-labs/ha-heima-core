@@ -371,6 +371,10 @@ mutation patterns** — first pass here missed the second one (grep only matched
 
 ### Decision (2026-08-31): declare the pattern that already emerged organically as the v3 rule
 
+> **Superseded for V3 on 2026-10-13** by Layer 8 decision L8-C1 ("Layer 8 specification
+> decisions"): all configuration moves to one Heima panel; the config flow keeps only the initial
+> installation. Kept below as history.
+
 1. **`Sensor` Registry, `Zone`, `FusionRule` → panel, pattern 1** (dedicated CRUD endpoint, same
    shape as `heima/actuators/action`). Structurally identical to `Actuator` (entity + `Location` +
    role/`fact_type`) — same UI treatment, not a new pattern to invent.
@@ -1826,6 +1830,20 @@ Inputs are the closed typed occurrences of CA4-65–68.
   The household locale is HA's `hass.config.language`; a `NotificationRecipient` may declare its own
   `locale`. Initial V3 supports Italian and English, with English as fallback. Administrators
   cannot edit templates.
+
+### Layer 8 specification decisions (approved, 2026-10-13)
+
+Decisions recorded before the Layer-8 specification is written; the spec will own them.
+
+- **L8-C1 — One configuration surface.** Every Heima configuration, review and diagnostic lives in
+  one Heima panel. The HA config flow is limited to the initial installation and, if ever added,
+  very basic maintenance (for example a database export). Supersedes the 2026-08-31 split
+  (config flow for linear settings, panel for registries); the reason is that composed-generation
+  staging, impact preview and confirmation (Layer 0 §4.7) need one coherent editing surface.
+- **L8-C2 — One panel, content by role.** A single panel serves administrators and residents. The
+  role is resolved server-side for every request from the authenticated HA user (administrator:
+  HA admin user; resident: HA user linked to a Layer-6 recipient or a `HouseholdConsentAuthority`
+  actor); the UI only hides what the role cannot use, and every backend command enforces it.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
