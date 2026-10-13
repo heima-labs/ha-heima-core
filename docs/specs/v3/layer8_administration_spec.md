@@ -385,7 +385,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `explain` | query | admin, resident | §8 (resident rendering for residents) |
 | `notifications/history` | query | admin, resident | Layer 6 facts, audience-filtered for residents |
 | `todo` | query | resident | pending-items projection for the resident's audiences |
-| `requests/answer` | command | resident (admin where the owner allows) | Layer 0 response ingress |
+| `requests/answer` | command | admin, resident (the owner's declared categories and own checks apply) | Layer 0 response ingress |
 | `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |
 | `reactions/set_consent` | command | resident with consent authority | Layer 5 §4.2 |
 | `consent_authority/stage` | command | admin | Layer 5 §4.2 |

@@ -1480,6 +1480,17 @@
       "orientation": ["docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-86",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-86.md",
+      "contracts": ["L0-RESPONSE-INGRESS", "L0-RECOVERY-CONFIRMATION", "L5-REACTION-AUTHORITY"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

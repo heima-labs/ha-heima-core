@@ -1668,8 +1668,9 @@ FactSourceKind = Literal[
     "reaction",            # a fact recorded as a byproduct of a Reaction firing (Layer 5) — distinct
                             # from the ApplyStep(s) the same Reaction issues, which carry
                             # ApplyStepSource with this same kind on the action side
-    "admin_command",        # a direct consequence of an admin-panel action, assignable only after HA
-                            # confirms the connection's user is an admin (§5.1)
+    "admin_command",        # a direct consequence of an admin-panel action or of an administrator's
+                            # verified ingress response, assignable only after HA confirms the
+                            # user is an admin (§5.1, §5.1.3)
     "resident_response",    # a direct consequence of a verified resident response to an active
                             # runtime confirmation request or a matched direct Actuator control edge
                             # — two distinct boundary checks; see §5.1
@@ -1724,10 +1725,11 @@ is derived by the code at the boundary that assigns it, never read off the data 
 - a configured reaction can produce `kind="reaction"`, but cannot declare itself `admin_command`;
 - an admin-panel action can produce `kind="admin_command"` only after Home Assistant confirms the
   connection's user is an admin;
-- a resident's response can produce `kind="resident_response"` only after it arrives through the
-  authenticated response ingress (§5.1.3), matches an active request of its registered owner and,
-  for a recovery confirmation, passes the current-proposal recheck in §7.4.1 — this is the
-  boundary for one of the two `resident_response` cases;
+- a response can produce a source only after it arrives through the authenticated response
+  ingress (§5.1.3), matches an active request of its registered owner and, for a recovery
+  confirmation, passes the current-proposal recheck in §7.4.1. Its kind follows the verified actor
+  category: `resident` gives `kind="resident_response"` (one of the two `resident_response`
+  boundaries) and `ha_admin` gives `kind="admin_command"`;
 - a third-party plugin (Layer 7) can produce `kind="third_party_plugin"`, but nothing it returns can
   make the core treat it as `kind="sensor"` or `kind="recovery"`.
 - `configuration_fingerprint`, when present, is assigned only by the active composed generation; a
@@ -1940,7 +1942,8 @@ becomes actionable and withdraws it when it closes; only a currently declared, u
 accepts a response.
 
 At ingress Layer 0 verifies the Home Assistant user through HA's own authentication, maps it to
-`resident` or `ha_admin`, assigns a fresh non-forgeable `ingress_id`, mints the causal
+`ha_admin` when HA confirms the user is an administrator and to `resident` otherwise, sets
+`actor_ref` to that HA user id, assigns a fresh non-forgeable `ingress_id`, mints the causal
 `correlation_id` (§5.2), and drops a duplicate report of the same ingress. It then rejects an unknown,
 withdrawn or expired `request_id`, an action outside `allowed_actions` and an actor outside
 `allowed_actor_categories`, all without calling the owner. Only a fully verified `VerifiedResponse`
@@ -1948,6 +1951,12 @@ reaches the owner, which alone decides the outcome under its own contract (for a
 confirmation, the compare-and-swap of §7.4.1). The actor reference reaches only the owner's
 governance record; operational facts and `ApplyStep`s carry only the actor category (§5). A request
 id, action or response arriving by any other path is never a response. Rejections are diagnostics.
+
+The actor category describes the HA account, not household membership: one person may be an
+administrator and a household member. An owner whose request a household member may answer
+therefore declares both `resident` and `ha_admin` and applies any narrower membership rule itself
+(for household consent, `HouseholdConsentAuthority`, Layer 5 §7.1.1). All three Initial-V3 owners
+declare both categories.
 
 ### 5.2 `correlation_id`: generation and propagation
 
@@ -2583,7 +2592,7 @@ accepted. If the current complete observation already satisfies the target, it c
 different proposal may create a fresh request after the current-cycle checks.
 
 The request is declared to the authenticated response ingress (§5.1.3) when it becomes `open`,
-with actions `approve` and `dismiss` and actor category `resident`, and withdrawn on every
+with actions `approve` and `dismiss` and actor categories `resident` and `ha_admin`, and withdrawn on every
 terminal transition.
 
 Layer 0 hands each request to Layer 6 twice through one typed occurrence: when it opens, so the
@@ -2827,9 +2836,11 @@ concrete checklist rather than re-deriving one:
   rejected. Only `reaction.follow_up` uses `prepared`. A storage failure blocks no cycle (§4.5).
 - A response to a recovery confirmation through the ingress reaches the owner only with a valid HA
   user of an allowed category, a declared unexpired request and an allowed action; a forged,
-  duplicate, expired or withdrawn request, an admin-only actor where only `resident` is allowed, or
-  an action outside the vocabulary reaches no owner. The owner's record keeps the actor reference;
-  the resulting `ApplyStep` carries only the actor category (§5.1.3, §7.4.1).
+  duplicate, expired or withdrawn request, an actor outside the declared categories, or an action
+  outside the vocabulary reaches no owner. A non-admin resident's approval yields an `ApplyStep`
+  with `kind="resident_response"` and an HA administrator's yields `kind="admin_command"`, each
+  with its own actor category. The owner's record keeps the actor reference (the HA user id); the
+  resulting `ApplyStep` carries only the actor category (§5.1, §5.1.3, §7.4.1).
 
 - A `HistoryViewRequirement` stages only for a registered state/event stream
   with its matching slice kind, unique id and retained positive `Window`.

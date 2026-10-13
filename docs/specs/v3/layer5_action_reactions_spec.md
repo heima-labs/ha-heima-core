@@ -2478,9 +2478,9 @@ class ConsentRequestOccurrence:
 
 Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1); Layer 6 appends it as
 one `reaction.consent_request` event fact per phase. The notice is actionable: on `opened` the
-response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor category
-`resident`, expiring when the request closes. A `VerifiedResponse` is applied only if its
-`actor_ref` is currently in `HouseholdConsentAuthority`: `grant` appends exactly the authority
+response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor categories
+`resident` and `ha_admin`, expiring when the request closes. A `VerifiedResponse` is applied only if its
+`actor_ref` (the HA user id) is currently in `HouseholdConsentAuthority`, whatever its category: `grant` appends exactly the authority
 transition of `set_reaction_household_consent` against the opening authority transition as its
 precondition, using the ingress id as the operation id; `decline` changes no authority and closes
 the request with `declined` for the whole household, so the first answer from any authorized
@@ -2499,7 +2499,7 @@ available; both paths share one authority rule.
 Each `ReactionAdvisoryOccurrence(opened)` is actionable for feedback only: before giving it to
 Layer 6, the owner `layer5.advisory_feedback` declares a request, whose id the occurrence carries
 as `response_request_id`, with actions `done`, `dismiss` and `not_useful`, actor
-category `resident`, open for as long as the activation lasts and withdrawn at its `closed` phase;
+categories `resident` and `ha_admin`, open for as long as the activation lasts and withdrawn at its `closed` phase;
 there is no separate feedback window. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
 (`advisory_operation_id`, `action`, `actor_category`, `recorded_at`), once per advisory and
 action. Feedback grants no authority, sends no command, changes no Reaction state and is never a
@@ -2880,7 +2880,7 @@ The three Reaction identity fields are present together exactly when the
 step is attached to a current admitted Reaction activation. They are all
 `None` for a standalone direct-admin, resident-approved or recovery-only
 target without a Reaction. `source.kind="reaction"` requires the three
-fields; `source.kind="recovery"` or `"resident_response"` may carry them
+fields; `source.kind="recovery"`, `"resident_response"` or `"admin_command"` may carry them
 only when Layer 5 has separately admitted that exact Reaction identity.
 The source kind never fabricates a Reaction anchor. `snapshot_id`, channel,
 target and the ordinary dispatch fence remain mandatory in both variants.
