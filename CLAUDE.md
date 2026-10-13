@@ -1,3 +1,12 @@
+# V3 implementation worktree — current instructions
+
+Read `AGENTS.md` and `docs/v3/WORKING_CONTEXT.md` first. The user approved a new
+V3 integration from scratch; the V2 runtime, tests, CI and operational scripts
+have been removed from this branch. The following inherited V2 material is
+historical reference, not current implementation instructions.
+
+---
+
 # Heima — Claude Code Instructions
 
 ## Project

@@ -11,7 +11,7 @@ reports 7 authoritative layer files, 114 mapped contracts, 78 CA4 issues, 0 open
 reviewed slices. That establishes the tracked specification status and structural map,
 not a proof that every V3 behavior is implemented or free of undiscovered contradictions.
 
-No V3 package or test directory exists in this implementation checkout. Its approved
+The empty V3 package skeleton and test directory guide now exist in this checkout; no behavioral code/tests exist yet. Its approved
 package boundary is `custom_components/heima/v3/` with contracts, runtime, storage and HA
 adapters. Planning copies in this checkout are older; use the current sibling planning
 worktree and a reviewed commit reference instead of trusting these old copies.
@@ -24,17 +24,16 @@ worktree and a reviewed commit reference instead of trusting these old copies.
 - **Environment completed on 2026-10-13:** dedicated `.venv-v3` on workspace-local
   CPython 3.14.5 arm64 for Apple M1, with hashed pinned dependencies and dedicated
   pytest/Ruff/mypy configs. The inherited Python 3.13/HA 2025.1.0 V2 configuration
-  remains separate; the V3 HA integration release/harness is selected later.
+  has been removed from this worktree; the V3 HA integration release/harness is selected later.
   See `TEST_ENVIRONMENT.md` for reproduction and actual local probe results.
 - **Initial toolchain verified:** pytest/pytest-asyncio/pytest-cov, Hypothesis,
   mutmut, Ruff and mypy. Temporary decisions/boundaries/properties/async probes passed
   and all 3 generated mutants were killed. Decision Tables and MC/DC still require
   behavior-derived evidence for each actual code slice; coverage is not MC/DC.
   Numerical thresholds remain undecided.
-- Resolve import isolation for pure tests. Python imports the parent
-  `custom_components.heima.__init__`, which currently imports HA and the V2 coordinator.
-  A pure V3 test must not initialize that runtime as a side effect. Choose a deliberate
-  test/package boundary compatible with the approved directory structure.
+- Import isolation prepared: the user approved building V3 from scratch. The parent
+  initializer and approved package groups are inert; pure imports execute neither HA
+  nor V2. No test namespace shim is used. Preserve this boundary when adding the HA adapter.
 - Implement canonical validation/serialization to the owning contracts. Payload size,
   collection depth, finite-number rules, immutable copying and canonical fingerprints
   are already specified; library/module selection is an implementation decision.
