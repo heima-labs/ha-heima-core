@@ -824,6 +824,8 @@ class Opening:
     other_side: str = "outside"      # what lies across this opening: a registered room id or the
                                        # reserved "outside". Declared for every opening, windows
                                        # included (added 2026-10-11, CA4-62); "outside" is the default
+    display_name: str | None = None  # presentation metadata only (CA4-84); None: composed from type,
+                                       # orientation and room through translation keys
 
 @dataclass(frozen=True)
 class ResolvedConnection:
@@ -831,9 +833,6 @@ class ResolvedConnection:
     room_b: str                      # equals the opening's `other_side`; `"outside"` is the reserved
                                        # value for an opening that exits the house, not a real room
     opening_id: str                  # the passable `door`/`door_window` `Opening` it is derived from
-    access_type: str = "direct"      # "direct", "stairs", or "elevator" (corrected 2026-09-08, same
-                                       # error and same source of truth: was "normal"/"restricted",
-                                       # neither a real value; real default is "direct", not "normal")
 
 @dataclass(frozen=True)
 class Topology:
@@ -878,7 +877,8 @@ against the Room registry; unknown ids, duplicate opening/connection ids, or a b
 link are errors. A `ResolvedConnection` exists exactly for each passable `door` or `door_window`
 opening and its `room_b` equals that opening's `other_side`; a `window` has no connection. Its
 canonical fingerprint is the shared RFC-8785 serialization of those canonical
-primary data and derived views.
+primary data and derived views, excluding each `Opening.display_name`, which is presentation
+metadata and changes no dependent.
 
 **One physical model, purpose-specific questions (CA4-62, 2026-10-11).** Topology records only
 physical facts: each room's `enclosure` (IFC `IfcSpace` internal/external semantics: `interior` is
@@ -912,15 +912,15 @@ room-topology model... Layer 1 does not redefine them," without ever stating tha
 review to be a real self-containment gap, more serious than the `Room`/`room_id` deferral it was
 modeled on: `room_id` is genuinely opaque everywhere it's used (Layer 1 never inspects its internal
 structure), but `Topology` uses `Opening`/`ResolvedConnection` as *structured* data with fields whose
-meaning (`orientation`, `other_side`, `access_type`) a reader needs to actually understand what
+meaning (`orientation`, `other_side`) a reader needs to actually understand what
 `Topology` answers. The shapes above carry every field a Layer 1 consumer actually reads, matching
 Heima's existing room-topology model (`custom_components/heima/room_topology.py`) — flattened only in
 packaging, presenting the query-time, already-resolved view a Layer 1 consumer reads (`Topology` is
 "queried, not consumed as a stream," below) rather than the admin-authored `Connection` shape that
-produces it. One field is deliberately dropped in the flattening, `connection_id` (the real
-`Connection`'s own stable identity, used for admin-side edit/delete) — not needed by anything that
-only *reads* topology, and explicitly Layer 8's concern, not Layer 1's, consistent with leaving the
-rest of `Connection`'s admin-authoring shape there too.
+produces it. In V3 there is no separately authored `Connection`: administrators edit `Opening`
+records (Layer 8), and every connection is derived from a passable opening. V2's `connection_id` and
+`access_type` are not carried over (CA4-84): no V3 consumer reads them, and a future consumer adds
+its own reviewed field.
 
 **`Topology` deliberately has no `casa` node — resolved 2026-09-02, not an oversight.** An early
 planning note (predating `Topology`'s own separation from `Location`/`Zone`) said the whole-house
