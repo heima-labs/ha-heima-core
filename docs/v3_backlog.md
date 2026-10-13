@@ -1858,6 +1858,18 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   Layer-8 presentation data, not Layer-1 `Topology`; rooms and devices stay Heima's own, so renames
   and removals propagate. Users who want `floorplan-card` in their own dashboards bind it to the
   HA entities Heima exposes (L8 decision on exposed entities); Heima neither bundles nor depends on it.
+- **L8-C4 — Session change set, applied atomically.** Configuration edits (Layer 0 §4.7 mutations)
+  accumulate in the administrator's browser session; a bar shows the pending count and errors, and
+  "Review and apply" opens one preview: what changes (field-level diff), effects on the rest of the
+  house (the Layer-0 impact record in plain language, breaking and semantic-only, with links) and
+  blocking errors. Applying commits everything in one composed generation with the base generation
+  and reviewed `impact_fingerprint`; if the active configuration changed meanwhile, the set is
+  reapplied on the new base and the preview is shown again. Reason: multi-object changes (replacing
+  a sensor, adding a room, changing an opening's exterior side) must not pass through intermediate
+  states that invalidate dependents and drop their promotion and consent. The set is not persisted
+  or shared; leaving the page warns before losing it. Each edit is validated immediately by the
+  owning layer. Immediate actions (promotion, disablement, consent, proposal review, answers,
+  finding acknowledgement) never enter the set and take effect at once after a confirmation dialog.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
