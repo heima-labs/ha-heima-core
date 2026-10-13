@@ -95,7 +95,7 @@ Sections are organized by the user's question, not by layer.
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
 | To do | resident | What do I need to answer? | Consent requests, recovery confirmations, advisories with feedback, including requests delivered without buttons |
 | Automations | resident | What do automations do for me? | Read-only state and decisions with reasons; own consents with revoke |
-| Notifications | resident | What did Heima tell me? | Own notification history |
+| Notifications | resident | What did Heima tell me? | Notifications addressed to the resident's audiences (Layer 6 records audiences, not per-person deliveries) |
 
 The resident Overview shows the house map and what Heima is doing, in plain language and without
 technical identifiers. Every configuration section shows the pending-changes bar (§6).
@@ -108,7 +108,8 @@ technical identifiers. Every configuration section shows the pending-changes bar
   place or registry object, a learning definition, a semantic resolver definition, a Reaction
   configuration (including descriptor-specific preparation inputs such as the comfort-trajectory
   prerequisite generation), Layer-6 recipients and family options. They enter the session change
-  set.
+  set. A learner-origin Reaction is not editable from the panel (Layer 5 §4.2): its configuration
+  changes only through a new reviewed proposal; the panel offers disablement and shows why.
 - **Immediate actions** are governance or answer commands that are not configuration mutations:
   promotion, disablement, consent grant or revoke, consent-authority changes, proposal review,
   artifact adoption mode, answers to requests, finding acknowledgement, house-map layout edits.
@@ -134,6 +135,21 @@ class ChangeSet:
     base_composed_generation_id: str
     edits: tuple[ConfigurationEdit, ...]  # at most one edit per object, canonical order
 ```
+
+Editable object kinds, closed per owning layer (rooms, openings, zones and topology are staged with
+the Layer-2 generation, Layer 0 §4.7):
+
+| `owner_layer` | `object_kind` |
+|---|---|
+| `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `sensor`, `fusion_rule`, `actuator` |
+| `layer3` | `learning_definition` (including its family enabled state) |
+| `layer4` | `semantic_resolver_definition` |
+| `layer5` | `reaction` (admin-direct configuration), `guard_profile`, `comfort_trajectory_prerequisite` |
+| `layer6` | `recipient`, `family_options` |
+
+`expected_fingerprint` is the SHA-256 of the RFC-8785 canonical definition of that object in the
+base generation, computed by Layer 8 itself, so every kind has one without an owner-specific
+fingerprint; `None` exactly for `add`.
 
 The change set lives in the administrator's browser session; it is not persisted or shared, and
 leaving the page warns before losing it. Each edit is validated immediately by the owning layer's
@@ -251,7 +267,8 @@ with HA's storage helper, not Layer-1 `Topology`
 and not part of the composed generation; editing it is an immediate action. A placement whose
 target no longer exists is hidden and listed for cleanup; a renamed object updates on the map.
 
-Overlays: room occupancy and casa presence, light and Actuator channel state, opening state,
+Overlays: room occupancy and casa presence, light and Actuator channel state, opening state where a
+registered Sensor or Actuator channel reports it,
 automations active or blocked with their reason (§8 on click). The map updates live through
 Layer 0 committed-state observers (§10.3); it never polls.
 
@@ -276,7 +293,9 @@ that Heima reads (Sensors) and commands (Actuators). They are read-only: Heima p
 
 - Unique ids derive from Heima identities (room id, reaction id); names come from configuration
   and translation keys, so renames propagate.
-- An entity is `unavailable` whenever its Heima fact is unavailable; it never shows a stale value.
+- A fact-backed entity is `unavailable` whenever its Heima fact is unavailable; a projection-backed
+  entity (§10.3) is `unavailable` until its projection is rebuilt after start. None shows a stale
+  value.
 - Attributes contain closed fields only (for example the block reason code), never free text or a
   person's identity. States and attributes use HA entity translations (§12).
 - An entity is created when its object is committed and removed from HA's entity registry when
@@ -298,7 +317,7 @@ read-only to Layer 8 as an additional consumer:
 | Projection | Inputs |
 |---|---|
 | Automation state | Layer 5 authority transitions (mode), Layer-6 availability tracker episodes (block and reason) |
-| Pending items | Layer 5 proposal-review and consent occurrences, Layer 6 advisory occurrences, Layer 0 recovery-confirmation occurrences |
+| Pending items | Layer 5 proposal-review, consent and advisory occurrences, Layer 0 recovery-confirmation occurrences |
 | Heima health | Layer 0 health snapshots and degradation-diagnostic changes |
 
 Health is `error` when no committed manifest is active or persistence writes are failing,
@@ -344,7 +363,33 @@ displays or interprets a V2 export.
   answers through Layer 0's response ingress (§5.1.3) with the HA user, exactly like a button press;
   finding acknowledgement as Layer-8 view state (Layer 3 §6.1.1); house-map layout (§9).
 - Every command carries an `operation_id`; exact retries return the first result.
-- Live updates to an open panel come from committed-state observers (§10.3), never polling.
+
+Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are the §4 roles:
+
+| Message | Kind | Roles | Owner path |
+|---|---|---|---|
+| `session` | query | any HA user | §4 principal and roles |
+| `overview` | query | admin, resident | map, automation state, pending items (role-filtered) |
+| `objects/list`, `objects/get` | query | admin | active generation, per `object_kind` |
+| `change_set/validate_edit` | query | admin | owning layer's staging validator |
+| `change_set/preview` | query | admin | Layer 0 §4.7 staging |
+| `change_set/apply` | command | admin | Layer 0 §4.7 commit |
+| `history/list`, `history/diff` | query | admin | Layer 0 manifests and generations, Layer 5 transitions |
+| `history/restore` | query | admin | builds a change set (§7), applies nothing |
+| `explain` | query | admin, resident | §8 (resident rendering for residents) |
+| `notifications/history` | query | admin, resident | Layer 6 facts, audience-filtered for residents |
+| `todo` | query | resident | pending-items projection for the resident's audiences |
+| `requests/answer` | command | resident (admin where the owner allows) | Layer 0 response ingress |
+| `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |
+| `reactions/set_consent` | command | resident with consent authority | Layer 5 §4.2 |
+| `consent_authority/stage` | command | admin | Layer 5 §4.2 |
+| `proposals/review` | command | admin | Layer 5 §4.2 |
+| `findings/acknowledge` | command | admin | Layer-8 view state |
+| `map/save_layout`, `map/upload_plan` | command | admin | §9 |
+| `diagnostics` | query | admin | §14 |
+| `subscribe` | subscription | admin, resident | live updates of §10.3, role-filtered |
+- Live updates to an open panel come from committed-state observers and the in-memory projections
+  of §10.3, pushed over an HA websocket subscription; never polling.
 
 ## 14. Diagnostics
 
@@ -372,8 +417,8 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
 - A resident cannot call any administrator command even by crafting a request; an administrator
   without consent authority cannot grant consent; both are rejected before the owning layer.
 - Replacing a sensor used by an automatic Reaction in one change set (remove, add, rebind) applies
-  with no breaking effect and keeps the Reaction automatic; the same edits applied one by one
-  return it to trial.
+  with no breaking effect and keeps the Reaction automatic; applying the removal alone shows a
+  breaking effect that would invalidate the Reaction, losing promotion and consent.
 - A change set based on generation N applied after another commit made N+1 is rejected without
   mutation, rebased, re-previewed; a conflicting field edit is shown for resolution.
 - Restoring a generation that contained a since-removed Reaction proposes recreating it in
