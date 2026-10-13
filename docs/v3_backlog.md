@@ -1893,6 +1893,20 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   (CA4-78). Beyond fact retention the panel says the data is no longer available. (3)
   Administrators see the full chain with codes and links; residents see the same chain in plain
   language with the localized Layer-6 templates and no technical identifiers.
+- **L8-C6 — HA entities published by Heima.** Distinct from the user's own HA entities that Heima
+  reads (Sensors) and commands (Actuators) through Layer 2, which are unchanged. Heima publishes
+  its own conclusions as new HA entities, created and removed automatically from its
+  configuration, for dashboards, `floorplan-card`, user automations, history and logbook.
+  (1) Read-only: no Heima `select`, `switch` or `number`; V2-style writable overrides are not
+  carried over, behavior changes only through the panel or notification answers. (2) A closed small
+  set: casa presence (`binary_sensor`, presence), occupancy per room (`binary_sensor`, occupancy),
+  activity per room (`sensor` enum), each automation's state (`sensor` enum `automatic`/`trial`/
+  `awaiting_consent`/`blocked`/`invalid` with a closed reason attribute; diagnostic category,
+  disabled by default), pending items (`sensor`, proposals and open requests), Heima health
+  (`sensor` enum). No per-person entities (HA `person.*` exists; V3 has no per-person state).
+  (3) Stable unique ids from Heima ids, names from configuration, `unavailable` when the Heima
+  fact is unavailable, closed attributes only, HA translations (it/en), entity removed with its
+  object.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
