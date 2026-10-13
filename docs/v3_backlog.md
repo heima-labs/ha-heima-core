@@ -1881,7 +1881,9 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   a restored Reaction returns as a new generation in `notification_only` (Layer 5 never inherits
   promotion or consent), and learned artifacts, facts and history are untouched. Removed objects
   return with their original identity when it is free. The restored configuration is validated by
-  the current core; anything no longer valid appears as a preview error.
+  the current core; anything no longer valid appears as a preview error. Partial restore: any entry
+  of a restore change set can be removed before applying, and every object page offers "restore
+  this version" for that object alone.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
