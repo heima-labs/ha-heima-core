@@ -1870,6 +1870,18 @@ Decisions recorded before the Layer-8 specification is written; the spec will ow
   or shared; leaving the page warns before losing it. Each edit is validated immediately by the
   owning layer. Immediate actions (promotion, disablement, consent, proposal review, answers,
   finding acknowledgement) never enter the set and take effect at once after a confirmation dialog.
+- **L8-C4a — One history timeline with restore.** System -> History shows one timeline built from
+  existing durable records: configuration commits (Layer 0 manifests, retained indefinitely by
+  CA4-78: who, when, field-level diff against the previous generation, confirmed effects),
+  governance actions (Layer 5 authority, consent and proposal-review transitions) and system
+  commits (bootstrap invalidations after a code upgrade); filters by section, object and person,
+  and every object page shows its own slice. "Restore" never applies anything: it loads the diff
+  from the current configuration to the chosen generation into the session change set (L8-C4),
+  so the result is a new generation after the ordinary preview. It restores configuration only:
+  a restored Reaction returns as a new generation in `notification_only` (Layer 5 never inherits
+  promotion or consent), and learned artifacts, facts and history are untouched. Removed objects
+  return with their original identity when it is free. The restored configuration is validated by
+  the current core; anything no longer valid appears as a preview error.
 
 ### Notifications: a two-tier fork, not just "5 fragmented channels" (mapped 2026-08-30)
 
