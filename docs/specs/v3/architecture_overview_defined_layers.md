@@ -89,7 +89,8 @@ Layer 0 standardizes the machinery every higher layer needs:
   Durable baselines recover progressively within that budget; global closure can precede
   all keys, and reads requiring an unseeded key remain incomplete.
 - **Committed-state observers:** a core component outside the DAG (for example Layer 6 waiting for
-  quiet hours to end) subscribes at bootstrap to exact state keys and is notified asynchronously
+  quiet hours to end) subscribes to exact state keys, declared at bootstrap or derived from the
+  active generation and re-declared at each swap, and is notified asynchronously
   after the cycle commit, coalesced to the latest value; no polling and no mirrored events (§4.8).
 - **Honest history:** retention coverage is stream-scoped. A noisy stream in one room can make its
   own historical interval truncated without falsely degrading the same fact type in another room.

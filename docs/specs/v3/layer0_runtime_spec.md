@@ -1586,10 +1586,14 @@ class CommittedStateChange:
     cycle_when: EvidenceInstant       # cycle instant of the commit that produced it (§3.5)
 ```
 
-- **Closed and declared at bootstrap.** Only core components register subscriptions, all during
-  bootstrap; administrators, learners and plugins cannot. A subscription names one exact state
-  `FactIdentityKey`, so the set is finite and known before the first cycle. A key with no
-  registered producer is accepted and simply never changes.
+- **Closed and core-declared.** Only core components register subscriptions; administrators,
+  learners and plugins cannot. A subscription names one exact state `FactIdentityKey`, never a
+  pattern. A component declares its set at bootstrap, or derives it from the active composed
+  generation (§4.7), for example one key per configured room. A derived set is re-declared
+  atomically at the same cycle boundary as each generation swap: added keys receive their current
+  value once after the first cycle under the new generation, removed keys stop receiving
+  deliveries, unchanged keys keep their state. No subscription is added or removed at any other
+  time. A key with no registered producer is accepted and simply never changes.
 - **After the commit, never inside evaluation.** When a cycle's results become the in-memory
   current index (§4.2), Layer 0 schedules one delivery per subscription whose key changed
   fingerprint in that cycle, including a change of availability. Delivery runs asynchronously
@@ -2802,8 +2806,9 @@ concrete checklist rather than re-deriving one:
 - A subscription to `quiet_hours.active@casa` receives its current value once after the first cycle,
   then one delivery per committed change in cycle order; three changes before the subscriber runs
   yield only the latest; an unchanged cycle yields none; a slow or failing subscriber never delays
-  a cycle or another subscriber; registration after bootstrap, a pattern key or an event key is
-  rejected (§4.8).
+  a cycle or another subscriber; a pattern key, an event key or a registration outside bootstrap or
+  a generation swap is rejected. A generation swap that adds a room delivers that room's key once
+  after the first new cycle and stops a removed room's key (§4.8).
 - A recovery confirmation produces one `opened` occurrence with `approve`/`dismiss` and one
   `closed` occurrence with its terminal state, each appended once as
   `recovery.confirmation_request`; an identical proposal on a later cycle produces neither again.
