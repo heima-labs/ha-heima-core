@@ -512,8 +512,8 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - **U4** — every `HouseholdConsentAuthority` reference is an HA user id (Layer 5 §7.1.1).
 - **CA4-74** — follow-up and action-notice occurrences carry `reaction_descriptor_id` (§6.1).
 - **CA4-75** — Layer 0 committed-state observers (Layer 0 §4.8), used by §6.2.
-- **CA4-77** — actionable phases with an open request are never silenced (§6.2).
 - **CA4-76** — authority transitions push `BindingEnablementChange` to Layer 6 (Layer 5 §4.2, §9.2).
+- **CA4-77** — actionable phases with an open request are never silenced (§6.2).
 
 ## 14. Initial acceptance criteria
 
