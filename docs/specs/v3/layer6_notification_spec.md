@@ -8,7 +8,7 @@ observers (§4.8), authenticated
 response ingress (§5.1.3), Runtime Scheduler, composed configuration generation (§4.7) and
 recovery confirmation (§7.4.1); Layer 1's operational event mapping (§3.1); Layer 3's
 availability-suppression contract (§6.3.1); Layer 4's availability-owner declarations (§7); and
-Layer 5's typed occurrences (§6.0). It implements the Layer-6 decisions C1–C6 recorded in
+Layer 5's typed occurrences (§6.0). It owns the Layer-6 decisions C1–C6 first recorded in
 `docs/v3_backlog.md` ("Layer 6 specification decisions").
 
 ## 1. Purpose
@@ -64,7 +64,8 @@ Assistant only configuration: the system language and the registered `notify.*` 
   verified by Layer 0's ingress and decided by its owner.
 - **No hot-path work.** Adapters run when an occurrence arrives, never inside a Layer-2–5
   evaluation; delivery I/O is asynchronous and never blocks a cycle, an `ApplyStep` or a
-  revocation.
+  revocation. The one bounded wait is Layer 5's follow-up preparation acknowledgement, limited by
+  its core deadline (Layer 5 §6.0, Layer 0 §4.5.1); delivery is never awaited.
 
 ## 4. Notification kinds
 
@@ -108,7 +109,8 @@ keeps the previous template while retained history can contain it (Layer 1 §3.1
 
 ### 4.3 Adapter contract
 
-Each kind has exactly one core adapter. On an occurrence it:
+Each kind has exactly one core adapter. The availability adapter is invoked by the tracker once per
+resident-visible binding delivery (§9.2), not once per owner occurrence. On an occurrence it:
 
 1. validates the occurrence against its closed contract (identities non-empty, phase and reason
    fields consistent, sizes bounded) and rejects it otherwise with a diagnostic;
@@ -158,7 +160,7 @@ V2 groups and free routes are not carried over. The administrator only assigns e
 - `residents` and `administrators` are the recipients assigned to them.
 - `consent_authorities` is derived, never configured: the recipients whose `ha_user_id` matches an
   actor of the current `HouseholdConsentAuthority` (Layer 5 §7.1.1). A consent-authorized person
-  without a recipient record gets the fallback channel.
+  without a recipient record counts as unreachable, so the fallback applies (§7.3).
 - Resolution happens at delivery time against the active Layer-6 generation, so a later change of
   recipients applies to notifications not yet delivered.
 
@@ -183,8 +185,8 @@ binding it is delivered for), through one closed core table:
 
 So a window held open while weather protection is active, a weather-protection step left
 unconfirmed, and the weather-protection action notice are all `safety` notices. A future descriptor
-namespace must add its row with the descriptor's core release; staging rejects a binding whose
-namespace has no row, so no namespace falls into a family by default.
+namespace must add its row with the descriptor's core release; bootstrap fails if a registered
+Reaction descriptor's namespace has no row, so no namespace falls into a family by default.
 
 Priority maps to Home Assistant mobile push options: `safety` uses the time-sensitive
 interruption level (iOS) and high priority (Android); the other families use the platform default.
@@ -260,9 +262,9 @@ persisted.
 
 ### 7.3 Retries and fallback
 
-Failed endpoint calls are retried after 30 seconds, 2 minutes and 10 minutes (core-fixed). When at least
-one resolved recipient is still unreached after the last retry, or when the audience has no
-reachable recipient, Layer 6 creates one `persistent_notification` with `notification_id` equal to
+Failed endpoint calls are retried after 30 seconds, 2 minutes and 10 minutes (core-fixed). When at
+least one resolved recipient is still unreached after the last retry, when a consent authority has
+no recipient record (§5.2), or when the audience has no reachable recipient, Layer 6 creates one `persistent_notification` with `notification_id` equal to
 the item tag. HA cannot address it to one user: every HA user sees it in the panel. This is accepted
 for Initial V3 and revisited if it proves noisy. An actionable phase delivered only through the fallback carries no buttons; it remains
 answerable from the Layer-8 surface through the same ingress (C2). The record becomes `delivered`
@@ -275,7 +277,7 @@ The item tag identifies one notified item across its phases:
 
 | Kind | Item tag source |
 |---|---|
-| `reaction.advisory` | `reaction_activation_id`, `member_index` |
+| `reaction.advisory` | `reaction_activation_id`, `member_index`; one fixed tag per resident for an advisory digest (§6.4) |
 | `recovery.confirmation_request` | `request_id` |
 | `reaction.consent_request` | `reaction_id`, `configuration_generation_id`, `authority_transition_id` |
 | `proposal.review_pending` | one fixed digest tag per audience |
@@ -284,7 +286,9 @@ The item tag identifies one notified item across its phases:
 
 The tag is `"heima:" + notification_kind + ":" + sha256(RFC-8785 tag source)[:32]`. A clearing
 phase (§4.1) sends `clear_notification` on the item tag to every recipient that received the
-opening phase and dismisses the fallback `persistent_notification`; it shows no new message.
+opening phase (after a restart, to every recipient of the audience, since that record is in
+memory) and dismisses the fallback `persistent_notification`; it shows no new message. An advisory
+digest is cleared when every advisory it covered has closed.
 Clearing is best effort and never changes the item's state. Because successive phases of one item
 share its tag, the phone always shows only the item's latest phase: an automation that is blocked,
 restored and blocked again within minutes leaves one notification showing its current state.
@@ -293,6 +297,8 @@ restored and blocked again within minutes leaves one notification showing its cu
 
 A `ready` record retires undelivered only when:
 
+- it is an audit-only phase (not in the kind's `delivered_phases`), right after its clearing
+  action (§7.4);
 - its item closed before delivery (advisory, proposal, recovery confirmation, consent request);
 - its item expired (a recovery request past `expires_at`);
 - its family is silent during quiet hours (§6.2);

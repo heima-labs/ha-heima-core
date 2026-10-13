@@ -545,7 +545,10 @@ The following ownership remains deliberately deferred beyond Layers 0--6:
   cause) and sends the commit with the reviewed base generation and `impact_fingerprint`; it
   never commits a partial layer edit or bypasses the confirmation (Layer 0 §4.7). It renders each
   Layer-5 `GovernanceCommandResult` and execution-audit code from the closed §4.0 vocabularies and
-  never turns them into resident notifications.
+  never turns them into resident notifications. For Layer 6 it edits recipients and family options,
+  renders notification history with the Layer-6 templates in the viewer's locale, and offers an
+  answer path through Layer 0's ingress for requests delivered without buttons (fallback channel,
+  advisory digest).
 
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.
