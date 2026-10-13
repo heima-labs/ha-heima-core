@@ -1936,14 +1936,17 @@ class ReactionDecisionValue:
     outcome: Literal["guards_unsatisfied", "abstained", "eligible"]
     evaluation_reason_codes: tuple[ReactionEvaluationReasonCode, ...]
     suppression_reason_codes: tuple[AutomationSuppressionReason, ...]
-    failed_guard_ids: tuple[str, ...]           # canonical staged guard binding ids that failed
+    failed_guard_capabilities: tuple[str, ...]  # capability_ids of the failed guard bindings, canonical order
     admission: Literal["admitted", "blocked", "not_reached"]
     admission_suppression_codes: tuple[AutomationSuppressionReason, ...]  # empty unless blocked
 ```
 
-`failed_guard_ids` names the semantic guards of a `guards_unsatisfied` evaluation and the action
-guards behind an `action_guard_active` admission block, so the explanation never has to guess
-which guard failed. `admission` is `not_reached` unless the outcome is `eligible` in `automatic`
+`failed_guard_capabilities` names, by `capability_id` (§3.2), the guards that failed: the
+semantic guards of a `guards_unsatisfied` evaluation and the action guards behind an
+`action_guard_active` admission block, so the explanation never has to guess which guard failed. A
+guard profile generation has exactly one binding per capability, so the id together with the
+record's `configuration_generation_id` identifies the exact binding and its limits; the capability
+version comes from that generation, keeping the value a flat tuple of strings. `admission` is `not_reached` unless the outcome is `eligible` in `automatic`
 mode. The fact uses `where=subject`, the cycle instant as `when`, and
 `FactSource(kind="system", source_id="layer5.reaction_decision")`; its identity is the evaluation
 identity `(reaction_id, configuration_generation_id, snapshot_id, reaction_activation_id)`, so a
@@ -4822,7 +4825,7 @@ profile or learner, and declares `requires_household_consent=True`,
   write (§3.2; Layer 3 §6.3.1).
 - An evaluation whose trigger fires and whose wind guard blocks admission appends one
   `reaction.decision` with `outcome="eligible"`, `admission="blocked"`,
-  `admission_suppression_codes=("action_guard_active",)` and the wind guard binding id; a
+  `admission_suppression_codes=("action_guard_active",)` and `failed_guard_capabilities=("wind",)`; a
   `not_triggered` evaluation appends none; a retried evaluation appends no second fact; a Reaction
   in `notification_only` records `admission="not_reached"`.
 - Both Initial-V3 planned-absence descriptors declare
