@@ -1548,6 +1548,13 @@ stopped by its own owner's guard: the Layer-5 dispatch fence rejects unsent call
 invalidated or superseded Reaction generation, and a Layer-3 run captured against an older
 generation cannot publish.
 
+**Configuration history.** Every committed `ComposedGenerationManifest` and every layer generation
+record it references are retained indefinitely and remain readable by id. They are configuration
+records, not `HouseFact`s, so fact retention (§4.3) never prunes them; their growth is bounded by
+the rate of administrator commits. Reading a past generation is a slow-path query for the
+administrative history and restore surface (Layer 8); it never affects evaluation, and only the
+latest manifest is active.
+
 **Restart and code upgrade.** Bootstrap loads the latest committed manifest and rebuilds every
 layer through staging; an uncommitted candidate leaves no trace. If a code upgrade (a changed
 formula, learning type, resolver kind or descriptor version) makes part of the committed
@@ -2786,6 +2793,9 @@ by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
 
+- Every committed manifest and the layer generation records it references stay readable by id
+  after any number of later commits and fact-retention runs; reading one changes no active
+  generation (§4.7).
 - A subscription to `quiet_hours.active@casa` receives its current value once after the first cycle,
   then one delivery per committed change in cycle order; three changes before the subscriber runs
   yield only the latest; an unchanged cycle yields none; a slow or failing subscriber never delays
