@@ -1666,7 +1666,16 @@ ordinary rules and needs fresh promotion and consent. Pending proposals bound to
 dependency become not approvable with the existing readiness codes. A **semantic_only** upstream
 change keeps the Reaction's generation and authority unchanged; it appears in the impact record so
 the administrator can decide whether to edit or disable it. The dispatch fence (§6.0) rejects any
-unsent call of an invalidated generation.
+unsent call of an invalidated generation. The invalidating commit also emits one
+`available=False` fact for the Reaction's decision claim (§5.2).
+
+**Revalidation.** A successor configuration generation may carry exactly the current canonical
+descriptor configuration: a change-set `replace` with an identical configuration is a revalidation,
+permitted for admin-direct and learner-origin Reactions alike. It recompiles the plan against the
+current composition and, if it validates, ends `configuration_invalid` with a successor in
+`notification_only` under the ordinary rules. For a learner-origin Reaction it is not a semantic
+edit, by the same rule as restore below, so it needs no new proposal. Applied to a valid Reaction it
+also creates an ordinary successor, with the usual loss of promotion and consent.
 
 **Removal.** Any Reaction, admin-direct or learner-origin, may be removed by a configuration edit
 that drops its catalog entry; it commits as an ordinary composed generation. The same commit applies
@@ -1753,7 +1762,9 @@ and the closed codes of §4.0, never a descriptor-invented string.
    with that generation; they are never descriptor parameters. A role with
    no initial artifact serves only its declared fallback until an explicitly
    reviewed first selection; it cannot enter `bounded_adaptive` by default.
-   A learner-origin Reaction cannot be edited through this command.
+   A learner-origin Reaction cannot be edited through this command; the
+   unchanged-configuration revalidation of §4.2 is a separate Layer-5 staging
+   contribution available to both origins.
 2. `review_proposal` is the existing common proposal dispatcher. An
    authenticated administrator names the exact proposal and expected
    evidence revision; initial acceptance also names one permitted
@@ -2020,8 +2031,10 @@ A guard profile generation has exactly one binding per capability, so the id tog
 record's `configuration_generation_id` identifies the exact binding and its limits; the capability
 version comes from that generation, keeping the value a flat tuple of strings. `admission` is
 `not_reached` unless the outcome is `eligible` or `normal_exit` in `automatic` mode with at least
-one selected step. The fact is available while its Reaction is in the catalog; a removal emits
-one terminal `available=False` fact (§4.2). It uses the cycle instant as `when` and
+one selected step. The fact is available while its Reaction is in the catalog with a valid
+current generation. The commit that invalidates the generation (`configuration_invalid`) or removes
+the Reaction emits one `available=False` fact, so no earlier decision remains its latest value
+(§4.2); after a valid successor, the next evaluation writes a new value. It uses the cycle instant as `when` and
 `FactSource(kind="system", source_id="layer5.reaction_decision")`. It is audit and explanation
 evidence only: never a notification, a command, a learning outcome or an authority input. It joins
 the cycle's ordinary Layer-0 batch, keeps the default 14-day retention for superseded values, and
@@ -2711,8 +2724,9 @@ physically unconfirmed. For `terminal_action`, normal cancellation/completion wi
 target needs a notice if that action is skipped, including an unavailable
 estimate-dependent target, or physically unconfirmed. A terminal pending
 outcome may resolve after the activation closes, but that activation cannot dispatch again. Ordinary hold
-activation, a fully confirmed due/final target, and administrative disablement or consent
-revocation alone emit no follow-up. A verified revocation always blocks a terminal call.
+activation, a fully confirmed due/final target, administrative disablement, consent
+revocation, invalidation, removal or a configuration successor alone emit no follow-up. A verified
+revocation or generation replacement always blocks a terminal call.
 
 Before consuming a qualifying step or completing a normal exit, Layer 5 derives the stable
 per-channel `operation_id` for that activation boundary and asks Layer 6 to prepare the minimal typed follow-up intent through Layer 0
@@ -4537,6 +4551,11 @@ profile or learner, and declares `requires_household_consent=True`,
   or `review_proposal`, and uses the same `promote_reaction_automatic_action`,
   `set_reaction_household_consent` when its consent property is true,
   `disable_reaction_automatic_action`, and household authority commands.
+- A sensor removed and later re-added leaves a dependent learner-origin Reaction
+  `configuration_invalid` with one `available=False` decision fact; a change-set `replace` with its
+  unchanged configuration revalidates it as a successor in `notification_only` without a new
+  proposal. A configuration successor during a running activation cancels its jobs, invalidates
+  its holds and emits no follow-up or terminal call.
 - Removing an `automatic` Reaction with a running activation, a held channel, an open advisory and
   a pending adoption proposal commits one composed generation: authority disabled, future jobs
   cancelled, no follow-up or terminal call, advisory closed `authorization_disabled`, hold
