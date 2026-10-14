@@ -77,7 +77,8 @@ boundaries of the current diagrams.
 
 ## Layer 0 — Cross-cutting runtime facilities
 
-Seven facilities that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
+Six facilities (Layer 0 §1; historical observation continuity, listed separately below, belongs to
+Persistence) that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
 depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 
 - **Timing**: one execution primitive, an "at" job — a scheduled one-shot deadline. A "cron" policy

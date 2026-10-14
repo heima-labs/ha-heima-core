@@ -5175,8 +5175,8 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87 | 0 | 0 | 39 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92 | 0 | 0 | 41 | 1 |
-| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93 | 0 | 0 | 11 | 0 |
-| **Total** | **93 findings** | **0** | **0** | **92** | **1** |
+| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94 | 0 | 0 | 12 | 0 |
+| **Total** | **94 findings** | **0** | **0** | **93** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-94 — Residues found in the CA6 fix verification
+
+**Status:** DONE (2026-10-14; specification readiness). **Severity:** P3. **Origin:** line-by-line verification of CA4-86–93.
+
+**Problem.** The verification of CA4-86–93 found wording residues: Layer 0's `resident_response` kind comment still named only runtime confirmation requests; Layer 5 §6.0 still said each `ReactionEvaluationResult` is "recorded" per snapshot; Layer 5 §4.1 said Layer 6 derives availability bindings, which Layer 5 declares; CA4-93 wrongly changed the recap to "seven facilities" (Layer 0 §1 lists six); the new overview communication row omitted Layer 3; the overview said recipients are people "with HA users" although `ha_user_id` is optional.
+
+**Approved resolution (2026-10-14).** Wording only: each place aligned with its owning contract. The separate configuration-invalid decision-state gap (CA6 V1) is tracked on its own. See the [CA4-94 review](specs/v3/reviews/CA4-94.md); no V3 runtime test ran.
 
 #### CA4-93 — CA6 mechanical residues across overview, recap, diagrams and specs
 

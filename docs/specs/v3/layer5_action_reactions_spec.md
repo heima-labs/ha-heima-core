@@ -1298,7 +1298,8 @@ configuration generation (Layer 0 §4.7). Layer 5 revalidates the immutable admi
 the current registry generation, Actuator inventory, Topology, and guard profile, and stages a
 candidate composition that adds the resulting `ConfiguredReaction` (root and generation index `0`,
 in `notification_only` mode), its Reaction-catalog entry with the optional `display_name` supplied
-with the command, and the availability publication bindings Layer 6 derives from it (disabled,
+with the command, and the availability publication bindings Layer 5 declares for it and Layer 6
+composes into its generation (Layer 3 §6.3.1; disabled,
 since the Reaction is not `automatic`). A new Reaction is only a new consumer, so its impact record
 is empty and needs no confirmation. One durable transaction writes the manifest, the new layer
 generations and the one `accepted` `ProposalReviewTransition`, which records the accepting actor,
@@ -2989,7 +2990,8 @@ loss of observation, or a valid divergence closes that satisfied episode. A term
 outcome closes its dispatch episode but retains the recorded target decision as possible later
 learning evidence under §6.1. While a hold is active, ordinary admission blocks a
 new command; after release, current-policy evaluation may record a new decision under fresh
-guards and authority. The current `ReactionEvaluationResult` is still recorded for each snapshot;
+guards and authority. The current `ReactionEvaluationResult` is still computed for each snapshot
+and submitted to the Reaction's decision state, which persists only changes (§5.2);
 the reuse link is audited against the first decision identity. If even one targeted facet does
 not match, Layer 5 dispatches the complete core-translated call plan when current admission
 permits: it never prunes individual calls or treats a pre-dispatch match as final confirmation.

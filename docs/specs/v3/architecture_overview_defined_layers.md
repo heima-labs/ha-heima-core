@@ -468,7 +468,7 @@ action.
 | 5 -> 6 | Reaction follow-up | Typed `ReactionFollowUpOccurrence` and a durably prepared intent at the qualifying boundary; Layer 6 persists the existing `reaction.follow_up` event fact and renders text only when it delivers its derived `HeimaEvent` | Layer-5 rendering, a second delivery envelope, or replaying an Actuator command from the outbox |
 | 5/0 -> 6 | Notices and requests | Typed advisory, action-notice, proposal-review and consent occurrences (Layer 5) and recovery-confirmation occurrences (Layer 0) | Pre-rendered text or any lower-layer append of a Layer-6 event fact |
 | 6 -> 0/1 | Delivery audit | Sole producer of the seven Layer-6 event fact types, each committed with its outbox record (Layer 0 §4.5); answers forwarded only to Layer 0's response ingress | Any lower-layer claim of these reserved event fact types, or Layer 6 deciding a response |
-| 8 -> 0/5 | Administration | Change sets committed through Layer 0 §4.7; governance commands of Layer 5 §4.2 and Layer 3; answers through the response ingress | Writing another layer's store, evaluating a policy, or running in an evaluation cycle |
+| 8 -> 0/3/5 | Administration | Change sets committed through Layer 0 §4.7; governance commands of Layer 5 §4.2 and Layer 3; answers through the response ingress | Writing another layer's store, evaluating a policy, or running in an evaluation cycle |
 
 ## 10. Performance and Technology Choices Already Fixed
 
@@ -533,8 +533,8 @@ handling, normal exit, next-step hold release, restart and consent rules once:
 
 **Layer 6 (defined).** [Layer 6](layer6_notification_spec.md) is the one path for pushed
 notifications. A closed registry of seven kinds turns typed occurrences into one audited event fact
-per phase with no stored text, committed with its outbox record. Recipients are people with HA
-users, endpoints and closed audiences (`consent_authorities` derived from
+per phase with no stored text, committed with its outbox record. Recipients are people, optionally linked to an HA user,
+with endpoints and closed audiences (`consent_authorities` derived from
 `HouseholdConsentAuthority`). Closed families drive quiet hours (`safety` bypasses; Reaction notices
 take their family from the descriptor namespace), proposal and advisory digests group low-urgency
 items, and item tags let later phases replace or clear a notification. Delivery uses `notify.*`,

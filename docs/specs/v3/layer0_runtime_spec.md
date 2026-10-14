@@ -1677,9 +1677,9 @@ FactSourceKind = Literal[
     "admin_command",        # a direct consequence of an admin-panel action or of an administrator's
                             # verified ingress response, assignable only after HA confirms the
                             # user is an admin (§5.1, §5.1.3)
-    "resident_response",    # a direct consequence of a verified resident response to an active
-                            # runtime confirmation request or a matched direct Actuator control edge
-                            # — two distinct boundary checks; see §5.1
+    "resident_response",    # a direct consequence of a verified non-admin response to an active
+                            # response-ingress request (§5.1.3) or a matched direct Actuator control
+                            # edge — two distinct boundary checks; see §5.1
     "timeout",              # recorded because an expected response/confirmation window elapsed with
                             # nothing arriving — assignable only by the in-process timeout controller
     "recovery",             # produced by Recovery/Checkpoint itself (§7) — e.g. a recovery diagnostic after a restart (§6.3)
