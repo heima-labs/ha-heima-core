@@ -981,8 +981,9 @@ with the same id and identical canonical fact reuses the first append;
 the same id with a different payload is a producer-contract error and
 blocks historical completeness for that stream. Distinct admitted
 decisions/phases keep distinct ids. The existing
-`actuator.correction.deduplication_key` and Layer-0 resident ingress
-`control_edge_id` likewise deduplicate only their own event family,
+`actuator.correction.deduplication_key`, Layer-0 resident ingress
+`control_edge_id` and the Layer-5 `reaction.advisory_feedback` key
+`(advisory_operation_id, action)` likewise deduplicate only their own event family,
 never arbitrary event facts. This does not make event payload equality a
 general persistence identity or drop repeated real occurrences.
 The validated `manual_hold.lifecycle` fact follows this ordinary immediate

@@ -90,7 +90,7 @@ Sections are organized by the user's question, not by layer.
 | Devices | admin | What does Heima see and command? | Sensors with interpretations, Actuators, fusion rules and formulas (Layer 2) |
 | Understanding | admin | How does Heima understand the situation? | Semantic resolver definitions: occupancy, presence, activity (Layer 4) |
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption, consent authority (Layer 5) |
-| Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings (Layer 3) |
+| Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
 | Notifications | admin | Who receives what? | Recipients, family options, notification history (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
 | To do | resident | What do I need to answer? | Consent requests, recovery confirmations, advisories with feedback, including requests delivered without buttons |
@@ -115,7 +115,8 @@ technical identifiers. Every configuration section shows the pending-changes bar
   rename never creates a configuration generation (Layer 5 §4.2).
 - **Immediate actions** are governance or answer commands that are not configuration mutations:
   promotion, disablement, consent grant or revoke, consent-authority changes, proposal review,
-  artifact adoption mode, answers to requests, finding acknowledgement, house-map layout edits.
+  artifact adoption mode, Layer-3 live-signal promotion and signal-artifact adoption (Layer 3 §4.9),
+  answers to requests, finding acknowledgement, house-map layout edits.
   They take effect at once after a confirmation dialog that states their consequence, and never
   enter the change set. Accepting a learned proposal is the one immediate action that creates
   configuration: it may name the new Reaction and commits it as one composed generation with an
@@ -196,7 +197,7 @@ System → History is one timeline built only from existing durable records:
 | Entry | Source |
 |---|---|
 | Configuration commit | Layer 0 manifest and layer generation records (retained indefinitely, Layer 0 §4.7) |
-| Governance action | Layer 5 authority, consent, consent-authority, adoption and proposal-review transitions |
+| Governance action | Layer 5 authority, consent, consent-authority, adoption and proposal-review transitions; Layer 3 signal-artifact adoption transitions |
 | System commit | Layer 0 bootstrap manifest after a code upgrade |
 
 Each configuration entry shows who, when, the field-level diff against the previous generation and
@@ -329,7 +330,7 @@ read-only to Layer 8 as an additional consumer:
 
 | Projection | Inputs |
 |---|---|
-| Automation state | Layer 5 authority transitions (mode), Layer-6 availability tracker episodes (block and reason) |
+| Automation state | Layer 5 authority transitions (mode), the active composed generation (catalog entries, and `configuration_invalid` from each commit's invalidated dependents), Layer-6 availability tracker episodes (block and reason) |
 | Pending items | Layer 5 proposal-review, consent and advisory occurrences, Layer 0 recovery-confirmation occurrences |
 | Heima health | Layer 0 health snapshots and degradation-diagnostic changes |
 
@@ -376,7 +377,8 @@ in the package. It loads no library from an external CDN and does not reuse the 
 - Queries: current state from the in-memory current index; history, timelines, diffs and
   explanations as bounded slow-path queries with explicit time windows and pagination.
 - Commands: configuration (§6) through Layer 0 §4.7; governance through Layer 5's common command
-  surface (Layer 5 §4.2), whose typed `GovernanceCommandResult` and closed codes Layer 8 renders;
+  surface (Layer 5 §4.2), whose typed `GovernanceCommandResult` and closed codes Layer 8 renders,
+  and Layer 3's signal-adoption transitions (Layer 3 §4.9);
   answers through Layer 0's response ingress (§5.1.3) with the HA user, exactly like a button press;
   finding acknowledgement as Layer-8 view state (Layer 3 §6.1.1); house-map layout (§9).
 - Every command carries an `operation_id`; exact retries return the first result.
@@ -398,6 +400,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `todo` | query | resident | pending-items projection for the resident's audiences |
 | `requests/answer` | command | admin, resident (the owner's declared categories and own checks apply) | Layer 0 response ingress |
 | `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |
+| `learning/promote_signal`, `learning/adopt_signal_artifact`, `learning/set_signal_adoption_mode` | command | admin | Layer 3 §4.9 (initial `live_signal_eligible` promotion, `adopt_pinned_signal_artifact`, `set_signal_artifact_adoption_mode`) |
 | `reactions/set_consent` | command | resident with consent authority | Layer 5 §4.2 |
 | `consent_authority/stage` | command | admin | Layer 5 §4.2 |
 | `proposals/review` | command | admin | Layer 5 §4.2 |

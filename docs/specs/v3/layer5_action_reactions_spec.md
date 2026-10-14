@@ -3858,7 +3858,8 @@ comfort-trajectory readiness/shadow gates above. This descriptor is
 learner-proposal-only, so `stage_admin_direct_reaction` rejects it. No
 descriptor-specific alias of a common authority command is registered.
 
-`HouseholdConsentAuthority` is a Layer-8 household access binding, separate from a trajectory
+`HouseholdConsentAuthority` is a Layer-5 governance record of household access, staged by
+`stage_household_consent_authority` (§4.2) and administered from Layer 8, separate from a trajectory
 prerequisite generation and from the consent value itself. It contains one or more explicitly assigned
 authenticated resident actor references; each reference is a Home Assistant user id (`ha_user_id`),
 the identity Layer 0's response ingress verifies (Layer 0 §5.1.3) and Layer 6 matches to recipients. Only an actor carrying this explicit resident authorization

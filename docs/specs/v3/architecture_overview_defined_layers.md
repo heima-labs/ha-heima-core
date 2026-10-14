@@ -4,9 +4,9 @@
 specifications and introduces no new implementation requirement.
 
 **Maintenance:** Manually synchronized when a confirmed decision is promoted to an authoritative
-specification. **Reviewed through:** 2026-10-12 for every CA4 correction closed in
-`docs/v3_backlog.md`, including the CA4-64 full-reread (CA5) corrections; no CA4 item is open. Where it differs from an
-authoritative specification, that specification wins.
+specification. **Reviewed through:** 2026-10-14 for every CA4 correction closed in
+`docs/v3_backlog.md`, including the CA4-64 (CA5) and CA4-86–93 (CA6) full-reread corrections; no
+CA4 item is open. Where it differs from an authoritative specification, that specification wins.
 
 **Scope:** Layers 0 to 6 and Layer 8 are defined in detail today; Layer 6 (notification) and
 Layer 8 (administration) were approved on 2026-10-13. Layer 7 is outside this document except for
@@ -24,7 +24,7 @@ questions:
 1. Which layer owns each kind of data, decision, and side effect?
 2. Which paths are synchronous engine work, and which are slow/background work?
 3. Which cross-layer communications are allowed, and which are deliberately forbidden?
-4. Which decisions are already fixed before Layers 7 and 8 are specified?
+4. Which decisions are already fixed before Layer 7 is specified?
 
 The authoritative sources remain:
 
@@ -51,8 +51,8 @@ legend:
 2. [Support and governance](architecture_support_governance.puml): persistence/history, staged
    generations, learning outputs, review, and availability delivery.
 
-In both diagrams, green components are layers defined so far and orange components are future layers
-with already-fixed interfaces. A solid arrow is an owned operational hand-off; a blue dashed arrow is
+In both diagrams, green components are layers defined so far; the legend keeps orange for a future
+layer with already-fixed interfaces, and Layer 7 is not drawn yet. A solid arrow is an owned operational hand-off; a blue dashed arrow is
 an immutable contract or staging dependency, never runtime message delivery.
 
 ## 3. Responsibility Map
@@ -64,7 +64,9 @@ an immutable contract or staging dependency, never runtime message delivery.
 | 2 | Composition-time registry generation; HA read bindings; interpretations; fact fusion; formula registry; actuator inventory | Typed sensor/fused `HouseFact`s and logical Actuator descriptions | Durable storage, historical learning, semantic resolution, policy evaluation, action execution |
 | 3 | Historical analysis; shared statistical lifecycle; optional ML governance; artifacts; findings; typed signals and learned candidates | `DiagnosticFinding`, `InferenceSignal`, `LearningProposalCandidate`, typed availability suppression occurrences | Fact persistence, HA access, semantic-claim resolution, policy approval, commands, notification rendering |
 | 4 | Core semantic-resolver registry; staged semantic DAG; authorized signal gateway; current semantic-claim resolution | Resolved semantic `HouseFact`s, completed immutable `DecisionSnapshot`, typed availability suppression occurrences | HA reads, historical learning/model lifecycle, policy/guard/envelope evaluation, Actuator commands, notification delivery |
-| 5 | Candidate validation/review; configured-Reaction staging; Reaction evaluation; action admissibility; `ApplyStep` generation | `ReactionProposal`, `ConfiguredReaction`, ordered one-endpoint `ApplyStep`s, typed suppression and follow-up occurrences | HA read bindings, raw state interpretation, historical learning, notification delivery |
+| 5 | Candidate validation/review; configured-Reaction staging; Reaction evaluation; action admissibility; `ApplyStep` generation | `ReactionProposal`, `ConfiguredReaction`, ordered one-endpoint `ApplyStep`s, per-Reaction decision state, typed suppression, follow-up and notice occurrences | HA read bindings, raw state interpretation, historical learning, notification delivery |
+| 6 | Notification kind registry and adapters; recipients and audiences; families, quiet hours, digests; delivery, rendering, retries, fallback; availability episode tracker | The seven Layer-6 event facts with their outbox records; HA `notify.*` deliveries and `heima_notification` events | Response decisions, governance, occurrence meaning, configuration and history surfaces |
+| 8 | The Heima panel by role; session change set, preview and apply; history and restore; explanations; house map; published HA entities; translations | Typed commands to owning layers; read-only HA entities; rendered views | Any configuration meaning, validation, authority, decision or fact; evaluation-cycle work |
 
 ## 4. Foundation: Layers 0 and 1
 
@@ -144,11 +146,11 @@ Layer 0 standardizes the machinery every higher layer needs:
   For irradiance-triggered solar shading, Layer 5 counts one elapsed wait from
   qualifying exposure; an observation gap counts only when the last valid
   state and first fresh state are both qualifying. Initial V3 uses a staged
-  fixed dwell on this path and registers no solar-fraction forecast. The
-  generic state-fraction outcome and bounded-delay selector remain available
-  only to descriptor paths with a separately reviewed learning definition.
-  hysteresis can end the occurrence, while a separate movement
-  cooldown gates admission.
+  fixed dwell on this path and registers no solar-fraction forecast. An
+  observed exit crossing of the hysteresis condition ends the occurrence,
+  while a separate cover-movement cooldown gates admission. The generic
+  state-fraction outcome and bounded-delay selector remain available only to
+  descriptor paths with a separately reviewed learning definition.
 - **Learned timing authority:** Layer 5 stores a stable
   `ReactionTimingModelBinding` with the descriptor path, learning definition,
   typed state, closed qualifying-value set and authorized window in the
@@ -184,10 +186,11 @@ Layer 0 standardizes the machinery every higher layer needs:
 - **Runtime health:** Layer 0 measures latency, memory, CPU and runtime capabilities. It never
   decides whether a learner may run; Layer 3 consumes the read-only snapshot on its slow path.
 
-Layer 0 reserves `automation.availability` and `reaction.follow_up` as Layer-6-owned
-event fact types. A lower layer may not append either event directly. The latter has
-one narrow durable-intent preparation boundary (Layer 0 §4.5); event rendering and
-delivery remain Layer-6 work.
+Layer 0 reserves the seven Layer-6 notification kinds as Layer-6-owned event fact types:
+`reaction.follow_up`, `automation.availability`, `reaction.advisory`, `reaction.action_notice`,
+`recovery.confirmation_request`, `reaction.consent_request` and `proposal.review_pending`. A lower
+layer may not append any of them directly. `reaction.follow_up` alone has a narrow durable-intent
+preparation boundary (Layer 0 §4.5); event rendering and delivery remain Layer-6 work.
 
 ### Layer 1: Semantic Substrate
 
@@ -296,7 +299,7 @@ it never reads HA runtime objects or a mutable HA payload.
 | `ShadowProposalPreview` | Diagnostic finding registry | Preview only; promotion creates a new candidate and never reuses the preview as approval |
 | `InferenceSignal` | Exactly one authorized Layer-4 semantic resolver | Transient, typed, expiring input; not a policy or `HouseFact` |
 | `LearningProposalCandidate` | Layer 5 | Evidence for review; Layer 5 independently validates candidate kind/version and policy payload |
-| `AvailabilitySuppressionOccurrence` | Future Layer-6 `AvailabilityEpisodeTracker` | Typed availability transition, not a notification, event fact, command, or persistence request |
+| `AvailabilitySuppressionOccurrence` | Layer-6 `AvailabilityEpisodeTracker` | Typed availability transition, not a notification, event fact, command, or persistence request |
 
 The proposal path is intentionally one way: learning proposes, Layer 5 reviews, a `ConfiguredReaction`
 later evaluates under current conditions. A statistical result can refine only its pre-approved
@@ -414,7 +417,8 @@ action.
   contracts reference its versioned entries, while households stage only typed guard-profile bindings;
   a new guard-profile generation cannot silently alter an active Reaction.
   Its `quiet_hours.v1` capability reads an explicit casa boolean fact only for
-  descriptor intents that require it; Layer-6 notification quiet hours remain separate.
+  descriptor intents that require it. Layer 6 reads the same fact for its notification quiet
+  hours (Layer 6 §6.2), but its delivery behavior is its own and never becomes a guard.
 
 ### Safe execution
 
@@ -462,7 +466,9 @@ action.
 | 5 -> HA | Execution | Ordered one-endpoint `ApplyStep`s | Raw multi-entity command graph or arbitrary service payload |
 | 3/4/5 -> 6 | Availability | Typed runtime suppression occurrences; own immutable staged publication declarations | Rendering, direct notification, policy lookup, or `automation.availability` persistence |
 | 5 -> 6 | Reaction follow-up | Typed `ReactionFollowUpOccurrence` and a durably prepared intent at the qualifying boundary; Layer 6 persists the existing `reaction.follow_up` event fact and renders text only when it delivers its derived `HeimaEvent` | Layer-5 rendering, a second delivery envelope, or replaying an Actuator command from the outbox |
-| 6 -> 0/1 | Delivery audit | Sole Layer-6 `automation.availability` and `reaction.follow_up` event producers; the latter uses Layer 0 §4.5 intent and operation-id retry | Any lower-layer claim of these reserved event fact types |
+| 5/0 -> 6 | Notices and requests | Typed advisory, action-notice, proposal-review and consent occurrences (Layer 5) and recovery-confirmation occurrences (Layer 0) | Pre-rendered text or any lower-layer append of a Layer-6 event fact |
+| 6 -> 0/1 | Delivery audit | Sole producer of the seven Layer-6 event fact types, each committed with its outbox record (Layer 0 §4.5); answers forwarded only to Layer 0's response ingress | Any lower-layer claim of these reserved event fact types, or Layer 6 deciding a response |
+| 8 -> 0/5 | Administration | Change sets committed through Layer 0 §4.7; governance commands of Layer 5 §4.2 and Layer 3; answers through the response ingress | Writing another layer's store, evaluating a policy, or running in an evaluation cycle |
 
 ## 10. Performance and Technology Choices Already Fixed
 
@@ -489,8 +495,9 @@ These are architectural technology choices, not incidental implementation prefer
 - **Clean V3 start:** no V2 configuration, state, model, approval, or history migration enters a V3
   runtime path. This removes conversion branches from bootstrap and the hot path.
 
-The specifications intentionally do **not** select a durable database engine, ML framework, external
-training protocol, or notification transport yet. Those choices must implement the contracts above;
+Notification transport is fixed by Layer 6: Home Assistant `notify.*`, mobile actions and
+`persistent_notification`. The specifications intentionally do **not** select a durable database
+engine, ML framework or external training protocol yet. Those choices must implement the contracts above;
 they must not weaken ownership, typed boundaries, staged validation, or hot-path constraints.
 
 ## 11. Defined but Gated, and Deferred Ownership
@@ -568,6 +575,8 @@ Before implementing a component, answer these questions in order:
 4. Is it a current semantic decision? It belongs to Layer 4, not to a learner or a policy.
 5. Does it create, approve, evaluate, or execute an action? It belongs to Layer 5.
 6. Does it render or deliver a resident-facing message? It belongs to Layer 6.
-7. Would it add a second representation, registry, scheduler, action engine, or callback path? Reuse
+7. Does it present, edit or explain configuration, decisions or state to people? It belongs to
+   Layer 8, which only sends typed commands to the owning layer.
+8. Would it add a second representation, registry, scheduler, action engine, or callback path? Reuse
    the existing typed mechanism unless the shared contract cannot express the requirement without
    weakening meaning, safety, or hot-path performance.

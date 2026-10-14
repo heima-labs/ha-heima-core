@@ -19,7 +19,8 @@ component "Layer 2\nstaged registry generation\nSensors, FusionRules, Actuators"
 component "Layer 3\nhistorical learning, artifacts,\nfindings, signals, candidates" as L3 #E6F4EA
 component "Layer 4\nSemantic DAG\nauthorized signal consumer" as L4 #E6F4EA
 component "Layer 5\ncandidate review, configured Reaction,\naction admissibility" as L5 #E6F4EA
-component "Layer 6 - future\nAvailabilityEpisodeTracker, follow-up adapter\nnotification delivery" as L6 #FCE8E6
+component "Layer 6\nnotification kinds and adapters, AvailabilityEpisodeTracker,\nquiet hours, digests, delivery" as L6 #E6F4EA
+component "Layer 8\nrole-based panel, change sets,\nhistory, explanations, published entities" as L8 #E6F4EA
 
 L0 --> L3 : bounded fact-history reads\nand runtime-health snapshot
 L2 -[#1A73E8,dashed]-> L3 : staged registry generation
@@ -35,8 +36,13 @@ L5 --> L6 : typed follow-up intent and occurrence
 L3 -[#1A73E8,dashed]-> L6 : staged owner declaration
 L4 -[#1A73E8,dashed]-> L6 : staged owner declaration only
 L5 -[#1A73E8,dashed]-> L6 : staged automation binding
-L6 --> L0 : sole producer of\nautomation.availability event fact
-L6 --> L0 : follow-up intent outbox and\nreaction.follow_up event fact
+L5 --> L6 : advisory, action-notice,\nproposal-review and consent occurrences
+L0 --> L6 : recovery-confirmation occurrence
+L6 --> L0 : sole producer of the seven\nnotification event facts, with outbox records
+L6 --> L0 : answers to the response ingress
+L8 --> L0 : change sets through the\ncomposed generation
+L8 --> L5 : governance commands
+L8 --> L3 : signal adoption commands
 
 note bottom of L3
   Historical learning and model work use the slow path.
@@ -53,8 +59,8 @@ end note
 note bottom of L6
   The tracker is transient. It reconciles active
   suppression episodes at a publication-generation swap.
-  Only Layer 6 renders, delivers, and audits availability
-  and reaction follow-up; its output lengths are bounded.
+  Only Layer 6 renders, delivers, and audits notifications;
+  its output lengths are bounded.
 end note
 
 legend bottom

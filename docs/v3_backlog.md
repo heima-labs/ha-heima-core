@@ -5175,8 +5175,8 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87 | 0 | 0 | 39 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92 | 0 | 0 | 41 | 1 |
-| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84 | 0 | 0 | 10 | 0 |
-| **Total** | **92 findings** | **0** | **0** | **91** | **1** |
+| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93 | 0 | 0 | 11 | 0 |
+| **Total** | **93 findings** | **0** | **0** | **92** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-93 — CA6 mechanical residues across overview, recap, diagrams and specs
+
+**Status:** DONE (2026-10-14; specification readiness). **Severity:** P3. **Origin:** CA6 full reread (M1–M21 not absorbed by CA4-86–92).
+
+**Problem.** Orientation documents still described Layers 6 and 8 as future or partial (stale review dates, a missing responsibility-map row for each, a "future" Layer 6 in the governance diagram and no Layer 8, only two of the seven Layer-6 event fact types, an unselected notification transport, quiet hours "separate", a recap notification list naming non-existent kinds, an outdated digest text, "six facilities" for seven, a dangling overview sentence). In the specs, Layer 5 §7.1.1 called `HouseholdConsentAuthority` a Layer-8 binding; `reaction.advisory_feedback` had no deduplication key; Layer 8's automation-state projection lacked the configuration-validity input; Layer 3's live-signal governance commands were absent from Layer 8; and Layer 3 called artifact promotion a generation transition.
+
+**Approved resolution (2026-10-14).** Wording and cross-references only, no contract change: overview and recap re-dated and aligned with Layers 6 and 8 (responsibility rows, seven event fact types, transport, quiet-hours relation, communication-table rows, Layer-8 checklist question, repaired sentence); the governance PlantUML marks Layer 6 defined and adds Layer 8; the recap diagram gains the Layer 3/4/0 → 6 and Layer 8 edges. `HouseholdConsentAuthority` is described as a Layer-5 governance record; `reaction.advisory_feedback` joins Layer 0 §4.2's producer-owned append-once keys with `(advisory_operation_id, action)`; the automation-state projection reads the active composed generation; Layer 8 lists Layer 3 promotion and signal-adoption commands, history entries and messages; Layer 3 promotion is an artifact-adoption decision. See the [CA4-93 review](specs/v3/reviews/CA4-93.md); no V3 runtime test ran.
 
 #### CA4-92 — Opening type and orientation were free strings; `entity_id` had no consumer
 

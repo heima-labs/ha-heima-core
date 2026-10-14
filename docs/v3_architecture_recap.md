@@ -9,8 +9,8 @@ itself should be enough to understand the system on its own.
 **Authority and maintenance.** The Layer 0--6 and Layer 8 specifications are authoritative; where this recap
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
-through:** 2026-10-12 for every CA4 correction closed in `docs/v3_backlog.md`, including the
-CA4-64 full-reread (CA5) corrections; no CA4 item is open.
+through:** 2026-10-14 for every CA4 correction closed in `docs/v3_backlog.md`, including the
+CA4-64 (CA5) and CA4-86–93 (CA6) full-reread corrections; no CA4 item is open.
 
 For current specification work, the [contract registry](specs/v3/contract_registry.json) and
 [workflow](specs/v3/spec_workflow.md) provide bounded navigation and review evidence.
@@ -54,12 +54,17 @@ flowchart TB
     L3 -->|candidate for review| L5[Layer 5: Reaction review and action]
     L4 -->|completed DecisionSnapshot| L5
     L5 -->|one-endpoint ApplyStep| HA
-    L5 -->|typed suppression and follow-up| L6[Layer 6: delivery adapters]
+    L3 -->|typed suppression| L6[Layer 6: notification kinds and delivery]
+    L4 -->|typed suppression| L6
+    L5 -->|typed suppression, follow-up and notices| L6
+    L0 -->|recovery confirmation| L6
     L6 -->|event facts and follow-up intent| L0
     L1[Layer 1: immutable contracts] -.-> L0
     L1 -.-> L2
     L7[Layer 7: staged extensions] -.-> L2
-    L8[Layer 8: administration] -.-> L5
+    L8[Layer 8: administration] -->|change sets| L0
+    L8 -->|governance commands| L5
+    L8 -->|signal adoption commands| L3
 ```
 
 The current detailed diagrams separate [runtime and authority](specs/v3/architecture_runtime_authority.puml)
@@ -72,7 +77,7 @@ boundaries of the current diagrams.
 
 ## Layer 0 — Cross-cutting runtime facilities
 
-Six facilities that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
+Seven facilities that sit outside the semantic-resolution DAG entirely — nothing in Layers 2-5 can
 depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 
 - **Timing**: one execution primitive, an "at" job — a scheduled one-shot deadline. A "cron" policy
@@ -649,9 +654,9 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
 
 ## Layer 6 — Notification / communication
 
-One pipeline handles every outbound notification — operational events (a reaction fired, a security
-condition, a semantic-claim transition) and review items (a new learned proposal, N new automation
-suggestions) alike — instead of one sophisticated, configurable path for the former and a separate,
+One pipeline handles every outbound notification — the seven closed kinds of Layer 6 §4.2:
+Reaction follow-ups, automation availability, advisories, protective-action notices, recovery
+confirmations, consent requests and proposal reviews — instead of one sophisticated, configurable path for the former and a separate,
 unconfigurable direct-call path for the latter. A Reaction under trial (`notification_only`) never
 notifies residents, only the administrator preview; once authorized, a member configured as
 advice (for example opening a manual window) produces one `reaction.advisory` per activation
@@ -685,8 +690,8 @@ the adapter never replays an Actuator command.
   `quiet_hours.active` fact, one source for the Layer-5 guard and Layer 6; room-scoped
   `activity.sleeping` alone does not establish a casa-wide quiet context.
 - **Digest** (specified in Layer 6 §6.3, not built): new-proposal notices for administrators are collected for
-  30 minutes after the first one and sent as one notification ("N new proposals to review") at
-  most every 4 hours, replacing the previous one on the phone through a fixed HA notification tag
+  30 minutes after the first one and sent as one notification ("N proposals awaiting review, M new")
+  at most every 4 hours per recipient, replacing the previous one on the phone through a fixed HA notification tag
   and cleared when no proposal remains open. Only proposals still open for review are counted.
   → [Layer 6 spec](specs/v3/layer6_notification_spec.md).
 
@@ -768,5 +773,5 @@ explainability system built on top.
 7. A namespacing convention for third-party-registered identifiers
    (`"plugin.<plugin_id>.<name>"`) — still to be reviewed for Layer 7; the current
    cross-layer claims and candidate-kind/Reaction-descriptor references must remain collision-free.
-8. Layer 0–6 and Layer 8 have no open CA4 correction after the CA5 full reread; any new finding is tracked as
+8. Layer 0–6 and Layer 8 have no open CA4 correction after the CA6 full reread; any new finding is tracked as
    a CA4 backlog item. The retired domain drafts are historical context, not pending decisions.

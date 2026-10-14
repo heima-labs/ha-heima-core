@@ -292,9 +292,9 @@ Persistence appends every distinct event occurrence, including otherwise equal p
 producer-owned operation-id protocols are exceptions: `manual_hold.lifecycle` retries are
 idempotent under Layer 0 §6.4, every Layer-6 notification kind (including `reaction.follow_up`
 and `automation.availability`) is appended once per `(notification_kind, operation_id)` under §4.5,
-and `actuator.target_lifecycle`, `actuator.correction` and
-`actuator.resident_control` deduplicate by their own stable event/edge ids
-under Layer 0 §4.2. None uses
+and `actuator.target_lifecycle`, `actuator.correction`,
+`actuator.resident_control` and `reaction.advisory_feedback` deduplicate by
+their own stable keys under Layer 0 §4.2. None uses
 `notification_key` as fact identity. Layer 6 uses that key for delivery identity; it has no
 time-based deduplication or rate-limiting window, and repeats on a device are replaced through
 item tags (Layer 6 §7.4–§7.6). A delivery that is not made remains visible in the audit

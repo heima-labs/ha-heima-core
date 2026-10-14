@@ -2613,7 +2613,8 @@ score alone does not establish that an uncertainty-bearing output is reliable
 An artifact that passes its absolute profile gates and baseline comparison may enter shadow only. Its
 hypothetical contrast and candidate remain diagnostics during shadow; they cannot notify, alter an
 existing policy, issue a live signal, or produce an action. Promotion is the existing authenticated
-administrative generation transition. `StratifiedResponseModel` remains the mandatory, independently
+artifact-adoption decision of its consumer (Layer 5 §4.1–4.2 for a Reaction, §4.9 for a live
+signal), never a configuration-generation change (Layer 0 §4.7). `StratifiedResponseModel` remains the mandatory, independently
 available baseline and is never silently replaced merely because a quantile artifact exists. Building
 control research similarly evaluates candidate strategies using separate physical, operational, and
 computational KPIs rather than forecast error alone
