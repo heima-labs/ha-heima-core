@@ -16,6 +16,7 @@ from custom_components.heima.v3.adapters.ha import monotonic_timer
 from custom_components.heima.v3.adapters.ha.monotonic_timer import AsyncioMonotonicTimer
 from custom_components.heima.v3.contracts.instants import validate_instant
 from custom_components.heima.v3.contracts.timing import AtJob
+from custom_components.heima.v3.runtime.clock import ExecutionClockReading
 from custom_components.heima.v3.runtime.timing import AtJobScheduler
 
 
@@ -254,11 +255,11 @@ def test_scheduler_and_guarded_timer_replace_after_early_wakeup():
     due = validate_instant("2026-01-01T00:00:10.000000+00:00")
     job = AtJob("job", "engine", due, "label", "elapsed")
     delivered = []
-    scheduler.register(job, now, delivered.append)
+    scheduler.register(job, ExecutionClockReading(now, now), delivered.append)
     loop.now = 109.5
     loop.scheduled[0].callback()
     previous_retry = loop.scheduled[-1]
-    scheduler.register(job, now, delivered.append)
+    scheduler.register(job, ExecutionClockReading(now, now), delivered.append)
     assert previous_retry.cancelled
     loop.now = loop.scheduled[-1].when
     for entry in tuple(loop.scheduled):

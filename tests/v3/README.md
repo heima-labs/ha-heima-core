@@ -14,3 +14,11 @@ Default mutation scope includes all five implemented modules and the whole V3 su
 Concrete timer evidence: `docs/v3/testing/MONOTONIC_ADAPTER.md`, with early-wakeup/
 coarse-clock simulations, exact-sum properties, scheduler integration and two real
 stdlib event-loop cases. The default mutation scope now includes six modules.
+
+Cycle-clock evidence: `docs/v3/testing/CYCLE_CLOCK.md`, including exact threshold
+boundaries and simulated clock regressions/long pauses. `mutation_clock.py` covers
+the threshold constant and frozen-result declarations. Default scope: seven modules.
+
+Current scheduling API/evidence: `docs/v3/testing/CA499_EXECUTION_REFERENCES.md`.
+Scheduler calls use explicit paired execution references; the former single-instant
+argument is rejected. `mutation_clock.py` now verifies five supplemental mutations.

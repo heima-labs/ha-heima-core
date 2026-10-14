@@ -1,3 +1,11 @@
+# Current CA4-99 checkpoint
+
+Execution references are now separate per basis. Read
+[CA499_EXECUTION_REFERENCES.md](CA499_EXECUTION_REFERENCES.md) for the current API,
+355-test evidence, paired clock reads, exact regression and mutation results.
+Earlier evidence below is historical where superseded, especially single-instant
+scheduler calls and the execution-reference ambiguity.
+
 # Layer-0 AtJob dispatch
 
 Implemented against planning 9cd077e (clean), Layer 0 §3.1 and the re-arm portion

@@ -133,3 +133,53 @@ and MONOTONIC_ADAPTER.md: 286 tests pass including two real asyncio-loop cases;
 117 scoped mutants, 92 killed, 25 contract-equivalent survivors reviewed. No HA/ARM
 benchmark or lifecycle wiring exists yet. Next step returns to Layer 0 §3.5 cycle
 clock/discontinuities; earlier adapter-pending notes are historical.
+
+
+## Latest checkpoint — cycle clock/classification
+
+Guarded asyncio timer block committed as beaac58. New runtime/clock.py/tests/evidence
+are uncommitted: 319 tests pass, 125 scoped mutants (112 killed, 13 reviewed equivalent),
+three supplementary mutations killed. Read WORKING_CONTEXT and CYCLE_CLOCK.md.
+A backward adjustment can occur without any frozen cycle: -2 s correction between
+60 s readings still advances wall 58 s. The §3.5 gap-start rule needs clarification;
+see clarifications/CLOCK_GAP_BOUNDARIES.md. The user approved preparing this note for Claude; it is ready to hand off. No gap/diagnostic policy was invented or spec edited.
+Independent next work: recurrence next-due/DST (§3.1); dependent gap wiring awaits
+clarification. No HA clock adapter/engine integration/ARM benchmark yet.
+
+
+## Latest checkpoint — CA4-98 resolved and applied
+
+Planning dd89383 verified clean. The clock-gap ambiguity is resolved; the original
+clarification note now records CA4-98. runtime/clock.py returns diagnostic/re-arm
+requirements, detection point, corrected previous+1us floor position and immutable
+gap intents with finish(tick). See current CYCLE_CLOCK.md: 336 tests pass; 198 mutants,
+185 killed, 13 equivalent survivors reviewed; four supplemental mutants killed.
+All clock changes remain uncommitted, latest commit beaac58. Persistence/emission/
+periodic/re-arm wiring is still pending; computing end does not acknowledge a gap.
+Next independent slice: internal recurrence next-due/DST (§3.1). Earlier clarification
+pending notes are historical and no longer block this policy.
+
+
+## Latest checkpoint — critical clock review
+
+Fixed forward-jump gap bounds while cycle instants remain frozen; regression tests
+failed first. Current suite 338 passes, fresh mutation 202 total/189 killed/13 reviewed
+equivalent survivors, four supplements killed. Clock/review changes are uncommitted.
+New separate clarification: §3.1's cycle-instant scheduling reference conflicts with
+corrected-wall deadlines while §3.5 floors cycle time. Read
+clarifications/CLOCK_SCHEDULING_REFERENCE.md before integrating those services.
+CA4-98 remains resolved; no spec/scheduler-reference policy was silently changed.
+
+
+## Latest checkpoint — CA4-99 applied
+
+Planning d58431c verified clean. Scheduling-reference contradiction resolved: scheduler
+now requires ExecutionClockReading(wall,cycle_instant); wall_clock uses raw wall,
+elapsed uses floored cycle clock. CycleClock supplies captured pairs at cycle/periodic
+comparison and read_execution between cycles without consuming state. Single-instant
+API rejected, all local consumers migrated. Read CA499_EXECUTION_REFERENCES.md:
+355 tests pass, 330 scoped mutants/301 killed/29 reviewed equivalent survivors,
+five supplements killed. All clock-related changes remain uncommitted; last commit
+beaac58. Actual HA/persistence/periodic/automatic re-arm wiring and ARM benchmarks are
+still pending. Next independent slice: internal recurrence next-due/DST, choosing
+reference by basis. Earlier ambiguity/API/evidence notes are historical.

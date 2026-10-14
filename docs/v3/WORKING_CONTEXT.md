@@ -12,12 +12,13 @@ instructions override the next action below.
   use `git log -1` and status for the latest revision each session.
   Payload/codec, temporal contracts and review fix are committed as `e3e4314`.
   AtJob dispatcher/delayed-callback tests are committed as `be83856`.
-  The asyncio monotonic timer adapter and its tests are local, not committed.
+  Guarded asyncio adapter/tests are committed as `beaac58`.
+  Cycle-clock/classification code and tests are local, not committed.
   No HouseFact assembly, HA runtime adapter, storage or deployment exists here.
   The dedicated native Python/test-tool environment is ready; its probes ran in /private/tmp.
 - Authoritative specs: sibling `../ha-heima-component-v3-planning`, branch
   `feat/v3-planning`, CA4-70 progressive recovery committed as `f84d4e7`; latest planning HEAD
-  checked for this task is `9cd077e` (clean). Its Layer 0–6 specs supersede this checkout's older copies.
+  checked for this task is `d58431c` (clean), including CA4-98/99. Its Layer 0–6 specs supersede this checkout's older copies.
   Layer 8 is now authoritative too (`5f4cf1b`, registered in contract_registry); Layer 7 remains separate. Recheck HEAD,
   status and current contracts each session because another session is developing specs.
 - Planning structural check rerun on 2026-10-14: 8 authoritative layers, 128 mapped
@@ -604,10 +605,122 @@ supported hardware matrix was chosen. Diagnostic emission, cycle clock/gaps,
 recurrence next-due/DST, HA bootstrap/unload wiring and storage remain pending.
 No specs, push or deployment changed.
 
+## Cycle clock/classification — 2026-10-14
+
+User requested commit and next step. Signed beaac58 commits the guarded asyncio
+adapter/tests; worktree was clean. Planning remains 9cd077e (clean), read-only.
+Implemented runtime/clock.py with explicit canonical wall/int monotonic-nanosecond
+inputs: strict cycle progression, shared cycle/periodic comparison baseline,
+exact >1 s classification and bootstrap durable-floor/downtime separation. Invalid
+readings/overflow preserve state. No ambient clock/I/O, dependency or tolerance added.
+Outcomes describe re-arm requirement and floor comparison; they do not emit runtime
+diagnostics or certify observation continuity.
+
+Tests: 33 new, 319 total pass with seed 3145; 68 statements/18 branches covered.
+Ruff/type/format/patch pass. Five-method evidence in testing/CYCLE_CLOCK.md; no new
+compound Boolean decision, single-predicate gates tested. Fresh second mutmut run:
+125 total, 112 killed, 13 contract-equivalent survivors reviewed in
+ testing/CYCLE_CLOCK_MUTANT_REVIEW.md. First run found two missing result assertions;
+added them and reran without cache. Three supplementary constant/decorator mutations
+killed. Default mutation scope now includes all seven implemented modules.
+
+Found an unresolved §3.5 backward-gap case: between checks 60 s apart, -2 s clock
+correction advances wall by 58 s. Detector must classify backward, but no cycle
+freezes and the specified gap-start condition never occurs. Prepared exact note in
+clarifications/CLOCK_GAP_BOUNDARIES.md for user/Claude review. The user explicitly approved preparing the note for Claude;
+it is ready to hand off. No message sent, issue opened
+or spec edited. Gap bounds/diagnostic policy were deliberately not chosen in code.
+
+New code/tests/evidence/config/handoff are uncommitted. Real paired-clock reads,
+engine barrier/ingress time normalization, periodic service, diagnostic emission,
+scheduler re-arm integration and durable gap/floor paths remain pending. Pure
+classifier accepts the clarified independent facts, including slow-loop pause without
+clock drift. No HA/ARM benchmark, push or deploy.
+
+## CA4-98 synchronization and implementation — 2026-10-14
+
+User supplied planning handoff dd89383. Verified actual clean HEAD, normative Layer
+0 §§3.5/10/13, review and registry. The backward-gap clarification is resolved; updated
+clarifications/CLOCK_GAP_BOUNDARIES.md with the definitive mapping, retaining original
+counterexample as history. Planning was not edited.
+
+Updated runtime/clock.py: floor position means previous cycle+1us (fixed equality
+regression); comparison returns detection point, exact bootstrap offset, regression/
+re-arm requirements and immutable ClockGap boundary intent. Adjacent-cycle bounds
+cover non-frozen detection. Periodic output opens with end pending and updates the
+shared baseline; finish(tick) computes a later end, waiting under the frozen-floor
+rule. Caller retains and consumes independent intents. No merging, durable schema,
+acknowledgement or emission mechanism invented; closed intent is not a durable gap.
+
+336 tests pass with seed 3145 (17 new); lint/format/mypy/patch pass. Five-method
+mapping in testing/CYCLE_CLOCK.md. Floor equality regression demonstrated failing
+before fix. Fresh mutmut: 198 total, 185 killed, 13 reviewed equivalent survivors in
+ testing/CYCLE_CLOCK_CA498_MUTANT_REVIEW.md. Strengthened periodic-floor metadata
+assertions after first run exposed three behavioral survivors, reran fresh. Four
+supplementary threshold/frozen-decorator mutants killed.
+
+All clock implementation and synchronization changes remain uncommitted; latest
+commit remains beaac58. Actual HA clock/periodic service, coordinator diagnostics,
+immediate scheduler re-arm orchestration, durable gap acknowledgements and historical
+read completeness remain unimplemented. No HA/ARM benchmark, push or deploy.
+
+## Critical clock review — 2026-10-14
+
+Reviewed clock boundary/classification code and its scheduler/asyncio consumers
+against clean planning dd89383. Confirmed/fixed one code error: a forward correction
+while still below the floor wrongly opened a frozen backward-style gap. next_cycle
+now requires backward AND behind to use frozen bounds; forward bounds are always
+adjacent detecting-cycle instants. Older backward gaps remain independently open.
+Regression + property demonstrated two failures before fix. 338 total tests pass;
+Ruff/type/format/patch pass. Five-method evidence appended to CYCLE_CLOCK.md.
+Fresh mutmut: 202 generated, 189 killed, 13 same reviewed equivalent survivors;
+four supplementary mutations still killed. No other confirmed implementation defect
+found in this scoped review. All clock/review changes remain uncommitted.
+
+Found a concrete unresolved spec contradiction: §3.1 requires due-current_cycle
+for wall_clock arm/re-arm, but §3.5 keeps that instant ahead of corrected wall during
+freeze. Reproducer with real helper APIs and fake timer: wall=100, due=110; at mono=1
+wall=98, cycle=100.000001; cycle-based re-arm waits 9.999999 s vs 12 s to actual due.
+Prepared exact Claude prompt in clarifications/CLOCK_SCHEDULING_REFERENCE.md. This
+blocks the combined clock/scheduler reference choice; did not change either spec or
+scheduler silently. CA4-98's resolved gap rule remains valid. No message sent to Claude.
+No HA/ARM/live/persistence test or deployment was claimed.
+
+## CA4-99 execution references applied — 2026-10-14
+
+User supplied handoff d58431c. Verified clean planning HEAD and normative §§3.1/3.5/13,
+review/registry. The execution-reference contradiction is resolved; updated
+clarifications/CLOCK_SCHEDULING_REFERENCE.md, retaining original prompt as history.
+No planning edits or new policy/dependency/tolerance.
+
+Added immutable validated ExecutionClockReading(wall,cycle_instant) in runtime/clock.py.
+CycleClock.read_execution applies the floor without consuming a cycle/comparison;
+cycle and periodic outcomes expose the pair from their captured wall reading.
+AtJobScheduler.register/rearm_wall_clock now require the pair, choosing wall for
+wall_clock and cycle_instant for elapsed. Single-instant API intentionally rejected;
+all repository consumers (tests only) migrated. No public HA or durable schema exists
+for this internal API. Fresh/current reading belongs to the future runtime boundary.
+Calendar exhaustion fails before consuming a sample when no successor is representable.
+
+Regression demonstrated first on prior API: 9.999999s versus required 12s. After the
+paired-API migration, cycle/periodic/bootstrap cases wait 12s, deliver at wall110 once,
+keep due/id unchanged; elapsed hold remains 30s. A firing-cycle test keeps its floored
+when distinct from due. 355 tests pass (17 new), seed3145; lint/format/mypy/patch pass.
+Five-method evidence in testing/CA499_EXECUTION_REFERENCES.md. Fresh mutmut on both
+changed modules: 330 generated, 301 killed, 29 equivalent survivors (28 prose, one
+unread sentinel), exact diffs in CA499_MUTANT_REVIEW.md. Five supplement mutants killed.
+Default broader mutation scope remains seven modules.
+
+All clock/CA4-98/review/CA4-99 changes remain uncommitted; last commit beaac58.
+No actual HA clock-reader/periodic service, automatic diagnostic/re-arm lifecycle
+wiring, durable gap acknowledgement, recurring next-due/DST or ARM benchmark exists.
+Pure component integration and prior stdlib loop tests are not HA/live evidence.
+
 ## Next action
 
-Implement the cycle clock and clock-discontinuity classification in Layer 0 §3.5,
-with injected wall/monotonic readings and explicit outcomes for re-arm, diagnostics
-and future durable observation gaps. Read current owning/dependent specs first.
-Then recurrence next-due/DST and HA lifecycle wiring; benchmark under actual ARM/HA
-load once the isolated harness exists. Git/deploy proposals remain pending review.
+Continue internal recurrence next-due/DST calculation in Layer 0 §3.1, using the
+paired execution reference per pattern/basis. Read current contract/dependencies
+before coding. Clock execution-reference and CA4-98 gap-boundary ambiguities are
+resolved. Future coordinator/HA/persistence wiring must consume current snapshots,
+respect re-arm requirements and keep durable acknowledgement separate from gap intent.
+Git/deploy policy proposals remain pending review.

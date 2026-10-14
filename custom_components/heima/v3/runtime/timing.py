@@ -4,8 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..contracts.instants import EvidenceInstant, parse_instant
+from ..contracts.instants import parse_instant
 from ..contracts.timing import AtJob
+from .clock import ExecutionClockReading
 
 type JobCallback = Callable[[AtJob], None]
 type JobKey = tuple[str, str]
@@ -36,7 +37,7 @@ class _Pending:
 class AtJobScheduler:
     """One pending timer per (owner, job_id), without HA or ambient clocks.
 
-    The caller supplies the canonical cycle instant at arm/re-arm. This class
+    The caller supplies paired wall/cycle-instant execution references. This class
     does not detect clock discontinuities, compute recurring deadlines, or
     emit runtime diagnostics. Admission errors propagate to that boundary.
     Once delivered, an owner must check its activation and arm revision before
@@ -51,14 +52,16 @@ class AtJobScheduler:
     def pending_jobs(self) -> tuple[AtJob, ...]:
         return tuple(pending.job for pending in self._pending.values())
 
-    def register(self, job: AtJob, now: EvidenceInstant, callback: JobCallback) -> None:
+    def register(self, job: AtJob, now: ExecutionClockReading, callback: JobCallback) -> None:
         if not isinstance(job, AtJob):
             raise TypeError("Registration requires AtJob")
         if not callable(callback):
             raise TypeError("Registration requires an owner callback")
         # Revalidate at admission, including a subtype/reconstructed object.
         validated = AtJob(job.job_id, job.owner, job.due, job.label, job.basis)
-        delay = max(0.0, (parse_instant(validated.due) - parse_instant(now)).total_seconds())
+        reading = _validated_reading(now)
+        reference = reading.wall if validated.basis == "wall_clock" else reading.cycle_instant
+        delay = max(0.0, (parse_instant(validated.due) - parse_instant(reference)).total_seconds())
         self._arm(validated, delay, callback)
 
     def cancel(self, owner: str, job_id: str) -> None:
@@ -66,8 +69,8 @@ class AtJobScheduler:
         if pending is not None:
             pending.handle.cancel()
 
-    def rearm_wall_clock(self, now: EvidenceInstant) -> None:
-        instant = parse_instant(now)
+    def rearm_wall_clock(self, now: ExecutionClockReading) -> None:
+        instant = parse_instant(_validated_reading(now).wall)
         for pending in tuple(self._pending.values()):
             if pending.job.basis == "wall_clock":
                 delay = max(0.0, (parse_instant(pending.job.due) - instant).total_seconds())
@@ -96,3 +99,9 @@ class AtJobScheduler:
             return
         del self._pending[key]
         pending.callback(pending.job)
+
+
+def _validated_reading(reading: ExecutionClockReading) -> ExecutionClockReading:
+    if not isinstance(reading, ExecutionClockReading):
+        raise TypeError("Scheduling requires paired execution references")
+    return ExecutionClockReading(reading.wall, reading.cycle_instant)
