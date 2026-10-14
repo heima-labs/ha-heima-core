@@ -2658,7 +2658,7 @@ canonical JSON text of that facet's normalized JSON value. Thus a boolean is
 `"true"`, a number is `"0.7"`, a colour array is `"[255,128,0]"`, and a
 string mode is `"\"heat\""` in the containing JSON object. Parsing the text
 must reproduce the same normalized value and canonical bytes. The codec
-rejects non-finite numbers, duplicate object keys, raw HA objects and values
+rejects numbers outside Layer 1's numeric domain (Layer 1 §3), duplicate object keys, raw HA objects and values
 whose canonical JSON cannot round-trip. It is an audit/notification projection,
 not a replacement for the typed `ChannelTarget` or physical matcher.
 Facet keys use the staged, nonempty `[a-z][a-z0-9_]*` grammar and at most

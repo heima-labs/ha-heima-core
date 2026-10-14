@@ -145,7 +145,7 @@ validates the actual value. No detail reference or alternate fact shape exists.
 
 `validate_house_fact_value(value) -> None` is Layer 1's pure, side-effect-free enforcement point for
 that complete contract: it accepts an `EvidenceValue` or qualifying frozen dataclass only, recursively
-checks finite floats and maximum depth 2, normalizes a permitted dataclass to its field payload for
+checks the numeric domain below and maximum depth 2, normalizes a permitted dataclass to its field payload for
 both depth counting and canonical UTF-8 size measurement, and rejects a result over 8 KiB.
 Within a qualifying frozen dataclass, an immutable tuple of permitted values
 normalizes to a JSON list before validation; an ordinary `EvidenceValue`
@@ -176,8 +176,11 @@ canonical serialization, or a fingerprint/digest derived from JSON means the JSO
 Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html)): recursive object-key sorting on raw
 property names as UTF-16 code-unit sequences, ECMAScript-compatible primitive serialization, and
 UTF-8 output. Duplicate property names and lone surrogate code units are invalid; Unicode strings are
-otherwise preserved without normalization. A contract may impose a stricter input rule (for example
-Layer 3 rejects negative zero), but may not substitute a different JSON ordering or formatter. An
+otherwise preserved without normalization. Canonical serialization writes `1` and `1.0` identically
+and both signed zeros as `0`; a contract that must distinguish them needs a stricter input rule or a
+declared string encoding. A contract may impose a stricter input rule (for example Layer 3's
+`CanonicalJsonObject` rejects negative zero, §4.2 of Layer 3), but may not substitute a different
+JSON ordering or formatter. An
 array whose order is semantically defined by this specification is sorted first by that stated rule;
 RFC 8785 then preserves that array order. This distinction keeps semantic sets deterministic without
 creating a second object-key canonicalizer.
@@ -189,12 +192,30 @@ extracts its declared raw scalar, but is never retained by reference or serializ
 data creates a copied, normalized, schema-declared `EvidenceValue` projection instead. The resulting
 fact is therefore independent of HA's mutable in-memory object graph after construction.
 
-**Numeric scalar rule.** `bool` remains a valid semantic `EvidenceValue`, distinct from a number.
-Every `float` anywhere inside an `EvidenceValue` (including nested collections and frozen-dataclass
-fields) must be finite: `NaN` and either infinity are invalid because they are not canonical JSON
-values. A field declared by a contract as a quantitative number accepts only a non-boolean `int` or
-finite `float`; it must never accept Python `True`/`False` as `1`/`0`. This leaves explicitly boolean
-fact values and configuration flags valid.
+**Numeric domain.** One numeric domain applies recursively to every `EvidenceValue`-shaped payload:
+`HouseFact.value`, `Provenance.evidence`, the fields of a permitted frozen-dataclass value, and
+`PersistedProjection` (§4). Configuration has its own owning contracts and limits.
+
+- A non-boolean `int` must lie in the inclusive safe range
+  `[-9007199254740991, 9007199254740991]`, that is `[-(2**53 - 1), 2**53 - 1]`. An integer outside
+  it is invalid; it is never converted to `float` or to a string. This is Heima's explicit
+  safe-integer policy, narrower than every integer binary64 can represent exactly.
+- A `float` must be a finite binary64 value, subnormals included; `NaN` and either infinity are
+  invalid because they are not canonical JSON values. There is no generic physical-range bound and
+  no fixed decimal rounding: a float promises neither exact decimal arithmetic nor an exact
+  arbitrary-size counter.
+- `bool` remains a valid semantic `EvidenceValue`, distinct from a number. A field declared by a
+  contract as a quantitative number accepts only a non-boolean `int` or finite `float` and never
+  accepts `True`/`False` as `1`/`0`; explicitly boolean fact values and configuration flags stay
+  valid.
+- `Decimal`, `Fraction` and `complex` objects are not numeric payloads. A numeric string remains a
+  string; nothing is coerced. An exact large integer or decimal needs a separately declared string
+  encoding and schema when a real use case requires one.
+- Field-specific ranges, units, count semantics and confidence constraints of the owning contracts
+  still apply on top of this domain.
+
+A value outside the domain is a hard construction failure; the same violation in `evidence` drops
+only the evidence (§4.3).
 
 **`value` has no contractual relationship to `available` (§4.1) — considered and rejected.** An
 earlier draft required `value=None` whenever `available=False`, mirroring `confidence`'s own
@@ -380,7 +401,7 @@ form. A naive `datetime`, a non-UTC offset, or a merely arbitrary string is neve
 `PersistedProjection` is the deliberately narrow contract for a named structured value retained by a
 Layer-0 durable facility without making it a `HouseFact` (for example, one recovery target). Its keys and values are copied and normalized, not retained from an
 HA object. It admits no frozen dataclass or arbitrary object: it is a JSON mapping whose values obey
-the ordinary `EvidenceValue` rule, have maximum nesting depth 2, contain only finite floats, and have
+the ordinary `EvidenceValue` rule, have maximum nesting depth 2, obey the numeric domain of §3, and have
 canonical UTF-8 serialization of at most **8 KiB**. It is a persistence boundary, not a general
 configuration type: registry configuration has its own contracts and limits.
 The hold-audit queue retains an already validated complete `HouseFact`; it
@@ -628,8 +649,9 @@ fact construction; it adds no I/O or retained raw HA object to the evaluation pa
 **Violation policy: fail soft, not hard — this is a fixed, deliberate choice, not an unspecified
 detail left to whoever implements it.** `evidence` is explicitly supporting detail, not essential to
 what a `HouseFact` means (§4 intro) — a shape or size violation drops `evidence` back to `{}` for
-that specific fact and raises a diagnostic event (Layer 0 §10). A non-finite number anywhere in
-`evidence` is such a violation: it discards only `evidence`, never the fact. The `HouseFact` itself is
+that specific fact and raises a diagnostic event (Layer 0 §10). A number outside the numeric domain
+of §3 anywhere in `evidence` (a non-finite float, an integer outside the safe range, or a `Decimal`,
+`Fraction` or `complex` object) is such a violation: it discards only `evidence`, never the fact. The `HouseFact` itself is
 still created with its `fact_type`/`value`/`where`/`when`/`confidence`/`source`/`available` intact.
 Aborting the entire fact over a malformed `evidence` payload would be disproportionate — it would
 mean a bug in optional diagnostic detail can silently blind a semantic resolver to a real observation. This is
@@ -1062,10 +1084,17 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
 - `HouseFact` construction rejects a `value` that isn't `EvidenceValue`-shaped or a qualifying frozen
   dataclass, exceeds the maximum nesting depth, or exceeds the size cap — a hard failure, in a test
   that tries each violation.
-- `HouseFact` construction rejects `NaN` and either infinity anywhere in `value`, including nested
-  collections and frozen-dataclass fields. The same non-finite number anywhere in `evidence` creates
-  the fact with `evidence={}` and a diagnostic (§4.3). Explicit boolean values remain valid
-  `EvidenceValue`s but are rejected wherever a quantitative number is required. The three confidence
+- The numeric domain (§3) holds recursively in `value`, `evidence`, frozen-dataclass fields and
+  `PersistedProjection`: `9007199254740991` and `-9007199254740991` are accepted, while
+  `9007199254740992` and `-9007199254740992` are rejected and never converted to `float` or string;
+  a finite float and a subnormal such as `5e-324` are accepted; `NaN` and either infinity are
+  rejected, including inside nested collections and dataclass fields; `Decimal`, `Fraction` and
+  `complex` objects are rejected and a numeric string stays a string. Under the generic domain `-0.0`
+  is accepted and canonicalizes to `0` (as `1.0` canonicalizes to `1`), while a stricter contract
+  such as Layer 3's `CanonicalJsonObject` rejects it. Any violation in `value` is a hard construction
+  failure; the same violation in `evidence` creates the fact with `evidence={}` and a diagnostic
+  (§4.3). Explicit boolean values remain valid `EvidenceValue`s but are rejected wherever a
+  quantitative number is required. The three confidence
   helpers and `Provenance` construction reject `bool` for every numeric argument/field rather than
   treating it as `1` or `0`.
 - A raw HA `State`, complete attributes mapping, event context, or another HA runtime object cannot
@@ -1079,7 +1108,7 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
   Depth is counted by the one §3 rule for `value`, `evidence` and `PersistedProjection`: a
   depth-two value is accepted and a third nested collection is rejected (or discarded for evidence).
 - A `PersistedProjection` accepts only copied JSON-compatible mappings within depth 2 and 8 KiB,
-  rejects raw HA objects, non-finite numbers, excessive depth, and excessive size. Layer 0
+  rejects raw HA objects, numbers outside the numeric domain of §3, excessive depth, and excessive size. Layer 0
   omits an invalid recovery target without cancelling its accepted command and omits only an
   invalid critical-entity checkpoint projection;
   each outcome emits a diagnostic and never retains the original HA object.

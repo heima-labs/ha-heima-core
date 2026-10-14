@@ -741,7 +741,8 @@ durable queue immediately, independent of background disk latency (§6.4).
 **Stored-data boundary.** These tiers, the current index, `PreviousCycleSnapshot`, durable retry queue,
 notification delivery outbox, recovery-target snapshot, and checkpoint retain only complete `HouseFact`s or
 their explicitly declared normalized projections. Every such non-fact projection is a Layer-1
-`PersistedProjection`: copied JSON-compatible data, maximum nesting depth 2, finite numbers, and at
+`PersistedProjection`: copied JSON-compatible data, maximum nesting depth 2, numbers within Layer 1's
+numeric domain (Layer 1 §3), and at
 most 8 KiB after canonical UTF-8 serialization. The audit queue retains
 only complete validated inline event facts, never an oversized non-fact
 projection. These facilities never retain a Home Assistant `State` object,
