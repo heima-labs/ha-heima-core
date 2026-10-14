@@ -724,3 +724,79 @@ before coding. Clock execution-reference and CA4-98 gap-boundary ambiguities are
 resolved. Future coordinator/HA/persistence wiring must consume current snapshots,
 respect re-arm requirements and keep durable acknowledgement separate from gap intent.
 Git/deploy policy proposals remain pending review.
+
+
+## Latest checkpoint — weekly calculator, 2026-10-14
+
+Committed the previously verified clock/CA4-98/review/CA4-99 changes as signed
+commit 551caa7 (feat: add V3 cycle clock and basis-specific execution references).
+This supersedes the preceding uncommitted-state notes; clean before this slice.
+Planning rechecked clean at d58431c, read-only, including §§3.1/3.2 and Layer 1 §4.
+
+Added runtime/recurrence.py::plan_weekly_job: pure weekly next-future-due calculation
+using injected ZoneInfo and raw wall, preserving AtJob identity and wall_clock basis.
+First fold only; missing local minutes map to first valid instant, with bounded binary
+search rather than scanning seconds. Tests cover Rome spring/fall, 167/169-hour weeks,
+Lord Howe half-hour gap, Apia skipped day, configured-vs-host civil dates, exact due
+boundaries, invalid shapes, calendar exhaustion, and generated matching/future/floor
+independence properties. Host timezone varied and restored in weekly tests.
+
+407 total tests pass, 52 weekly cases including PBT, seed3145. Ruff check/format,
+mypy and diff checks pass. Five-method evidence in testing/WEEKLY_RECURRENCE.md;
+fresh mutmut 129 generated: 91 killed, 5 nontermination timeouts, 33 reviewed
+equivalent survivors, exact diffs in WEEKLY_MUTANT_REVIEW.md. Default scope now
+eight modules. No new test threshold or development/Git/deploy policy.
+
+Developer authorized preparing the Claude prompt for the interval precision gap:
+clarifications/INTERVAL_PRECISION.md. Valid Window(0.0000001) is lost by microsecond
+deadline arithmetic; 1.5 µs is also inexact. Normative rejection/rounding/minimum and
+numeric interpretation remain unresolved. No interval-next-due implementation or
+shared-validator change. Do not silently choose a policy. No message sent to Claude.
+
+This weekly slice and its docs remain uncommitted. It is a calculator, not the full
+CronEntry service: automatic recurring re-arm, served-occurrence replay protection,
+timezone-change coordination, HA wiring, durable configuration/gaps remain future
+work. No HA/live/ARM benchmark or deployment claimed.
+
+### Exact next action
+
+Obtain Claude's normative interval representability handoff before implementing
+interval due generation. Then build the bounded CronEntry lifecycle using the existing
+paired clock API and monotonic dispatcher; explicitly protect weekly occurrence
+identity during clock/timezone changes. Re-read current planning contracts first.
+Git/deploy proposals still await review.
+
+
+## Latest checkpoint — CA4-100 applied, 2026-10-14
+
+Verified clean read-only planning HEAD 34ce913, normative owning/dependent sections
+and registry/review. It resolves INTERVAL_PRECISION.md; note updated while retaining
+historical prompt. contracts/deadlines.py adds derive_instant(anchor,Window,
+strictly_after=False): canonical decimal, exact integer ratio, inclusive/strict
+microsecond selection and overflow preflight. Immutable Unrepresentable carries
+inputs for diagnostics. Window unchanged. runtime/recurrence.py adds plan_interval_job
+(cycle_instant/elapsed) and register_interval_job for one guarded admission;
+overflow returns diagnostic input without changing timers. Caller must publish it.
+Weekly calculation unchanged; no existing float-seconds timedelta producer to migrate.
+
+445 V3 tests pass, 38 new, seed3145; lint/format/mypy/diff pass. Five-method evidence
+in testing/CA4100_DEADLINES.md. Fresh mutation: 239 generated, 180 killed, 5 unchanged
+weekly timeouts, 54 equivalents (21 new prose/ASCII aliases, 33 reviewed weekly),
+exact diffs in CA4100_MUTANT_REVIEW.md. Supplement frozen diagnostic mutant killed.
+Default scope nine modules. No new dependency/policy. Weekly and CA4-100 changes
+remain uncommitted; last signed commit 551caa7.
+
+Full CronEntry automatic lifecycle, served-occurrence protection, HA timezone wiring,
+diagnostic publication, CalendarViewRequirement staging and persistence remain
+unimplemented. Their acceptance gates have not run; no HA/live/ARM/deploy claim.
+Future owner deadlines/horizons must use derive_instant; L2 strict and L5 whole-ms
+rules remain valid.
+
+### Exact next action
+
+Proceed to bounded CronEntry lifecycle above existing single-arm planners and
+AtJobScheduler: recurring re-arm, callback failure isolation and served-weekly
+occurrence protection during clock/timezone changes. Re-read current Layer 0
+§3.1/§3.5/§9/§13 first and surface any missing policy. Static calendar horizon
+staging and diagnostic publication belong to future coordinators/adapters.
+Git/deploy proposals remain pending review.

@@ -22,3 +22,13 @@ the threshold constant and frozen-result declarations. Default scope: seven modu
 Current scheduling API/evidence: `docs/v3/testing/CA499_EXECUTION_REFERENCES.md`.
 Scheduler calls use explicit paired execution references; the former single-instant
 argument is rejected. `mutation_clock.py` now verifies five supplemental mutations.
+
+Weekly calculator evidence: `docs/v3/testing/WEEKLY_RECURRENCE.md` and
+`WEEKLY_MUTANT_REVIEW.md`. Current default mutation scope: eight modules.
+Interval deadline precision awaits a normative clarification; no full CronEntry
+service or timezone-change replay guard is implemented yet.
+
+CA4-100 evidence: `docs/v3/testing/CA4100_DEADLINES.md` and `CA4100_MUTANT_REVIEW.md`.
+`mutation_deadlines.py` checks immutable overflow diagnostics. Default scope nine
+modules; interval representation resolved. Full lifecycle/calendar/HA integration
+remains separate from single-arm calculation and admission.
