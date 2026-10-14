@@ -119,20 +119,27 @@ class AtJob:
 
 `AtJob` is the **one** execution primitive: a scheduled one-shot deadline.
 
-**Scheduling semantics**: at arm (or re-arm) time, Timing parses the canonical `due` and the
-current cycle-instant clock (§3.5), computes their difference **once**, and schedules that
-duration on a monotonic timer. The owner declares the job's `basis`:
+**Scheduling semantics**: at arm (or re-arm) time, Timing parses the canonical `due`, takes the
+current reference instant of the job's `basis` (below), computes their difference **once**, and
+schedules that duration on a monotonic timer. The owner declares the job's `basis`, which also
+selects that reference:
 
 - `elapsed`: the due expresses a duration from an in-process anchor (a fixed-duration hold, a
   `Stability` dwell or grace, a Reaction delay, a confirmation ceiling, an
-  `IntervalRecurrence`). The monotonic countdown is authoritative and is never re-evaluated
-  against wall-clock time while armed; a wall-clock correction cannot shorten, extend or repeat it.
+  `IntervalRecurrence`). Its reference is the current cycle-instant clock of §3.5 (the floored
+  history clock), from which the owner derived the due, so the countdown equals the intended
+  duration even while the floor is frozen. The monotonic countdown is authoritative and is never
+  re-evaluated against wall-clock time while armed; a wall-clock correction cannot shorten, extend
+  or repeat it.
 - `wall_clock`: the due expresses an instant defined outside the process (a `WeeklyRecurrence`
   occurrence, a calendar boundary, a session or recovery boundary derived from civil or calendar
-  time, a Layer-2 `last_reported + max_source_age` expiry). The monotonic countdown is armed the
-  same way, but a detected clock discontinuity (§3.5) re-arms every pending `wall_clock` job
-  against its unchanged `due`. A due already in the past after re-arm fires exactly once,
-  immediately; a due moved further away waits. Re-arm uses the ordinary `job_id` replacement,
+  time, a Layer-2 `last_reported + max_source_age` expiry). Its reference is the current
+  wall-clock reading in UTC, the same unfloored reading §3.5 compares, never the cycle-instant
+  clock: while §3.5 holds cycle instants above a regressed wall clock, the civil deadline must not
+  fire early. A detected clock discontinuity (§3.5), at a cycle start, at the periodic check or at
+  bootstrap, re-arms every pending `wall_clock` job against its unchanged `due` and the wall-clock
+  reading taken by that detection. A due at or before that reading fires exactly once,
+  immediately; a later due waits. Re-arm uses the ordinary `job_id` replacement,
   so a job never fires twice for one due.
 
 An owner that cannot classify a job's due is invalid at registration. Daylight Saving Time never
@@ -189,7 +196,9 @@ dataclass with optional fields, because "run every Monday at 07:00" and "run eve
 genuinely different kinds of rule, not the same rule with some fields unset — `WeeklyRecurrence`
 answers "which wall-clock moments", `IntervalRecurrence` answers "how often, relative to now".
 
-For a `CronEntry`, Timing computes the next `due` from `pattern` relative to now, arms an `AtJob`,
+For a `CronEntry`, Timing computes the next `due` from `pattern` relative to now (the reference
+instant of the job's basis: the wall-clock reading for `WeeklyRecurrence`, the cycle-instant clock
+for `IntervalRecurrence`), arms an `AtJob`,
 and on fire recomputes and re-arms. A `WeeklyRecurrence` job has `basis="wall_clock"`; an
 `IntervalRecurrence` job has `basis="elapsed"`. Calendar cache refresh at a known event boundary
 (§3.4.1) is `wall_clock`; a fixed-duration hold deadline (§6.2) is `elapsed`. For `WeeklyRecurrence`, `hour`/`minute` are civil-time values in
@@ -461,6 +470,13 @@ durably committed instant known to Persistence (last `CycleCommitMarker`, contin
 or observation boundary, §4.1/§4.4), so recorded history never moves backward across a restart.
 In ordinary operation the wall-clock reading is already later and the rule changes nothing; it
 adds one comparison per cycle.
+
+The **cycle-instant clock** applies the same rule at any reading between cycles:
+`max(wall_clock_reading_utc, last_cycle_instant + 1 µs)`. The cycle instant is the time assigned
+to history; it is not the execution reference for civil deadlines. While the floor holds cycle instants above a regressed wall clock, `wall_clock` jobs
+keep counting against the wall-clock reading (§3.1) and `elapsed` jobs against the cycle-instant
+clock. A `wall_clock` job that fires in that interval requests an ordinary cycle, whose facts
+receive the floored cycle instant; the job's `due` never becomes a history instant.
 
 Equal-`when` facts still occur *within* one cycle and remain one concurrent group (§4.0); they
 never span two cycles.
@@ -2908,6 +2924,15 @@ concrete checklist rather than re-deriving one:
   re-armed against its unchanged due: after a forward jump past the due it
   fires once immediately, after a backward jump it waits, and it never fires
   twice. A job registered without `basis` is rejected (§3.1).
+- With wall 100, monotonic 0 and cycle 100, a `wall_clock` job due at 110 arms
+  10 s. At monotonic 1 the wall reads 98 (a 3 s backward correction); the next
+  cycle instant is 100.000001. Re-arming against the wall reading gives 12 s, so
+  the job fires at wall 110, never at about wall 108; detection by the periodic
+  check or at bootstrap uses the reading of that detection the same way. An
+  `elapsed` 30 s hold armed at that cycle has due 130.000001 and a 30 s
+  countdown against the cycle-instant clock. The cycle requested by the
+  `wall_clock` job receives the floored cycle instant; neither job fires twice
+  and replacement and cancellation are unchanged (§3.1, §3.5).
 - With storage failing and a fake 32 MiB budget, a flapping state stream keeps
   only its latest queued state plus a `queue_overflow` lost interval; oldest
   queued events are discarded next with per-stream intervals; continuity
