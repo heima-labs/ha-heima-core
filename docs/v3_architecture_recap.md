@@ -10,7 +10,7 @@ itself should be enough to understand the system on its own.
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
 through:** 2026-10-14 for every CA4 correction closed in `docs/v3_backlog.md`, including the
-CA4-64 (CA5) and CA4-86–93 (CA6) full-reread corrections; no CA4 item is open.
+CA4-64 (CA5) and CA4-86–96 (CA6 and follow-ups) corrections; no CA4 item is open.
 
 For current specification work, the [contract registry](specs/v3/contract_registry.json) and
 [workflow](specs/v3/spec_workflow.md) provide bounded navigation and review evidence.

@@ -5,7 +5,7 @@ specifications and introduces no new implementation requirement.
 
 **Maintenance:** Manually synchronized when a confirmed decision is promoted to an authoritative
 specification. **Reviewed through:** 2026-10-14 for every CA4 correction closed in
-`docs/v3_backlog.md`, including the CA4-64 (CA5) and CA4-86–93 (CA6) full-reread corrections; no
+`docs/v3_backlog.md`, including the CA4-64 (CA5) and CA4-86–96 (CA6 and follow-ups) corrections; no
 CA4 item is open. Where it differs from an authoritative specification, that specification wins.
 
 **Scope:** Layers 0 to 6 and Layer 8 are defined in detail today; Layer 6 (notification) and
@@ -206,6 +206,8 @@ Layer 1 makes every durable house assertion answerable as WHAT, WHERE, WHEN, and
   defines the derived queries every consumer shares; purpose-specific groupings are Zones with a
   closed core role (`thermal_envelope`, reserved `security_perimeter`).
 - Canonical JSON follows RFC 8785 where fingerprints or persisted canonical payloads require it.
+  Fact payloads share one numeric domain: non-boolean integers within `±(2**53 - 1)` and finite
+  binary64 floats, with no non-generic numeric objects; stricter contracts may narrow it.
 - Time has one contract representation across layers: Layer 1 `EvidenceInstant` is the exact
   UTC microsecond `+00:00` instant for facts, jobs, snapshots, model artifacts and Reaction
   records; Layer 0 `Window` is the canonical seconds object for positive elapsed durations.

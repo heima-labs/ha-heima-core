@@ -5175,8 +5175,8 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87 | 0 | 0 | 39 | 0 |
 | P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96 | 0 | 0 | 43 | 1 |
-| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94 | 0 | 0 | 12 | 0 |
-| **Total** | **96 findings** | **0** | **0** | **95** | **1** |
+| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97 | 0 | 0 | 13 | 0 |
+| **Total** | **97 findings** | **0** | **0** | **96** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-97 — Residues of the numeric-domain change
+
+**Status:** DONE (2026-10-14; specification readiness). **Severity:** P3. **Origin:** residue check after CA4-96.
+
+**Problem.** Layer 2 §2.4 required formula results to be a non-boolean `int` or finite `float` without the integer range that Layer 1's numeric domain imposes on every fact payload; the overview's Layer-1 summary did not mention the numeric domain; overview and recap review lines named only CA4-86–93.
+
+**Approved resolution (2026-10-14).** Wording only: Layer 2 §2.4 references Layer 1 §3 for every value that becomes a fact payload (configuration numbers keep their own contracts); the overview's Layer-1 list states the shared numeric domain; both review lines cover CA4-86–96. See the [CA4-97 review](specs/v3/reviews/CA4-97.md); no V3 runtime test ran.
 
 #### CA4-96 — The generic numeric domain of fact payloads was underspecified
 

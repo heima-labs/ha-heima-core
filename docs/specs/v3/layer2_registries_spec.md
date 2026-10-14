@@ -150,7 +150,9 @@ hot evaluation path; it is never normalized, clamped, or allowed to fail unpredi
 quantitative number below must be a non-boolean `int` or finite `float` (`NaN` and either infinity are
 invalid); a `bool` is accepted only where the field is explicitly boolean. This applies equally to
 numeric formula results and payload fields validated by a formula compiler, while preserving boolean
-fact values as valid `EvidenceValue`s.
+fact values as valid `EvidenceValue`s. Every value that becomes a fact payload, including a formula
+result, additionally obeys Layer 1's numeric domain (Layer 1 §3), so an integer must lie within
+`[-(2**53 - 1), 2**53 - 1]`; configuration numbers keep only the constraints of their own contract.
 
 - `Sensor.reliability` is in `[0.0, 1.0]`.
 - A `Sensor` whose fact type is exactly `occupancy.evidence.<kind>.<sensor_id>` at a room, or
