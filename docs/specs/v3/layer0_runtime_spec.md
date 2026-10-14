@@ -473,17 +473,35 @@ comparison. A difference greater than **1 second** in either direction is a cloc
   process-wide observation gap with reason `clock_discontinuity` from the last cycle instant
   before the jump to the first cycle instant after it, and re-arms pending `wall_clock` jobs
   (§3.1).
-- **Backward jump.** The cycle-instant rule keeps instants strictly increasing, so successive
-  cycles advance by one microsecond from the frozen floor until the wall clock exceeds it again.
-  Those instants do not measure real elapsed time. Layer 0 emits the `clock_regression`
-  diagnostic, records a process-wide `clock_discontinuity` gap from the first frozen cycle
-  instant until the first cycle whose wall-clock reading exceeds the floor, and re-arms pending
-  `wall_clock` jobs. A regression of at most 1 second is absorbed by the cycle-instant rule with
-  the diagnostic only, and opens no gap.
+- **Backward jump.** Layer 0 emits the `clock_regression` diagnostic, re-arms pending
+  `wall_clock` jobs and records a process-wide `clock_discontinuity` gap. Its bounds depend on
+  whether the corrected wall clock falls behind the cycle floor
+  (`previous_cycle_instant + 1 µs`):
+  - **Wall clock still ahead of the floor.** Cycle instants follow the corrected wall clock,
+    but durations measured across the correction are wrong by its size. The gap uses the
+    forward-jump bounds: from the last cycle instant before the detecting comparison to the
+    first cycle instant after the detection.
+  - **Wall clock behind the floor.** The cycle-instant rule keeps instants strictly increasing,
+    so successive cycles advance by one microsecond from the frozen floor until the wall clock
+    exceeds it again. Those instants do not measure real elapsed time. The gap runs from the
+    first frozen cycle instant until the first cycle whose wall-clock reading exceeds the
+    floor.
+
+  A regression of at most 1 second is not a discontinuity and opens no gap. If it puts the
+  wall clock behind the floor, the cycle-instant rule absorbs it and Layer 0 emits
+  `clock_regression` alone; otherwise nothing is emitted.
 
 At bootstrap a wall-clock reading more than 1 second earlier than the durable floor is a backward
 discontinuity under the same rule. A forward difference at bootstrap is indistinguishable from
 downtime and is already covered by the ordinary process interruption (§4.4).
+
+**Detection by the periodic check.** A discontinuity found by the 60-second check of §4.4,
+between cycles, is handled at detection: `wall_clock` jobs are re-armed, the diagnostic is emitted
+and the gap opens immediately. Its bounds are still cycle instants, because only cycles assign
+instants to recorded history: it starts at the last cycle instant before the check and ends at the
+first cycle instant after it, or later under the frozen-floor rule above. The next cycle compares
+against that check, so one correction is detected once. Until the end boundary is durably
+acknowledged, a historical read reaching past the start is incomplete (§4.4).
 `clock_discontinuity` gap boundaries use the durable observation-continuity metadata path of
 §4.4; until a boundary is acknowledged, a historical read spanning it is incomplete. Elapsed
 waits, dwell and holds continue on monotonic time and are unaffected (§3.1); they are never
@@ -2779,7 +2797,8 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   delivery retries and write failures (§4.5).
 - **Response ingress**: declared open requests per owner and rejected responses by reason (§5.1.3).
 - **Clock**: last cycle instant, last clock comparison, and every detected discontinuity with
-  direction, size, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
+  direction, size, detection point (cycle start or periodic check), whether the wall clock fell
+  behind the cycle floor, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
 - **Retry queue**: queued bytes, current budget and its source (floor or memory limit), and, after
   ordinary overflow, per-stream discarded counts and `queue_overflow` lost intervals;
   for exceptional global overflow, the epoch start/status, latest baseline invalidation,
@@ -2869,9 +2888,18 @@ concrete checklist rather than re-deriving one:
   across those cycles satisfies Layer 4's strict `last_available_when <
   observed_at` and emits one departure (§3.5; Layer 4 §9.3).
 - With a fake monotonic clock and fake wall clock: a 0.5 s wall correction
-  emits no gap; a 2 s backward correction keeps instants strictly increasing,
-  emits `clock_regression` and records a `clock_discontinuity` gap until the
-  wall clock exceeds the frozen floor; a 10 min forward jump records a gap
+  emits no gap and no diagnostic unless it puts the wall clock behind the cycle
+  floor, in which case only `clock_regression` is emitted; a 2 s backward
+  correction that puts the wall clock behind the floor keeps instants strictly
+  increasing, emits `clock_regression` and records a `clock_discontinuity` gap
+  from the first frozen cycle instant until the wall clock exceeds the frozen
+  floor. A 2 s backward correction that leaves the wall clock ahead (previous
+  cycle at wall 12:00:00 and monotonic 0 s; next reading at wall 12:00:58 and
+  monotonic 60 s) emits `clock_regression`, re-arms `wall_clock` jobs and records
+  a gap from 12:00:00 to the next cycle instant 12:00:58, with no frozen
+  instant. The same correction detected first by the 60-second check opens the
+  gap at that check, from the last cycle instant to the first later cycle
+  instant, and is not detected again by that cycle; a 10 min forward jump records a gap
   over the skipped interval. A history read spanning either gap is incomplete
   with `clock_discontinuity`. A bootstrap reading earlier than the durable
   floor by more than 1 s behaves as a backward jump (§3.5/§4.4).

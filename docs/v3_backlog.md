@@ -5174,9 +5174,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87 | 0 | 0 | 39 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96 | 0 | 0 | 43 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98 | 0 | 0 | 44 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97 | 0 | 0 | 13 | 0 |
-| **Total** | **97 findings** | **0** | **0** | **96** | **1** |
+| **Total** | **98 findings** | **0** | **0** | **97** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-98 — A backward clock correction without a frozen cycle had no gap bounds
+
+**Status:** DONE (2026-10-14; specification readiness). **Severity:** P2. **Origin:** Layer 0 implementation (`docs/v3/clarifications/CLOCK_GAP_BOUNDARIES.md` in the implementation worktree).
+
+**Problem.** Layer 0 §3.5 classifies any wall-versus-monotonic difference over 1 s as a discontinuity and, per CA4-20 (20c/A), a backward jump opens a `clock_discontinuity` gap, but its bounds were tied to "the first frozen cycle instant". A correction such as wall 12:00:00 → 12:00:58 over 60 monotonic seconds (−2 s) is a backward discontinuity while the wall clock stays ahead of the cycle floor, so no cycle freezes and the gap had no start. Detection by the 60-second check between cycles and the `clock_regression` condition for a sub-second correction were likewise unstated.
+
+**Approved resolution (2026-10-14).** Clarification within the approved CA4-20 rules, no new product choice: a backward discontinuity always emits `clock_regression`, re-arms `wall_clock` jobs and opens a gap; with the wall clock still ahead of the floor the gap takes the forward-jump bounds (last cycle instant before the detecting comparison → first cycle instant after detection); behind the floor the existing frozen-floor bounds apply. A periodic-check detection acts at detection, bounds the gap on the adjacent cycle instants, and is not detected again by the next cycle. A correction of at most 1 s opens no gap and emits `clock_regression` only when it puts the wall clock behind the floor. Threshold, strictly increasing cycle instants, elapsed countdowns, `wall_clock`-only re-arm, bootstrap/downtime separation and §4.4 acknowledgement rules are unchanged. See the [CA4-98 review](specs/v3/reviews/CA4-98.md); no V3 runtime test ran.
 
 #### CA4-97 — Residues of the numeric-domain change
 
