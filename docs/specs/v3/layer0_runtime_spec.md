@@ -183,13 +183,42 @@ normalizes the accepted value to `float`. It is applied to `Window.seconds` and
 `IntervalRecurrence.interval.seconds`. `WeeklyRecurrence.weekdays` is non-empty and contains only non-boolean
 integers in `0..6`; `hour` and `minute` are non-boolean integers in `0..23` and `0..59` respectively.
 `AtJob.due` must be a canonical `EvidenceInstant`. No constructor or scheduler silently clamps, rounds,
-or corrects an invalid temporal value.
+or corrects an invalid temporal value; the explicit deadline-construction rule below derives an instant
+from a valid duration and changes no duration.
 
 Static configuration shapes are constructed and validated while staging the startup or candidate reload
 generation. A dynamic `AtJob` is validated when its owner registers it with Timing, before it reaches
 the scheduler; this is not deferred to the callback or repeated in an evaluation cycle. Rejected
 configuration leaves the active generation unchanged, while a rejected dynamic job produces a
 diagnostic and arms nothing.
+
+**Deadline construction from a duration.** Every contract that derives an instant from an anchor
+instant plus a positive duration uses one rule. This covers every `AtJob.due` computed that way (a
+`Stability` dwell or grace, a fixed-duration hold, a Reaction delay or step interval, an
+`IntervalRecurrence`, a confirmation ceiling, a Layer-6 digest window) and every horizon end such as
+`now + horizon` for a calendar read (§3.4.1).
+
+- **Exact value.** The duration's value is the decimal number written by its canonical RFC-8785
+  form (§3.2), not the exact binary value of the `float`: `0.1` s is exactly 100 000 µs. The sum
+  is computed exactly (for example in integer microseconds from that decimal), never through a
+  lossy conversion such as a native duration object built from the `float`.
+- **Representation.** The derived instant is the first `EvidenceInstant` at or after the exact
+  sum: the sum itself when it is a whole microsecond, otherwise the next whole microsecond. Because
+  the anchor is a whole microsecond and the duration is positive, the derived instant is strictly
+  later than the anchor. A deadline therefore never fires before its requested duration, and a
+  recurrence never re-arms at its own anchor. The difference is below one microsecond and is not a
+  change of the `Window`, which keeps its canonical value.
+- **Stricter consumers.** A consumer whose own contract is stricter keeps it: the Layer-2
+  source-age expiry uses the first instant strictly after its sum (Layer 2 §3.2), and Layer-5
+  learned-delay paths require whole milliseconds at staging (Layer 5 §6.0).
+- **Overflow.** A derived instant later than the largest canonical `EvidenceInstant`
+  (`9999-12-31T23:59:59.999999+00:00`) is unrepresentable. A dynamic registration is then
+  rejected with a diagnostic and arms nothing; a static horizon is rejected at staging when its end,
+  computed from the staging cycle-instant clock, is unrepresentable. The `Window` itself remains a
+  valid duration.
+- **Latency is separate.** A monotonic timer that fires after its due is execution lateness, never
+  a representation rule; the basis references of this section and §3.5 apply after the due is
+  constructed.
 
 `CronEntry` is the recurrence policy layer on top of `AtJob`. Two separate shapes instead of one
 dataclass with optional fields, because "run every Monday at 07:00" and "run every 300 seconds" are
@@ -242,7 +271,7 @@ a system-owned periodic safety net or another Heima-internal recurrence is a sta
 outlives any single pending countdown. This is why `CronEntry` state is expected to survive a
 restart (the *rule* is re-read from configuration, a fresh `due` is computed against current time,
 and a new `AtJob` is armed — nothing about the interrupted countdown is recovered. For an
-`IntervalRecurrence`, that fresh deadline is `now + interval`; for a `WeeklyRecurrence`, it is the
+`IntervalRecurrence`, that fresh deadline is `now + interval` under the deadline-construction rule above; for a `WeeklyRecurrence`, it is the
 next matching civil-time occurrence. Missed occurrences are never replayed implicitly after restart.
 An owner that requires an initialization action performs it explicitly during its own bootstrap,
 rather than obtaining it indirectly from scheduler catch-up) while a
@@ -421,7 +450,7 @@ upcoming_starts_within(entity_id, now: EvidenceInstant, horizon: Window) -> Cale
 
 When `status="ready"`, `active_now` returns every window containing `now`.
 `upcoming_starts_within` returns every non-active window whose `start` is strictly after `now` and
-at-or-before `now + horizon`; it preserves each window's original `start`, `end`, `summary`, and
+at-or-before `now + horizon`, that end being derived under §3.1's deadline-construction rule; it preserves each window's original `start`, `end`, `summary`, and
 `source_entity`, rather than reducing it to a category.
 A predictive consumer that needs seven days therefore declares `horizon=Window(seconds=7 * 24 * 60 *
 60)` and can decide today about an event starting tomorrow. Active and upcoming are distinct views, so
@@ -859,7 +888,7 @@ class FrozenHistoryView:
 class CalendarViewRequirement:
     requirement_id: str
     entity_id: str                  # one staged calendar.* entity
-    upcoming_horizon: Window        # finite, positive, bounded by Layer-0 registration limits
+    upcoming_horizon: Window        # finite, positive; `now + horizon` must be representable (§3.1)
 
 @dataclass(frozen=True)
 class FrozenCalendarView:
@@ -2973,6 +3002,15 @@ concrete checklist rather than re-deriving one:
   positive learned range; rejects invalid weekly weekday/hour/minute fields; and rejects a malformed,
   non-UTC or noncanonical `AtJob.due`. Static failures reject startup/reload staging, while a dynamic invalid job is
   diagnosed and never armed (§3.1/§3.2).
+- Deadline construction from anchor `2026-10-14T12:00:00.000000+00:00`: `Window(0.0000001)`
+  gives due `…12:00:00.000001` (never equal to the anchor), `Window(0.000001)` gives
+  `…12:00:00.000001`, `Window(0.0000015)` gives `…12:00:00.000002`, `Window(0.000002)` gives
+  `…12:00:00.000002`, and `Window(0.1)` gives exactly `…12:00:00.100000`, because the canonical
+  decimal and not the binary float value is used. An `IntervalRecurrence` of `0.0000001` s re-arms
+  1 µs after each fire, never at its own anchor. Each `Window` keeps its canonical value. A dynamic
+  job whose sum passes `9999-12-31T23:59:59.999999+00:00` is rejected with a diagnostic and arms
+  nothing; a `CalendarViewRequirement` whose horizon end from the staging clock is unrepresentable
+  fails staging. A timer firing late is lateness, not a different due (§3.1).
 - Canonical round-trip fixtures give the same bytes to equal `EvidenceInstant` values in facts,
   jobs and calendar snapshots, and to equal `Window` values in recurrence, fusion and learning
   contracts. A `Z` alias, a bare millisecond integer or a native `datetime`/`timedelta` at a

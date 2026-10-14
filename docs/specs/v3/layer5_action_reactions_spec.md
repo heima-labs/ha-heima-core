@@ -2210,7 +2210,8 @@ Location as `condition_ref`, exact equality of the model outcome's
 minimum action dwell is this window's `minimum`, not an additional timer.
 For this path `minimum.seconds`, `maximum.seconds` and `seed.seconds` must be
 representable as positive integer milliseconds within their ordinary
-construction-time bounds (Layer 0 §3.2).
+construction-time bounds (Layer 0 §3.2), a stricter consumer rule than Layer 0 §3.1's deadline
+construction.
 
 Let `q` be the eligible adopted model's finite scalar forecast of the fraction
 of `[anchor, anchor + window.maximum]` for which the state belongs to the

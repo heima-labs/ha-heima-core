@@ -584,7 +584,7 @@ assertion is first decided, by a concrete rule, not by each producer's discretio
   This is validated for shape at staging, but the physical reporting promise cannot be
   inferred or proved merely from an HA timestamp.
   A staged binding with this gate arms one ordinary Layer-0 `AtJob` with
-  `basis="wall_clock"` for the first representable instant strictly after
+  `basis="wall_clock"` (the strict form of Layer 0 §3.1's deadline-construction rule) for the first representable instant strictly after
   `last_reported + max_source_age`.
   A newer report re-arms the same job id; cancellation/replacement uses the
   shared scheduler, never a Sensor-specific timer loop. At due, a fresh
