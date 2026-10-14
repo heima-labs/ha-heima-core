@@ -87,8 +87,8 @@ Layer 2 is **not** responsible for:
   closed strategies, but it cannot alter their union, register a formula, or dynamically import code
   into a Sensor/Fusion execution path. The future Layer-7 lifecycle defines how such a producer is
   invoked; this Layer-2 boundary defines only what it cannot extend.
-- Redesigning the `Room`/device inventory model — `where: Location` and `device_id` reference it,
-  Layer 2 does not own it (same boundary Layer 1 already states for `room_id`).
+- Redesigning Home Assistant's device inventory — `device_id` references it and Layer 2 does not
+  own it. The `Room` registry is Layer 2's own (§2.6); HA areas are only linked to it.
 
 ### 2.2 Performance contract — no blocking I/O on the hot path
 
@@ -299,7 +299,7 @@ class Room:
   §7). They are stored in Heima so that moving an area in HA can never change Heima's behavior
   without a commit, impact preview and history. The area's HA floor `level` is only a suggestion
   when the room is created.
-- **The name is presentation.** With `display_name=None` the panel, templates and published
+- **The name is presentation (§2.7).** With `display_name=None` the panel, templates and published
   entities show the linked HA area's current name, read at render time; an explicit
   `display_name` replaces it. A room without an area requires a non-empty `display_name`.
 - **One room per HA area.** `ha_area_id` is unique among rooms, so entity discovery by area is
@@ -310,6 +310,31 @@ class Room:
   `ha_area_id` absent from HA's area registry at staging, and a missing name without an area.
   Removing a room is a configuration edit whose impact record lists every dependent (Sensors,
   Actuators, openings, zones, semantic resolvers, Reactions).
+
+### 2.7 Presentation names
+
+One rule governs the name of every object shown to people: `Room`, `Zone` (Layer 1 §6), `Opening`
+(Layer 1 §7), `Sensor`, `Actuator` and Reaction (Layer 5 §4.2).
+
+- **Field.** Each has `display_name`, presentation metadata excluded from every semantic
+  fingerprint: changing it invalidates no dependent and resets no runtime state. It is required for
+  a `Zone` and optional for the others.
+- **Fallback.** Without an explicit name, the effective name is either live from Home Assistant,
+  read at render time (a `Room` from its linked area; a `Sensor` or `Actuator` from its HA entity's
+  current name), or composed from closed fields through translation keys (an `Opening` from type,
+  orientation and room; a Reaction from its descriptor label and subject).
+- **Length.** An explicit name is non-empty after trimming and at most 64 Unicode characters after
+  NFC normalization; staging rejects a longer one. Renderers still truncate any longer live name
+  (Layer 6 §8.1).
+- **Uniqueness.** Effective names are unique per kind within a scope: globally for `Room`, `Zone`
+  and Reaction; within the same `Location` for `Sensor` and `Actuator`; within the owning room for
+  `Opening`. Comparison trims, applies Unicode NFC and case-folds; a composed name is compared as
+  rendered in every shipped locale. Staging rejects a collision between explicit or composed names;
+  a composed name that would collide needs an explicit `display_name`. A live Home Assistant name
+  is outside Heima's control and may change after staging, so it is not checked (HA itself keeps
+  area names unique).
+- **Validation** of a name runs at the owning layer's staging, so the Layer-8 change set reports a
+  collision next to the edited field (Layer 8 §6.2).
 
 ## 3. `Sensor`
 
@@ -396,6 +421,7 @@ class Sensor:
                                      # stable id means readings share a physical/device/model
                                      # failure mode and cannot be counted independently by the
                                      # physical-evidence formula. It is never an HA entity id.
+    display_name: str | None = None  # presentation name (§2.7); None: the HA entity's current name
 ```
 
 Every Home Assistant **readable signal path** Heima cares about is registered exactly once, here —
@@ -1873,7 +1899,7 @@ class Actuator:
                                           # the outside (IFC `IsExternal` semantics); None = undeclared.
                                           # Administrator-declared physical property; see "Exterior
                                           # exposure" below
-    display_name: str | None = None
+    display_name: str | None = None     # presentation name (§2.7); None: the HA entity's current name
     actuator_role: str | None = None    # coarse role, e.g. "light", "shutter", "hvac_unit",
                                           # "water_valve", "switch" (a generic on/off outlet whose
                                           # controlled load Heima doesn't otherwise know). Resolved
@@ -2122,6 +2148,11 @@ this layer.
 
 ## 9. Acceptance criteria (for the eventual implementation phase)
 
+- Two south windows in one room without explicit names are rejected at staging because their
+  composed names collide; naming one of them applies. The same composed name in two rooms is valid.
+  A 65-character explicit name, or two Reactions or Zones whose names differ only by case or
+  trailing space, are rejected. A Sensor or Actuator without a name shows its HA entity's current
+  name, and renaming that entity in HA changes no fingerprint and needs no commit (§2.7).
 - A `Room` with a linked HA area and no `display_name` shows the area's current name; renaming the
   area in HA changes the shown name and no fingerprint. Moving the area to another HA floor
   changes nothing in Heima until an administrator edits `floor` and commits. A duplicate

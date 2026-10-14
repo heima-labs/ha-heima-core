@@ -768,7 +768,8 @@ tuple(sorted(room_ids, key=unicode_code_point)))`: display text does not change 
 zone-scoped fact. Layer 2's reload impact comparison uses the latter, while retaining the former as
 historical configuration metadata. `room_ids` serializes as a
 Unicode-code-point-sorted array, while in memory it remains a `frozenset`. Zone construction rejects an
-empty `zone_id`, empty `display_name`, empty membership, or empty room id; Zone registration resolves
+empty `zone_id`, empty `display_name`, empty membership, or empty room id, and applies the common
+name rule of Layer 2 §2.7 (length and global uniqueness); Zone registration resolves
 every member against the `Room` registry (Layer 2 §2.6) and rejects a duplicate `zone_id`.
 
 A changed definition is a new **configuration generation**, even though `ZoneKey` remains the same.
@@ -825,7 +826,7 @@ class Opening:
     other_side: str = "outside"      # what lies across this opening: a registered room id or the
                                        # reserved "outside". Declared for every opening, windows
                                        # included (added 2026-10-11, CA4-62); "outside" is the default
-    display_name: str | None = None  # presentation metadata only (CA4-84); None: composed from type,
+    display_name: str | None = None  # presentation metadata only (Layer 2 §2.7); None: composed from type,
                                        # orientation and room through translation keys
 
 @dataclass(frozen=True)

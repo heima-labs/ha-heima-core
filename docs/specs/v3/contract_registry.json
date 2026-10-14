@@ -738,6 +738,12 @@
       "depends_on": ["L1-TOPOLOGY"]
     },
     {
+      "id": "L2-PRESENTATION-NAMES",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "2.7 Presentation names",
+      "depends_on": ["L2-ROOM-REGISTRY"]
+    },
+    {
       "id": "L8-ROLES",
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "4. Roles and access",
@@ -1531,6 +1537,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-90.md",
       "contracts": ["L5-REACTION-AUTHORITY", "L5-REACTION-ARTIFACT-ADOPTION", "L5-DECISION-RECORD", "L0-COMPOSED-GENERATION", "L8-HISTORY-RESTORE"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-91",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-91.md",
+      "contracts": ["L2-PRESENTATION-NAMES", "L2-ROOM-REGISTRY", "L5-REACTION-AUTHORITY", "L8-PUBLISHED-ENTITIES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

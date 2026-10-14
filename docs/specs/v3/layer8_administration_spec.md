@@ -297,8 +297,8 @@ that Heima reads (Sensors) and commands (Actuators). They are read-only: Heima p
 
 ### 10.2 Rules
 
-- Unique ids derive from Heima identities (room id, resolver id, reaction id); names come from
-  configuration and translation keys, so renames propagate. An activity entity's name combines its
+- Unique ids derive from Heima identities (room id, resolver id, reaction id); names are the
+  effective names of Layer 2 §2.7 combined through translation keys, so renames propagate. An activity entity's name combines its
   scope name with the translated activity label.
 - A fact-backed entity is `unavailable` whenever its Heima fact is unavailable, with one declared
   exception: an activity entity is `on` when its claim is `active` and `off` otherwise, including

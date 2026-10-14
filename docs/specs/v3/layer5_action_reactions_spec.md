@@ -1646,9 +1646,10 @@ successor configuration generation, no return to `notification_only`, no job can
 empty impact record. It applies to learner-origin Reactions too, whose configuration remains
 editable only through a new proposal. With `display_name=None`, presentation composes a name from
 the descriptor's translated label and the subject (for example "Shading · Living room").
-Effective names are unique: staging normalizes each Reaction's explicit or composed name (trimmed,
-Unicode NFC, case-folded) and rejects a catalog in which two Reactions share one; a Reaction whose
-composed name would collide needs an explicit `display_name`.
+Effective names follow the common rule of Layer 2 §2.7: they are unique across Reactions after
+trimming, Unicode NFC and case-folding, composed names compared in every shipped locale; a catalog
+in which two Reactions share one is rejected, and a Reaction whose composed name would collide needs
+an explicit `display_name` of at most 64 characters.
 
 **Composed-generation dependency.** Every Reaction configuration, guard-profile and prerequisite
 generation activates only through the composed configuration generation of Layer 0 §4.7, and is a

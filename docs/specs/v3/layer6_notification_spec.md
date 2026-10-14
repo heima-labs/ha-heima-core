@@ -353,8 +353,10 @@ closed `context` fields (phase, intent, closing reason, outcome). A template is 
 translation keys, never a literal string in code; its texts live in per-locale translation
 resources (English is the source locale), so adding a language adds a resource file and no code.
 Templates are versioned with the core and not editable by administrators. A template uses only closed context
-fields, the subject Location, names resolved from the current configuration (room, opening,
-Actuator) and the core-owned localized label of the Reaction's descriptor. A name longer than 64 characters is truncated; an identifier that is no longer
+fields, the subject Location, the effective names resolved from the current configuration under
+Layer 2 §2.7 (room, opening, Actuator, Sensor and the Reaction itself) and the core-owned localized
+label of the Reaction's descriptor. A live Home Assistant name longer than 64 characters is
+truncated; an identifier that is no longer
 configured is shown as the identifier. An unknown `context_version` renders a generic text with the
 kind and identifiers.
 
