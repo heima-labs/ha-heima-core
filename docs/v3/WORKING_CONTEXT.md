@@ -11,7 +11,8 @@ instructions override the next action below.
   The current environment/tooling files are included in the developer-requested commit;
   use `git log -1` and status for the latest revision each session.
   Payload/codec, temporal contracts and review fix are committed as `e3e4314`.
-  The AtJob dispatcher and its tests are implemented locally, not committed.
+  AtJob dispatcher/delayed-callback tests are committed as `be83856`.
+  The asyncio monotonic timer adapter and its tests are local, not committed.
   No HouseFact assembly, HA runtime adapter, storage or deployment exists here.
   The dedicated native Python/test-tool environment is ready; its probes ran in /private/tmp.
 - Authoritative specs: sibling `../ha-heima-component-v3-planning`, branch
@@ -577,11 +578,36 @@ Brief owner handoff/no blocking work follows existing code rules. Do not silentl
 add hardware-specific rounding, grace periods, lateness discard or queue limits.
 See testing/ATJOB_DISPATCH.md for sources and remaining verification.
 
+## Concrete monotonic adapter — 2026-10-14
+
+At user's request, committed dispatcher + hardware-lateness tests as signed be83856;
+worktree was clean. Planning remains 9cd077e (clean), read-only. Implemented
+adapters/ha/monotonic_timer.py: inject existing asyncio loop, compute monotonic due
+once, guard early callbacks, asynchronously re-arm beyond the clock-resolution
+horizon, deliver once and release owner references on cancel/delivery. No polling,
+worker/task per timer, wall-clock read or new dependency. Exact representable sums
+remain unchanged; TwoSum/nextafter preserve minimum waits when float addition rounds
+down, verified with an independent Fraction oracle. Standard loop clock metadata
+is read once; alternative loops supply matching resolution explicitly.
+
+Tests: 41 new, 286 total pass (seed 3145), including two actual Python asyncio-loop
+cases and a scheduler/adapter early-wakeup replacement case. All 64 adapter statements/
+18 branches covered; Ruff/type/format/patch checks pass. Five-method evidence in
+ testing/MONOTONIC_ADAPTER.md. Fresh mutmut: 117 generated, 92 killed, 25 survivors
+(24 generic-error prose, one erased cast annotation); exact diffs reviewed in
+ testing/MONOTONIC_ADAPTER_MUTANT_REVIEW.md. Default scope includes all six modules.
+
+Adapter/tests/docs/config changes remain uncommitted. This is actual stdlib asyncio
+evidence on local native Python, not HA lifecycle integration or an ARM workload
+benchmark. No latency/CPU/memory guarantee, lateness policy, capacity threshold or
+supported hardware matrix was chosen. Diagnostic emission, cycle clock/gaps,
+recurrence next-due/DST, HA bootstrap/unload wiring and storage remain pending.
+No specs, push or deployment changed.
+
 ## Next action
 
-Prioritize the concrete monotonic timer adapter and early-wakeup/coarse-clock tests
-before claiming complete or portable AtJob execution. Then continue cycle-clock and
-clock-discontinuity classification (Layer 0 §3.5), recurrence next-due/DST execution
-and HA integration. Re-read authoritative contracts first. Measurements on actual
-ARM/desktop hardware await an isolated HA harness; thresholds/devices remain undecided.
-Git/deploy policy proposals remain pending review.
+Implement the cycle clock and clock-discontinuity classification in Layer 0 §3.5,
+with injected wall/monotonic readings and explicit outcomes for re-arm, diagnostics
+and future durable observation gaps. Read current owning/dependent specs first.
+Then recurrence next-due/DST and HA lifecycle wiring; benchmark under actual ARM/HA
+load once the isolated harness exists. Git/deploy proposals remain pending review.

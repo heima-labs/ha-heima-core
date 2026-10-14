@@ -10,3 +10,7 @@ Temporal contract evidence: `docs/v3/testing/TIMING_CONTRACT.md`.
 Dispatcher evidence: `docs/v3/testing/ATJOB_DISPATCH.md`; its fake monotonic timer
 exercises replacement/cancellation/re-arm and stale callbacks without sleeps or HA.
 Default mutation scope includes all five implemented modules and the whole V3 suite.
+
+Concrete timer evidence: `docs/v3/testing/MONOTONIC_ADAPTER.md`, with early-wakeup/
+coarse-clock simulations, exact-sum properties, scheduler integration and two real
+stdlib event-loop cases. The default mutation scope now includes six modules.

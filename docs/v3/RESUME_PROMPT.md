@@ -122,3 +122,14 @@ wake early by a clock-resolution, so the concrete timer adapter needs monotonic
 minimum-deadline protection. Prioritize this adapter verification before the cycle
 clock. No hardware-specific minimum, lateness/grace policy or device matrix was
 approved. Pending dispatcher/test/docs changes remain uncommitted.
+
+
+## Latest checkpoint — guarded asyncio timer
+
+Dispatcher + delayed-callback tests committed as be83856. New asyncio monotonic
+adapter/tests/evidence remain local and uncommitted. It guards early wakeups, avoids
+busy waiting and preserves tiny positive delays at large uptimes. Read WORKING_CONTEXT
+and MONOTONIC_ADAPTER.md: 286 tests pass including two real asyncio-loop cases;
+117 scoped mutants, 92 killed, 25 contract-equivalent survivors reviewed. No HA/ARM
+benchmark or lifecycle wiring exists yet. Next step returns to Layer 0 §3.5 cycle
+clock/discontinuities; earlier adapter-pending notes are historical.
