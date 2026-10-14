@@ -1,0 +1,2 @@
+# Approved canonical JSON codec; HA adapter dependencies are selected separately.
+rfc8785==0.1.4

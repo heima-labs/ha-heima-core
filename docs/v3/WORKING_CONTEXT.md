@@ -10,7 +10,8 @@ instructions override the next action below.
   `feat/v3-implementation`, branched from planning `0063da4`; the previous instruction commit is `6fe67b8`.
   The current environment/tooling files are included in the developer-requested commit;
   use `git log -1` and status for the latest revision each session.
-  No V3 application code, runtime, application tests or deployment exists here.
+  The first pure V3 payload/codec slice and behavioral tests are implemented locally.
+  No HouseFact assembly, HA runtime adapter, storage or deployment exists here.
   The dedicated native Python/test-tool environment is ready; its probes ran in /private/tmp.
 - Authoritative specs: sibling `../ha-heima-component-v3-planning`, branch
   `feat/v3-planning`, CA4-70 progressive recovery committed as `f84d4e7`; latest planning HEAD
@@ -41,8 +42,8 @@ Homebrew update. Point 2 is now approved and prepared: build the V3 integration
 from scratch in this worktree, keeping V2 in its own workspace/history as reference.
 Small pure V2 functions may be assessed individually; no V2 runtime dependency.
 The approved package groups are empty packages with an inert parent initializer,
-so real qualified imports need no test-only namespace shim. No application behavior
-or HA lifecycle adapter has been implemented.
+so real qualified imports need no test-only namespace shim. The first pure payload/codec
+behavior is now implemented and verified below; no HA lifecycle adapter exists.
 
 - Package boundary approved: `custom_components/heima/v3/` with `contracts/`, `runtime/`,
   `storage/`, `adapters/ha/`. Domain contracts contain no Home Assistant imports. Individual
@@ -118,7 +119,7 @@ or HA lifecycle adapter has been implemented.
   mutmut killed 3/3 mutants. This is tool evidence, not Heima behavior validation.
   Commands, versions and limitations are in `TEST_ENVIRONMENT.md`.
 
-## First behavioral contract — proposal awaiting approval
+## Earlier EvidenceInstant-first proposal — superseded by the payload slice
 
 The clean-start commit is complete (`1eaba51`). The user requested discussion of the complete fact data model before agreeing on the first behavioral contract.
 Proposed first slice: `L1-EVIDENCE-INSTANT`, Layer 1 §4 and its §10 acceptance case,
@@ -450,20 +451,89 @@ and standard JCS vectors to verify the dependency boundary.
 Only WORKING_CONTEXT updated; existing pending handoff edits preserved. No code,
 installation, spec edit or commit. Patch hygiene checked.
 
+## First behavioral slice completed — 2026-10-14
+
+- The user approved rfc8785 0.1.4, private mapping/tuple deep freezing and the
+  shared payload/codec slice. Prior instruction/handoff changes committed first
+  as `7ca1700`, as requested. Current slice changes remain uncommitted. Final checks reran successfully in the
+  actual implementation worktree (not only the temporary development copy), including
+  109 cases, lint/format/types/pip consistency and six supplementary mutants.
+- Added canonical_json.py and payloads.py: shared JCS projection, bounded value
+  validation/freezing, mapping-only projections, evidence soft failure with typed
+  diagnostics, canonical-content equality/hash. No raw HA object retention.
+- Added separate hashed runtime lock, focused tests, mutmut-only pyproject.toml,
+  six targeted module/decorator mutations and permanent five-method evidence.
+  Kept tool lock/versions unchanged. Updated README/test-environment/readiness/resume.
+- Tests: 109 passed with seed 3145; all 134 statements and 52 branches reported
+  covered. Explicit decision table/BVA/MC/DC/property evidence in
+  testing/PAYLOAD_CONTRACT.md. Ruff lint/format and mypy pass. Runtime hashed wheel
+  installed in .venv-v3; pip check/patch hygiene verified.
+- Mutation source scope: both modules; 265 generated, 231 killed, 34 survived and
+  reviewed as equivalent for the runtime contract, no timeout/error/untested.
+  Complete survivor diffs/rationales in testing/PAYLOAD_MUTANT_REVIEW.md. Additional
+  six module/decorator mutants killed by named tests. Fresh run after adding missing
+  validator/hash/context cases avoided cached mutation results. No raw 100% score claimed.
+- No full HouseFact construction or actual diagnostic emission exists yet; returned
+  diagnostic descriptors will be consumed by the future builder/runtime. No JSON
+  text decoder: duplicate-key rejection belongs at the future decoding boundary.
+  No performance/HA/live/storage/crash verification or deployment.
+- Planning checked at `9cd077e` (clean): CA4-97 aligns formula payloads with the same
+  numeric domain; no changed Layer-1 behavior or spec edits in this implementation.
+
+## Layer-0 temporal foundation — 2026-10-14
+
+The user authorized continuing Layer-0 implementation. Scoped this next block to
+fully specified immutable timing definitions (Layer 0 §§3.1/3.2/3.4/3.4.1), with
+Layer 1 §4 EvidenceInstant as a required dependency; planning `9cd077e` is clean.
+Implemented instants.py (strict parsing/validation, explicit producer normalization)
+and timing.py (Window, AtJob, WeeklyRecurrence, IntervalRecurrence, CronEntry,
+CalendarWindow). Weekly matches uses an explicit ZoneInfo and classifies both
+physical DST-fold occurrences; CalendarWindow uses half-open containment.
+No ambient wall clock is read by these modules; objects store canonical strings.
+Shared duration normalization excludes bool/zero/negative/nonfinite/overflow, and
+civil fields validate their exact bounds. Window remains a comparison value.
+
+Tests: 92 new cases, 201 total with existing payload tests, seed 3145. New modules
+report 109 statements/36 branches covered. Five-method evidence and limitations in
+testing/TIMING_CONTRACT.md; mutmut: 188 total, 110 killed, 78 runtime-contract
+equivalent survivors reviewed in testing/TIMING_MUTANT_REVIEW.md; no errors/timeouts.
+Seven supplementary module/decorator mutants killed. Regression demonstrated before
+fix: Python 3.14 accepts 24:00:00 and normalizes it; added parse round-trip identity
+check rejects it. Mutation found implicit host-time-zone use was not distinguished;
+added explicit UTC/Tokyo tests, reran fresh mutation stats. Ruff/mypy pass.
+
+This is the temporal contract foundation, not all Layer 0. Monotonic dispatch,
+replacement/cancellation, weekly next-due DST execution policy, cycle clock/epochs,
+calendar I/O/cache, LearnedWindow (needs Location), WarmupGate consumers, provenance,
+persistence/queue/outbox/holds/recovery/health/observers remain unimplemented. No
+HA integration, spec edits, new dependency, commit or deployment. Earlier pending
+payload implementation changes are preserved, not silently committed.
+
+## Critical code review — 2026-10-14
+
+Reviewed all four implemented contract modules and behavioral tests against planning
+9cd077e (clean), chiefly Layer 0 §§3.1/3.2/3.4 and Layer 1 §§3/4. Confirmed and fixed
+one missing check: IntervalRecurrence accepted a Window subtype that bypassed
+post-init even with invalid seconds. Normal Window construction was already safe;
+this was missing independent interval admission required by §3.1. Retained interval
+is now constructed via Window/the shared validator; valid seconds normalize to float
+and the source object is unchanged. No spec or product-policy change.
+
+Regression demonstrated first: 12 failures/3 passes, including Hypothesis shrinking
+to 0.0. Added 15 cases/properties: complete suite 216 passes, seed 3145; timing/instant
+coverage 110 statements/36 branches; Ruff/type/format pass. Five-method evidence in
+testing/TIMING_CONTRACT.md. Three new targeted behavioral mutations killed; all seven
+previous timing supplements still killed (10 total). Earlier full mutmut counts are
+historical; no fresh full mutmut run claimed. No other confirmed defect in this
+review. Performance, full builder/runtime diagnostics, scheduler, persistence/crash
+and HA/live integration remain unverified/unimplemented as previously recorded.
+
+All preceding local implementation changes preserved; review edits also uncommitted.
+
 ## Next action
 
-Numeric domain is approved and incorporated by CA4-96. Planning stays read-only here. Implement the approved rfc8785 0.1.4 / private-mapping-and-tuple shared payload
-codec. Current scope: canonical_json.py/payloads.py, pinned runtime dependency,
-focused tests, all five test-method evidence and handoff updates. No HouseFact
-assembly, HA, storage, deployment or spec changes in this slice.
-No application code or additional commit made in this approval-recording task;
-`git diff --check` passed, and no behavioral tests ran.
-
-
-Point 2 is complete as a package skeleton. Continue point 3: discuss the full fact model and its module/API boundaries, then
-agree on the first behavioral slice. Real qualified package imports are verified;
-the HA adapter must preserve this import boundary when it is implemented.
-Point 1 is done;
-use `.venv-v3` and the dedicated configs/requirements, not the Intel system Python or
-V2 dependency pins. HA release/harness selection, concrete queue/writer/schema,
-scheduler/clock, test lab and proposed Git/deploy policies remain later work. The developer approved the shared payload/codec first slice; continue that scope.
+Continue Layer 0 from these verified temporal contracts: monotonic AtJob dispatch
+and replace/cancel semantics, with injected timer/clock and scheduler-specific
+five-method tests. Read §§3.1/3.5 and dependencies before fixing its API; preserve
+elapsed versus wall-clock semantics and DST single-firing policy. Complete required
+foundation dependencies alongside runtime slices. Git/deploy proposals remain open.

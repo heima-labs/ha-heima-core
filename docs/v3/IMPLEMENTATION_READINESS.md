@@ -11,7 +11,9 @@ reports 7 authoritative layer files, 114 mapped contracts, 78 CA4 issues, 0 open
 reviewed slices. That establishes the tracked specification status and structural map,
 not a proof that every V3 behavior is implemented or free of undiscovered contradictions.
 
-The empty V3 package skeleton and test directory guide now exist in this checkout; no behavioral code/tests exist yet. Its approved
+The first pure payload/codec slice is implemented and behaviorally tested; see
+`testing/PAYLOAD_CONTRACT.md`. Full HouseFact construction and HA integration are
+not implemented. Its approved
 package boundary is `custom_components/heima/v3/` with contracts, runtime, storage and HA
 adapters. Planning copies in this checkout are older; use the current sibling planning
 worktree and a reviewed commit reference instead of trusting these old copies.

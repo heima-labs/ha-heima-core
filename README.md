@@ -1,7 +1,7 @@
 # Heima V3 implementation
 
-This worktree builds Heima V3 from scratch. The package skeleton is present;
-application behavior and the Home Assistant lifecycle adapter are not implemented.
+This worktree builds Heima V3 from scratch. The first pure payload validation/freezing and canonical JSON slice is implemented;
+the Home Assistant lifecycle adapter is not implemented.
 This checkout is not an installable Home Assistant integration yet: there is no
 V3 manifest, config flow or deployment workflow.
 
@@ -13,7 +13,8 @@ specification copies and V2 documentation here are historical reference.
 
 Use the native Python 3.14.5 environment and pinned tools documented in
 [TEST_ENVIRONMENT.md](docs/v3/TEST_ENVIRONMENT.md), with `pytest-v3.ini`,
-`ruff-v3.toml` and `mypy-v3.ini`. No V3 behavioral test exists yet.
+`ruff-v3.toml` and `mypy-v3.ini`. Install both runtime and development locks.
+Behavioral test design/results: [PAYLOAD_CONTRACT.md](docs/v3/testing/PAYLOAD_CONTRACT.md).
 Git and deployment policies still await review. The inherited V2 CI, tests and
 operational scripts have been removed from this branch; a V3 CI and deploy target
 will be designed separately.

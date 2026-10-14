@@ -4,7 +4,7 @@ Python 3.14.5 was approved on 2026-10-13, aligned with Home Assistant's current
 minimum of Python 3.14.2 ([official setup guide](https://developers.home-assistant.io/docs/development_environment/)).
 The environment is `.venv-v3`, created from the workspace-local CPython 3.14.5
 arm64 runtime in `.python-v3/cpython-3.14.5-macos-aarch64-none`.
-V3 tools use dedicated config files; inherited V2 configuration is unchanged.
+V3 tools use dedicated config files; inherited V2 code/configuration was removed.
 
 ## Reproduce the environment
 
@@ -13,7 +13,7 @@ V3 tools use dedicated config files; inherited V2 configuration is unchanged.
 # On this M1 workspace, the local managed runtime is used:
 .python-v3/cpython-3.14.5-macos-aarch64-none/bin/python3.14 -m venv .venv-v3
 .venv-v3/bin/python -c 'import platform, sys; print(sys.version); assert platform.machine() == "arm64"'
-.venv-v3/bin/python -m pip install --require-hashes --only-binary=:all: -r requirements-v3-dev.txt
+.venv-v3/bin/python -m pip install --require-hashes --only-binary=:all: -r requirements-v3-runtime.txt -r requirements-v3-dev.txt
 .venv-v3/bin/python -m pip check
 ```
 
@@ -43,9 +43,16 @@ that release target belongs to the adapter phase.
 .venv-v3/bin/python -m mypy --config-file mypy-v3.ini custom_components/heima/v3
 ```
 
-The V3 package/tests have not been created yet. Import isolation and mutation
-paths will be configured in the next agreed step; those suite commands do not
-yet constitute an executable V3 test suite.
+The first payload/codec modules and tests now exist and use real qualified imports.
+Runtime dependencies are pinned in requirements-v3-runtime.in/txt separately from
+the tooling lock. Root pyproject.toml contains only mutmut configuration; use the
+dedicated lint/type/test configs. Mutation and behavioral evidence, limitations
+and reproduction are documented in testing/PAYLOAD_CONTRACT.md.
+
+Runtime lock refresh: `.venv-v3/bin/pip-compile --generate-hashes
+--output-file=requirements-v3-runtime.txt requirements-v3-runtime.in`; review
+resolved versions/artifacts, then install with hash checking. The current runtime
+lock deliberately pins the verified universal wheel artifact for rfc8785 0.1.4.
 
 ## Evidence for the five methods
 

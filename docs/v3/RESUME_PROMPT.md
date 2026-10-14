@@ -25,11 +25,11 @@ and owning text on resumption; this checkpoint does not freeze the specs.
 The user approved immutable dataclasses, one public `build_house_fact` construction
 entry point and `FactBuildResult(fact, diagnostics)`; runtime delivers returned
 diagnostics. Essential invalid content rejects construction, invalid evidence is
-dropped with a diagnostic. Concrete modules/API details and first code slice remain
-to agree. RFC 8785 is retained; CBOR is an alternative to evaluate if measured
+dropped with a diagnostic. The shared payload/codec first slice was subsequently approved and implemented;
+full HouseFact assembly and later contracts remain to discuss. RFC 8785 is retained; CBOR is an alternative to evaluate if measured
 performance problems justify it, not an automatic switch. Numeric domain is approved: non-boolean integers in ±(2**53-1), finite binary64
-floats and no implicit numeric conversions. Owning-spec alignment is complete via CA4-96 (`15ccdcd`); library selection remains
-pending. Read NUMERIC_DOMAIN_HANDOFF.md. At planning `f52f86f`, Layer 0 §§7.4.1/9 add read-only
+floats and no implicit numeric conversions. Owning-spec alignment is complete via CA4-96 (`15ccdcd`); rfc8785 0.1.4 was
+subsequently approved and implemented in the first payload slice. Read NUMERIC_DOMAIN_HANDOFF.md. At planning `f52f86f`, Layer 0 §§7.4.1/9 add read-only
 recovery occurrence and health/diagnostic handoffs to Layer 8 §10.3 projections,
 without changing mechanisms or HouseFact fields; account for this consumer during
 runtime design.
@@ -64,5 +64,39 @@ CA4-96 incorporates the approved numeric domain in Layer 1 §§3/4/4.3/10, with
 references from Layer 0 §4.1 and Layer 5 §6.0 facet codec. Verification found no
 discrepancy with NUMERIC_DOMAIN_HANDOFF.md. Structural checker: 96 CA4 issues, none
 open, 128 contracts/72 reviews; no runtime tests. Numeric spec alignment is complete;
-do not request it again. Next discuss concrete serializer/library/version and frozen
-payload implementation, then approve the first behavioral code slice.
+do not request it again. The subsequent first-slice entry below records the approved serializer and
+implemented frozen-payload behavior; discuss the next contract after its review.
+
+## First implementation slice — completed locally
+
+The user approved rfc8785 0.1.4, private map/tuple deep freezing and the shared
+payload/codec first slice, requested an instruction commit then implementation.
+Instruction commit: `7ca1700`. The first behavioral slice now has canonical_json.py,
+payloads.py, separate hashed runtime lock, tests, mutmut config and test evidence
+in testing/PAYLOAD_CONTRACT.md. 109 tests pass; 265 mutants, 231 killed, 34 reviewed
+as equivalent to the runtime contract, plus six killed module/decorator mutants.
+No HouseFact assembly, HA adapter, storage or deploy exists yet. Changes from this
+slice are not committed; inspect Git before continuing. Discuss the next contract
+rather than resuming the old serializer-selection or numeric-pending proposals.
+
+## Layer-0 temporal foundation — latest implementation scope
+
+The user authorized proceeding with Layer 0. instants.py and timing.py implement
+strict canonical time/duration/civil-field validation plus immutable Window, AtJob,
+recurrence/CronEntry and CalendarWindow definitions. 201 tests total pass, 92 new;
+188 timing mutants, 110 killed, 78 reviewed as contract-equivalent, seven targeted
+module/decorator mutants killed. Read testing/TIMING_CONTRACT.md. Scheduler dispatch,
+cycle clock, weekly next-due/DST execution and calendar cache are still pending.
+This supersedes the earlier next action to ask whether to continue implementation.
+All implementation changes remain uncommitted; preserve them. No spec edits/deploy.
+
+
+## Critical review checkpoint — 2026-10-14
+
+The implemented payload/codec and temporal foundation were reviewed against planning
+9cd077e (clean). Fixed missing independent duration validation at IntervalRecurrence
+admission (Layer 0 §3.1); see TIMING_CONTRACT.md for failing-before-fix and five-method
+evidence. Current suite: 216 passed; 10 supplementary timing mutations killed;
+Ruff/type/format pass. Earlier mutmut counts describe the preceding revisions.
+All implementation/review changes remain uncommitted. Next work remains the
+injected-clock monotonic scheduler; no HA runtime/storage completion is implied.
