@@ -4,7 +4,7 @@ Update this file at the end of every bounded task and before yielding on an unfi
 Keep verified state and distinguish user-approved decisions from proposals. Newer user
 instructions override the next action below.
 
-## Verified state — 2026-10-13
+## Verified state — 2026-10-14
 
 - Implementation workspace: `ha-heima-component-v3-implementation`, branch
   `feat/v3-implementation`, branched from planning `0063da4`; the previous instruction commit is `6fe67b8`.
@@ -14,11 +14,13 @@ instructions override the next action below.
   The dedicated native Python/test-tool environment is ready; its probes ran in /private/tmp.
 - Authoritative specs: sibling `../ha-heima-component-v3-planning`, branch
   `feat/v3-planning`, CA4-70 progressive recovery committed as `f84d4e7`; latest planning HEAD
-  checked for this task is `761294d` (clean). Its Layer 0–6 specs supersede this checkout's older copies.
-  Layer 6 is now authoritative; later Layer 7/8 design work is separate. Recheck HEAD,
+  checked for this task is `9cd077e` (clean). Its Layer 0–6 specs supersede this checkout's older copies.
+  Layer 8 is now authoritative too (`5f4cf1b`, registered in contract_registry); Layer 7 remains separate. Recheck HEAD,
   status and current contracts each session because another session is developing specs.
-- Last recorded planning structural check (before `c66afb7`; not rerun for this package task): 7 layer files, 114 mapped contracts, 78 CA4 issues,
-  0 open, 54 reviewed slices. Specification status does not demonstrate runtime behavior.
+- Planning structural check rerun on 2026-10-14: 8 authoritative layers, 128 mapped
+  contracts, 96 CA4 issues, 0 open, 72 reviewed slices. This is structural evidence,
+  not runtime validation. Older checkpoints below are historical; the latest Layer 0/1
+  synchronization supersedes their reaction.decision event model.
 - The inherited V2 component, tests, operational scripts, workflows and obsolete tool configs have been removed from this worktree; V2 remains in its original workspace/history. V3 is a clean
   start with no V2 migration; protect V3 public contracts once introduced.
 - CT-4 still has an implementation release gate for frozen numerical calibration and
@@ -84,7 +86,7 @@ or HA lifecycle adapter has been implemented.
   replaced parent initializer), added seven inert package initializers and the V3 test
   directory guide; replaced root README and marked inherited CLAUDE instructions historical.
   Kept V3 tooling, instruction files and historical documentation. No CI/deploy replacement
-  or manifest was invented. This change is included in the explicitly requested clean-start commit; resolve its revision with `git log -1`. Verification: seven real qualified imports resolve inside this worktree without HA/V2
+  or manifest was invented. Clean-start preparation was committed as `1eaba51` at the user's request. Verification: seven real qualified imports resolve inside this worktree without HA/V2
   modules in `sys.modules`; Ruff lint and format pass; mypy passes on all seven files;
   `git diff --check` passes. No application tests ran. The five behavioral techniques
   have no applicable rule, boundary, compound decision, property or executable function
@@ -118,7 +120,7 @@ or HA lifecycle adapter has been implemented.
 
 ## First behavioral contract — proposal awaiting approval
 
-The user requested the clean-start commit, then agreement on the first contract.
+The clean-start commit is complete (`1eaba51`). The user requested discussion of the complete fact data model before agreeing on the first behavioral contract.
 Proposed first slice: `L1-EVIDENCE-INSTANT`, Layer 1 §4 and its §10 acceptance case,
 registry dependencies empty, checked at planning `761294d`. No application code yet.
 Proposed files: `custom_components/heima/v3/contracts/instants.py`,
@@ -132,13 +134,336 @@ validation-condition pairs where compound decisions exist, generated round trips
 normalization invariants, mutation scope on this module. Exact API names/error types
 remain a proposal. This does not implement the cycle clock, scheduler or persistence.
 
+## Complete fact data model — discussion, no new implementation approval
+
+At planning `c8a68a8`, reread Layer 1 §§3/4/5 and Layer 0 §§4.0/5.
+Specified envelope: immutable `HouseFact(fact_type, value, where, when, how)`, with
+`Location`, canonical `EvidenceInstant`, and `Provenance(confidence, source, available,
+evidence)`; structured `FactSource` vocabulary belongs to Layer 0. Value/evidence
+allow depth 2 and at most 8 KiB canonical UTF-8 each; value additionally admits
+qualifying frozen dataclasses. Deep freezing and RFC-8785 serialization are required.
+Invalid value fails construction; invalid evidence becomes empty with a diagnostic,
+without discarding the fact. Unavailable implies confidence None and unusable value.
+State identity is WHAT+WHERE; change fingerprint includes availability, confidence,
+normalized value and stable source, excluding when/correlation/evidence. Events have
+no current-state identity; append ordering and state/event registration are runtime
+metadata, not extra HouseFact fields. State when records the accepted change, not
+last observation; observation coverage/source-report age remain separate mechanisms.
+Proposed modules: instants, locations, sources, payloads, provenance, facts; pure
+canonical serializer/freeze must exist before full fact construction. Concrete JSON
+library and diagnostic delivery API (prefer pure construction results plus runtime
+delivery over logging/I/O in value objects) remain to discuss. No code implemented.
+
+## Claude Layer 0/1 sync — verified at planning `c8a68a8`
+
+Read the supplied handoff and current owning sections; planning is clean and was not
+edited. This is specification alignment, not approval to implement the proposed APIs.
+The five HouseFact fields, identity, write-on-change, payload limits, deep immutability
+and existing queue/recovery contract remain unchanged. Map the supplied eight items:
+
+1. CA4-72, Layer 1 §3.1: `OperationalEventValue` has exactly notification_key, severity,
+   context_version (integer >=1), context. No title/message; context holds closed fields
+   and stable identifiers, never names/text/HA entity ids/person identities. Adapter
+   checks the version registered for fact_type and its closed context schema; Layer 6
+   renders delivery text. This restriction is for notification context, not a global
+   ban on every FactSource.source_id. Typed value remains inside HouseFact.value.
+2. CA4-74, Layer 5 §6.0: add reaction_descriptor_id to follow-up intent/occurrence and
+   action notice occurrence. Intent projection retains it; notification context includes
+   it. Keep subject as HouseFact.where, occurred_at as when; flatten follow-up facet
+   maps into canonical JSON-text scalar expected.<facet>/observed.<facet> context keys.
+   Read serialization examples: intent bytes 763/694/747; event bytes 891/786/856,
+   all depth 2. These are documented fixtures, not freshly executed serialization tests.
+3. CA4-79, Layer 0 §4 / Layer 1 §3.1 / Layer 5 §5.2 Decision record: reserve event
+   claim reaction.decision owned by layer5.reaction_decision. ReactionDecisionValue is
+   distinct from OperationalEventValue: ids, mode, outcome, reason tuples, flat tuple
+   of failed capability_id strings, admission and admission suppression codes. Append
+   once per evaluation identity when outcome != not_triggered; default retention.
+   Existing notification claims remain; Layer 5 §6.0 typed occurrences have closing
+   phases/response_request_id and consent reissued. Do not flatten typed occurrences
+   into arbitrary generic messages or treat every event as a notification.
+4. CA4-71, Layer 0 §4.5: no extra NotificationDeliveryRecord field. Permit ready->retired
+   without delivery while preserving its audit fact; one digest attempt may acknowledge
+   multiple ready records, each with its own delivered transition. Atomic audit+ready
+   and operation uniqueness remain. Delivery transition policy belongs to Layer 6.
+5. CA4-73 U3, Layer 0 §4.7: Layer-6 generation includes recipients/family options. Changes
+   solely to them have no dependents, empty impact and no impact confirmation. These
+   are configuration records, not new HouseFact/Provenance fields.
+6. CA4-75/80, Layer 0 §4.8: add CommittedStateSubscription(subscriber_id, fact_key) and
+   CommittedStateChange(fact_key, fact|None, cycle_when) to future runtime contracts.
+   Core-only exact state keys; bootstrap declaration or atomic generation-swap
+   redeclaration; initial delivery for added keys, stop removed keys. Post-in-memory
+   commit async delivery, coalescing in cycle order, per-run initial value and isolated
+   failures. No durable record, event fact, DAG dependency or durable-ack wait.
+7. CA4-78, Layer 0 §4.7: retain every committed manifest and referenced layer generation
+   indefinitely, read by id on slow path. Outside fact retention, no pruning job; only
+   latest manifest active. This constrains future storage, not HouseFact shape.
+8. CA4-70: global overflow invalidation and progressive recovery unchanged.
+
+No contradiction found between these changes and the generic model reviewed so far.
+The previous six-module proposal covered the generic fact primitives, not a complete
+inventory of event, configuration and runtime-observer contracts. Need to account for
+OperationalEventValue and versioned adapter schemas in that roadmap, with module
+placement still a proposal. Keep Layer-5 typed values owned by Layer 5.
+Updated WORKING_CONTEXT and RESUME_PROMPT only; no app code, runtime tests, spec edits
+or additional commit. `git diff --check` passed for the handoff patch. Continue discussing
+the complete model/API before approving the first implementation slice.
+
+## Fact construction API — approved by the user
+
+The user resumed fact definition; no request to implement yet. Layer 1 §3 rechecked
+at clean planning `3525c1b`. User approved immutable dataclasses and one public fact-building
+entry point taking explicit fact_type/value/location/instant plus source/confidence/
+availability/evidence, assembling Provenance and HouseFact internally. Return a typed
+construction result containing the valid HouseFact and bounded diagnostic descriptors
+(not raw offending payloads). Essential invalid fields/value reject construction;
+invalid optional evidence becomes empty and produces a diagnostic descriptor. Runtime
+admission must consume/emit those diagnostics; no logging, HA event, I/O or implicit
+clock in the pure builder. Result is local construction metadata, never an extra
+HouseFact field or persisted envelope. Constructor/internal API details and precise
+error types remain open; enforce validation across all supported construction paths.
+Source authority and concrete value semantics remain owning-boundary checks, distinct
+from universal shape checks. The construction approach and FactBuildResult are approved; implementing code, exact types/module details and first slice still require the ongoing discussion.
+
+## Frozen payload / canonical serialization — proposal, unresolved library limit
+
+User requested discussion; no implementation yet. Layer 1 §3 rechecked at planning
+`299c9ff` (clean). Proposed stdlib representation: mapping proxies over new private
+dicts, tuples for input lists, and preservation of qualifying frozen dataclass types
+with frozen fields. Input tuple restrictions remain as specified; internal tuple
+representation does not widen admissible input. No sorting of generic list contents;
+Location room_ids has its own code-point set order, distinct from JCS key UTF-16 order.
+Proposed single internal canonical-JSON wrapper for fact validation/size/equality/hash
+and later fingerprints. Python hash is local, not a durable identifier; SHA-256 of
+canonical bytes for contracts explicitly requiring stable digests. No new type tag
+or rendered notification text added to the wire shape.
+Candidate library `rfc8785` (Trail of Bits), pure Python/no dependencies, UTF-8 bytes
+output; not installed or approved. Read README and source, compared to RFC 8785 §3.1
+and Appendix B Note 1. Its int range ±(2**53-1) is intentionally stricter than exact
+binary64 representability: it rejects 2**53 although that value is exactly representable.
+Layer 1 §§3/4 admit int with JCS serialization and give no explicit such safe-int cap.
+Report this contract/library mismatch before selection; do not silently reject extra
+values, round big integers or convert them to strings. Need developer/spec-owner
+clarification of intended integer domain or selection of a compatible serializer.
+References: github.com/trailofbits/rfc8785.py/blob/main/README.md and
+raw.githubusercontent.com/trailofbits/rfc8785.py/main/src/rfc8785/_impl.py,
+www.rfc-editor.org/rfc/rfc8785.html, Python 3.14 types.MappingProxyType docs.
+Only context updated; no planning edits, runtime tests or dependency changes.
+
+## RFC 8785 versus other codecs — evaluation requested, no change approved
+
+User requested evaluation of JCS alternatives including Protobuf. Primary references
+reviewed: protobuf.dev/programming-guides/serialization-not-canonical/, proto3 guide,
+Python generated-code guide and google.protobuf well-known types; RFC 8785 and RFC
+8949 §4.2 deterministic CBOR. Protobuf deterministic encoding is not canonical across
+schema/runtime changes; stable V3 fingerprints would still require a separate explicit
+semantic projection/canonical rule. Typed proto int64/uint64 retain those integer
+domains, but generic google.protobuf.Value stores numbers as double, so Struct/Value
+is not itself a solution to exact large integer handling. Generated Python messages
+are mutable, requiring boundary conversion to the approved immutable domain objects.
+CBOR with a fixed deterministic profile is the plausible binary alternative for
+generic maps/lists and exact integers; profile must specify numeric equivalence,
+allowed types/tags and ordering. No performance/size measurements conducted.
+Recommendation for current local Python/SQLite architecture: keep JCS as common
+canonical rule, clarify numeric domain and pick a conforming implementation; no
+demonstrated benefit yet from proto schema/codegen plus separate fingerprint codec.
+Protobuf may be appropriate later for a concrete external typed protocol; independent
+wire storage codec need not replace canonical semantics. A global canonical-rule
+change would affect payload byte limits, fingerprints/config generations/operation
+ids, scalar facet codecs, LocationKey projections and examples across layers.
+No planning edit, library installation, code or benchmark; alternative evaluation is
+not an approval to change the RFC-8785 contract.
+
+## Codec direction and Layer-8 consumers — approved / verified
+
+User accepted retaining RFC 8785 and explicitly requested CBOR remain a possible
+alternative if measured performance problems justify it. This is an option to
+evaluate, not an automatic format switch or approval to implement CBOR now. Keep
+canonical encoding behind the common function; future binary persistence/transport
+may be evaluated separately from canonical fingerprint semantics. The numeric domain is approved and aligned via CA4-96; concrete library selection
+remains pending.
+
+Checked clean planning `f52f86f`: Layer 0 diff since the prior Layer-8 work adds only
+read-only handoff of the same RecoveryConfirmationOccurrence (§7.4.1) to Layer 8
+pending-items projection, and health snapshots / degradation-diagnostic changes
+(§9/§10) to Layer 8 health projection. Layer 8 §10.3 owns in-memory projections,
+rebuilt from owners' current state at startup. Fact-mirroring entities retain the
+existing §4.8 observers; recovery/health handoffs are owner-produced typed changes,
+not new HouseFact events or additional persisted copies. Delivery is outside cycle
+evaluation; no change to recovery/queue/persistence mechanisms or fact model.
+Track these additional consumers when designing runtime delivery and bootstrap.
+No contradiction found in those added handoffs. No planning edits, code, dependency
+installation or runtime tests; context/resume updates only, diff hygiene checked.
+
+## Numeric payload domain — approved; incorporated by CA4-96 on 2026-10-14
+
+The user explicitly approved the numeric domain; Claude incorporated it in planning
+`15ccdcd` (CA4-96), verified clean on 2026-10-14. Layer 1 §3 is now normative.
+Layer 1 §§3/4 admit int and finite float with bool distinct; no explicit safe-int
+range is stated. Approved domain for canonical payloads (value, evidence,
+normalized frozen-dataclass fields and PersistedProjection): non-boolean int in
+[-(2**53-1), 2**53-1]; finite binary64 float, including subnormals, with no generic
+physical-range limit; bool only in boolean fields; no Decimal/Fraction/complex or
+implicit string/int/float conversions. Quantitative field contracts retain their
+stricter ranges/units and count/integer semantics. Integer-valued float is still
+binary64 approximate measurement, not an exact arbitrary-size counter workaround.
+JCS makes 1/1.0 and +0/-0 canonically equal; stricter contracts such as Layer 3
+may reject negative zero. No generic decimal rounding; precise decimal or large
+integer encodings need a separately declared schema, never silent string conversion.
+Numeric violations follow value hard-fail versus evidence empty+diagnostic rules.
+The approved safe-int cap is an explicit Heima restriction, not a rule required by
+JCS. Layer-1 specification alignment is complete via CA4-96. See
+NUMERIC_DOMAIN_HANDOFF.md for the approved decision and verification status. Candidate rfc8785 is compatible
+with this proposed integer range, but no library installation or approval inferred.
+Read RFC 8785 §3.1/Appendix B and candidate source; no runtime test or spec edit.
+
+## Claude addendum — data-model mapping at `20bc9ae`
+
+Read owning sections and CA4-84 review; planning worktree clean and read-only.
+1. CA4-83, Layer 2 §2.6: add registry-owned Room(room_id, ha_area_id|None,
+   display_name|None, floor:int, enclosure:interior|exterior=interior). Semantic
+   fingerprint exactly (room_id,floor,enclosure); area/name are metadata. Store
+   floor/enclosure, do not read live HA floor as semantics. Nonempty/unique room ids;
+   unique linked areas resolved at staging; no-area room needs nonempty explicit name;
+   linked area's current name is rendering fallback. Location still holds opaque ids,
+   not Room objects; Zone/Topology resolve references through this Layer-2 owner.
+2. CA4-84, Layer 1 §7: Opening gains optional display_name, excluded from Topology
+   fingerprint. ResolvedConnection has exactly room_a,room_b,opening_id, no access_type
+   or legacy connection_id; connections derive from door/door_window, never authored
+   separately. Serialized access_type is an unknown-field rejection (CA4-84 review).
+   Derived floor/enclosure/exposure views recomputed and checked against Room/Openings.
+3. CA4-85, Layer 5 §4.2 Reaction catalog: Layer-5 generation is a reaction_id catalog
+   pointing to current configuration generations with display_name metadata. A rename
+   produces a new layer generation and composed commit, retaining the SAME Reaction
+   configuration generation, authority, activations, consent and jobs; empty impact.
+   Effective names unique after trim+NFC+case-fold comparison; composed collisions need
+   explicit display_name. This normalization is for display-name collision checks,
+   never Location/Room/fact_type/source stable ids. Zone definition fingerprint still
+   includes its display_name per Layer 1 §6; execution-semantic fingerprint excludes
+   it. Do not globally drop presentation metadata from configuration/audit records.
+4. CA4-82, Layer 0 §§7.4.1/9/10: read-only recovery occurrences and health/diagnostic
+   changes to Layer 8 remain as previously verified; no new persisted record/wait.
+5. CA4-80, Layer 0 §4.8 / Layer 8 §10.3: generation-derived exact-key subscriptions
+   re-declared atomically on swaps; supports per-room entity publishing. Not fact fields.
+6. CA4-79, Layer 5 §5.2 Decision record: failed_guard_capabilities is flat capability_id
+   tuple, not binding ids; one binding per capability per profile generation.
+
+No contradiction found with the generic five-field fact draft in this scoped review.
+New Room/catalog shapes belong to their owning registries; do not add them or display
+names to HouseFact/Location. Layer 8 now authoritative (`5f4cf1b`), registry verified.
+At the addendum checkpoint, first-slice and numeric-domain safe-int proposal were
+unapproved. The user subsequently approved the numeric domain; the first slice
+remains to agree. No planning edits, app code or runtime
+tests; updated own context/resume only, patch hygiene checked.
+
+## Layer 0/1 synchronization — 2026-10-14, `793b6a2`
+
+Compared full Layer-0/1 diff from `20bc9ae`, reread changed sections plus owning
+Layer-2/5 dependencies and reviews CA4-89/91/92/95. Planning clean, read-only.
+- CA4-89 supersedes CA4-79: reaction.decision.<digest> is STATE, reserved pattern
+  reaction.decision.*, owner layer5.reaction_decision. Digest is SHA-256 canonical
+  [reaction_id]. One exact key per catalog Reaction at subject; ordinary write-on-change.
+  ReactionDecisionValue removes snapshot_id and includes not_triggered/normal_exit
+  via the single ReactionEvaluationOutcome. No per-cycle identity inside its value;
+  failed_guard_capabilities remains flat capability_id tuple. Latest retained, default
+  14-day retention for superseded records. Removal/invalidation emits available=False;
+  next evaluation of a valid successor recovers current state (Layer 5 §5.2/CA4-95).
+- CA4-86, Layer 0 §§5/5.1.3/7.4.1: all three Initial-V3 response owners allow resident
+  and ha_admin. Non-admin response maps to resident_response/resident; verified HA
+  admin response to admin_command/ha_admin. actor_ref is verified HA user id, only
+  governance, not FactSource/ApplyStep operational payloads. Account category is not
+  household membership; owning consent boundary still checks membership.
+- CA4-87, Layer 0 §4.7: accepting learned Reaction proposal creates configuration via
+  composed commit with empty impact. Atomic transaction includes its review transition,
+  manifest, layer records and invalidations; catalog edits explicitly in this path.
+- Layer 0 §4.2/Layer 1 §3.1: advisory_feedback dedup by
+  (advisory_operation_id, action), scoped to its event family, not generic equality.
+- CA4-91, Layer 2 §2.7 / Layer 1 §6: common display-name rule, explicit names nonempty
+  trimmed and <=64 Unicode characters after NFC. Uniqueness per kind: Room/Zone/Reaction
+  global, Sensor/Actuator per Location, Opening per owning room. Compare trim+NFC+
+  case-fold; composed names across all shipped locales. Live HA fallback names exempt
+  from uniqueness check. Sensor gains display_name. Names remain outside semantic
+  fingerprints; Zone full definition fingerprint still includes name. Never normalize ids.
+- CA4-92, Layer 1 §7: OpeningType door/window/door_window; eight CompassOrientation
+  values; orientation optional unless consumer requires it. Opening.entity_id REMOVED
+  and rejected in serialized input. Opening state only via Sensor.related_opening_id
+  or Actuator channel.opening_id. ResolvedConnection remains derived with no access_type.
+
+Generic HouseFact fields/identity/deep freeze/JCS/depth/8-KiB/value-vs-evidence error
+policy unchanged. No contradiction found in reviewed changes; confirmed one outstanding
+approved-decision/spec alignment: safe-int numeric cap still absent from Layer 1 §3.
+NUMERIC_DOMAIN_HANDOFF.md remains pending for Claude; do not silently treat it as
+incorporated or edit planning. Numeric/library-dependent implementation waits alignment.
+Ran planning checker --open: 8 layers/127 contracts/95 issues/0 open/71 reviews,
+structural only. No application code/tests or spec edits. Updated implementation
+handoff/instructions, diff hygiene checked; no commit requested/made.
+
+## CA4-96 verification — 2026-10-14, `15ccdcd`
+
+Planning clean and read-only. Compared the complete numeric-domain commit against
+NUMERIC_DOMAIN_HANDOFF.md and reread Layer 1 §§3/4/4.3/10, Layer 0 §4.1, Layer 5
+§6.0 facet codec and CA4-96 review/registry closure. All agreed numeric rules are
+incorporated: inclusive safe-int domain, finite binary64/subnormals, bool distinct,
+no implicit conversions or Decimal/Fraction/complex, generic canonical equalities,
+stricter owning contracts preserved, value hard failure versus evidence soft failure.
+PersistedProjection and facet codec reference the same owner; Layer-2 configuration
+keeps its own contracts. No discrepancy found in this scoped comparison.
+Ran check_v3_specs.py --issue CA4-96 and --open: 8 layers, 128 contracts, 96 issues,
+0 open, 72 reviews. git diff --check passed. Structural/scenario review only, no
+behavioral implementation/test or benchmark. Updated own handoff/context/resume and
+policy status; no planning edit or commit. This supersedes earlier numeric-pending
+checkpoints. rfc8785 library/version and frozen payload implementation remain to agree.
+
+## Concrete codec / freeze — approved on 2026-10-14
+
+User asked to proceed to library/frozen payload selection. No application implementation
+started. Planning is now clean `9cd077e` (CA4-97): Layer 2 §2.4 explicitly applies the
+Layer-1 domain to formula-result payloads, preserving configuration-specific limits.
+CA4-97 leaves the agreed numeric domain unchanged.
+
+Propose rfc8785==0.1.4, isolated behind canonical_json_bytes; private copied dicts
+with MappingProxyType, list-to-tuple deep freezing, qualifying dataclass type retained
+with frozen fields, explicit JSON projection for the serializer. Never pass raw HA
+objects or arbitrary mappings/tuples directly into the third-party codec and treat
+its wider acceptance as the input contract. Fact equality/hash must use canonical
+content, not auto-generated Python collection comparisons/hash. Stable digests remain
+separate from local Python hash. No codec framework or CBOR implementation now.
+
+Fetched official PyPI 0.1.4 metadata and universal pure-Python wheel to /private/tmp.
+Requires Python >=3.8, no runtime dependencies. SHA256 verified:
+520d690b448ecf0703691c76e1a34a24ddcd4fc5bc41d589cb7c58ec651bcd48.
+Loaded wheel via sys.path using project native Python 3.14.5 -B, without installing
+it into .venv-v3 or changing requirements. 13 targeted checks passed: safe-integer
+extremes/rejection of next integers, finite minimum subnormal, signed-zero canonical
+form, 1.0 form, bool distinction, UTF-16 object-key order and tuple-array encoding,
+NaN/infinities rejected. Separate check confirmed MappingProxyType unsupported by
+raw library; explicit projection is needed. This is a library compatibility probe,
+not full conformance/Heima behavioral testing or a performance benchmark.
+
+Proposed first slice is now the shared payload validation/freezing/canonical codec
+(Layer 1 §3, L1-NUMERIC-DOMAIN / L1-DEEP-IMMUTABILITY, plus §4 projection shapes),
+before full HouseFact assembly. This revises the earlier EvidenceInstant-first
+proposal; user has now approved this implementation scope and rfc8785 0.1.4, requested the
+preceding instruction changes be committed, then this first slice implemented.
+Candidate files canonical_json.py/payloads.py and focused tests/evidence; exact API
+remains to agree. Apply all five behavioral testing methods to changed own code,
+and standard JCS vectors to verify the dependency boundary.
+Only WORKING_CONTEXT updated; existing pending handoff edits preserved. No code,
+installation, spec edit or commit. Patch hygiene checked.
+
 ## Next action
 
-Point 2 is complete as a package skeleton. Discuss point 3 next: the exact first
-behavioral slice and its modules/APIs. Real qualified package imports are verified;
+Numeric domain is approved and incorporated by CA4-96. Planning stays read-only here. Implement the approved rfc8785 0.1.4 / private-mapping-and-tuple shared payload
+codec. Current scope: canonical_json.py/payloads.py, pinned runtime dependency,
+focused tests, all five test-method evidence and handoff updates. No HouseFact
+assembly, HA, storage, deployment or spec changes in this slice.
+No application code or additional commit made in this approval-recording task;
+`git diff --check` passed, and no behavioral tests ran.
+
+
+Point 2 is complete as a package skeleton. Continue point 3: discuss the full fact model and its module/API boundaries, then
+agree on the first behavioral slice. Real qualified package imports are verified;
 the HA adapter must preserve this import boundary when it is implemented.
 Point 1 is done;
 use `.venv-v3` and the dedicated configs/requirements, not the Intel system Python or
 V2 dependency pins. HA release/harness selection, concrete queue/writer/schema,
-scheduler/clock, test lab and proposed Git/deploy policies remain later work. Do not
-implement the proposed first contract before the developer agrees on its scope/API.
+scheduler/clock, test lab and proposed Git/deploy policies remain later work. The developer approved the shared payload/codec first slice; continue that scope.
