@@ -10,7 +10,8 @@ instructions override the next action below.
   `feat/v3-implementation`, branched from planning `0063da4`; the previous instruction commit is `6fe67b8`.
   The current environment/tooling files are included in the developer-requested commit;
   use `git log -1` and status for the latest revision each session.
-  The first pure V3 payload/codec slice and behavioral tests are implemented locally.
+  Payload/codec, temporal contracts and review fix are committed as `e3e4314`.
+  The AtJob dispatcher and its tests are implemented locally, not committed.
   No HouseFact assembly, HA runtime adapter, storage or deployment exists here.
   The dedicated native Python/test-tool environment is ready; its probes ran in /private/tmp.
 - Authoritative specs: sibling `../ha-heima-component-v3-planning`, branch
@@ -530,10 +531,57 @@ and HA/live integration remain unverified/unimplemented as previously recorded.
 
 All preceding local implementation changes preserved; review edits also uncommitted.
 
+## AtJob dispatcher — 2026-10-14
+
+User requested commit then continuation. Created signed commit e3e4314 for payload,
+temporal contracts, reviewed nested-duration fix, test evidence and handoff. Worktree
+was clean after commit. Planning remains 9cd077e (clean), read-only.
+
+Implemented runtime/timing.py: explicit monotonic timer port, register/cancel keyed
+by (owner, job_id), once-only handoff, stale-arm suppression, selective wall_clock
+re-arm against unchanged due, cancellation of all pending arms. Admission revalidates
+AtJob; failed validation or timer scheduling preserves existing registrations.
+Timer calls/dispatch must be serialized and callbacks deferred. This small port/API
+is an implementation choice respecting §§3.1/3.5, with no new dependency or policy.
+Layer 5 retains generation/activation/arm-revision checks after handoff.
+
+Tests: 25 new, 241 total passing, seed 3145; 59 scheduler statements/18 branches
+covered. Ruff/type/format/patch checks pass. Five-method evidence in
+ testing/ATJOB_DISPATCH.md; no compound Boolean gates in new module, so MC/DC has no
+new compound decision. Fresh mutmut: 95 total, 87 killed, 8 survivors (only generic
+TypeError prose), all exact diffs reviewed in testing/ATJOB_MUTANT_REVIEW.md.
+Updated default mutation scope to include this module and tests/v3.
+
+New dispatcher/tests/docs/config changes remain uncommitted. No concrete timer/HA
+adapter, diagnostic emission, clock discontinuity detection/gaps, recurrence next-due,
+DST execution, persistence or live verification was implemented. This internal API
+raises admission errors for the future runtime boundary to diagnose; it does not
+claim completion of all §3.1 service requirements. No specs/push/deploy changed.
+
+## Hardware portability steering — 2026-10-14
+
+The user requires AtJob correctness on Raspberry Pi through desktop hardware.
+Reviewed dispatcher under this constraint and official HA/Python documentation.
+Added four tests/properties for delayed dispatch, overdue invalidation/replacement,
+and a reversed-order burst of 1000 equal-deadline jobs. Complete suite 245 passes
+(seed 3145); lint/format pass. This is simulated semantic verification, not hardware
+performance evidence. Production source unchanged, prior mutation scope still valid;
+no additional mutation/benchmark claim. Test/docs changes remain uncommitted alongside
+the preceding dispatcher block; e3e4314 remains last implementation commit.
+
+Found a concrete adapter requirement: asyncio call_later/call_at may wake one clock
+resolution early. The unimplemented concrete adapter must preserve minimum elapsed
+deadlines with a monotonic due check and account for clock resolution without busy
+waiting. Representational microseconds do not imply timer precision or latency.
+Brief owner handoff/no blocking work follows existing code rules. Do not silently
+add hardware-specific rounding, grace periods, lateness discard or queue limits.
+See testing/ATJOB_DISPATCH.md for sources and remaining verification.
+
 ## Next action
 
-Continue Layer 0 from these verified temporal contracts: monotonic AtJob dispatch
-and replace/cancel semantics, with injected timer/clock and scheduler-specific
-five-method tests. Read §§3.1/3.5 and dependencies before fixing its API; preserve
-elapsed versus wall-clock semantics and DST single-firing policy. Complete required
-foundation dependencies alongside runtime slices. Git/deploy proposals remain open.
+Prioritize the concrete monotonic timer adapter and early-wakeup/coarse-clock tests
+before claiming complete or portable AtJob execution. Then continue cycle-clock and
+clock-discontinuity classification (Layer 0 §3.5), recurrence next-due/DST execution
+and HA integration. Re-read authoritative contracts first. Measurements on actual
+ARM/desktop hardware await an isolated HA harness; thresholds/devices remain undecided.
+Git/deploy policy proposals remain pending review.

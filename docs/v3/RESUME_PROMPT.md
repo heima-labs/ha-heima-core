@@ -100,3 +100,25 @@ evidence. Current suite: 216 passed; 10 supplementary timing mutations killed;
 Ruff/type/format pass. Earlier mutmut counts describe the preceding revisions.
 All implementation/review changes remain uncommitted. Next work remains the
 injected-clock monotonic scheduler; no HA runtime/storage completion is implied.
+
+
+## Latest checkpoint — AtJob dispatcher
+
+Payload/temporal/review block committed as e3e4314 at the user's request. The new
+runtime/timing.py dispatcher and tests are local, uncommitted: 241 total tests pass;
+95 new-scope mutants, 87 killed, 8 generic-error-prose survivors reviewed. Read
+WORKING_CONTEXT and testing/ATJOB_DISPATCH.md. The injected monotonic timer port
+has no concrete adapter yet. Cycle clock/discontinuities, diagnostic emission and
+recurring next-due/DST execution remain pending; next action is Layer 0 §3.5.
+Earlier uncommitted notes and scheduler-next notes are historical.
+
+
+## Hardware portability steering
+
+AtJobs must work correctly from Raspberry Pi to desktop hardware. Latest suite is
+245 passing with simulated delayed callbacks and equal-deadline bursts; no actual
+ARM/HA benchmark has run. Read WORKING_CONTEXT and ATJOB_DISPATCH.md: asyncio may
+wake early by a clock-resolution, so the concrete timer adapter needs monotonic
+minimum-deadline protection. Prioritize this adapter verification before the cycle
+clock. No hardware-specific minimum, lateness/grace policy or device matrix was
+approved. Pending dispatcher/test/docs changes remain uncommitted.
