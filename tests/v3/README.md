@@ -32,3 +32,8 @@ CA4-100 evidence: `docs/v3/testing/CA4100_DEADLINES.md` and `CA4100_MUTANT_REVIE
 `mutation_deadlines.py` checks immutable overflow diagnostics. Default scope nine
 modules; interval representation resolved. Full lifecycle/calendar/HA integration
 remains separate from single-arm calculation and admission.
+
+Standing interval lifecycle: `docs/v3/testing/INTERVAL_LIFECYCLE.md` and its mutant
+review. Supplement: `mutation_interval_recurrences.py`. Default scope ten modules.
+Shared dispatch is reused; this service is process-local, with explicit clock and
+diagnostic ports. Weekly lifecycle and actual HA/persistence wiring are pending.

@@ -800,3 +800,44 @@ occurrence protection during clock/timezone changes. Re-read current Layer 0
 §3.1/§3.5/§9/§13 first and surface any missing policy. Static calendar horizon
 staging and diagnostic publication belong to future coordinators/adapters.
 Git/deploy proposals remain pending review.
+
+
+## Latest checkpoint — standing interval lifecycle, 2026-10-14
+
+Committed all verified weekly and CA4-100 changes at user request: signed b2bff62,
+feat: add V3 recurrence planning and exact deadline construction. Clean before this
+slice. Earlier uncommitted notes are superseded. Planning rechecked clean 34ce913,
+read-only; Layer 0 §3.1/§3.5/§9/§10/§13 apply.
+
+Added runtime/interval_recurrences.py::IntervalRecurrences for standing interval
+rules. It uses the existing planners and shared monotonic dispatcher, explicit fresh
+clock capture and non-raising diagnostic sink. Callback failures are diagnosed and
+finally re-arm the current rule; reentrant cancel/stop/replacement cannot resurrect
+an older rule. Replacement admission failure preserves accepted state. Overflow
+is reported before changing timers. Re-arm infrastructure failure/overflow retains
+the standing definition with no pending timer and an explicit diagnostic; no retry
+policy invented. Stop cancels only owned registrations; restart from supplied rules
+arms fresh from now, without recovering countdowns.
+
+469 tests pass, 24 new, seed3145; Ruff lint/format, mypy and diff pass. Five-method
+matrix in testing/INTERVAL_LIFECYCLE.md. Fresh mutmut: 119 generated, 107 killed,
+12 generic-prose equivalents, no timeout/error/skipped; exact diffs in
+INTERVAL_LIFECYCLE_MUTANT_REVIEW.md. Three public diagnostic frozen-record mutants
+killed by mutation_interval_recurrences.py with a passing baseline. Default scope
+now ten modules. No new dependency, policy or timing threshold.
+
+New lifecycle slice remains uncommitted; last signed commit b2bff62. Not yet a full
+CronEntry service: weekly served-occurrence protection and timezone updates are
+pending. Persistence of standing rules and automatic HA restart restoration,
+HA diagnostic logging/publication, one-shot callback fault-boundary integration,
+calendar staging and clock coordinator remain future work. No live HA/ARM/deploy
+claim. Diagnostic sink must log/publish promptly without raising; this service does
+not silently swallow infrastructure sink failures.
+
+### Exact next action
+
+Review the interval lifecycle before committing its slice, then implement weekly
+lifecycle and served-occurrence identity/timezone re-arm against current Layer 0
+§3.1/§3.5/§9/§13. Keep basis-specific references and CA4-100 deadline rule. Clarify
+any missing occurrence policy through the existing Claude workflow rather than
+choosing silently. Git/deploy proposals remain pending developer review.
