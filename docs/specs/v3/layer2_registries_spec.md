@@ -1436,10 +1436,8 @@ configuration object: `opening_id`, `solar_binding_id`, and `mode` equal to
 `geometry_proxy` or `incident_irradiance`. Its pure compiler rejects extra
 fields; its binding validator resolves the registered opening and its
 orientation from the staged Topology. The frozen core compass-azimuth mapping
-accepts exact `north`, `northeast`, `east`, `southeast`, `south`,
-`southwest`, `west`, or `northwest`, maps them to 0, π/4, π/2, 3π/4,
-π, 5π/4, 3π/2, or 7π/4 radians clockwise from north, and rejects an
-unsupported string. Its version and the exact opening/topology fingerprint
+covers Layer 1's closed `CompassOrientation` (`north` … `northwest`) and maps
+it to 0, π/4, π/2, 3π/4, π, 5π/4, 3π/2, or 7π/4 radians clockwise from north. Its version and the exact opening/topology fingerprint
 enter the compiled configuration. The first mode requires current
 `external.solar_elevation` and
 `external.solar_azimuth` inputs at `casa` and produces a dimensionless
@@ -2364,8 +2362,8 @@ this layer.
   or to any code that pattern-matches on it, verified by adding a second formula in a test without
   touching the union type.
 - `environment.solar_incidence.v1` stages separately for a north-facing and south-facing
-  opening, freezing each resolved orientation and topology fingerprint. An unsupported
-  orientation, duplicate binding, wrong room, missing angle fact, or irradiance-mode
+  opening, freezing each resolved orientation and topology fingerprint. A missing
+  orientation (Layer 1 `CompassOrientation` admits no other value), duplicate binding, wrong room, missing angle fact, or irradiance-mode
   input without the declared canonical W/m² unit fails staging. Geometry mode yields a
   dimensionless proxy and cannot claim W/m² exposure. At or below zero solar
   elevation, the geometric direct component is zero even for a matching

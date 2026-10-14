@@ -807,6 +807,10 @@ A role binding adds no field to `Zone` and does not make zones exclusive or nest
 ## 7. `Topology`
 
 ```python
+OpeningType = Literal["door", "window", "door_window"]
+CompassOrientation = Literal["north", "northeast", "east", "southeast",
+                             "south", "southwest", "west", "northwest"]
+
 @dataclass(frozen=True)
 class Opening:
     opening_id: str
@@ -816,13 +820,12 @@ class Opening:
                                        # graph data, not fact attribution, and its own `exposure_by_room`/
                                        # `floor_by_room` fields below are keyed by this same plain
                                        # `room_id`, never by `Location`
-    type: str                        # e.g. "door", "window", "door_window"
-    orientation: str | None = None   # compass orientation, populated for window-bearing openings —
-                                       # this is exactly what `exposure_by_room` below is derived from
-    entity_id: str | None = None     # an optional HA entity tracking this opening's live state — a
-                                       # reference only; `Topology` itself never reads live entity
-                                       # state, same non-live-dependency discipline as `Sensor.device_id`
-                                       # (Layer 2 §3)
+    type: OpeningType                # closed core vocabulary; `door` and `door_window` are passable,
+                                       # `window` is not
+    orientation: CompassOrientation | None = None
+                                       # the direction the opening faces; optional, required only by
+                                       # the consumers that use it (e.g. Layer 2's solar formula);
+                                       # `exposure_by_room` below is derived from it
     other_side: str = "outside"      # what lies across this opening: a registered room id or the
                                        # reserved "outside". Declared for every opening, windows
                                        # included (added 2026-10-11, CA4-62); "outside" is the default
@@ -876,7 +879,10 @@ removes duplicate orientations. A
 serialized derived view that disagrees with this recomputation is rejected. Topology registration also
 resolves every `Opening.room_id`, non-`outside` `Opening.other_side` and `ResolvedConnection.room_b`, and derived-view room key
 against the Room registry; unknown ids, duplicate opening/connection ids, or a broken opening-owner
-link are errors. A `ResolvedConnection` exists exactly for each passable `door` or `door_window`
+link are errors. `type` and `orientation` accept only their closed vocabularies; a new opening type
+or orientation needs a new core version and review. An opening's live state is never a Topology
+field: it comes from a `Sensor` with `related_opening_id` or an `Actuator` channel with
+`opening_id` (Layer 2 §3, §6). A `ResolvedConnection` exists exactly for each passable `door` or `door_window`
 opening and its `room_b` equals that opening's `other_side`; a `window` has no connection. Its
 canonical fingerprint is the shared RFC-8785 serialization of those canonical
 primary data and derived views, excluding each `Opening.display_name`, which is presentation
@@ -921,8 +927,8 @@ packaging, presenting the query-time, already-resolved view a Layer 1 consumer r
 "queried, not consumed as a stream," below) rather than the admin-authored `Connection` shape that
 produces it. In V3 there is no separately authored `Connection`: administrators edit `Opening`
 records (Layer 8), and every connection is derived from a passable opening. V2's `connection_id` and
-`access_type` are not carried over (CA4-84): no V3 consumer reads them, and a future consumer adds
-its own reviewed field.
+`access_type` are not carried over (CA4-84), nor is V2's per-opening `entity_id` (CA4-92): no V3
+consumer reads them, and a future consumer adds its own reviewed field.
 
 **`Topology` deliberately has no `casa` node — resolved 2026-09-02, not an oversight.** An early
 planning note (predating `Topology`'s own separation from `Location`/`Zone`) said the whole-house
@@ -1007,6 +1013,9 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
 
 ## 10. Acceptance criteria (for the eventual implementation phase)
 
+- `Opening.type` and `Opening.orientation` reject any value outside `OpeningType` and
+  `CompassOrientation` (for example `"Porta"` or `"N"`); a serialized opening carrying `entity_id`
+  is rejected as an unknown field; an opening without orientation is valid (§7).
 - Topology has no stored `connection_type`. `opening_faces_exterior` is `True` for a window with
   default `other_side="outside"`, for a door to a room whose enclosure is `exterior` (terrace), and
   for an opening owned by an exterior room; it is `False` for a window or door toward an `interior`
