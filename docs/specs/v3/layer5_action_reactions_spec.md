@@ -563,8 +563,11 @@ the plan contains no callable. Layer 5 resolves the implementation from the
 frozen descriptor/version registry and calls it once per evaluation attempt
 with that plan, the current `DecisionSnapshot`, the current activation state
 (or no activation before start), and any validated current boundary token
-from §6.0. Its closed decision is one of `not_started`,
-`ongoing`, `normal_exit`, or `abstained`, and carries at most one selected
+from §6.0. Its closed decision is one value of the common
+`ReactionEvaluationOutcome` (§5.2), restricted to `not_triggered` (no
+activation starts), `eligible` (the activation is active, with zero or more
+selected steps), `normal_exit` or `abstained`; Layer 5 alone adds
+`guards_unsatisfied` after applying guards. It carries at most one selected
 current step per affected channel, at most one next timed boundary for the
 activation, and the existing `ReactionNormalExitResult` only for
 `normal_exit`. If a descriptor declares a final target at normal exit, that
@@ -1918,6 +1921,7 @@ ReactionEvaluationOutcome = Literal[
     "guards_unsatisfied",
     "abstained",
     "eligible",
+    "normal_exit",       # step-programmed descriptors only: verified end of the activation
 ]
 
 @dataclass(frozen=True)
@@ -1940,23 +1944,30 @@ The independent §3.2 post-restart active-channel notice does not relabel a
 `not_triggered` result as an action attempt. `abstained` means a
 required semantic input is missing, stale or invalid, or the context lies outside the envelope; it uses
 Layer 3 §6.3.1's availability-occurrence contract, with Layer 5 as suppression owner. Only `eligible`
-proceeds to action admissibility. It is still not a command and contains neither an `ApplyStep` nor a
-raw HA target.
+and, for its declared terminal step, `normal_exit` proceed to action admissibility. Neither is a
+command; neither contains an `ApplyStep` or a raw HA target. One-shot and step-programmed Reactions
+use this one vocabulary: a program's `evaluate_program` returns it directly (§3.2), and an active
+program waiting for its next boundary is `eligible` with no selected step.
 
-An `eligible` result has the current nonempty activation id; an absent id
+An `eligible` or `normal_exit` result has the current nonempty activation id; an absent id
 cannot compile an automatic bundle. A non-eligible result retains the id of
 an already active sequence, if one exists, without minting a replacement on
 abstention or guard failure. Outcome validation is closed: `not_triggered` has exactly `("trigger_not_matched",)` as its evaluation
 reasons; `guards_unsatisfied` has exactly `("semantic_guard_unsatisfied",)`; `abstained` has no
 evaluation reason and a non-empty canonical Layer-3 `AutomationSuppressionReason` tuple; `eligible`
-has both tuples empty. No `ReactionEvaluationResult` may carry an arbitrary string.
+and `normal_exit` have both tuples empty. No `ReactionEvaluationResult` may carry an arbitrary string.
 
 #### Decision record
 
-Every evaluation whose outcome is not `not_triggered` — a fired trigger or a program evaluation —
-appends one `reaction.decision` event fact, so "why did it act, or not act, at that time" has an
-exact durable answer. A `not_triggered` evaluation appends nothing: the history of the trigger's
-own state fact already explains why nothing fired.
+Each configured Reaction has one Layer-5 decision state, so "why did it act, or not act, at that
+time" has an exact durable answer. It is the state fact `reaction.decision.<digest>`, where
+`<digest>` is the full lowercase SHA-256 hex of RFC-8785 canonical JSON over `[reaction_id]`, at the
+Reaction's `subject`. Each Reaction-catalog entry contributes its exact `(fact_type, Location)`
+state claim at staging under Layer 0 §4's reserved pattern. Every evaluation submits its current
+value as a candidate; Layer 0's ordinary write-on-change (§4.2 of Layer 0) persists only a changed
+value. An evaluation outcome that repeats over many cycles, such as a long abstention, therefore
+writes once, and a typical trigger firing writes twice (to `eligible`, then back to
+`not_triggered`).
 
 ```python
 @dataclass(frozen=True)
@@ -1965,9 +1976,8 @@ class ReactionDecisionValue:
     reaction_descriptor_id: str
     configuration_generation_id: str
     reaction_activation_id: str | None
-    snapshot_id: str
     execution_mode: ReactionExecutionMode       # at evaluation; trial mode is recorded too
-    outcome: Literal["guards_unsatisfied", "abstained", "eligible"]
+    outcome: ReactionEvaluationOutcome
     evaluation_reason_codes: tuple[ReactionEvaluationReasonCode, ...]
     suppression_reason_codes: tuple[AutomationSuppressionReason, ...]
     failed_guard_capabilities: tuple[str, ...]  # capability_ids of the failed guard bindings, canonical order
@@ -1975,19 +1985,21 @@ class ReactionDecisionValue:
     admission_suppression_codes: tuple[AutomationSuppressionReason, ...]  # empty unless blocked
 ```
 
-`failed_guard_capabilities` names, by `capability_id` (§3.2), the guards that failed: the
-semantic guards of a `guards_unsatisfied` evaluation and the action guards behind an
-`action_guard_active` admission block, so the explanation never has to guess which guard failed. A
-guard profile generation has exactly one binding per capability, so the id together with the
+The value contains no per-cycle identity: the cycle is identified by the fact's `when` and
+`correlation_id`, so an unchanged decision is not rewritten and a retried evaluation is idempotent
+under write-on-change. `failed_guard_capabilities` names, by `capability_id` (§3.2), the guards
+that failed: the semantic guards of a `guards_unsatisfied` evaluation and the action guards behind
+an `action_guard_active` admission block, so the explanation never has to guess which guard failed.
+A guard profile generation has exactly one binding per capability, so the id together with the
 record's `configuration_generation_id` identifies the exact binding and its limits; the capability
-version comes from that generation, keeping the value a flat tuple of strings. `admission` is `not_reached` unless the outcome is `eligible` in `automatic`
-mode. The fact uses `where=subject`, the cycle instant as `when`, and
-`FactSource(kind="system", source_id="layer5.reaction_decision")`; its identity is the evaluation
-identity `(reaction_id, configuration_generation_id, snapshot_id, reaction_activation_id)`, so a
-retried evaluation appends it once. It is audit and explanation evidence only: never a
-notification, a command, a learning outcome or an authority input. It is appended with the
-cycle's other facts through ordinary Layer-0 persistence (an in-memory append, durable write
-asynchronous) and keeps the default 14-day retention. Its value is bounded by the staged guard
+version comes from that generation, keeping the value a flat tuple of strings. `admission` is
+`not_reached` unless the outcome is `eligible` or `normal_exit` in `automatic` mode with at least
+one selected step. The fact is always available, uses the cycle instant as `when` and
+`FactSource(kind="system", source_id="layer5.reaction_decision")`. It is audit and explanation
+evidence only: never a notification, a command, a learning outcome or an authority input. It joins
+the cycle's ordinary Layer-0 batch, keeps the default 14-day retention for superseded values, and
+its latest value is never pruned (Layer 0 §4.3). Because the fact type is per Reaction, the
+per-type record ceiling bounds each Reaction separately. Its value is bounded by the staged guard
 and reason vocabularies and fits Layer 1's depth-two/8 KiB limits.
 
 ## 6. Action admissibility and execution
@@ -4869,11 +4881,13 @@ profile or learner, and declares `requires_household_consent=True`,
   scope. The availability occurrence contains neither rendered text nor an
   Actuator/HA id and does not use `reaction.follow_up`'s prepared-intent
   write (§3.2; Layer 3 §6.3.1).
-- An evaluation whose trigger fires and whose wind guard blocks admission appends one
-  `reaction.decision` with `outcome="eligible"`, `admission="blocked"`,
-  `admission_suppression_codes=("action_guard_active",)` and `failed_guard_capabilities=("wind",)`; a
-  `not_triggered` evaluation appends none; a retried evaluation appends no second fact; a Reaction
-  in `notification_only` records `admission="not_reached"`.
+- An evaluation whose trigger fires and whose wind guard blocks admission changes the Reaction's
+  `reaction.decision.<digest>` state to `outcome="eligible"`, `admission="blocked"`,
+  `admission_suppression_codes=("action_guard_active",)` and `failed_guard_capabilities=("wind",)`;
+  the next `not_triggered` evaluation changes it back. A required input unavailable for a day writes
+  one `abstained` value, not one per cycle; a retried evaluation writes nothing new; a Reaction in
+  `notification_only` records `admission="not_reached"`. An active program waiting for its next
+  boundary is `eligible` with `admission="not_reached"`, and its verified end is `normal_exit`.
 - Renaming an `automatic` Reaction commits a new Layer-5 layer generation pointing to the same
   configuration generation: mode, consent, activations and jobs are unchanged and the impact record
   is empty. Two Reactions named "Bathroom fan" and "bathroom fan " are rejected; a second

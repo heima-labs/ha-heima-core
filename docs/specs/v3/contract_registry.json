@@ -1513,6 +1513,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-89",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-89.md",
+      "contracts": ["L5-DECISION-RECORD", "L5-PROGRAM-START", "L0-STATE-HISTORY", "L0-RETENTION", "L8-EXPLANATIONS"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

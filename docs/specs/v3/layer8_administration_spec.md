@@ -230,9 +230,9 @@ class ExplanationNode:
 The chain is built on demand, by a slow-path query, from:
 
 - `ApplyStep` sources, `actuator.target_lifecycle` and follow-up facts for an effect;
-- `reaction.decision` for a fired evaluation (outcome, reasons, failed guard capabilities,
-  admission), Layer 5 §5.2;
-- the trigger's own state history when no decision exists ("nothing fired");
+- the Reaction's `reaction.decision.<digest>` state at that time (outcome, reasons, failed guard
+  capabilities, admission), reconstructed as of T like any state fact (Layer 5 §5.2, Layer 0 §4.0);
+- the trigger's own state history, to detail a `not_triggered` decision ("nothing fired");
 - semantic facts with their evidence and the `correlation_id` of the same cycle for conclusions
   and their inputs;
 - the configuration generation active at that time (Layer 0 §4.7) for thresholds and bindings;
@@ -438,9 +438,9 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   mutation, rebased, re-previewed; a conflicting field edit is shown for resolution.
 - Restoring a generation that contained a since-removed Reaction proposes recreating it in
   `notification_only`; removing that entry from the set leaves the Reaction absent.
-- "Why did the awning not lower at 15:00?" returns the `reaction.decision` chain when the trigger
-  fired, the trigger's state history when it did not, the generation thresholds of that time, and
-  `data_unavailable` beyond retention.
+- "Why did the awning not lower at 15:00?" returns the Reaction's decision state as of 15:00, with
+  the trigger's state history when it was `not_triggered`, the generation thresholds of that time,
+  and `data_unavailable` beyond retention.
 - The house map shows occupancy within one committed cycle of a change, with no polling; a room
   removed from configuration disappears from the map and its entity from HA.
 - Every published entity is read-only, `unavailable` when its fact is unavailable (an activity

@@ -307,8 +307,9 @@ but are audit/learning evidence, not rendered `HeimaEvent`s. Their sole producer
 values are Layer 0 §5.1.1 and Layer 5 §6.1 respectively, under Layer 0 §4's exclusive
 `FactTypeClaim`s. Neither uses `OperationalEventValue` or creates a resident notification by
 itself; both still follow the ordinary `HouseFact` envelope and event-history rules.
-`reaction.decision` is a non-rendered event fact owned only by Layer 5 §5.2: the outcome, reasons,
-failed guards and admission result of one evaluation whose trigger fired, kept for explanation.
+`reaction.decision.<digest>` is a non-rendered **state** fact, one per configured Reaction, owned
+only by Layer 5 §5.2: the current evaluation outcome, reasons, failed guards and admission result,
+written only when they change and kept for explanation.
 `actuator.target_lifecycle` is another non-rendered event fact, owned only
 by Layer 5 §6.1 for admitted decision/complete-observation/close history.
 `actuator.channel_state.<digest>` is the distinct Layer-0-owned **state**

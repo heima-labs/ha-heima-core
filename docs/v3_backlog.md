@@ -5174,9 +5174,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87 | 0 | 0 | 39 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88 | 0 | 0 | 37 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–89 | 0 | 0 | 38 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84 | 0 | 0 | 10 | 0 |
-| **Total** | **88 findings** | **0** | **0** | **87** | **1** |
+| **Total** | **89 findings** | **0** | **0** | **88** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-89 — The decision record wrote once per cycle and programs had a second outcome vocabulary
+
+**Status:** DONE (2026-10-14; specification readiness). **Severity:** P2. **Origin:** CA6 full reread (S4).
+
+**Problem.** Layer 5 evaluates every enabled Reaction against every `DecisionSnapshot`, and CA4-79 appended one `reaction.decision` event for every non-`not_triggered` evaluation. A Reaction abstaining on a missing input, or a running program, therefore wrote one fact per cycle, not one per trigger firing as estimated, and could exhaust the per-type ceiling; its "appended once" retry rule had no Layer-0 deduplication. Separately, `evaluate_program` returned its own vocabulary (`not_started`, `ongoing`, `normal_exit`, `abstained`), never mapped to `ReactionEvaluationOutcome`, so a program's recorded decision was undefined.
+
+**Approved resolution (2026-10-14).** The decision is a per-Reaction state fact `reaction.decision.<digest>` (digest over `[reaction_id]`, reserved pattern `reaction.decision.*`, owner `layer5.reaction_decision`), whose value holds no per-cycle identity; ordinary write-on-change persists only changes, makes retries idempotent, keeps the latest value unpruned, answers "why at T" through ordinary as-of reconstruction, and bounds each Reaction under its own per-type ceiling. `ReactionEvaluationOutcome` is the one vocabulary for one-shot and programmed Reactions and gains `normal_exit`; `evaluate_program` returns it directly (an active program waiting for its next boundary is `eligible` with no selected step). This supersedes the event shape of CA4-79; a change-suppressed event, recording only fired triggers, and keeping two vocabularies or renaming to new lifecycle names were rejected. See the [CA4-89 review](specs/v3/reviews/CA4-89.md); no V3 runtime test ran.
 
 #### CA4-88 — Published activity entities contradicted Layer 4 and would always look broken
 

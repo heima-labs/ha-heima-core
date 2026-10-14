@@ -568,9 +568,11 @@ The core reserves `FactTypeClaim(fact_type_pattern="actuator.target_lifecycle",
 owner_id="layer5.target_evidence", emission_kind="event")` for the
 admitted-target historical phases of Layer 5 §6.1. It is audit/learning
 evidence, not a second command or live target authority.
-The core reserves `FactTypeClaim(fact_type_pattern="reaction.decision",
-owner_id="layer5.reaction_decision", emission_kind="event")` for the Layer-5 decision record of
-every evaluation whose trigger fired (Layer 5 §5.2); it uses the default retention.
+The core reserves `FactTypeClaim(fact_type_pattern="reaction.decision.*",
+owner_id="layer5.reaction_decision", emission_kind="state")` for the per-Reaction Layer-5
+decision state (Layer 5 §5.2). Each Reaction-catalog entry contributes its exact
+`(fact_type, Location)` claim; ordinary write-on-change persists only changed decisions, and the
+default retention applies to superseded values.
 The core reserves `FactTypeClaim(fact_type_pattern="reaction.managed_episode.*",
 owner_id="layer5.managed_episode", emission_kind="state")` for the
 per-channel confirmed-episode projection of §5.1.1.2. Only a staged
