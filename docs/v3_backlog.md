@@ -5174,9 +5174,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87 | 0 | 0 | 39 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–89 | 0 | 0 | 38 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–90 | 0 | 0 | 39 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84 | 0 | 0 | 10 | 0 |
-| **Total** | **89 findings** | **0** | **0** | **88** | **1** |
+| **Total** | **90 findings** | **0** | **0** | **89** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-90 — Removing a Reaction had no lifecycle
+
+**Status:** DONE (2026-10-14; specification readiness). **Severity:** P2. **Origin:** CA6 full reread (S5).
+
+**Problem.** Layer 8 allowed removing a Reaction and restoring it, and Layer 0 §7.4, Layer 5 and Layer 8 §10.2 presupposed removed Reactions, but no layer defined what removal did to the running activation, jobs, holds, managed episode, open advisory and consent request, the decision claim, pending proposals and the reuse of the id. Separately, a pending artifact-adoption proposal naming a superseded configuration generation stayed pending and not approvable forever, since that generation can never become current again.
+
+**Approved resolution (2026-10-14).** Removal drops the catalog entry in an ordinary composed commit that applies the existing invalidation effects (authority disabled, future jobs cancelled); every other effect follows existing revocation rules (no follow-up or terminal call, advisory and consent closed `authorization_disabled`, owned hold invalidated `authority_revoked`, managed episode closed, recovery facets filtered, bindings closed `binding_deactivated`, entity removed), plus one terminal `available=False` decision fact. Root, generations and transitions stay as history; a `reaction_id` is never reassigned; restore appends a successor generation to the same root in `notification_only`. Learner-origin Reactions may be removed; their restore must equal a committed configuration. Pending adoption proposals naming a generation that is replaced or removed close in that commit as `proposal_incompatible` with the new transition code `target_generation_not_current`. Archiving and physical deletion were rejected. See the [CA4-90 review](specs/v3/reviews/CA4-90.md); no V3 runtime test ran.
 
 #### CA4-89 — The decision record wrote once per cycle and programs had a second outcome vocabulary
 

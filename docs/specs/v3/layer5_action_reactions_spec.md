@@ -929,6 +929,7 @@ ProposalTransitionReasonCode = Literal[
     "accepted_by_admin",
     "rejected_by_admin",
     "candidate_kind_incompatible",
+    "target_generation_not_current",
 ]
 
 ProposalReadinessReasonCode = Literal[
@@ -983,7 +984,7 @@ class Layer5DiagnosticRegistry:
 
 The initial registry contains exactly the literals above. A transition code is valid only for its
 corresponding disposition: `accepted_by_admin` -> `accepted`, `rejected_by_admin` -> `rejected`, and
-`candidate_kind_incompatible` -> `proposal_incompatible`. Readiness codes are duplicate-free and in
+`candidate_kind_incompatible` and `target_generation_not_current` -> `proposal_incompatible`. Readiness codes are duplicate-free and in
 registry canonical order; `approvable` readiness has an empty tuple.
 
 #### Governance command results
@@ -1317,9 +1318,14 @@ eligibility and, for a successor, pinned compatibility under §4.2. It atomicall
 that revision. The transition names the existing Reaction in
 `configured_reaction_id`; no Reaction root or configuration/authority
 generation is created, and existing administrative authorization and
-household consent remain as they were. A stale generation, superseded
-revision or failed eligibility check leaves the proposal pending with a
-typed readiness assessment; it cannot adopt by merely becoming available.
+household consent remain as they were. A superseded revision or failed
+eligibility check leaves the proposal pending with a typed readiness
+assessment; it cannot adopt by merely becoming available. The generation it
+names can never become current again, so the composed commit that appends a
+successor configuration generation of that Reaction, or removes the Reaction
+(§4.2), also closes every pending adoption proposal naming the old generation
+as `proposal_incompatible` with `target_generation_not_current`, under the
+closed `system` actor and in the same transaction.
 
 An authenticated rejection appends a typed `rejected` `ProposalReviewTransition`. A candidate with the
 same canonical deduplication fingerprint cannot silently reopen that decision; a semantic configuration
@@ -1660,6 +1666,24 @@ change keeps the Reaction's generation and authority unchanged; it appears in th
 the administrator can decide whether to edit or disable it. The dispatch fence (§6.0) rejects any
 unsent call of an invalidated generation.
 
+**Removal.** Any Reaction, admin-direct or learner-origin, may be removed by a configuration edit
+that drops its catalog entry; it commits as an ordinary composed generation. The same commit applies
+the invalidation effects above: it appends an authority transition with administrative
+authorization and any household consent disabled and cancels the Reaction's future jobs. Every
+other effect follows the existing revocation and configuration rules: the live activation ends
+without a follow-up or terminal call; an open advisory and an open consent request close with
+`authorization_disabled`; a hold it owns is invalidated with `authority_revoked` (Layer 0 §6.2); an
+open managed episode closes; its recovery baseline facets are filtered (Layer 0 §7.4); its
+availability bindings leave the Layer-6 generation and close with `binding_deactivated`; pending
+adoption proposals naming it close as above (§4.1); its decision claim receives one terminal
+`available=False` fact (§5.2); and its published entity is removed (Layer 8 §10.2). The root, its
+configuration generations and all transitions remain as immutable history, so past decisions stay
+explainable. A `reaction_id` is never assigned to another root. Restoring a removed Reaction (Layer 8
+§7) appends a successor configuration generation to the same root with the restored canonical
+configuration and a catalog entry, in `notification_only` with no inherited authority, consent or
+adoption; for a learner-origin Reaction the configuration must equal a committed one, so restore is
+never a semantic edit.
+
 Every new configuration generation starts `notification_only`, with administrative action authorization
 disabled and household consent unset/disabled. Authority changes are immutable append-only
 `ReactionAuthorityTransition`s whose current projection determines `ReactionExecutionMode`: no
@@ -1994,7 +2018,8 @@ A guard profile generation has exactly one binding per capability, so the id tog
 record's `configuration_generation_id` identifies the exact binding and its limits; the capability
 version comes from that generation, keeping the value a flat tuple of strings. `admission` is
 `not_reached` unless the outcome is `eligible` or `normal_exit` in `automatic` mode with at least
-one selected step. The fact is always available, uses the cycle instant as `when` and
+one selected step. The fact is available while its Reaction is in the catalog; a removal emits
+one terminal `available=False` fact (§4.2). It uses the cycle instant as `when` and
 `FactSource(kind="system", source_id="layer5.reaction_decision")`. It is audit and explanation
 evidence only: never a notification, a command, a learning outcome or an authority input. It joins
 the cycle's ordinary Layer-0 batch, keeps the default 14-day retention for superseded values, and
@@ -4508,6 +4533,14 @@ profile or learner, and declares `requires_household_consent=True`,
   or `review_proposal`, and uses the same `promote_reaction_automatic_action`,
   `set_reaction_household_consent` when its consent property is true,
   `disable_reaction_automatic_action`, and household authority commands.
+- Removing an `automatic` Reaction with a running activation, a held channel, an open advisory and
+  a pending adoption proposal commits one composed generation: authority disabled, future jobs
+  cancelled, no follow-up or terminal call, advisory closed `authorization_disabled`, hold
+  invalidated `authority_revoked`, adoption proposal `proposal_incompatible` with
+  `target_generation_not_current`, one terminal `available=False` decision fact, entity removed.
+  A "why" query before the removal still reconstructs its decision. Restore appends a successor
+  generation to the same root in `notification_only`; a new Reaction never receives the removed
+  id. Appending a successor generation closes adoption proposals naming the old one the same way.
 - Accepting a learned proposal commits one composed generation containing the new Reaction, its
   catalog entry and its disabled availability bindings, with an empty impact record and the
   `accepted` review transition in the same transaction; a crash leaves all or none. A composed-name

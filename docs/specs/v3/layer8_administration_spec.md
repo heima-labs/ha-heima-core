@@ -110,6 +110,7 @@ technical identifiers. Every configuration section shows the pending-changes bar
   prerequisite generation), Layer-6 recipients and family options. They enter the session change
   set. A learner-origin Reaction's configuration is not editable from the panel (Layer 5 §4.2): it
   changes only through a new reviewed proposal; the panel offers disablement and shows why. Any
+  Reaction, learner-origin included, can be removed (Layer 5 §4.2). Any
   Reaction can be renamed: `display_name` is catalog metadata, unique across Reactions, and a
   rename never creates a configuration generation (Layer 5 §4.2).
 - **Immediate actions** are governance or answer commands that are not configuration mutations:
@@ -148,7 +149,7 @@ the Layer-2 generation, Layer 0 §4.7):
 | `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `sensor`, `fusion_rule`, `actuator` |
 | `layer3` | `learning_definition` (including its family enabled state) |
 | `layer4` | `semantic_resolver_definition` |
-| `layer5` | `reaction` (admin-direct configuration, or `display_name` only for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
+| `layer5` | `reaction` (admin-direct configuration; `display_name` or removal for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
 | `layer6` | `recipient`, `family_options` |
 
 `expected_fingerprint` is the SHA-256 of the RFC-8785 canonical definition of that object in the
@@ -206,9 +207,10 @@ slice.
 **Restore** never applies anything. It loads into the session change set the edits that turn the
 current configuration into the chosen generation (whole generation, or one object from its page),
 and any entry can be removed before preview. The result is a new generation. Restore covers
-configuration only: a restored Reaction returns as a new generation in `notification_only`
-(Layer 5 never inherits promotion or consent), and learned artifacts, facts and history are
-untouched. A removed object returns with its original identity when that identity is free. The
+configuration only: a restored Reaction returns as a new generation of the same Reaction root in
+`notification_only` (Layer 5 never inherits promotion, consent or adoption), and learned artifacts,
+facts and history are untouched. A removed object returns with its original identity when that
+identity is free; a removed Reaction's id is never given to another Reaction (Layer 5 §4.2). The
 current core validates the restored configuration; anything no longer valid is a preview error.
 
 ## 8. Explanations (L8-C5)
