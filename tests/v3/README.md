@@ -132,3 +132,13 @@ See [FACT_TYPE_CLAIMS](../../docs/v3/testing/FACT_TYPE_CLAIMS.md) and
 Run `.venv-v3/bin/python tests/v3/mutation_fact_types.py` for record and termination
 supplements. HouseFact builder reuses the concrete identifier validator.
 This does not yet compose reserved core claims or admit running producers.
+
+
+### Composed producer staging
+
+`runtime/test_producer_staging.py` checks mandatory core reservations, exact static
+identity uniqueness, inventory references and staging-only owner/kind bindings.
+Evidence: [PRODUCER_STAGING](../../docs/v3/testing/PRODUCER_STAGING.md) and
+[mutants](../../docs/v3/testing/PRODUCER_STAGING_MUTANTS.md). Semantic supplements:
+`.venv-v3/bin/python tests/v3/mutation_producer_staging.py`.
+Bindings are metadata, not source-authority tokens or live producer admission.

@@ -1,12 +1,13 @@
 # Prompt to resume V3 implementation
 
-> Review docs committed as1c8adbe; new fact-type staging primitives and builder
-> validator refactor are uncommitted. Read latest WORKING_CONTEXT and testing/
-> FACT_TYPE_CLAIMS.md/FACT_TYPE_CLAIM_MUTANTS.md.1504 tests, Ruff and mypy pass.
-> Dotted glob overlap is staging-only, not a hot-path lookup or authorization.
-> Next: reserved core claims + global static state claims + resolved producer
-> bindings. Runtime admission, current index, ordering and fact/marker SQL pending.
-> Planningaa4455a remains read-only; Topology CA4-104 belongs to a later slice.
+> Claim primitives committed asf5f2369. New composed producer staging is
+> uncommitted: all15 core reservations, duplicate static identities, inventory
+> reference checks and immutable staged type bindings.1567 tests,Ruff/mypy pass.
+> Read latest WORKING_CONTEXT and testing/PRODUCER_STAGING.md and PRODUCER_STAGING_MUTANTS.md.
+> resolve_type is staging-only; bindings do not prove source/actor/generation
+> authority. Next: concrete producer ports/admission tied to active generation,
+> then coordinator order and acceptance. Index/queue/fact-marker SQL pending.
+> Planningaa4455a read-only; Topology CA4-104 belongs to a later slice.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

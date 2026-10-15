@@ -2000,3 +2000,65 @@ admission. Re-read live L0 §4/§5 plus L2 registration dependencies; do not con
 equivalent type-claim overlap with duplicate exact (fact_type,Location) producers.
 Only then wire state/event acceptance, coordinator order and fact/marker batches.
 Preserve event bypass and forced-durable-baseline/live-transition separation.
+
+
+## Active slice — composed producer staging
+
+Committed fact-type claim slice asf5f2369 at developer request. Planningaa4455a
+clean/read-only. Implement pure mandatory-core/static-state composition and staged
+concrete type bindings, with explicit known room/zone ID snapshots. Impact/test
+plan in testing/PRODUCER_STAGING.md. No authority token or running producer/index.
+
+
+## Latest checkpoint — composed producer claims, 2026-10-15
+
+Committed claim primitives and evidence asf5f2369 at developer request; worktree
+clean before this slice. Planningaa4455a clean/read-only. Read AGENTS/workflow/
+registry, L0 §4/§4.0/§5.1/§13, L2 §2.3 and L1 §5. Impact/rationale recorded
+before code in testing/PRODUCER_STAGING.md. No new product/policy decision.
+
+Added runtime/producer_staging.py: immutable StaticStateClaim, factory-only
+ComposedFactProducers and FactTypeBinding. compose_fact_producers always adds all15
+core reservations, validates namespace ownership/emission overlaps, rejects every
+duplicate static(fact_type,canonical Location) even for the same owner, verifies
+concrete declaration owner/state-kind and resolves Location references against
+explicit immutable candidate room/zone ID sets. Owns concrete Location snapshots;
+subclass key overrides cannot hide duplicates. Type declarations are copied,
+outputs retain only immutable tuples. Failed candidates publish/mutate nothing.
+
+Staging-only resolve_type produces concrete owner/state-event metadata for future
+producer-specific ports. Namespace lookups stay outside fact evaluation. Binding
+is not a bearer capability, source trust, actor verification or active-generation
+proof. Core reservations do not instantiate producers. Room/Zone definitions,
+producer-specific legal scopes and Sensor/Fusion ID uniqueness remain their owners.
+Inventories must come from the same candidate's registry snapshots.
+
+63 focused cases,1567 full V3 passed(seed3145). Ruff lint/format82files,mypy32sources,
+diff check pass. Five-method evidence PRODUCER_STAGING.md: reservation/conflict/
+location/duplicate decision tables and boundary cases,3 seeded PBTs. No compound
+Boolean expression introduced; MC/DC marked specifically not applicable rather
+than conflated with sequential guards. Reused glob/Location logic unchanged.
+Fresh mutmut213generated,149killed,64individually reviewed prose-equivalent
+survivors; no errors/timeouts/skipped/untested/interrupted. Initial inventory-
+encoding survivor exposed a masked test: isolated inventory checks with no static
+producer and added zone case; restarted fresh, mutant now killed, source unchanged.
+All23 semantic supplements killed with clean63-test baseline:15 reserve omissions,
+2 owner/kind changes,6 immutable/slots decorators. Exactdiffs PRODUCER_STAGING_MUTANTS.md.
+Default scope26modules. No dependency, HA public contract or persisted schema change.
+
+New source/tests/supplement/scope/evidence/README/handoff remain uncommitted.
+No verified-source admission/generation lifecycle, runtime producer port, live
+index, cycle ordering, durable queue, fact/CycleCommitMarker SQL or HA wiring.
+No V2 migration, live HA, ARM-throughput or deployment claim. Planning unchanged;
+Topology CA4-104 later, Git/deploy proposals remain pending.
+
+### Exact next action
+
+Review/commit this staging slice when requested. Continue concrete producer-specific
+admission/ports tied to the active composed generation and coordinator ordering,
+using these pre-resolved declarations. Read current L0 §4/§4.0/§4.2/§5 and cycle/
+generation rules; record lifecycle/authority/order design before code. Do not trust
+owner/source strings from external facts, treat staging metadata as authority, or
+add pattern lookup per emitted fact. Initial core/static concrete outputs can be
+bound at staging; future dynamic Layer7 lifecycle remains outside implemented scope.
+Preserve event bypass and forced-durable-baseline/live-transition separation.
