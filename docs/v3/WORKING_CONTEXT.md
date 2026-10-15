@@ -1,7 +1,7 @@
 # V3 implementation working context
 
-> Latest implementation: clock-gap durability projection; see final checkpoint.
-> Last signed commit f628736 (observation assessment); durability slice uncommitted.
+> Latest implementation: continuity prefix accounting gate; see final checkpoint.
+> Last signed commit 956039d (clock-gap durability); accounting slice uncommitted.
 > CA4-102 is resolved and committed in planning as 37986ea; final planning check clean.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
@@ -1275,3 +1275,63 @@ mint receipts on queue admission or callbacks before commit, and do not derive g
 ids from timestamps. SQLite schema/worker, watermark advancement, process/stream
 journal ownership, overflow baseline validity and full HistoricalReadResult remain
 future work. Git/deploy proposals still await review; no generic weekly lifecycle.
+
+
+## Active slice — continuity prefix accounting gate
+
+Committed clock-gap durability as signed 956039d; clean after commit. Planning
+37986ea read-only; owning L0 §4.4 plus atomic cycle markers §4.1/§4.2 and full
+overflow closure boundary §4.6. Implement pure accounting of complete accepted-ticket
+ranges: pending writes/loss declarations, holes and producer blockers cannot be
+bypassed by a later acknowledgement. No receipt issuance, durable watermark write
+or payload queue is introduced. Snapshot assembler/writer remain future work.
+
+
+## Latest checkpoint — continuity prefix accounting gate, 2026-10-15
+
+Committed previous clock-gap durability at developer request as signed 956039d,
+feat: guard V3 clock gap coverage with matched durable receipts. Clean after commit;
+801 tests rerun before it. Planning checked clean/read-only 37986ea; read owning
+§4.4 and dependency atomic-cycle §4.1/§4.2 and full overflow closure §4.6. No spec edits.
+
+Added storage/continuity_accounting.py: frozen ContinuityAccountingBarrier and
+DurabilityRange plus continuity_barrier_accounted. This checks complete contiguous
+accounting of all accepted positions after an already-proved prefix through the
+chosen target. Outcomes pending/written/loss_pending/loss_declared remain distinct;
+only durably declared loss is resolved, not claimed as written payload. A later
+acknowledgement cannot heal an earlier missing audit/fact/boundary proof. Unknown
+inventory and known producer audit-construction failure at/before the barrier block.
+
+Internal positions belong to one process-local coordinator, not a new AppendOrder
+or persisted schema. Future owner must assign all acceptances and derive exact
+uniform ranges from matched durable results; never infer a range from sparse min/max
+receipts or a prior prefix from the largest receipt/time. Sorted disjoint ranges give
+one-pass constant-extra-memory checking without enumerating tickets, sorting or
+retaining payloads. Old/future entries are validated but not re-accounted. The gate
+does not own ranges, advance/write a watermark or certify whole observation coverage.
+Queue/loss inventory and range assembly remain to implement, without a second queue.
+
+66 focused instances, full V3:867 passed,seed3145. Ruff lint/format57files,mypy24sources,
+diff pass. PBT found a development bug with a pending range straddling previous=target;
+two literal tests failed before excluding its empty clipped intersection. Fresh
+mutmut scope continuity_accounting.py:138 generated,97 killed,41 equivalents (40 error
+prose,1 redundant equality fast path), no timeout/error/skipped/untested. Initial
+continue->break survivor prompted a later-invalid-input test and fresh uncached rerun.
+Both frozen declarations removed by supplements were killed after clean 66-test baseline.
+Evidence: testing/CONTINUITY_ACCOUNTING.md and CONTINUITY_ACCOUNTING_MUTANTS.md.
+Default mutation scope eighteen modules. No dependency/policy/SQLite/HA/ARM/deploy claim.
+
+Accounting source/tests/supplement/config/evidence/README/handoff remain uncommitted;
+parent 956039d. Previous durability, observation assessment and clipping are committed.
+
+### Exact next action
+
+Review/commit this accounting gate when requested. Continue the real persistence owner:
+assemble ranges from matched committed writer receipts and bounded acceptance/loss
+inventory, then write the continuity watermark only after its complete chosen boundary
+is accounted. Read current §4.2/§4.4/§4.6 and atomic marker/HA-intake contracts first.
+Include independent audits and later same-cycle DAG facts; account an accepted item as
+lost only after its loss declaration is durable. Preserve process-local sequence
+namespace and receipt correlation across callbacks/restarts. No SQLite schema/worker,
+range assembler, actual watermark write, process/stream owner or HistoricalReadResult
+assembly exists yet. Git/deploy policies remain proposals; no generic weekly lifecycle.

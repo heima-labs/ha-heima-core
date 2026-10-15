@@ -2,7 +2,7 @@
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
 Install runtime/development locks first; tests import real packages and the mutated
-copy under mutmut, without HA/V2 import shims. Default mutation scope: seventeen modules.
+copy under mutmut, without HA/V2 import shims. Default mutation scope: eighteen modules.
 
 ## Current contracts
 
@@ -67,3 +67,10 @@ Clock-gap durability projection: `docs/v3/testing/CLOCK_GAP_DURABILITY.md` and
 Exact receipt correlation prevents cross-gap/stale-boundary proof; pending ends stay
 incomplete. This is a per-gap coverage contribution, not overall process proof or
 actual SQLite receipt issuance. CA4-102 independent-gap integration is exercised.
+
+
+Continuity prefix accounting: `docs/v3/testing/CONTINUITY_ACCOUNTING.md` and
+`CONTINUITY_ACCOUNTING_MUTANTS.md`. Supplement: `mutation_continuity_accounting.py`.
+Contiguous resolved ranges must cover every still-needed acceptance through the full
+chosen barrier; later acknowledgements cannot hide audit holes or pending losses.
+This pure gate does not issue receipts, own the queue/ranges or write a watermark.
