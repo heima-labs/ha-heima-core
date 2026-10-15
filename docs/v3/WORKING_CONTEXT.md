@@ -1,7 +1,7 @@
 # V3 implementation working context
 
-> Latest implementation: continuity prefix accounting gate; see final checkpoint.
-> Last signed commit 956039d (clock-gap durability); accounting slice uncommitted.
+> Latest implementation: worker-owned SQLite transaction boundary; see final checkpoint.
+> Last signed commit 671f3b4 (continuity accounting); SQLite slice uncommitted.
 > CA4-102 is resolved and committed in planning as 37986ea; final planning check clean.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
@@ -1335,3 +1335,65 @@ lost only after its loss declaration is durable. Preserve process-local sequence
 namespace and receipt correlation across callbacks/restarts. No SQLite schema/worker,
 range assembler, actual watermark write, process/stream owner or HistoricalReadResult
 assembly exists yet. Git/deploy policies remain proposals; no generic weekly lifecycle.
+
+
+## Active slice — SQLite transaction boundary
+
+Committed accounting as signed 671f3b4; clean after commit. Planning37986ea read-only.
+Implement real SQLite WAL/FULL worker-owned transactions, returning results only after
+COMMIT; validate event-loop/thread ownership and fail closed on transaction uncertainty.
+No fact schema, retry queue or HA lifecycle is chosen. Explicit busy timeout supplied
+by owner; no new retry policy. Test real on-disk atomicity and injected failure stages.
+
+
+## Latest checkpoint — SQLite transaction boundary, 2026-10-15
+
+Committed accounting at developer request as signed671f3b4, feat: require complete V3
+continuity prefix accounting. Clean after commit;867 tests rerun. Planning clean/read-
+only37986ea, owning L0 §4.2/§4.4/§4.6 and marker/boundary dependencies checked. No edits.
+
+Added storage/sqlite_transactions.py: SQLiteTransactionWriter(path,busy_timeout_ms=...),
+run(operation),close(). Real native connection, verified WAL/FULL/native busy_timeout;
+explicit SQL BEGIN IMMEDIATE/COMMIT/ROLLBACK with Python autocommit=True. Results return
+only after successful COMMIT. Required integer busy_timeout_ms uses native representable
+0..2147483647; no operational default/retry cadence/new Window semantics. Worker thread
+ownership and no-running-event-loop guards enforce the I/O boundary. Host must supply
+one dedicated worker and the existing bounded queue; no executor/queue is added here.
+
+Failures discard the connection after best-effort explicit rollback; all cleanup errors
+are preserved with original BaseException in an appropriate exception group. Commit
+error can be uncertain, including durable rows but no returned result: no automatic
+retry; future owner must reconcile stable operation identities. Normal close is
+idempotent; nested transaction/close rejects. SQLite authorizer denies callback
+transaction/savepoint control; a failing COMMIT-then-BEGIN regression first left a
+partial fixture batch durable, then passed after guard. Warmed-cache control denial
+also tested. Trusted internal callbacks must not disable guard/settings or publish
+before run returns/leak connections. No application schema or real receipt issuer yet.
+
+48 new focused instances, full V3:915 passed,seed3145. Actual temporary on-disk reads
+prove isolation/atomic facts+fixture marker, real constraint rollback, lock handling,
+failure stages and commit uncertainty. Dedicated single-worker executor test keeps
+main event-loop callback available. PBT uses fresh databases and varied statement cuts.
+Ruff lint/format60files,mypy25sources,diff pass. Fresh scoped mutmut:144 generated,
+73 killed,71 reviewed equivalents (55 generic prose,11 SQL case,5 overwritten/private
+setup variants); zero error/timeout/skipped/untested/interrupted. Three supplemental
+SQL/publication mutations killed with clean48-test baseline. Default scope19modules.
+Evidence: testing/SQLITE_TRANSACTIONS.md and SQLITE_TRANSACTIONS_MUTANTS.md, including
+primary Python/SQLite API references and precise mutation limits. Runtime Python3.14.5,
+SQLite3.53.1. No dependency/policy/live HA/ARM throughput/power-cut/deploy claim.
+
+SQL module/tests/supplement/config/evidence/README/handoff uncommitted; parent671f3b4.
+No production database/table was created; only temporary test fixtures. Prior gate,
+clock durability, observation assessment/clipping work committed.
+
+### Exact next action
+
+Review/commit this SQLite boundary when requested. Continue concrete domain SQL schema
+and operations: matched clock-boundary rows, operation-id reconciliation and verified
+accounting ranges, then actual continuity-watermark transaction after full barrier
+proof. Record schema/worker lifecycle rationale before costly choices. Re-read current
+§4.2/§4.4/§4.6. Never auto-replay an uncertain commit without idempotence/reconciliation,
+issue a receipt on queue admission, or use intake-only ordinals for full closure.
+No real bounded retry owner, SQL fact/metadata schema, receipt issuer, range assembler,
+watermark publication, HA lifecycle or HistoricalReadResult exists yet. SQLite backup
+and checkpoint cadence remain future design. Git/deploy policies still proposals.

@@ -1,8 +1,8 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: continuity prefix accounting gate; read the final WORKING_CONTEXT checkpoint.
-> Last signed commit 956039d contains clock-gap durability projection.
-> Accounting slice is uncommitted; planning checked clean at 37986ea.
+> Latest implementation: worker-owned SQLite transaction boundary; read final WORKING_CONTEXT checkpoint.
+> Last signed commit 671f3b4 contains continuity prefix accounting.
+> SQLite slice is uncommitted; planning checked clean at 37986ea.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

@@ -2,7 +2,7 @@
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
 Install runtime/development locks first; tests import real packages and the mutated
-copy under mutmut, without HA/V2 import shims. Default mutation scope: eighteen modules.
+copy under mutmut, without HA/V2 import shims. Default mutation scope: nineteen modules.
 
 ## Current contracts
 
@@ -74,3 +74,10 @@ Continuity prefix accounting: `docs/v3/testing/CONTINUITY_ACCOUNTING.md` and
 Contiguous resolved ranges must cover every still-needed acceptance through the full
 chosen barrier; later acknowledgements cannot hide audit holes or pending losses.
 This pure gate does not issue receipts, own the queue/ranges or write a watermark.
+
+
+SQLite transaction boundary: `docs/v3/testing/SQLITE_TRANSACTIONS.md` and
+`SQLITE_TRANSACTIONS_MUTANTS.md`. Supplement: `mutation_sqlite_transactions.py`.
+Real temporary on-disk WAL/FULL transactions, post-COMMIT results, rollback/uncertain
+commit, SQL-control guard and worker/event-loop ownership. No application SQL schema,
+queue/worker host or actual watermark/receipt issuer is implemented by this primitive.
