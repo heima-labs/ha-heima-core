@@ -3985,6 +3985,20 @@ Session occurrences are deterministic:
   one week (for every weekday selected, shorter than 24 hours).
 - **Timezone change:** an occurrence already started keeps its computed end; later occurrences are
   recomputed in the new zone and its session-boundary job is re-armed (`wall_clock` basis).
+- **Occurrence identity:** a session is identified by its **requested civil date**, the selected
+  local weekday on which it was requested to start, independent of the UTC instant and of the date
+  on which it actually starts. Within one activation, a requested date that has already started a
+  session never starts another. This holds after a timezone change (a Monday 07:00 session served
+  in `Europe/Rome` is not started again when the zone becomes UTC and Monday 07:00 UTC is still
+  ahead), after a backward clock correction, and across several changes. The record of served dates
+  belongs to the activation: it is process memory, bounded by the absence, and ends with the
+  activation; a restart restores no activation, as everywhere else.
+- **Shifted or merged dates:** a requested start that does not exist locally moves to the first
+  valid instant (Layer 0 §3.1) but keeps its requested date, even when that instant falls on the
+  next local day (for example a skipped calendar day). Two requested dates that resolve to the same
+  physical start produce one session, which serves both. A start missed while delivery was late is
+  not caught up: a session whose end has passed does not start; a session still in progress acts
+  only for its remaining time.
 
 The session boundary job uses `AtJob.basis="wall_clock"`; the end of an already started session
 is also re-armed after a clock discontinuity (Layer 0 §3.5).
@@ -4136,6 +4150,11 @@ They assert only durable configuration/authority state, exact job creation/cance
    same configured Reaction starts a distinct activation. A calendar outage
    or failed guard suppresses work without a false normal exit, and a stale
    job from the prior activation cannot dispatch into the new one.
+   Within one activation, a Monday 07:00 session served in `Europe/Rome` is not
+   started again after the zone changes to UTC or the clock moves back; a
+   requested Friday on a skipped calendar day keeps its Friday identity when it
+   starts on Saturday 00:00, and two requested dates resolving to one start
+   produce one session.
    With activation A's next job armed, temporary unavailable presence cancels
    only action work; it neither ends A nor creates B. When current stabilized
    `away` returns after that job's due time, one fresh evaluation selects the

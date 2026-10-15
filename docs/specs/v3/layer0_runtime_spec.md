@@ -167,13 +167,11 @@ class WeeklyRecurrence:
 class IntervalRecurrence:
     interval: "Window"  # positive elapsed duration; no separate seconds field
 
-RecurrencePattern = WeeklyRecurrence | IntervalRecurrence
-
 @dataclass(frozen=True)
 class CronEntry:
     job_id: str
     owner: str
-    pattern: RecurrencePattern
+    pattern: IntervalRecurrence  # Initial V3: elapsed cadence only (see below)
     label: str
 ```
 
@@ -220,16 +218,18 @@ instant plus a positive duration uses one rule. This covers every `AtJob.due` co
   a representation rule; the basis references of this section and §3.5 apply after the due is
   constructed.
 
-`CronEntry` is the recurrence policy layer on top of `AtJob`. Two separate shapes instead of one
-dataclass with optional fields, because "run every Monday at 07:00" and "run every 300 seconds" are
-genuinely different kinds of rule, not the same rule with some fields unset — `WeeklyRecurrence`
-answers "which wall-clock moments", `IntervalRecurrence` answers "how often, relative to now".
+`CronEntry` is the recurrence policy layer on top of `AtJob`. In Initial V3 its pattern is only an
+`IntervalRecurrence` ("how often, relative to now"): every Heima-owned recurrence is an elapsed
+cadence, and admin-authored civil schedules belong to Home Assistant (below). `WeeklyRecurrence`
+("which civil moments") is a value type for descriptor time-window parameters and for civil-time
+classification; it is not a `CronEntry` pattern. A future weekly `CronEntry` needs its own reviewed
+contract, including the identity of an already served occurrence across clock and timezone
+changes.
 
-For a `CronEntry`, Timing computes the next `due` from `pattern` relative to now (the reference
-instant of the job's basis: the wall-clock reading for `WeeklyRecurrence`, the cycle-instant clock
-for `IntervalRecurrence`), arms an `AtJob`,
-and on fire recomputes and re-arms. A `WeeklyRecurrence` job has `basis="wall_clock"`; an
-`IntervalRecurrence` job has `basis="elapsed"`. Calendar cache refresh at a known event boundary
+For a `CronEntry`, Timing computes the next `due` relative to now (the cycle-instant clock, the
+`elapsed` reference), arms an `AtJob`, and on fire recomputes and re-arms. An `IntervalRecurrence`
+job has `basis="elapsed"`; a `WeeklyRecurrence`-derived descriptor boundary has
+`basis="wall_clock"`. Calendar cache refresh at a known event boundary
 (§3.4.1) is `wall_clock`; a fixed-duration hold deadline (§6.2) is `elapsed`. For `WeeklyRecurrence`, `hour`/`minute` are civil-time values in
 the installation's configured local timezone (Home Assistant's own `time_zone` setting) — computing
 the next `due` means taking `now` (UTC), converting to that local zone, finding the next matching
@@ -245,34 +245,35 @@ computation, never the dispatch mechanism itself. `WeeklyRecurrence` also classi
 just schedules the future: `pattern.matches(fact.when)` answers "did this fact occur on a matching
 weekday/hour" for bucketing.
 
-**Daylight Saving Time execution policy.** This policy applies only while scheduling a
-`WeeklyRecurrence`; it does not suppress, merge, or alter already-produced `HouseFact` events or
-their UTC timestamps. A requested local civil time can be exceptional at a DST boundary:
+**Daylight Saving Time execution policy.** This policy applies only while computing a
+`WeeklyRecurrence` occurrence; it does not suppress, merge, or alter already-produced `HouseFact`
+events or their UTC timestamps. A requested local civil time can be exceptional at a DST boundary:
 
 - When the requested time is **nonexistent** at the spring-forward transition (for example,
   `02:30` in `Europe/Rome` when the clock advances from `01:59:59` directly to `03:00:00`), the
-  routine fires once at the first valid local instant after the gap (`03:00` in this example).
+  occurrence starts once at the first valid local instant after the gap (`03:00` in this example).
 - When the requested time is **ambiguous** at the autumn fall-back transition (for example,
-  `02:30` occurs first in CEST and then again one real hour later in CET), the routine fires once
-  at the first occurrence (`fold=0`); the second occurrence must not produce a second firing for
-  the same civil weekly request.
+  `02:30` occurs first in CEST and then again one real hour later in CET), the occurrence starts
+  once at the first occurrence (`fold=0`); the second must not start it again.
 
 The next-due calculation must explicitly detect both cases rather than rely on an implementation's
 implicit timezone conversion behavior. `pattern.matches(fact.when)` remains a civil-time
 classification operation, so either physical occurrence in an ambiguous hour matches the requested
-weekday/hour/minute for history and bucketing; only the scheduler applies the single-firing rule.
-`IntervalRecurrence` uses elapsed monotonic time and is unaffected by either case. A change to Home
-Assistant's configured `time_zone` invalidates the currently armed weekly due and re-arms it between
-evaluation cycles using the new zone; it never replays a past weekly occurrence merely because the
-zone changed.
+weekday/hour/minute for history and bucketing; only occurrence computation applies the
+single-start rule. `IntervalRecurrence` uses elapsed monotonic time and is unaffected by either
+case. A change to Home Assistant's configured `time_zone` invalidates a currently armed boundary
+derived from a `WeeklyRecurrence` and re-arms it between evaluation cycles using the new zone. The
+consumer that derives occurrences defines which occurrence was already served, so that no past
+occurrence is replayed merely because the zone or the clock changed (Layer 5 §7.2 for the
+Initial-V3 presence-simulation session).
 
 `CronEntry`'s **definition** (owner, pattern, label, job_id) is treated as durable configuration —
 a system-owned periodic safety net or another Heima-internal recurrence is a standing rule that
 outlives any single pending countdown. This is why `CronEntry` state is expected to survive a
 restart (the *rule* is re-read from configuration, a fresh `due` is computed against current time,
 and a new `AtJob` is armed — nothing about the interrupted countdown is recovered. For an
-`IntervalRecurrence`, that fresh deadline is `now + interval` under the deadline-construction rule above; for a `WeeklyRecurrence`, it is the
-next matching civil-time occurrence. Missed occurrences are never replayed implicitly after restart.
+`IntervalRecurrence`, that fresh deadline is `now + interval` under the deadline-construction rule
+above. Missed occurrences are never replayed implicitly after restart.
 An owner that requires an initialization action performs it explicitly during its own bootstrap,
 rather than obtaining it indirectly from scheduler catch-up) while a
 one-shot `AtJob` that belongs to transient runtime state (see §6, Divergence Hold) does not:
@@ -2748,7 +2749,7 @@ Silent failure is not acceptable anywhere in this section.
   logical deadline is the expected common case, not a conflict to reject.
 - **A `CronEntry`'s `due` passes while Heima is offline**: no missed occurrence is queued, replayed,
   or inferred from an interrupted countdown. On restart an `IntervalRecurrence` arms its first new
-  deadline at `now + interval`; a `WeeklyRecurrence` arms its next matching civil-time occurrence.
+  deadline at `now + interval`.
   This requires no durable scheduling state beyond the standing rule itself and avoids an unprovable
   catch-up decision. An owner that needs startup work performs it explicitly during bootstrap, where
   that work can be named, reviewed, and tested independently of recurrence timing.
@@ -3298,14 +3299,15 @@ concrete checklist rather than re-deriving one:
   converted to an empty result; an undeclared requirement, wider horizon or direct provider/cache read
   is rejected. No Layer-0 code classifies a summary or persists it outside the normalized calendar
   cache.
-- A `WeeklyRecurrence` at `02:30` in `Europe/Rome` fires once at `03:00` on the spring-forward date,
-  and once at the first `02:30` (`fold=0`) on the fall-back date, never again at the repeated
-  `02:30`; both physical fall-back instants still match the same civil-time pattern for bucketing.
-  An `IntervalRecurrence` crossing either boundary retains its elapsed monotonic cadence, and a
-  configured timezone change re-arms a weekly entry without a catch-up firing (§3.1). After a
-  simulated restart, an interval arms at `now + interval` and neither recurrence pattern replays a
-  missed occurrence; an owner that needs initialization work is verified to perform it from explicit
-  bootstrap logic, not from a scheduler callback.
+- A `WeeklyRecurrence` occurrence at `02:30` in `Europe/Rome` starts once at `03:00` on the
+  spring-forward date, and once at the first `02:30` (`fold=0`) on the fall-back date, never again
+  at the repeated `02:30`; both physical fall-back instants still match the same civil-time pattern
+  for bucketing. An `IntervalRecurrence` crossing either boundary retains its elapsed monotonic
+  cadence, and a configured timezone change re-arms a weekly-derived descriptor boundary without a
+  catch-up (§3.1). A `CronEntry` with a `WeeklyRecurrence` pattern is rejected at registration.
+  After a simulated restart, an interval arms at `now + interval` and replays no missed occurrence;
+  an owner that needs initialization work is verified to perform it from explicit bootstrap logic,
+  not from a scheduler callback.
 - An admin-authored HA `schedule.*` helper is read as an ordinary state-bound boolean fact; a change
   to its effective state triggers normal evaluation without a Heima recurrence picker or `CronEntry`.
   An unavailable or unmapped helper state produces `available=False` and cannot activate its Reaction

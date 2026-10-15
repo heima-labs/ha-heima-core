@@ -82,8 +82,9 @@ Persistence) that sit outside the semantic-resolution DAG entirely — nothing i
 depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 
 - **Timing**: one execution primitive, an "at" job — a scheduled one-shot deadline. A "cron" policy
-  layer sits on top of it: a `RecurrencePattern` computes the next due time and re-arms an "at" job
-  each time it fires. This is how every **Heima-owned** recurring or periodic job works — a periodic
+  layer sits on top of it: in Initial V3 an elapsed `IntervalRecurrence` computes the next due time
+  and re-arms an "at" job each time it fires (`WeeklyRecurrence` is only a civil time-window value for
+  descriptors and bucketing, not a cron pattern). This is how every **Heima-owned** recurring or periodic job works — a periodic
   safety-net re-evaluation, for example — each is a `CronEntry` owned by whichever subsystem needs it,
   not a separate bespoke timer mechanism per feature. Admin-authored recurrence instead belongs to an
   HA `schedule.*` helper; Heima consumes only its effective state as an ordinary sensor fact and never
