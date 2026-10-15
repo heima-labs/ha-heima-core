@@ -111,3 +111,13 @@ encoding/equality/hash and source mode propagation; `mutation_house_facts.py`
 supplements envelope flags, omission semantics and policy/equality changes.
 See `docs/v3/testing/HOUSE_FACT_BUILDER.md` and `HOUSE_FACT_BUILDER_MUTANTS.md`.
 This is construction; runtime authority, diagnostics delivery and fact SQL are pending.
+
+
+### State identity and change fingerprint
+
+`contracts/test_fact_state.py` exercises L0 §4.0 identity, stable-source changes,
+canonical value equality and unavailable-value exclusion. Five-method evidence:
+[FACT_STATE](../../docs/v3/testing/FACT_STATE.md); generated mutant review:
+[FACT_STATE_MUTANTS](../../docs/v3/testing/FACT_STATE_MUTANTS.md). Run
+`.venv-v3/bin/python tests/v3/mutation_fact_state.py` for semantic supplements.
+These are comparison primitives, not coordinator/admission/storage integration.

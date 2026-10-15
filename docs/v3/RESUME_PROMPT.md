@@ -1,12 +1,13 @@
 # Prompt to resume V3 implementation
 
-> Parentc9b6c62; new Provenance/HouseFact builder and CA4-104 notes are uncommitted.
-> Read final WORKING_CONTEXT checkpoint and testing/HOUSE_FACT_BUILDER.md.
-> Use build_house_fact; consume FactBuildResult diagnostics at future admission.
-> Essential invalid data rejects; evidence alone degrades. Value is undefined when
-> unavailable, confidence must then be None. Full record equality is not write-on-change.
-> Source shape grants no authority; producer/generation/HA admission remains pending.
-> Planning aa4455a read-only. Topology CA4-104 is for later; no fact/marker SQL yet.
+> Parent d921fd6 (HouseFact builder + CA4-104 notes committed). New state
+> identity/change extraction is uncommitted; see the latest WORKING_CONTEXT entry
+> and testing/FACT_STATE.md. Use fact_identity_key/fact_change_fingerprint only
+> for registered state claims; events bypass them. Unavailable value projects to
+> None without inspection; time/correlation/evidence do not affect comparison.
+> Full fact equality is different. Producer authority/emission routing, current
+> index, append ordering and fact/CycleCommitMarker SQL are still unimplemented.
+> Planning aa4455a remains read-only; Topology CA4-104 is for a later slice.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

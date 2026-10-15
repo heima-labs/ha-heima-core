@@ -1851,3 +1851,61 @@ returned diagnostics, or create a competing fact envelope. Generic JSON parsing
 must not lose duplicate names/numeric-domain rules when fact decoding is added.
 Topology remains a future slice governed by CA4-104 above; re-read planning on resume.
 Git/deploy policies remain proposals. All current changes await developer commit.
+
+
+## Active slice — state comparison primitives
+
+Committed prior builder and CA4-104 notes as d921fd6 at developer request;
+1362 tests rechecked. Planning aa4455a clean/read-only. Implement only pure
+FactIdentityKey and FactChangeFingerprint extraction per L0 §4.0/§4.2, using
+existing immutable builder outputs and stable-source projection. Rationale and
+five-method plan in testing/FACT_STATE.md. No coordinator/index/SQL/events yet.
+
+
+## Latest checkpoint — state identity and change comparison, 2026-10-15
+
+Committed prior builder and CA4-104 handoff as d921fd6 at developer request;
+1362-test baseline rechecked. Started clean. Planning aa4455a clean/read-only;
+read AGENTS/workflow/registry, L0 §4.0/§4.2/§5.1/§13 and L1 §3/§4/§5.
+Impact/implementation rationale precedes code in testing/FACT_STATE.md.
+
+Added contracts/fact_state.py: exact2-field frozen/slots FactIdentityKey and
+exact4-field FactChangeFingerprint, extracted through fact_identity_key and
+fact_change_fingerprint from concrete builder outputs. Constructors blocked;
+no competing fact validation or source-authority path. Keys use canonical
+Location; WHAT/WHERE alone determine identity. Stable source, availability,
+confidence and canonical value determine changes. Time/correlation/evidence
+excluded. Unavailable value is not inspected and becomes None. Frozen record
+values normalize recursively to immutable JSON field shapes; no float decoding
+or coercion. Canonical equality/hash distinguish bool/number, equate1/1.0 and
+signed zeros, and work for immutable mappings. No bytes/cache fields added.
+
+51 focused cases, 1413 full V3 tests passed, seed3145; Ruff check/format76files,
+mypy30sources, diff pass. Decision table varies every component independently;
+BVA valid confidence endpoints/adjacent floats, numeric equivalence, depth2 and
+Location forms. MC/DC: no compound Boolean decision introduced; explicit single
+availability branch covered. Three reproducible PBTs. Fresh mutmut95generated,
+79killed,16individually reviewed generic TypeError-prose equivalents; zero errors,
+timeouts/skipped/untested/interrupted. Six decorator/semantic supplements killed
+with clean51-test baseline. Evidence FACT_STATE.md/FACT_STATE_MUTANTS.md; default
+scope24modules. No new dependency, policy or specification decision.
+
+New code/tests/supplement/scope/evidence/README/resume/context remain uncommitted.
+Only declared state consumers may call these primitives; they do not classify
+emission kind or prove producer authority. No live current index, admission,
+AppendOrder allocator, ordered queue, fact/marker SQL batch, source redaction,
+HA lifecycle or deploy added. Forced new-epoch/global-reseed baseline writes
+remain a future durable path, distinct from live transitions. No HA/live/ARM
+throughput claim. Planning unchanged.
+
+### Exact next action
+
+Review/commit this comparison slice when requested. Continue with composed
+producer admission/emission-kind ownership and coordinator ordering needed by
+actual state/event acceptance, before fact/CycleCommitMarker SQL batching.
+Read current L0 §4 (producer registration), §4.0/§4.2/§5 and owning dependencies;
+record concrete staging/order design before coding. Events bypass state keys
+and comparison; ordinary state compares against live current index; forced
+durable baselines must not duplicate live buffer/subscriber transitions.
+Validated read-query key construction is not implemented by this extraction API.
+Topology remains later under CA4-104; Git/deploy proposals remain pending.
