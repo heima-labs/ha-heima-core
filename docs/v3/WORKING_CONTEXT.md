@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Latest implementation: request-clipped known observation gaps; see final checkpoint.
-> Last signed commit 6cf839b (CA4-102, intervals, timing review fixes); clipping slice uncommitted.
-> Periodic forward gap clarification is resolved by CA4-102 (planning working copy).
+> Latest implementation: observation coverage assessment; see final checkpoint.
+> Last signed commit d965470 (known gap clipping); assessment slice uncommitted.
+> CA4-102 is resolved and committed in planning as 37986ea; final planning check clean.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -1158,3 +1158,60 @@ building HistoricalReadResult; surface any unresolved case rather than choosing 
 SQLite writer/acknowledgements, process/stream timeline ownership, baseline validity,
 HA lifecycle and complete historical read assembly remain future work. CA4-102 is
 resolved; no generic weekly lifecycle. Git/deploy proposals remain pending review.
+
+
+## Active slice — observation coverage assessment
+
+Committed clipping as signed d965470 at developer request; clean after commit.
+Implement pure coverage assessment from explicit bounded gap evidence and a mandatory
+metadata-trust input, reusing clipping and existing ObservationCoverage composition.
+Read planning L0 §4.4/§13 and dependency separation; no planning edits.
+
+
+## Latest checkpoint — observation coverage assessment, 2026-10-15
+
+Committed the previous clipping slice at developer request as signed d965470,
+feat: clip known V3 observation gaps to historical requests. Clean after commit;
+691 tests rerun before it. No planning edits. Initially read 0b82d61 plus pending
+CA4-102; final planning check clean at 37986ea (CA4-102 committed concurrently by
+Claude). SHA-256 of spec/registry/backlog/review unchanged from the reviewed inputs.
+
+Extended contracts/observation_gaps.py with assess_observation_coverage(request,gaps,
+metadata_trustworthy=...). Required trust is an explicit non-defaulted boolean from
+the future timeline owner. Known original extents are request-clipped; reasons are
+unioned/sorted, earliest missing canonical instant retained. §4.4's already-open-gap
+exception uses request start; otherwise excluded lower bound advances exactly 1us
+inside the nonempty intersection. Unknown metadata (flag False or intersecting
+unknown reason) uses request start and preserves other known reasons. Original extents
+must be passed, not pre-clipped gaps, to preserve the already-open distinction.
+
+A private shared generator retains original gap and intersection for both clipping
+and assessment; all inputs are still validated even if trust is already unknown.
+One linear pass and a bounded reason set/one first instant; no sorted gap list, I/O
+or storage access. Process/required-stream calculations compose through the existing
+combine_observation_coverage. No producer availability, scope selection, durable proof
+or gap end acknowledgement is inferred; the owner must supply exhaustive evidence.
+No HouseFact/history record assembly, SQLite schema or HA contract changes.
+
+54 new assessment instances + 58 unchanged clipping instances pass. Full V3:745 passed,
+seed3145; Ruff lint/format51files, mypy22sources, diff hygiene pass. Fresh scoped mutmut
+on observation_gaps.py:110 generated,94 killed,16 reviewed TypeError-prose equivalents,
+no timeout/error/skipped/untested. Existing frozen-gap supplement killed after clean
+58-test baseline. Evidence: testing/OBSERVATION_ASSESSMENT.md; exact surviving diffs:
+testing/OBSERVATION_ASSESSMENT_MUTANTS.md. Default scope remains sixteen modules.
+No dependencies/policies changed; no HA/ARM/SQLite/live/deploy claim.
+
+Assessment source/test/evidence/README/handoff remain uncommitted; parent d965470.
+Earlier clipping/CA4-102/interval/timing review work is committed. Git status is the
+complete dirty inventory; no unrelated modifications were found.
+
+### Exact next action
+
+Review/commit this assessment slice when requested. Next connect explicit continuity
+boundary/acknowledgement state to the bounded evidence and required trust input; read
+current §3.5/§4.4/§4.6 and dependencies before defining pending/open extents. A clock
+gap end intent alone cannot certify complete coverage. Keep source unavailability,
+process gaps and post-overflow baseline validity separate; never restore an older
+available fact over a newer unavailable one. Concrete SQLite writer/transaction
+schema, watermark advancement, full HistoricalReadResult and HA lifecycle remain
+future work. No generic weekly lifecycle; Git/deploy proposals still await review.

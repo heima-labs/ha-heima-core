@@ -53,3 +53,10 @@ Known observation gap clipping: `docs/v3/testing/OBSERVATION_GAP_CLIPPING.md` an
 Explicit bounded intervals/reasons are request-clipped without merging independent
 gaps or inferring completeness from absent intersections. Required-stream selection,
 metadata trust, pending boundaries and full history assembly remain future work.
+
+
+Observation coverage assessment: `docs/v3/testing/OBSERVATION_ASSESSMENT.md` and
+`OBSERVATION_ASSESSMENT_MUTANTS.md`. Uses original bounded gap extents and explicit
+metadata trust to derive sorted reasons/first limit, then composes process and only
+required streams. Unknown metadata is conservative. Durable proof, open/pending
+boundary extents and full historical record assembly remain owner responsibilities.

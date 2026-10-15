@@ -1,8 +1,8 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: request-clipped known observation gaps; read the final WORKING_CONTEXT checkpoint.
-> Last signed commit 6cf839b includes CA4-102 and prior geometry/review fixes.
-> Current clipping slice is uncommitted; CA4-102 clarification remains resolved.
+> Latest implementation: observation coverage assessment; read the final WORKING_CONTEXT checkpoint.
+> Last signed commit d965470 contains known gap clipping.
+> Assessment slice is uncommitted; CA4-102 committed in planning as 37986ea.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
