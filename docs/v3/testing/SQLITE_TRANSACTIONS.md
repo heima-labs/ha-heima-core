@@ -1,3 +1,8 @@
+> Updated by [critical review](SQLITE_CRITICAL_REVIEW.md): the baseline below
+> predates the implicit-rollback guard and disabled statement cache. See
+> SQLITE_CRITICAL_REVIEW_MUTANTS.md and the final WORKING_CONTEXT checkpoint for
+> current verification; retain these original results as historical evidence.
+
 # Worker-owned SQLite transaction boundary — 2026-10-15
 
 ## Sources and bounded implementation choices

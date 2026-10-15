@@ -515,3 +515,97 @@ def test_real_constraint_failure_rolls_back_preceding_statements_and_marker(tmp_
     with pytest.raises(sqlite3.IntegrityError):
         writer.run(operation)
     assert rows(path) == ((), ())
+
+
+@pytest.mark.parametrize("warm_statement", [False, True])
+@pytest.mark.parametrize("conflict", ["ABORT", "ROLLBACK"])
+def test_caught_constraint_error_cannot_write_a_marker_outside_the_batch(
+    tmp_path, warm_statement, conflict
+):
+    path = database(tmp_path)
+    writer = SQLiteTransactionWriter(path, busy_timeout_ms=0)
+
+    def operation(connection):
+        if warm_statement:
+            connection.execute("INSERT INTO markers VALUES (?)", (99,))
+        connection.execute("INSERT INTO facts VALUES (1, 42)")
+        try:
+            connection.execute(f"INSERT OR {conflict} INTO facts VALUES (1, 99)")
+        except sqlite3.IntegrityError:
+            pass  # Ordinary conflict handling must not escape the batch's atomicity.
+        connection.execute("INSERT INTO markers VALUES (?)", (1,))
+        return "candidate receipt"
+
+    try:
+        if conflict == "ABORT":
+            assert writer.run(operation) == "candidate receipt"
+            markers = ((1,), (99,)) if warm_statement else ((1,),)
+            assert rows(path) == (((1, 42),), markers)
+        else:
+            with pytest.raises((sqlite3.DatabaseError, RuntimeError)):
+                writer.run(operation)
+            assert rows(path) == ((), ())
+            with pytest.raises(RuntimeError):
+                writer.run(lambda connection: "not reusable")
+    finally:
+        writer.close()
+
+
+@settings(max_examples=30, deadline=None)
+@given(
+    st.lists(st.integers(-1000, 1000), max_size=8),
+    st.booleans(),
+    st.sampled_from(["execute", "executemany", "cursor"]),
+)
+def test_property_implicit_rollback_never_publishes_following_writes(values, warm, method):
+    with TemporaryDirectory(prefix="heima-sqlite-rollback-property-") as directory:
+        path = database(Path(directory))
+        writer = SQLiteTransactionWriter(path, busy_timeout_ms=0)
+        writer.run(
+            lambda connection: connection.execute("INSERT INTO facts VALUES (0, 42)").close()
+        )
+
+        def operation(connection):
+            if warm:
+                connection.execute("INSERT INTO markers VALUES (?)", (99,))
+            for index, value in enumerate(values, 1):
+                connection.execute("INSERT INTO facts VALUES (?, ?)", (index, value))
+            try:
+                connection.execute("INSERT OR ROLLBACK INTO facts VALUES (0, 99)")
+            except sqlite3.IntegrityError:
+                pass
+            if method == "executemany":
+                connection.executemany("INSERT INTO markers VALUES (?)", [(1,), (2,)])
+            elif method == "cursor":
+                connection.cursor().execute("INSERT INTO markers VALUES (?)", (1,))
+            else:
+                connection.execute("INSERT INTO markers VALUES (?)", (1,))
+            return "not published"
+
+        try:
+            with pytest.raises((sqlite3.DatabaseError, RuntimeError)):
+                writer.run(operation)
+            assert rows(path) == (((0, 42),), ())
+        finally:
+            writer.close()
+
+
+def test_repeating_the_rollback_statement_cannot_escape_even_a_single_cached_slot(tmp_path):
+    path = database(tmp_path)
+    writer = SQLiteTransactionWriter(path, busy_timeout_ms=0)
+
+    def operation(connection):
+        sql = "INSERT OR ROLLBACK INTO facts VALUES (?, ?)"
+        connection.execute(sql, (1, 42))
+        try:
+            connection.execute(sql, (1, 99))
+        except sqlite3.IntegrityError:
+            pass
+        connection.execute(sql, (2, 100))
+
+    try:
+        with pytest.raises((sqlite3.DatabaseError, RuntimeError)):
+            writer.run(operation)
+        assert rows(path) == ((), ())
+    finally:
+        writer.close()

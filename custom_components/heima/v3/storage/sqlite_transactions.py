@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from sqlite3 import (
     SQLITE_DENY,
@@ -24,13 +25,14 @@ def _outside_event_loop() -> None:
 
 
 def _operation_authorizer(
+    connection: Connection,
     action: int,
     _argument1: str | None,
     _argument2: str | None,
     _database: str | None,
     _source: str | None,
 ) -> int:
-    if action in (SQLITE_TRANSACTION, SQLITE_SAVEPOINT):
+    if not connection.in_transaction or action in (SQLITE_TRANSACTION, SQLITE_SAVEPOINT):
         return SQLITE_DENY
     return SQLITE_OK
 
@@ -76,7 +78,9 @@ class SQLiteTransactionWriter:
             raise TypeError("SQLite lock timeout must be a non-boolean integer in milliseconds")
         if busy_timeout_ms < 0 or busy_timeout_ms > 2_147_483_647:
             raise ValueError("SQLite lock timeout is outside its integer-millisecond range")
-        connection = connect(path, timeout=0.0, autocommit=True)
+        # Authorization runs at preparation, not execution. Cached statements could
+        # otherwise write in autocommit after SQLite rolls back the whole batch.
+        connection = connect(path, timeout=0.0, autocommit=True, cached_statements=0)
         try:
             connection.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
             if connection.execute("PRAGMA busy_timeout").fetchone() != (busy_timeout_ms,):
@@ -107,7 +111,7 @@ class SQLiteTransactionWriter:
             raise RuntimeError("SQLite writer does not allow nested transactions")
         try:
             self._connection.execute("BEGIN IMMEDIATE")
-            self._connection.set_authorizer(_operation_authorizer)
+            self._connection.set_authorizer(partial(_operation_authorizer, self._connection))
             result = operation(self._connection)
             self._connection.set_authorizer(None)
             if not self._connection.in_transaction:

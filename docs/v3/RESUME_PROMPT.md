@@ -1,8 +1,10 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: worker-owned SQLite transaction boundary; read final WORKING_CONTEXT checkpoint.
-> Last signed commit 671f3b4 contains continuity prefix accounting.
-> SQLite slice is uncommitted; planning checked clean at 37986ea.
+> Latest implementation: SQLite transaction boundary committed as 9207821.
+> Critical review found and fixed implicit-rollback writes escaping atomicity;
+> review fix/tests/evidence/handoff are uncommitted. Read final WORKING_CONTEXT checkpoint.
+> Planning checked clean at 37986ea; no planning edits. Do not re-enable SQL statement
+> caching without an execution-time ownership guard: even a single cached slot is unsafe.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

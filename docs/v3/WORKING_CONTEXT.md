@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Latest implementation: worker-owned SQLite transaction boundary; see final checkpoint.
-> Last signed commit 671f3b4 (continuity accounting); SQLite slice uncommitted.
-> CA4-102 is resolved and committed in planning as 37986ea; final planning check clean.
+> Latest commit 9207821 contains the SQLite transaction boundary.
+> Critical review fixed implicit-rollback atomicity; fix/tests/evidence uncommitted.
+> Read the final checkpoint. Planning 37986ea remains clean and read-only.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -1397,3 +1397,51 @@ issue a receipt on queue admission, or use intake-only ordinals for full closure
 No real bounded retry owner, SQL fact/metadata schema, receipt issuer, range assembler,
 watermark publication, HA lifecycle or HistoricalReadResult exists yet. SQLite backup
 and checkpoint cadence remain future design. Git/deploy policies still proposals.
+
+
+## Latest checkpoint — critical SQLite/continuity review, 2026-10-15
+
+Developer requested commit then critical review. Reran all915 tests and diff check,
+committed the nine SQLite slice files as 9207821, feat: add worker-owned V3
+SQLite transaction boundary; clean immediately afterward. Planning37986ea clean,
+read-only; re-read registry/workflow and L0 §4.1/§4.2/§4.4/§4.6 boundaries.
+
+One confirmed P1 atomicity defect fixed: SQLite can roll back the whole transaction
+without an explicit ROLLBACK statement. A callback catching that error could then
+write in autocommit; the final ownership check was too late. Real native regression
+first found a durable marker with no facts on baseline9207821, for both cold and
+warmed SQL. The callback authorizer now denies preparation after transaction loss;
+cached_statements=0 ensures reused SQL cannot bypass that compile-time check.
+No new retries/schema/receipts or product policy. Cost: repeated SQL preparations
+within a batch; actual Raspberry Pi throughput remains unmeasured. Trusted callback
+constraints remain; this does not sandbox Python or connections deliberately leaked.
+
+Decision table distinguishes caught ABORT (transaction remains valid) vs ROLLBACK
+(transaction ended), with cold/warmed continuation. MC/DC isolates transaction loss
+and explicit transaction control. New PBT varies prefix values, prior durable row,
+warm state and execute/executemany/cursor paths. A first mutation run exposed cache
+size1 as a real surviving defect seed; added same-SQL/new-key regression, proved it
+fails on durable contents with cache1, then restarted mutation from a fresh directory.
+Final full V3 suite:921 passed, seed3145; SQLite focused54. Ruff lint/format60files,
+mypy25sources and diff check pass. Fresh scoped mutmut153 generated,82killed,
+71 individually reviewed equivalents; zero errors/timeouts/skipped/untested/
+interrupted. Five supplemental mutations killed with clean54-test baseline.
+Evidence: testing/SQLITE_CRITICAL_REVIEW.md and SQLITE_CRITICAL_REVIEW_MUTANTS.md.
+Prior mutation reports remain historical. Fix/tests/supplement/review evidence/
+handoff and baseline-doc cross-reference are uncommitted on parent9207821.
+
+No other confirmed defect in reviewed clock receipt correlation, continuity-prefix
+proof, observation clipping/assessment. None of these pure constructors issues a
+real SQLite acknowledgement. Future domain SQL owner must correlate durable receipt
+identity and reconcile uncertain COMMIT outcomes; no fake queue-admission success.
+
+### Exact next action
+
+Review/commit this critical-review fix when requested, then continue the domain SQL
+schema/operations and stable operation-id reconciliation, matched clock boundaries,
+verified range assembly and continuity watermark transaction. Read current planning
+first; record concrete schema/worker rationale before costly choices. Full-cycle
+closure includes later DAG facts and independent audit items, not intake ordinals.
+No schema, bounded queue/retry owner, real receipt issuer, watermark publication or
+HA lifecycle exists yet. No deployment, V2 change or planning write was performed.
+Git/deploy policies remain proposals.

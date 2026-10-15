@@ -9,6 +9,18 @@ from pathlib import Path
 
 MUTATIONS = (
     (
+        "allow_sql_after_implicit_rollback",
+        "if not connection.in_transaction or action in (SQLITE_TRANSACTION, SQLITE_SAVEPOINT):",
+        "if action in (SQLITE_TRANSACTION, SQLITE_SAVEPOINT):",
+        "test_caught_constraint_error_cannot_write_a_marker_outside_the_batch",
+    ),
+    (
+        "reuse_prepared_sql_after_implicit_rollback",
+        "cached_statements=0",
+        "cached_statements=128",
+        "test_caught_constraint_error_cannot_write_a_marker_outside_the_batch",
+    ),
+    (
         "publish_before_commit",
         '            self._connection.execute("COMMIT")',
         '            return result\n            self._connection.execute("COMMIT")',
