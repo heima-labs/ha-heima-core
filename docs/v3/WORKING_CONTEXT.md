@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Source/Location review fixes, regression tests and evidence are included in this checkpoint.
-> Use git log -1 for this commit; its parent is0207174. See the final checkpoint.
-> Planning f191d2c read-only. Source shape validation never grants authority.
+> Parentc9b6c62; Provenance/HouseFact builder and CA4-104 context update are uncommitted.
+> Read the final checkpoint and testing/HOUSE_FACT_BUILDER.md.
+> Planning aa4455a read-only; Topology and runtime source authority remain unimplemented.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -396,10 +396,13 @@ Layer-2/5 dependencies and reviews CA4-89/91/92/95. Planning clean, read-only.
   case-fold; composed names across all shipped locales. Live HA fallback names exempt
   from uniqueness check. Sensor gains display_name. Names remain outside semantic
   fingerprints; Zone full definition fingerprint still includes name. Never normalize ids.
-- CA4-92, Layer 1 §7: OpeningType door/window/door_window; eight CompassOrientation
-  values; orientation optional unless consumer requires it. Opening.entity_id REMOVED
-  and rejected in serialized input. Opening state only via Sensor.related_opening_id
-  or Actuator channel.opening_id. ResolvedConnection remains derived with no access_type.
+- CA4-92 + CA4-104, Layer 1 §7 (planning aa4455a): OpeningType is now
+  door/window/door_window/passage; eight CompassOrientation values. Orientation is
+  forbidden for passage; for other types it remains optional unless a consumer
+  requires it. Opening.entity_id is removed/rejected in serialized input. Opening
+  state comes via Sensor.related_opening_id or Actuator.opening_id, whose staging
+  must reject passage. Connections derive exactly from door/door_window/passage;
+  no access_type or connection_type. See final CA4-104 checkpoint for floor rules.
 
 Generic HouseFact fields/identity/deep freeze/JCS/depth/8-KiB/value-vs-evidence error
 policy unchanged. No contradiction found in reviewed changes; confirmed one outstanding
@@ -1708,3 +1711,143 @@ reading current L1 §3/§4 and L0 §5. Source shape grants no authority; actual 
 admission/redaction requires registered producer/generation and verified HA ingress.
 Fact/marker SQL and HA integration remain pending. Recheck the live planning worktree
 at resumption; CA4-104 was being changed by the other session during the review.
+
+
+## Latest checkpoint — CA4-104 Topology handoff, 2026-10-15
+
+Developer requested documentation synchronization only; no implementation or commit.
+Implementation branch feat/v3-implementation was clean at c9b6c62. Planning branch
+feat/v3-planning is clean at aa4455a (CA4-104/105 committed). Read planning AGENTS,
+workflow/registry, L1 §7 and §10 topology acceptance, reviews/CA4-104.md and backlog
+CA4-104, plus dependent L2 §2.4/§3/§9. The cited list was checked against normative
+text. Planning was not edited. CA4-103/105 house-map work is for later, outside scope.
+
+### Rules to apply when Topology is implemented
+
+- Closed OpeningType: door, window, door_window, passage. A passage is passable,
+  has no leaf or state, is always open and cannot be closed (archway/open-plan/
+  open staircase). Its owner and other_side must both resolve to registered interior
+  rooms. Reject outside, either exterior side, and any orientation. Consequently
+  opening_faces_exterior is always False for an admitted passage.
+- Derive one ResolvedConnection per door/door_window/passage and none for window;
+  room_a is the opening owner and room_b equals other_side. Do not author a separate
+  Connection, access_type or connection_type.
+- Between two registered rooms on different floor_by_room values, admit only door
+  or passage; reject window and door_window, including a window facing an interior
+  room on another floor. Compare the existing derived floor_by_room only, no new
+  cross-floor field. A closable staircase connection is a door, on any floor. A
+  staircase may instead be an ordinary one-floor Room with its own openings/windows;
+  a Room never spans floors.
+- Keep canonical ordering, derived views, thermal-envelope/exposure rules and
+  fingerprint membership unchanged; display_name stays outside semantic fingerprints.
+  Passage contributes no exterior-facing exposure. Consult the full L1 §7 contract
+  for existing window exposure rules rather than deriving new ones from this note.
+- At L2 staging reject Actuator.opening_id or Sensor.related_opening_id referencing
+  passage; it has neither an operable leaf nor opening state to observe.
+
+### Acceptance evidence to implement later
+
+1. Decision table: type × other_side (outside/interior/exterior) × orientation
+   absent/present × same/different floor, with owner enclosure covered too; expected
+   admission and derived connection. Floor comparison is not applicable to outside,
+   which is not a Room; explicitly mark that case instead of inventing its floor.
+2. MC/DC: isolate each passage condition (registered interior owner, registered
+   interior opposite room, no outside, no exterior side, no orientation). Keep valid
+   reference-resolution preconditions explicit when comparing condition pairs.
+3. BVA: passage owned by exterior room; window toward an interior room on another
+   floor rejected; door between floors valid. Include same-floor controls and
+   passage across floors, plus orientation absent versus present.
+4. PBT: every admitted passage has opening_faces_exterior=False; permuting openings
+   preserves the canonical fingerprint. Preserve independent identity/order fixtures.
+5. Mutation testing scoped to the Topology validator and its relevant consumers;
+   record survivors/equivalence with the approved five-method testing workflow.
+
+### Compatibility, evidence and exact next action
+
+Source diff f191d2c..aa4455a changes L1 §7/topology acceptance; Location §5 is unchanged
+and L0 source contracts have no diff. Inspected implemented Location/source modules
+and package inventory: no Topology/Opening/registry implementation exists, and no
+conflict with implemented contracts was found. No clarification prompt needed.
+Only WORKING_CONTEXT.md changed. Verification: source/implementation comparison and
+Git diff check; no runtime or mutation tests run for this documentation-only task.
+The previous1252-test result belongs to the committed implementation, not a CA4-104
+execution claim. This update remains uncommitted per developer instruction.
+
+When development is requested again, resume Provenance/full HouseFact as previously
+recorded; this handoff does not start the Topology slice. Before that future slice,
+re-read live L1 §7/§10 and L2 staging rules and use the CA4-104 plan above. Recheck
+planning HEAD/status on resumption. Git/deploy proposals and other implementation
+limits remain as recorded in the preceding commit checkpoint.
+
+## Active slice — Provenance and approved HouseFact builder
+
+Continuing development without commit. Parentc9b6c62; preserve uncommitted CA4-104
+context update. Planningaa4455a clean/read-only. Read L1 §3/§4/§5/§10 and L0 §5,
+source fingerprint §4.0 and registry/workflow. Implement approved build_house_fact
+with exact envelopes and bounded diagnostics, using existing payload preparation.
+Rationale in testing/HOUSE_FACT_BUILDER.md precedes code. Expected new contract/tests/
+supplement/evidence, mutation scope, README/handoff. No Topology, source authority,
+SQL fact batch, queue worker or deploy. Existing payload functions remain unchanged.
+
+
+## Latest checkpoint — Provenance and full HouseFact construction, 2026-10-15
+
+Developer approved continuation, no commit request. Started with only prior CA4-104
+WORKING_CONTEXT documentation dirty; retained it. Parentc9b6c62. Planningaa4455a
+clean/read-only at start; read workflow/registry, L1 §3/§4/§5/§10 and L0 §5/§4.0.
+Impact/rationale recorded before coding in testing/HOUSE_FACT_BUILDER.md. Topology
+is not started; CA4-104 rules remain queued for that slice.
+
+Added contracts/house_facts.py: frozen/slots HouseFact and Provenance with exact5/4
+fields, one approved public build_house_fact entry point and FactBuildResult(fact,
+diagnostics). Ordinary record constructors reject; factory internally assembles
+only locally prepared payloads. Essential type/name/value/instant/location/source/
+availability/confidence violations reject. Reused value freeze and evidence
+preparation once each; invalid evidence alone becomes immutable empty mapping and
+returns existing bounded PayloadDiagnostic. Omitted evidence differs from explicit
+None (the latter is invalid and diagnosed). No raw invalid payload in diagnostics.
+
+None confidence iff unavailable; primitive nonboolean confidence numbers must be
+in finite[0,1], without coercion or overflow from huge ints. Integer0/1 preserved.
+Unavailable value still validates/freezes and retains supplied content; consumers
+must not read it as usable. Canonical metadata encodability validated; concrete
+Location/source snapshots preserve opaque identities and causal ID with no UUID
+regeneration. Production source-shape gate uses existing mode policy, explicit
+isolated test_mode permits test sources, legacy always rejects. This grants no
+authority: runtime producer/generation/verified HA ingress and redaction remain
+required. Specific typed fact-value semantics belong to owning producers.
+
+house_fact_canonical_bytes encodes exactly the five fields; where projects its four
+Location fields with code-point-sorted room_ids, how keeps its four fields. No extra
+identity/append/diagnostic fields. Fact/provenance equality/hash use shared canonical
+bytes; True differs from1, while1/1.0 and signed zeros agree. No duplicate byte cache.
+This full record equality is not the future write-on-change comparison, which must
+exclude time/correlation/evidence and ignore unavailable semantic value as L0 §4.0 says.
+
+110 focused instances, full V3:1362 passed,seed3145. Decision/BVA/MC/DC and two PBTs
+cover hard/soft failures, confidence boundaries/nonfinite/bools/large ints, size
+8191/8192/8193, immutable input detachment, opaque metadata/source copying, source
+modes, all Location forms and canonical equality/hash. Ruff lint/format73files,
+mypy29sources,diff pass. Fresh scoped mutmut233generated,189killed,44individually
+reviewed prose equivalents; no errors/timeouts/skipped/untested/interrupted. First
+run exposed two constant Provenance-hash test gaps; strengthened canonical hash
+assertion and restarted fresh. Eleven frozen/slots/omission/policy/equality seeds
+killed with clean110-test baseline. Default scope23modules. Evidence testing/
+HOUSE_FACT_BUILDER.md and HOUSE_FACT_BUILDER_MUTANTS.md. No new dependency/policy.
+
+New module/tests/supplement/pyproject/evidence/README/resume/context are uncommitted;
+CA4-104 context update remains included. No SQL fact/marker write, decoder, state
+acceptance index, source authority, bounded worker/queue, watermark or HA lifecycle.
+No deployment, V2 migration, live HA or ARM-throughput claim. Planning not edited.
+
+### Exact next action
+
+Review/commit this builder when requested. Then implement the missing accepted-state
+FactIdentityKey/FactChangeFingerprint contract and producer admission/order metadata
+needed by real fact/CycleCommitMarker SQL. Read current L0 §4.0/§4.1/§4.2 and source
+authority §5 first; record schema/replay rationale before storage changes. Do not use
+full HouseFact equality as write-on-change, treat shape as authority, silently omit
+returned diagnostics, or create a competing fact envelope. Generic JSON parsing
+must not lose duplicate names/numeric-domain rules when fact decoding is added.
+Topology remains a future slice governed by CA4-104 above; re-read planning on resume.
+Git/deploy policies remain proposals. All current changes await developer commit.

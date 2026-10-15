@@ -103,3 +103,11 @@ net, explicit causal propagation and forged/subclass validation. The validator g
 no authorization. `mutation_fact_sources.py` supplements module vocabularies,
 dataclass defaults and frozen/slots outside ordinary function scope. Evidence:
 `docs/v3/testing/FACT_SOURCE.md` and `FACT_SOURCE_MUTANTS.md`.
+
+
+HouseFact/Provenance builder: `contracts/test_house_facts.py` verifies universal
+record assembly, hard/soft failures, immutable snapshots, metadata, canonical
+encoding/equality/hash and source mode propagation; `mutation_house_facts.py`
+supplements envelope flags, omission semantics and policy/equality changes.
+See `docs/v3/testing/HOUSE_FACT_BUILDER.md` and `HOUSE_FACT_BUILDER_MUTANTS.md`.
+This is construction; runtime authority, diagnostics delivery and fact SQL are pending.

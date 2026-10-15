@@ -1,13 +1,12 @@
 # Prompt to resume V3 implementation
 
-> Source/Location review fixes/tests/evidence are included in this checkpoint (parent0207174).
-> Use git log -1 for the commit that records it; there is no pending review-fix patch.
-> Read final WORKING_CONTEXT checkpoint and testing/SOURCE_LOCATION_CRITICAL_REVIEW.md.
-> Canonical Location operations derive identity from owned fields, not subclass hooks.
-> Runtime source shape/fingerprint boundaries require concrete source classes; extra
-> source fields must not enter generic serialization after admission. Shape is not
-> authority: producer/generation/verified HA boundaries remain future work.
-> Planning f191d2c read-only. Full HouseFact/Provenance/fact SQL still pending.
+> Parentc9b6c62; new Provenance/HouseFact builder and CA4-104 notes are uncommitted.
+> Read final WORKING_CONTEXT checkpoint and testing/HOUSE_FACT_BUILDER.md.
+> Use build_house_fact; consume FactBuildResult diagnostics at future admission.
+> Essential invalid data rejects; evidence alone degrades. Value is undefined when
+> unavailable, confidence must then be None. Full record equality is not write-on-change.
+> Source shape grants no authority; producer/generation/HA admission remains pending.
+> Planning aa4455a read-only. Topology CA4-104 is for later; no fact/marker SQL yet.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
