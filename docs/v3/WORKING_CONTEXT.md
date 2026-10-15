@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Latest commit 9207821 contains the SQLite transaction boundary.
-> Critical review fixed implicit-rollback atomicity; fix/tests/evidence uncommitted.
-> Read the final checkpoint. Planning 37986ea remains clean and read-only.
+> Latest commit 2449ea0 fixes SQLite implicit-rollback atomicity.
+> New composable SQLite clock-boundary writes/tests/evidence are uncommitted.
+> Read the final checkpoint. Planning HEAD37986ea; Layer8 CA4-103 edits in progress.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -1445,3 +1445,67 @@ closure includes later DAG facts and independent audit items, not intake ordinal
 No schema, bounded queue/retry owner, real receipt issuer, watermark publication or
 HA lifecycle exists yet. No deployment, V2 change or planning write was performed.
 Git/deploy policies remain proposals.
+
+## Active slice — real SQLite clock boundary writes
+
+Review fix committed2449ea0 after921 tests; clean afterward. Planning37986ea clean,
+read-only. Implement composable immutable clock-boundary SQL operations with stable
+(gap_id,boundary) reconciliation and post-COMMIT publication via existing writer.
+Read L0 §3.5/§4.2/§4.4/§4.6. Rationale and rejected storage choices recorded before
+implementation in testing/SQLITE_CLOCK_BOUNDARIES.md. Expected files: new storage
+module/tests/evidence/supplement, mutation scope, README and handoff. No generic
+ledger, fact schema, watermark, queue worker, retention or HA lifecycle yet.
+
+
+## Latest checkpoint — SQLite clock-boundary operations, 2026-10-15
+
+Committed the critical-review fix at developer request as2449ea0 after921 tests
+and diff check; clean immediately afterward. Planning37986ea unchanged/clean,
+read-only; reviewed current L0 §3.5/§4.1/§4.2/§4.4/§4.6 and registry/workflow.
+
+Added storage/sqlite_clock_gaps.py: prepare_clock_gap_schema SQL callback for staging,
+ClockGapBoundaryWrite frozen/slots callable for composing inside writer.run with
+other end-of-cycle SQL. New version-named STRICT clock_gap_boundaries_v1 table;
+(gap_id,boundary) primary key, canonical UTC time and explicit inclusion. Reuse
+ClockGapBoundaryReceipt validator at staging and application (including forged data).
+Exact immutable replay reconciles an uncertain COMMIT; different time/inclusion
+under the same identity rejects, leaving existing data unchanged. No mutable upsert,
+ID allocation, automatic retries or generic operation journal. No result may be
+published from inside the callback; writer.run must return successfully first.
+The future owner must supply globally unique retained gap IDs and valid matched
+ClockGap intents. Separate opening/closing rows allow independent/out-of-order proofs.
+Rationale/rejected options recorded before coding in testing/SQLITE_CLOCK_BOUNDARIES.md.
+
+39 focused instances, full V3:960 passed,seed3145. Real on-disk isolation and atomic
+composition with fixture facts, rollback, immutable replay, explicit replacement-
+writer reconciliation after COMMIT errors before/after actual commit, and downstream
+coverage from genuine committed closing receipt. Boundary IDs include raw Unicode,
+SQL quotes and NUL; no extra normalization/limits. BVA min/max canonical instants,
+booleans, matching/1us-different time. Decision table/MC/DC and30-example dictionary
+PBT. Ruff lint/format63files,mypy26sources,diff pass. Fresh scoped mutmut45generated,
+33killed,12individually inspected generic-prose equivalents, zero errors/timeouts/
+skipped/untested/interrupted; five SQL/frozen/slots supplements killed with clean39
+baseline. Permanent scope20modules. New evidence SQLITE_CLOCK_BOUNDARIES.md and
+SQLITE_CLOCK_BOUNDARIES_MUTANTS.md; prior mutation reports remain historical.
+
+At the final check, planning HEAD was still37986ea but another session had started
+uncommitted CA4-103 changes: Layer8 house map, its registry, overview/recap/backlog
+and new review. Inspected the diff and review: no new L0–5 contract, no clock/SQLite
+boundary impact. Planning was clean at task start, NOT clean at final check; no
+planning files were edited by Codex. Re-read the live working copy on resumption.
+
+Module/tests/supplement/evidence/pyproject/README/handoff are uncommitted on2449ea0.
+No planning/V2/deploy/live HA/power-cut/ARM-throughput claim. No production DB created.
+
+### Exact next action
+
+Review/commit this bounded storage slice when requested. Continue domain batch
+schema/operations for accepted facts and CycleCommitMarker, then verified receipt-
+backed accounting ranges and the actual continuity-watermark write. Read current
+planning first and record schema rationale before costly choices. Compose all cycle
+facts/marker/continuity operations in one transaction rather than flushing each
+boundary. Mutable operation replay needs its own stable identity/reconciliation;
+this immutable boundary mechanism does not solve general replay. Future worker/queue
+owner handles admission, acknowledgements and uncertainty; HA lifecycle, startup
+timeline enumeration and retention/pruning remain unimplemented. No generic weekly
+CronEntry lifecycle or V2 migration. Git/deploy policies remain proposals.

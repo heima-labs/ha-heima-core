@@ -81,3 +81,10 @@ SQLite transaction boundary: `docs/v3/testing/SQLITE_TRANSACTIONS.md` and
 Real temporary on-disk WAL/FULL transactions, post-COMMIT results, rollback/uncertain
 commit, SQL-control guard and worker/event-loop ownership. No application SQL schema,
 queue/worker host or actual watermark/receipt issuer is implemented by this primitive.
+
+
+SQLite clock-boundary operations: `storage/test_sqlite_clock_gaps.py` uses real
+on-disk batch/replay/uncertainty cases; `mutation_sqlite_clock_gaps.py` supplements
+SQL semantics and frozen-value checks. Evidence: `docs/v3/testing/SQLITE_CLOCK_BOUNDARIES.md`
+and `SQLITE_CLOCK_BOUNDARIES_MUTANTS.md`. Receipts from inner callbacks are candidates
+until the enclosing SQLiteTransactionWriter.run successfully returns.

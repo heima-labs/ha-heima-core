@@ -1,10 +1,12 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: SQLite transaction boundary committed as 9207821.
-> Critical review found and fixed implicit-rollback writes escaping atomicity;
-> review fix/tests/evidence/handoff are uncommitted. Read final WORKING_CONTEXT checkpoint.
-> Planning checked clean at 37986ea; no planning edits. Do not re-enable SQL statement
-> caching without an execution-time ownership guard: even a single cached slot is unsafe.
+> Latest commit2449ea0 fixes SQLite implicit-rollback atomicity.
+> New SQLite clock-boundary operations/tests/evidence/handoff are uncommitted.
+> Read final WORKING_CONTEXT checkpoint and SQLITE_CLOCK_BOUNDARIES.md before resuming.
+> Planning HEAD37986ea has in-progress Layer8 CA4-103 edits; read it without editing.
+> Publish callback receipt candidates only
+> after writer.run succeeds; immutable boundary replay does not solve mutable batches.
+> Keep SQL statement caching disabled absent an execution-time ownership guard.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
