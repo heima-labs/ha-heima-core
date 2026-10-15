@@ -1,7 +1,7 @@
 # V3 implementation working context
 
-> Latest implementation: timing clock bridge and safe per-job re-arm failures;
-> see final checkpoint. Last signed commit f182a37; new bridge slice uncommitted.
+> Latest implementation: observation coverage values/composition; see final checkpoint.
+> Last signed commit 6a60bd5; new coverage slice uncommitted.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -976,3 +976,46 @@ gap/periodic watermark effects; alternatively the next agreed foundation contrac
 Actual HA bootstrap/shutdown and fault publication need their own bounded integration
 slice. Preserve shared 60-second CronEntry ownership, CA4-98/99 references and CA4-101
 interval-only scope. Git/deploy proposals remain pending developer review.
+
+
+## Latest checkpoint — observation coverage foundation, 2026-10-15
+
+Committed verified clock/scheduler bridge and safe failure handling at user request
+as signed 6a60bd5, feat: connect V3 clock observations to safe scheduler rearming.
+Clean before this slice. Planning clean/read-only 0b82d61, L0 §4.4 continuity value,
+required-stream composition and dependency registry checked. Older bridge-uncommitted
+notes are superseded.
+
+Added contracts/observation.py with closed ObservationCoverageStatus/ObservationGapReason,
+validated frozen ObservationCoverage, and combine_observation_coverage(process,
+required_streams=()). Complete/incomplete field invariants, exact closed reason shape,
+ASCII order/distinctness and canonical missing instant validated. Composition unions
+reasons and keeps earliest missing instant, revalidating reconstructed inputs.
+Process result is mandatory even for zero required streams; known gaps cannot be
+healed by complete streams. No clipping, endpoint or retention policy is invented.
+
+541 V3 tests pass, 39 new, seed3145; Ruff lint/format, mypy and diff pass. Five-method
+evidence in OBSERVATION_COVERAGE.md. Fresh mutmut: 115 generated, 67 killed, 48 generic
+error-prose equivalents, no timeout/error/skipped; exact diffs in
+OBSERVATION_MUTANT_REVIEW.md. Three supplemental observation mutations killed with
+clean baseline (frozen result, dropped declared reason, accepted unknown reason).
+A rejected collection-error probe was not counted as a behavioral kill. Default
+scope fourteen modules. No new dependency, policy or SQLite schema; no live/HA/ARM/
+durable gap acknowledgement/deploy claim.
+
+New coverage slice remains uncommitted; last signed 6a60bd5. Its inputs must already
+cover the same request and be clipped to it, with only required streams selected.
+This algebra does not certify trusted metadata, store gaps, select interval endpoints,
+resolve latest state availability, evaluate retention or acknowledge writes. Those
+belong to the future timeline/read implementation. HistoricalReadResult and HouseFact
+assembly remain unimplemented.
+
+### Exact next action
+
+Review/commit this value/composition slice when requested. Continue the bounded
+Layer-0 observation timeline/read path: derive request-clipped process/stream coverage
+from specified gap and durability state before connecting SQLite writer/acknowledgement.
+Read current §4.1/§4.4/§4.6 and dependencies; surface ambiguous endpoint cases instead
+of choosing silently. HA lifecycle/diagnostics, watermark writer and standing config
+persistence remain future work. Preserve interval-only CronEntry and current clock
+rules. Git/deploy proposals remain pending developer review.

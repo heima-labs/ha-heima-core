@@ -2,7 +2,7 @@
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
 Install runtime/development locks first; tests import real packages and the mutated
-copy under mutmut, without HA/V2 import shims. Default mutation scope: thirteen modules.
+copy under mutmut, without HA/V2 import shims. Default mutation scope: fourteen modules.
 
 ## Current contracts
 
@@ -34,3 +34,8 @@ Timing clock integration: `docs/v3/testing/TIMING_CLOCK_BRIDGE.md` and its mutan
 review. `mutation_timing_clock.py` covers three public frozen clock/failure records.
 Host capture and 60-second component composition are tested; actual HA lifecycle,
 diagnostic publishers and durable continuity watermark/gap implementation remain future.
+
+Observation coverage foundation: `docs/v3/testing/OBSERVATION_COVERAGE.md` and its
+mutant review. Supplement: `mutation_observation.py`. Covers value invariants and
+composition of already request-clipped process/required-stream results; actual gap
+timeline assessment, SQLite durability and historical record assembly remain future.
