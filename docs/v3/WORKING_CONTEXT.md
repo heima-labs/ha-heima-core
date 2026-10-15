@@ -1909,3 +1909,34 @@ and comparison; ordinary state compares against live current index; forced
 durable baselines must not duplicate live buffer/subscriber transitions.
 Validated read-query key construction is not implemented by this extraction API.
 Topology remains later under CA4-104; Git/deploy proposals remain pending.
+
+
+## Latest checkpoint — commit and critical fact-contract review, 2026-10-15
+
+At developer request committed state comparison as50b9cc8, feat: add V3 state
+identity and change fingerprints. Worktree clean after commit. Reviewed50b9cc8,
+d921fd6 and Source/Location dependencies c9b6c62,0207174,cdea575 against clean
+read-only planningaa4455a, L0 §4.0/§4.2/§5/§13 and L1 §3/§4/§5.
+
+No confirmed correctness defect or new spec contradiction found in this scope.
+Full report testing/FACT_CONTRACT_CRITICAL_REVIEW.md. Inspected tests, consumers,
+existing mutation survivors and construction/equality/immutability paths. Re-ran
+1413 V3 tests(seed3145), Ruff lint/format76files, mypy30sources and diff check:
+all pass. Additional144-scenario cross-product probe includes finite float1e20,
+max float/subnormal/safe-int endpoints, four Locations, availability and volatile
+metadata; nested record/JSON equality and nested projection immutability pass.
+No production code/test change, new mutation run, HA/live/ARM benchmark or deploy.
+
+Only review report and handoff updates remain uncommitted; production code through
+50b9cc8 is committed. Source authority/emission routing, validated read-query key
+construction, current index, ordered admission/queue and fact/marker SQL remain
+unimplemented; these limitations are not closed by the primitive tests. Planning
+unchanged; Topology CA4-104 remains later, Git/deploy proposals remain pending.
+
+### Exact next action
+
+On development authorization continue composed producer ownership/emission-kind
+admission and coordinator ordering before state/event acceptance and SQL batch.
+Re-read live L0 §4/§4.0/§4.2/§5 and dependencies, and record concrete staging/order
+design before coding. Preserve event bypass and forced-baseline/live-transition
+separation. No clarification or regression fix is pending from this review.

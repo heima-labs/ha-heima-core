@@ -1,13 +1,12 @@
 # Prompt to resume V3 implementation
 
-> Parent d921fd6 (HouseFact builder + CA4-104 notes committed). New state
-> identity/change extraction is uncommitted; see the latest WORKING_CONTEXT entry
-> and testing/FACT_STATE.md. Use fact_identity_key/fact_change_fingerprint only
-> for registered state claims; events bypass them. Unavailable value projects to
-> None without inspection; time/correlation/evidence do not affect comparison.
-> Full fact equality is different. Producer authority/emission routing, current
-> index, append ordering and fact/CycleCommitMarker SQL are still unimplemented.
-> Planning aa4455a remains read-only; Topology CA4-104 is for a later slice.
+> Code through50b9cc8 is committed (state identity/change comparison); d921fd6
+> contains HouseFact construction. Latest critical review found no confirmed
+> defect:1413 tests and144 extra scenarios pass, Ruff/mypy pass. Read testing/
+> FACT_CONTRACT_CRITICAL_REVIEW.md and latest WORKING_CONTEXT checkpoint.
+> Only review/handoff docs remain uncommitted. Producer authority, emission
+> routing, current index, append coordinator and fact/marker SQL remain pending.
+> Planningaa4455a read-only; Topology CA4-104 belongs to a later slice.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
