@@ -1,13 +1,13 @@
 # Prompt to resume V3 implementation
 
-> Claim primitives committed asf5f2369. New composed producer staging is
-> uncommitted: all15 core reservations, duplicate static identities, inventory
-> reference checks and immutable staged type bindings.1567 tests,Ruff/mypy pass.
-> Read latest WORKING_CONTEXT and testing/PRODUCER_STAGING.md and PRODUCER_STAGING_MUTANTS.md.
-> resolve_type is staging-only; bindings do not prove source/actor/generation
-> authority. Next: concrete producer ports/admission tied to active generation,
-> then coordinator order and acceptance. Index/queue/fact-marker SQL pending.
-> Planningaa4455a read-only; Topology CA4-104 belongs to a later slice.
+> Producer staging committed as66f885b. New generation record foundation is
+> uncommitted: LayerGenerationRef and ComposedGenerationManifest, canonical five
+> layers, explicit effective_at and immutable metadata.1642 tests,Ruff/mypy pass.
+> Read latest WORKING_CONTEXT and testing/COMPOSED_GENERATION.md plus mutant review.
+> Constructor/manifest object is not proof of durable activation or actor/source
+> authority. Next integration still needs active-generation reference/fence and
+> concrete producer ports; writer/activation/index/queue/fact-marker SQL pending.
+> Planningaa4455a remains read-only; Topology CA4-104 belongs to a later slice.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

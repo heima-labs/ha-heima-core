@@ -142,3 +142,13 @@ Evidence: [PRODUCER_STAGING](../../docs/v3/testing/PRODUCER_STAGING.md) and
 [mutants](../../docs/v3/testing/PRODUCER_STAGING_MUTANTS.md). Semantic supplements:
 `.venv-v3/bin/python tests/v3/mutation_producer_staging.py`.
 Bindings are metadata, not source-authority tokens or live producer admission.
+
+
+### Composed generation record shapes
+
+`contracts/test_generations.py` checks L0 §4.7 exact records, canonical five-layer
+order, immutable metadata and explicit UTC effective_at. Evidence:
+[COMPOSED_GENERATION](../../docs/v3/testing/COMPOSED_GENERATION.md) and
+[mutants](../../docs/v3/testing/COMPOSED_GENERATION_MUTANTS.md).
+Run `.venv-v3/bin/python tests/v3/mutation_generations.py` for semantic supplements.
+Constructing a manifest does not prove durable commit or activate a generation.

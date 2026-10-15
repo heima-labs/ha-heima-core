@@ -2062,3 +2062,64 @@ owner/source strings from external facts, treat staging metadata as authority, o
 add pattern lookup per emitted fact. Initial core/static concrete outputs can be
 bound at staging; future dynamic Layer7 lifecycle remains outside implemented scope.
 Preserve event bypass and forced-durable-baseline/live-transition separation.
+
+
+## Active slice — composed generation value prerequisite
+
+Committed producer staging as66f885b at developer request. Planningaa4455a clean,
+read-only. L0 §4.7 makes durable manifest activation the authority for the next
+runtime fence. Implement the missing exact manifest/reference value contract
+first; rationale in testing/COMPOSED_GENERATION.md. No activation or trust flag.
+
+
+## Latest checkpoint — composed generation record prerequisite, 2026-10-15
+
+Committed producer composition as66f885b at developer request, started clean.
+Planningaa4455a clean/read-only. Read AGENTS/workflow/registry, L0 §4.7/§5.1/§5.2,
+L2 §2.5 and L0-COMPOSED-GENERATION dependency closure: L1-EVIDENCE-INSTANT and
+L0-CYCLE-INSTANT (L1 §4, L0 §3.5). The next runtime admission fence needs the durable
+active-composition contract; implemented its missing value records first, before
+introducing active-generation authority. Impact in testing/COMPOSED_GENERATION.md.
+
+Added contracts/generations.py: ConfigurationLayer closed vocabulary,
+LayerGenerationRef exact3fields and ComposedGenerationManifest exact7fields, both
+frozen/slots. Manifest requires exactly one reference per layer2..layer6 in
+canonical order; no silent sorting. Requires concrete references, revalidates their
+metadata, accepts immutable dependent-id tuples and canonical UTC effective_at.
+Primitive Unicode metadata is preserved; previous id optional. No digest format,
+identifier grammar, parent existence or dependent-id ordering rule invented.
+Shared canonical encoder serializes configuration records; no HouseFact fields or
+PersistedProjection depth/8KiB limits applied to configuration history.
+
+75 focused,1642 full V3 passed(seed3145); Ruff lint/format85files,mypy33sources,diff
+pass. Decision/BVA order/cardinality/vocabulary/metadata/time cases and2 seeded
+PBTs; no compound Boolean decision, MC/DC explicitly inapplicable to this module's
+single guards. Fresh mutmut47generated,23killed,24individually reviewed error-prose
+equivalents, zero errors/timeouts/skipped/untested/interrupted.12 semantic supplements
+killed with clean75-test baseline:4 immutable/slots,4 canonical-order swaps,1 unknown
+layer,3 skipped validation calls. Rejected collection-error seed is not a kill;
+an initial property-list fixture failed clean baseline and was corrected before a
+fresh campaign. Two nested-reference cases added after campaign, source unchanged.
+Evidence COMPOSED_GENERATION.md/COMPOSED_GENERATION_MUTANTS.md. Scope27modules.
+
+New source/tests/supplement/scope/evidence/README/handoff are uncommitted. No new
+policy/dependency/HA public contract or existing persisted-schema change.
+Manifest construction is only shape validation: it does not prove a durable
+commit, authenticated actor, actual digest, parent chain, cycle-clock origin or
+active status. Manifest writer/activation, impact confirmation, verified source/
+generation admission, actual producer ports, current index, cycle ordering,
+queue/fact-marker SQL and HA lifecycle remain unimplemented. No live HA/ARM
+benchmark/deploy claim. Planning unchanged; Topology CA4-104 remains later.
+
+### Exact next action
+
+Review/commit record foundation when requested. Continue the generation-bound
+producer admission integration using a durable active-composition reference;
+record concrete activation/fence/port lifecycle design against L0 §4.7/§5 before
+coding. Separate staged value construction from activation, which is the durable
+atomic manifest/layer/invalidation transaction followed by all-pointer swap at a
+cycle boundary. Never treat a supplied generation id, source kind/owner string or
+manifest object as independent proof of authority. Producer staging's resolved
+metadata must feed concrete ports without per-fact pattern lookup. Preserve
+state/event separation and durable-baseline/live-transition distinctions. Git and
+deploy policies remain proposals; no clarification is pending from this slice.
