@@ -1,5 +1,8 @@
 # V3 implementation working context
 
+> Latest implementation: timing clock bridge and safe per-job re-arm failures;
+> see final checkpoint. Last signed commit f182a37; new bridge slice uncommitted.
+
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
 > Weekly identity is resolved at the L5 activation; do not build a generic weekly
@@ -927,3 +930,49 @@ wiring, or the next agreed bounded foundation contract. Calendar staging, persis
 of standing configuration and durable gaps remain future work. Do not schedule a
 weekly CronEntry or implement a Timing-level served-date ledger. L5 session fixtures
 belong to the future presence-simulation activation. Git/deploy proposals still pending.
+
+
+## Latest checkpoint — timing clock bridge, 2026-10-15
+
+Committed shared callback and CA4-101 changes at user request as signed f182a37,
+feat: align V3 recurrence contracts and share callback fault isolation. Clean before
+this slice. Planning clean/read-only at 0b82d61, Layer 0 §3.1/§3.5/§4.4/§13 and
+fault/diagnostic sections checked. Interval-only CronEntry scope is unchanged.
+
+Added adapters/ha/clock_source.py SystemClockSource for sequential raw UTC/monotonic
+host capture; runtime/timing_clock.py TimingClock uses explicit source, CycleClock,
+scheduler, observation and re-arm-fault ports. Each comparison samples once and
+re-arms civil jobs from its exact raw wall; execution reads change no baseline.
+Observer receives classification/gap intents before scheduler effects. Tests compose
+the periodic entry point with an ordinary 60-second IntervalRecurrence, outside a
+cycle, without duplicate jump detection. Actual continuity writer is not created.
+
+Found/fixed an actual scheduler safety defect: failed re-arm used to retain a stale
+pre-correction timer that could execute before corrected wall due. Reproducer failed
+before fix. rearm_wall_clock now returns per-job immutable failures, cancels failed
+old arms, continues other civil jobs, and leaves elapsed untouched; bridge reports
+each failure with comparison/job context. Normal registration failure still preserves
+its valid old arm. No retry/fallback policy invented. All runtime callers inspected.
+
+502 V3 tests pass, 16 new, seed3145; Ruff lint/format, mypy/diff pass. Evidence in
+TIMING_CLOCK_BRIDGE.md. Fresh mutmut on three affected modules: 168 generated,
+156 killed, 12 equivalent generic-error-prose survivors, no timeout/error/skipped;
+exact diffs in TIMING_CLOCK_MUTANT_REVIEW.md. Three frozen-result supplement mutants
+killed by mutation_timing_clock.py, clean baseline. Default scope thirteen modules.
+No new dependency, timing threshold or policy; no HA/live/ARM/deploy claim.
+
+New bridge/fix remains uncommitted; last signed f182a37. Observe/report ports require
+prompt non-raising in-memory effects/logging/queuing, not waiting for storage. Their
+actual runtime/HA implementations, durable gap state/acknowledgement, continuity
+watermark worker, standing configuration persistence and calendar staging remain
+future work. Sequential host capture is not an atomic clock pair. A gap completion
+intent never certifies durable acknowledgement.
+
+### Exact next action
+
+Review/commit this bridge slice when requested. Continue with concrete Layer-0
+continuity metadata ownership and persistence contract before wiring real durable
+gap/periodic watermark effects; alternatively the next agreed foundation contract.
+Actual HA bootstrap/shutdown and fault publication need their own bounded integration
+slice. Preserve shared 60-second CronEntry ownership, CA4-98/99 references and CA4-101
+interval-only scope. Git/deploy proposals remain pending developer review.

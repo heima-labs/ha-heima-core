@@ -34,6 +34,13 @@ class _Pending:
     handle: TimerHandle
 
 
+@dataclass(frozen=True, slots=True)
+class WallClockRearmFailure:
+    job: AtJob
+    error_type: str
+    message: str
+
+
 class AtJobScheduler:
     """One pending timer per (owner, job_id), without HA or ambient clocks.
 
@@ -69,12 +76,25 @@ class AtJobScheduler:
         if pending is not None:
             pending.handle.cancel()
 
-    def rearm_wall_clock(self, now: ExecutionClockReading) -> None:
+    def rearm_wall_clock(self, now: ExecutionClockReading) -> tuple[WallClockRearmFailure, ...]:
+        """Re-arm each civil timer; retire invalid old arms if replacement fails.
+
+        Keeping the pre-correction monotonic countdown could execute too early.
+        Return each failure for owner diagnostics; continue with the other jobs.
+        """
         instant = parse_instant(_validated_reading(now).wall)
+        failures = []
         for pending in tuple(self._pending.values()):
             if pending.job.basis == "wall_clock":
                 delay = max(0.0, (parse_instant(pending.job.due) - instant).total_seconds())
-                self._arm(pending.job, delay, pending.callback)
+                try:
+                    self._arm(pending.job, delay, pending.callback)
+                except Exception as error:
+                    self.cancel(pending.job.owner, pending.job.job_id)
+                    failures.append(
+                        WallClockRearmFailure(pending.job, type(error).__qualname__, str(error))
+                    )
+        return tuple(failures)
 
     def cancel_all(self) -> None:
         pending = tuple(self._pending.values())
