@@ -1,11 +1,11 @@
 # Prompt to resume V3 implementation
 
-> Latest commit0c5a637 contains SQLite clock-boundary writes.
-> New Location foundation/tests/evidence/handoff are uncommitted; read final checkpoint.
-> Real fact/marker SQL awaits full HouseFact/FactSource/Provenance construction.
-> Planning HEAD37986ea has in-progress Layer8 CA4-103 edits; read without editing.
-> Publish callback receipt candidates only after writer.run succeeds. Keep SQL
-> statement caching disabled absent an execution-time ownership guard.
+> Latest commitcdea575 contains Location. Source values/fingerprint/tests are uncommitted.
+> Read final WORKING_CONTEXT checkpoint and testing/FACT_SOURCE.md.
+> Planning f191d2c clean/read-only; CA4-103 committed, L0/L1 owning contracts unchanged.
+> Source shape validation grants no trust: generation, producer and verified HA
+> ingress authority/redaction remain to implement. Full HouseFact/Provenance/fact SQL
+> are still pending. Publish SQL results only after writer.run succeeds.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

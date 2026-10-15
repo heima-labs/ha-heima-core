@@ -95,3 +95,11 @@ matrix, canonical identity/Unicode ordering, strict key-text recovery and proper
 `mutation_location.py` supplements immutable shape and identity/order mutations.
 See `docs/v3/testing/LOCATION.md` and `LOCATION_MUTANTS.md`. This slice does not
 implement full HouseFact assembly or fact/marker SQL.
+
+
+Source values/fingerprints: `contracts/test_fact_sources.py` verifies exact closed
+vocabularies, production/test/archive shape modes, stable source axes, UUID safety
+net, explicit causal propagation and forged/subclass validation. The validator grants
+no authorization. `mutation_fact_sources.py` supplements module vocabularies,
+dataclass defaults and frozen/slots outside ordinary function scope. Evidence:
+`docs/v3/testing/FACT_SOURCE.md` and `FACT_SOURCE_MUTANTS.md`.

@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Latest commit0c5a637 contains composable SQLite clock-boundary writes.
-> Location foundation/tests/evidence/handoff are uncommitted; see final checkpoint.
-> Planning HEAD37986ea has Layer8 CA4-103 edits in progress; read-only for Codex.
+> Latest commitcdea575 contains the canonical Location contract.
+> Source value/fingerprint slice is uncommitted; see final checkpoint.
+> Planning f191d2c clean/read-only. Source shape validation never grants authority.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -1570,3 +1570,70 @@ non-forgeable. Read current planning working copy; do not invent restart uniquen
 or general replay rules for mutable batches. Watermark, verified accounting-range
 assembly, bounded queue/worker, HA lifecycle, startup timeline and retention remain
 unimplemented. No deploy, migration, generic weekly CronEntry or Git-policy approval.
+
+## Active slice — source values and stable fingerprint
+
+Location committedcdea575 after1074 tests/diff check, clean afterward. Planning now
+f191d2c clean: CA4-103 committed, L0/L1 source contracts unchanged. Read L0 §5/§5.1/
+§5.2, §4.0 and L1 §4. Implement source value shapes and fingerprint first; shape
+validation grants no trust. Authority requires future generation/producer/HA boundaries.
+Expected files: contracts/fact_sources.py, tests, evidence/supplement, mutation scope,
+README/handoff. Rationale in testing/FACT_SOURCE.md precedes code. No full HouseFact,
+Provenance, factory authority, fact/marker SQL or live HA in this slice.
+
+
+## Latest checkpoint — source values and stable fingerprint, 2026-10-15
+
+Committed Location at developer request ascdea575 after1074 tests/diff check;
+clean immediately afterward. Planning nowf191d2c clean: CA4-103 committed, source
+contracts unchanged. Read L0 §5/§5.1/§5.2 and §4.0 fingerprint plus L1 §4; registry
+L0-FACT-SOURCE has no dependency closure. Planning remains read-only for Codex.
+
+Added contracts/fact_sources.py: frozen/slots FactSource, ApplyStepSource and
+FactSourceFingerprint; exact fact/action/actor literal vocabularies. The action
+shape omits route_fingerprint and rejects fact-only/legacy kinds. Data defaults
+match owning specs, including UUID4 safety net; production must explicitly mint
+at origins and propagate causal IDs. Fingerprint extracts all six stable fields,
+excluding correlation. Opaque metadata strings are preserved; no new format,
+normalization, length or nonempty rule added to source fields declared only str.
+
+validate_runtime_source_shape enforces closed types and mode: legacy always rejects,
+kind=test or actor=test rejects production mode (default); explicit test_mode enables
+isolated test shapes. This grants NO authority. Runtime owner/generation/verified
+HA boundaries must assign/reassign kind, identity, actor, config/route and redact
+before admission/storage/diagnostics. Fabricated admin fields can be well-shaped;
+no trust flag/capability/authority proof is inferred from these dataclasses.
+
+Internal review found a validation bypass via subclass-overridden __post_init__.
+Three regressions first failed; explicit base-class validation fixed runtime shape
+and fingerprint checks. Initial mutation exposed a real test gap for default
+production-mode rejection; four regressions added and mutation restarted fresh.
+
+169 focused instances, full V3:1243 passed,seed3145. Decision tables/MC/DC isolate
+kind/actor/mode and optional-string cases; BVA None/empty/nonempty/invalid primitive,
+exact vocabularies, immutable field sets, explicit causal propagation, forged/subclass
+validation and two PBTs for correlation/configuration/route. Ruff lint/format69files,
+mypy28sources,diff pass. Fresh scoped mutmut134generated,106killed,28individually
+reviewed generic-prose equivalents; zero error/timeout/skipped/untested/interrupted.
+18 supplemental frozen/slots/vocabulary/default mutations killed with clean169
+baseline. Default scope22modules. Evidence testing/FACT_SOURCE.md and
+FACT_SOURCE_MUTANTS.md. No dependency/policy/HA/deploy changes.
+
+New module/tests/supplement/pyproject/evidence/README/handoff uncommitted oncdea575.
+No source authority factories/verified ingress/generation binding/redaction adapter,
+Provenance/full HouseFact builder, fact/marker SQL, queue/worker or watermark exists.
+Earlier SQLite clock-boundary operations, Location and accounting primitives committed.
+
+### Exact next action
+
+Review/commit this source-value slice when requested. Continue Provenance and the
+approved full HouseFact builder with the existing payload/evidence preparation,
+Location, canonical instants and source values. Keep shape construction separate
+from runtime source admission: authorization needs actual registered producer,
+active composed generation and verified HA ingress; do not treat this validator
+as its substitute. Re-read L1 §3/§4 availability/confidence/evidence rules and L0 §5
+before coding; no arbitrary confidence formulas, sentinel sanitization kind or
+new source authority is decided here. Then implement accepted-fact/AppendOrder/
+CycleCommitMarker SQL as a single batch with stable replay/reconciliation. Mutable
+batch identity/restart rules must come from owning contracts. No planning edits,
+V2 migration, live deployment or generic weekly lifecycle; Git/deploy still proposals.
