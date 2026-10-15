@@ -7,15 +7,9 @@ from typing import Protocol
 from ..contracts.deadlines import Unrepresentable
 from ..contracts.timing import AtJob, CronEntry, IntervalRecurrence
 from .clock import ExecutionClockReading
+from .job_callbacks import JobCallbackFault, invoke_job_callback
 from .recurrence import plan_interval_job
 from .timing import AtJobScheduler, JobCallback, JobKey
-
-
-@dataclass(frozen=True, slots=True)
-class JobCallbackFault:
-    job: AtJob
-    error_type: str
-    message: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,11 +97,9 @@ class IntervalRecurrences:
 
     def _deliver(self, registration: _Registration, job: AtJob) -> None:
         try:
-            registration.callback(job)
-        except Exception as error:
-            # This is the explicit owner fault-isolation boundary, not a catch-all
-            # around engine work. Do not retain tracebacks inside diagnostic records.
-            self._report(JobCallbackFault(job, type(error).__qualname__, str(error)))
+            fault = invoke_job_callback(job, registration.callback)
+            if fault is not None:
+                self._report(fault)
         finally:
             key = (registration.entry.owner, registration.entry.job_id)
             if self._registrations.get(key) is registration:

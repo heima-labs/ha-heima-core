@@ -1,39 +1,31 @@
 # V3 behavioral tests
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
-Install both runtime and development locks first. Tests import the real packages,
-including the mutated copy under mutmut; no HA or V2 parent shim is used.
-See `docs/v3/testing/PAYLOAD_CONTRACT.md` for the five-method evidence and the
-supplementary module/decorator mutation runner.
+Install runtime/development locks first; tests import real packages and the mutated
+copy under mutmut, without HA/V2 import shims. Default mutation scope: eleven modules.
 
-Temporal contract evidence: `docs/v3/testing/TIMING_CONTRACT.md`.
-Dispatcher evidence: `docs/v3/testing/ATJOB_DISPATCH.md`; its fake monotonic timer
-exercises replacement/cancellation/re-arm and stale callbacks without sleeps or HA.
-Default mutation scope includes all five implemented modules and the whole V3 suite.
+## Current contracts
 
-Concrete timer evidence: `docs/v3/testing/MONOTONIC_ADAPTER.md`, with early-wakeup/
-coarse-clock simulations, exact-sum properties, scheduler integration and two real
-stdlib event-loop cases. The default mutation scope now includes six modules.
+CronEntry accepts IntervalRecurrence only (CA4-101). WeeklyRecurrence remains a value
+for descriptor windows/bucketing. next_weekly_occurrence returns requested civil date
+and canonical physical start. Layer-5 activation owns served dates, equal-start merge,
+remaining-time admission and timezone re-arm; those session tests await L5 code.
 
-Cycle-clock evidence: `docs/v3/testing/CYCLE_CLOCK.md`, including exact threshold
-boundaries and simulated clock regressions/long pauses. `mutation_clock.py` covers
-the threshold constant and frozen-result declarations. Default scope: seven modules.
+## Evidence index under docs/v3/testing
 
-Current scheduling API/evidence: `docs/v3/testing/CA499_EXECUTION_REFERENCES.md`.
-Scheduler calls use explicit paired execution references; the former single-instant
-argument is rejected. `mutation_clock.py` now verifies five supplemental mutations.
+- PAYLOAD_CONTRACT.md / PAYLOAD_MUTANT_REVIEW.md: shared canonical payloads.
+- TIMING_CONTRACT.md: temporal foundation history; CA4101_OCCURRENCES.md is current.
+- ATJOB_DISPATCH.md: shared monotonic admission, replacement and stale deliveries.
+- MONOTONIC_ADAPTER.md: early-wakeup/coarse-clock and real stdlib-loop cases.
+- CYCLE_CLOCK.md / CA499_EXECUTION_REFERENCES.md: cycle floor and paired basis clocks.
+- CA4100_DEADLINES.md: exact canonical-decimal deadline construction/overflow.
+- CA4101_OCCURRENCES.md / CA4101_MUTANT_REVIEW.md: interval-only CronEntry and
+  requested-date-preserving weekly occurrences, DST and calendar boundaries.
+- INTERVAL_LIFECYCLE.md: process-local standing interval rules, faults and re-arm.
+- JOB_CALLBACK_BOUNDARY.md: shared owner fault isolation and wrapped one-shot tests.
 
-Weekly calculator evidence: `docs/v3/testing/WEEKLY_RECURRENCE.md` and
-`WEEKLY_MUTANT_REVIEW.md`. Current default mutation scope: eight modules.
-Interval deadline precision awaits a normative clarification; no full CronEntry
-service or timezone-change replay guard is implemented yet.
-
-CA4-100 evidence: `docs/v3/testing/CA4100_DEADLINES.md` and `CA4100_MUTANT_REVIEW.md`.
-`mutation_deadlines.py` checks immutable overflow diagnostics. Default scope nine
-modules; interval representation resolved. Full lifecycle/calendar/HA integration
-remains separate from single-arm calculation and admission.
-
-Standing interval lifecycle: `docs/v3/testing/INTERVAL_LIFECYCLE.md` and its mutant
-review. Supplement: `mutation_interval_recurrences.py`. Default scope ten modules.
-Shared dispatch is reused; this service is process-local, with explicit clock and
-diagnostic ports. Weekly lifecycle and actual HA/persistence wiring are pending.
+Supplemental mutation runners: mutation_constants.py, mutation_timing.py,
+mutation_clock.py, mutation_deadlines.py, mutation_interval_recurrences.py,
+mutation_weekly_occurrence.py. The new weekly runner checks immutable metadata and
+replacement of requested date with shifted start date. Actual HA/persistence wiring,
+calendar staging, durable gap acknowledgement and ARM benchmarks remain separate.

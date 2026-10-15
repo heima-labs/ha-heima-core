@@ -121,7 +121,7 @@ def test_job_and_cron_definitions_immutable(basis):
     assert AtJob("a", "engine", validate_instant(T), job.label, basis) == job
     with pytest.raises(FrozenInstanceError):
         job.due = "other"
-    for pattern in [IntervalRecurrence(Window(1)), WeeklyRecurrence(frozenset({0}), 7, 30)]:
+    for pattern in [IntervalRecurrence(Window(1))]:
         cron = CronEntry("a", "engine", pattern, "label")
         assert cron.pattern is pattern
         with pytest.raises(FrozenInstanceError):
@@ -158,6 +158,11 @@ def test_invalid_job_due_and_recurrence_shapes():
             IntervalRecurrence(value)
         with pytest.raises(TypeError):
             CronEntry("a", "engine", value, "label")
+
+
+def test_cron_rejects_weekly_pattern_in_initial_v3():
+    with pytest.raises(TypeError):
+        CronEntry("a", "engine", WeeklyRecurrence(frozenset({0}), 7), "label")
 
 
 @pytest.mark.parametrize("day", [0, 1, 5, 6])

@@ -1,7 +1,7 @@
 """Weekly next-due contract: civil transitions, UTC boundaries and invariants."""
 
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -10,13 +10,11 @@ from hypothesis import strategies as st
 
 from custom_components.heima.v3.contracts.instants import format_instant, parse_instant
 from custom_components.heima.v3.contracts.timing import (
-    CronEntry,
     IntervalRecurrence,
     WeeklyRecurrence,
     Window,
 )
-from custom_components.heima.v3.runtime.clock import ExecutionClockReading
-from custom_components.heima.v3.runtime.recurrence import plan_weekly_job
+from custom_components.heima.v3.runtime.recurrence import next_weekly_occurrence
 
 
 @pytest.fixture(autouse=True, params=["UTC", "Europe/Rome"])
@@ -32,7 +30,7 @@ def ambient_zone(request, monkeypatch):
 
 def test_local_date_uses_configured_zone():
     assert (
-        plan("2026-10-17T23:59:00.000000+00:00", "Asia/Tokyo", hour=9, minute=0).due
+        plan("2026-10-17T23:59:00.000000+00:00", "Asia/Tokyo", hour=9, minute=0).start
         == "2026-10-18T00:00:00.000000+00:00"
     )
 
@@ -45,21 +43,20 @@ def test_local_day_behind_utc_still_has_future_request():
             weekdays=frozenset({5}),
             hour=23,
             minute=59,
-        ).due
+        ).start
         == "2026-10-18T06:59:00.000000+00:00"
     )
 
 
 def test_normal_minute_has_no_gap_shift():
     assert (
-        plan("2026-10-18T00:00:00.000000+00:00", "Europe/Rome", hour=7, minute=0).due
+        plan("2026-10-18T00:00:00.000000+00:00", "Europe/Rome", hour=7, minute=0).start
         == "2026-10-18T05:00:00.000000+00:00"
     )
 
 
-def plan(wall, zone="UTC", weekdays=frozenset({6}), hour=2, minute=30, floor=None):
-    entry = CronEntry("routine", "owner", WeeklyRecurrence(weekdays, hour, minute), "label")
-    return plan_weekly_job(entry, ExecutionClockReading(wall, floor or wall), ZoneInfo(zone))
+def plan(wall, zone="UTC", weekdays=frozenset({6}), hour=2, minute=30):
+    return next_weekly_occurrence(WeeklyRecurrence(weekdays, hour, minute), wall, ZoneInfo(zone))
 
 
 @pytest.mark.parametrize(
@@ -75,7 +72,7 @@ def plan(wall, zone="UTC", weekdays=frozenset({6}), hour=2, minute=30, floor=Non
     ],
 )
 def test_rome_gap_and_fold_boundaries(wall, expected):
-    assert plan(wall, "Europe/Rome").due == expected
+    assert plan(wall, "Europe/Rome").start == expected
 
 
 @pytest.mark.parametrize(
@@ -109,7 +106,7 @@ def test_rome_gap_and_fold_boundaries(wall, expected):
     ],
 )
 def test_explicit_zone_and_non_hour_gaps(zone, wall, days, hour, minute, expected):
-    assert plan(wall, zone, frozenset(days), hour, minute).due == expected
+    assert plan(wall, zone, frozenset(days), hour, minute).start == expected
 
 
 @pytest.mark.parametrize(
@@ -120,7 +117,7 @@ def test_explicit_zone_and_non_hour_gaps(zone, wall, days, hour, minute, expecte
     ],
 )
 def test_local_hour_stays_fixed_across_dst(wall, hours):
-    due = parse_instant(plan(wall, "Europe/Rome", hour=7, minute=0).due)
+    due = parse_instant(plan(wall, "Europe/Rome", hour=7, minute=0).start)
     assert due - parse_instant(wall) == timedelta(hours=hours)
     assert due.astimezone(ZoneInfo("Europe/Rome")).hour == 7
 
@@ -131,7 +128,8 @@ def test_history_matches_both_folds_but_future_scheduling_skips_second():
     assert pattern.matches("2026-10-25T00:30:00.000000+00:00", zone)
     assert pattern.matches("2026-10-25T01:30:00.000000+00:00", zone)
     assert (
-        plan("2026-10-25T01:00:00.000000+00:00", zone.key).due == "2026-11-01T01:30:00.000000+00:00"
+        plan("2026-10-25T01:00:00.000000+00:00", zone.key).start
+        == "2026-11-01T01:30:00.000000+00:00"
     )
 
 
@@ -139,7 +137,7 @@ def test_history_matches_both_folds_but_future_scheduling_skips_second():
 def test_exact_due_is_not_replayed(offset, expected):
     anchor = datetime(2026, 10, 19, 7, 30, tzinfo=UTC)
     wall = format_instant(anchor + timedelta(microseconds=offset))
-    assert plan(wall, weekdays=frozenset({0}), hour=7).due == format_instant(
+    assert plan(wall, weekdays=frozenset({0}), hour=7).start == format_instant(
         anchor + timedelta(days=expected)
     )
 
@@ -152,49 +150,55 @@ def test_exact_due_is_not_replayed(offset, expected):
     hour=st.integers(0, 23),
     minute=st.integers(0, 59),
 )
-def test_utc_future_matching_and_floor_independence(wall, days, hour, minute):
-    entry = CronEntry("id", "owner", WeeklyRecurrence(days, hour, minute), "label")
-    current = format_instant(wall)
-    job = plan_weekly_job(entry, ExecutionClockReading(current, current), ZoneInfo("UTC"))
-    due = parse_instant(job.due)
-    assert wall < due <= wall + timedelta(days=7)
-    assert entry.pattern.matches(job.due, ZoneInfo("UTC"))
-    assert due.second == due.microsecond == 0
-    assert (job.job_id, job.owner, job.label, job.basis) == ("id", "owner", "label", "wall_clock")
-    assert (
-        plan_weekly_job(
-            entry,
-            ExecutionClockReading(current, format_instant(wall + timedelta(days=30))),
-            ZoneInfo("UTC"),
-        )
-        == job
-    )
+def test_utc_future_matching_and_requested_date(wall, days, hour, minute):
+    pattern = WeeklyRecurrence(days, hour, minute)
+    occurrence = next_weekly_occurrence(pattern, format_instant(wall), ZoneInfo("UTC"))
+    start = parse_instant(occurrence.start)
+    assert wall < start <= wall + timedelta(days=7)
+    assert pattern.matches(occurrence.start, ZoneInfo("UTC"))
+    assert start.second == start.microsecond == 0
+    assert occurrence.requested_date == start.date()
 
 
 @pytest.mark.parametrize(
-    "entry,reading,zone",
+    "pattern,now,zone,error",
     [
-        (None, None, None),
-        (CronEntry("id", "owner", IntervalRecurrence(Window(30)), "label"), None, None),
-        (
-            CronEntry("id", "owner", WeeklyRecurrence(frozenset({0}), 0), "label"),
-            None,
-            ZoneInfo("UTC"),
-        ),
-        (
-            CronEntry("id", "owner", WeeklyRecurrence(frozenset({0}), 0), "label"),
-            ExecutionClockReading(
-                "2026-01-01T00:00:00.000000+00:00", "2026-01-01T00:00:00.000000+00:00"
-            ),
-            "UTC",
-        ),
+        (None, None, None, TypeError),
+        (IntervalRecurrence(Window(30)), None, ZoneInfo("UTC"), TypeError),
+        (WeeklyRecurrence(frozenset({0}), 0), None, ZoneInfo("UTC"), TypeError),
+        (WeeklyRecurrence(frozenset({0}), 0), "2026-01-01T00:00:00.000000+00:00", "UTC", TypeError),
+        (WeeklyRecurrence(frozenset({0}), 0), "2026-01-01T00:00:00Z", ZoneInfo("UTC"), ValueError),
     ],
 )
-def test_rejects_wrong_boundary_shapes(entry, reading, zone):
-    with pytest.raises(TypeError):
-        plan_weekly_job(entry, reading, zone)
+def test_rejects_wrong_boundary_shapes(pattern, now, zone, error):
+    with pytest.raises(error):
+        next_weekly_occurrence(pattern, now, zone)
+
+
+def test_apia_retains_requested_date_instead_of_shifted_start_date():
+    occurrence = plan("2011-12-29T21:00:00.000000+00:00", "Pacific/Apia", frozenset({4}), 4, 0)
+    assert occurrence.requested_date == date(2011, 12, 30)
+    assert occurrence.start == "2011-12-30T10:00:00.000000+00:00"
+    assert parse_instant(occurrence.start).astimezone(ZoneInfo("Pacific/Apia")).date() == date(
+        2011, 12, 31
+    )
+    from dataclasses import FrozenInstanceError
+
+    with pytest.raises(FrozenInstanceError):
+        occurrence.requested_date = date(2011, 12, 31)
+    with pytest.raises(FrozenInstanceError):
+        occurrence.start = "2011-12-31T10:00:00.000000+00:00"
 
 
 def test_calendar_exhaustion_is_explicit():
     with pytest.raises(ValueError):
         plan("9999-12-31T23:59:59.999999+00:00", weekdays=frozenset(range(7)))
+
+
+def test_merged_physical_start_keeps_distinct_requested_dates_for_consumer():
+    now = "2011-12-29T21:00:00.000000+00:00"
+    friday = plan(now, "Pacific/Apia", frozenset({4}), 0, 0)
+    saturday = plan(now, "Pacific/Apia", frozenset({5}), 0, 0)
+    assert friday.start == saturday.start == "2011-12-30T10:00:00.000000+00:00"
+    assert friday.requested_date == date(2011, 12, 30)
+    assert saturday.requested_date == date(2011, 12, 31)

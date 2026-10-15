@@ -1,5 +1,10 @@
 # Prompt to resume V3 implementation
 
+> **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
+> next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
+> Weekly identity is resolved at the L5 activation; do not build a generic weekly
+> lifecycle. The last checkpoint below supersedes historical state/next-action notes.
+
 Use this prompt when starting a new chat in the V3 implementation worktree. It is also a checklist after context compaction; the repository files, not the chat summary, carry the durable state.
 
 > We are implementing Heima V3 in the `ha-heima-component-v3-implementation` worktree on `feat/v3-implementation`. First confirm this is the current working directory; if another tree is open, navigate to this worktree before editing. Read root `AGENTS.md`, `docs/v3/WORKING_CONTEXT.md`, `docs/v3/CODE_RULES.md`, and `docs/v3/DEVELOPMENT_POLICY.md`. Check `git status`, branch and recent commits; reconcile any difference from the context file, including uncommitted instruction changes. For the current task, check Git status and HEAD in the adjacent `ha-heima-component-v3-planning` worktree, then read the authoritative layer specification and its contract dependencies there (Layer 0–6 and Layer 8 are currently authoritative), starting with its `AGENTS.md`, contract registry and spec workflow. That worktree's committed specs are currently newer than this code checkout's copies. Identify approved requirements, current issue status, and implementation decisions separately. Continue the recorded next action, or follow my newer instruction. Work in a bounded slice, use the approved five-method testing rule, and update `WORKING_CONTEXT.md` before stopping with exact files, evidence, risks and next step. Do not infer implementation or test completion from a specification's DONE status. Git and deployment sections are proposals pending developer review; do not treat them as approved. Do not deploy or merge without the required authorization.
@@ -300,3 +305,84 @@ lifecycle and served-occurrence identity/timezone re-arm against current Layer 0
 §3.1/§3.5/§9/§13. Keep basis-specific references and CA4-100 deadline rule. Clarify
 any missing occurrence policy through the existing Claude workflow rather than
 choosing silently. Git/deploy proposals remain pending developer review.
+
+
+## Latest checkpoint — shared callback boundary / weekly clarification, 2026-10-14
+
+Committed verified interval lifecycle at user request as signed f92639a,
+feat: add V3 standing interval recurrence lifecycle. Clean before this slice;
+earlier uncommitted-state notes superseded. Planning checked clean/read-only at
+34ce913, Layer 0 §3.1/§3.5/§9/§10/§13.
+
+Found missing weekly occurrence identity rules for timezone changes and replacement.
+Example: Monday 07:00 Rome served at 05:00 UTC; switch to UTC at 05:01 makes that
+Monday 07:00 future again. Spec says no replay without defining identity/memory.
+Requested civil date also differs from delivered date for skipped-day gaps; a backward
+clock correction can revisit a served request. User authorized the Claude prompt:
+clarifications/WEEKLY_OCCURRENCE_IDENTITY.md. No planning edit/message sent, no new
+identity/reset/retention policy chosen. Full weekly lifecycle remains dependent.
+
+Completed independent shared callback isolation: runtime/job_callbacks.py with
+JobCallbackFault, invoke_job_callback and isolate_job_callback. Intervals reuse it
+within existing finally re-arm; existing interval-module import remains valid.
+One-shot wrapper integration proves a failed job is consumed once and other owners
+continue. Diagnostic infrastructure errors and BaseException control signals propagate.
+Actual coordinator must use the wrapper; low-level dispatcher behavior unchanged.
+Updated supplementary lifecycle mutation runner for diagnostic-class relocation.
+
+479 V3 tests pass, 10 new, seed3145; lint/format/mypy/diff pass. Five-method evidence
+in testing/JOB_CALLBACK_BOUNDARY.md. Fresh mutmut on both changed modules: 144 generated,
+124 killed, 20 generic-prose equivalents, no timeout/error/skipped; exact diffs in
+JOB_CALLBACK_MUTANT_REVIEW.md. Three frozen public-record supplement mutants killed.
+Default scope eleven modules. No new dependency/policy, live HA/ARM/deploy claim.
+This new callback slice and clarification remain uncommitted; last signed commit f92639a.
+
+### Exact next action
+
+Obtain Claude's normative handoff defining weekly occurrence identity, consumption,
+replacement scope, clock/timezone behavior and bounded transient memory before
+implementing that dependent lifecycle. Keep existing first-fold/gap calculator,
+CA4-98/99 basis rules and CA4-100 duration construction. Future HA diagnostic wiring,
+calendar staging and durable configuration remain unimplemented. Git/deploy proposals
+still await developer review.
+
+
+## Latest checkpoint — CA4-101 applied, 2026-10-15
+
+Verified clean read-only planning HEAD 0b82d61, normative L0 §3.1/restart/§13,
+L5 §7.2/§7.2.1 and CA4-101 registry/review. Weekly CronEntry is OUT of Initial V3,
+not a blocked feature. Clarification WEEKLY_OCCURRENCE_IDENTITY.md marked resolved.
+
+contracts/timing.py now types/validates CronEntry.pattern as IntervalRecurrence only;
+RecurrencePattern removed. Runtime interval gates reject reconstructed legacy weekly
+entries. Existing interval lifecycle and shared callback isolation unchanged.
+Removed internal plan_weekly_job (only test consumers); replaced with pure
+next_weekly_occurrence(pattern,canonical_now,ZoneInfo) -> frozen WeeklyOccurrence
+(requested_date: civil date, start: EvidenceInstant). No job metadata or paired-clock
+parameter; consumers use the raw wall reference and build wall_clock AtJob boundaries.
+Requested civil date survives missing-time resolution, including Apia's skipped day;
+merged physical starts retain distinct requested dates for L5 to consume. No native
+datetime instant crosses the output boundary; civil date is an in-process value.
+
+486 V3 tests pass, seed3145; Ruff lint/format, mypy and diff pass. New rejection
+regression failed on prior code as expected. Evidence in CA4101_OCCURRENCES.md.
+Fresh mutmut timing+recurrence: 305 generated, 210 killed, 5 known search timeouts,
+90 equivalents (80 generic prose, 1 cast, 9 search variants), exact diffs in
+CA4101_MUTANT_REVIEW.md. Supplements: 10 timing mutants and 2 weekly occurrence
+mutants killed, clean baselines. Default scope stays eleven modules, no dependency
+or policy change. Newer two merged-date test instances added after mutation/source
+freeze. No live HA/ARM/deploy claim.
+
+CA4-101 and prior shared-callback changes remain uncommitted; last signed f92639a.
+No L5 activation/session implementation exists: served-date RAM, equal-start merge,
+late session remaining-time admission, timezone re-arm and restart activation rules
+are now specified and must be implemented THERE. No generic weekly lifecycle next.
+
+### Exact next action
+
+Review/commit shared callback and CA4-101 slices when requested; continue Layer 0
+integration with actual clock/coordinator/HA diagnostic ports and periodic interval
+wiring, or the next agreed bounded foundation contract. Calendar staging, persistence
+of standing configuration and durable gaps remain future work. Do not schedule a
+weekly CronEntry or implement a Timing-level served-date ledger. L5 session fixtures
+belong to the future presence-simulation activation. Git/deploy proposals still pending.

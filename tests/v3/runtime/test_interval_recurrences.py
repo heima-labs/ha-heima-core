@@ -322,11 +322,23 @@ def test_restart_arms_from_now_without_replaying_previous_countdown():
     assert timer.handles[-1].seconds == 30
 
 
+def legacy_weekly_entry():
+    entry = object.__new__(CronEntry)
+    for field, value in (
+        ("job_id", "id"),
+        ("owner", "owner"),
+        ("pattern", WeeklyRecurrence(frozenset({0}), 7)),
+        ("label", "label"),
+    ):
+        object.__setattr__(entry, field, value)
+    return entry
+
+
 @pytest.mark.parametrize(
     "entry,callback",
     [
         (None, lambda job: None),
-        (CronEntry("id", "owner", WeeklyRecurrence(frozenset({0}), 7), "label"), lambda job: None),
+        (legacy_weekly_entry(), lambda job: None),
         (definition(), None),
     ],
 )

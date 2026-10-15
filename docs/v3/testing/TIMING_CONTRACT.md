@@ -1,5 +1,9 @@
 # Layer-0 temporal foundation
 
+> Superseded scope notes: see CA4101_OCCURRENCES.md. Initial V3 CronEntry is
+> interval-only; weekly calculation returns an occurrence for descriptor consumers.
+> Generic weekly lifecycle is outside Initial V3, not pending clarification.
+
 Implemented 2026-10-14 against planning `9cd077e`: Layer 0 §§3.1, 3.2,
 3.4/3.4.1; Layer 1 §4 EvidenceInstant. This slice provides validated immutable
 contracts and pure comparisons, not the scheduler or calendar cache.

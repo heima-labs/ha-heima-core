@@ -1,5 +1,9 @@
 # Standing interval lifecycle — 2026-10-14
 
+> Superseded scope notes: see CA4101_OCCURRENCES.md. Initial V3 CronEntry is
+> interval-only; weekly calculation returns an occurrence for descriptor consumers.
+> Generic weekly lifecycle is outside Initial V3, not pending clarification.
+
 Scope: runtime/interval_recurrences.py, IntervalRecurrences, Layer 0 §3.1, §3.5,
 §9 callback failures and §10 timing diagnostics; acceptance §13. Checked clean
 read-only planning 34ce913. Dependencies: existing CronEntry/IntervalRecurrence,

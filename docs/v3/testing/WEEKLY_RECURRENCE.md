@@ -1,5 +1,9 @@
 # Weekly next-due calculation — 2026-10-14
 
+> Superseded scope notes: see CA4101_OCCURRENCES.md. Initial V3 CronEntry is
+> interval-only; weekly calculation returns an occurrence for descriptor consumers.
+> Generic weekly lifecycle is outside Initial V3, not pending clarification.
+
 Scope: pure `runtime/recurrence.py::plan_weekly_job`, owning Layer 0 §3.1 and §13,
 canonical instants from Layer 1 §4; clean planning `d58431c`.
 Inputs are a validated weekly CronEntry, a paired execution reading and an explicit

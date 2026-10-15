@@ -38,6 +38,8 @@ def main() -> None:
         shutil.copyfile(root / "pytest-v3.ini", work / "pytest-v3.ini")
         source = work / "custom_components/heima/v3/runtime/interval_recurrences.py"
         original = source.read_text()
+        callback_source = work / "custom_components/heima/v3/runtime/job_callbacks.py"
+        callback_original = callback_source.read_text()
         command = [
             sys.executable,
             "-m",
@@ -58,9 +60,13 @@ def main() -> None:
                 "Interval lifecycle mutation baseline failed:\n" + baseline.stdout + baseline.stderr
             )
         for name, old, new, expected_test in MUTATIONS:
-            if original.count(old) != 1:
+            source.write_text(original)
+            callback_source.write_text(callback_original)
+            target = callback_source if name == "callback_fault_mutable" else source
+            baseline_source = callback_original if name == "callback_fault_mutable" else original
+            if baseline_source.count(old) != 1:
                 raise SystemExit("Interval lifecycle mutation target changed: " + name)
-            source.write_text(original.replace(old, new, 1))
+            target.write_text(baseline_source.replace(old, new, 1))
             result = subprocess.run(
                 command, cwd=work, env=environment, capture_output=True, text=True
             )
@@ -74,6 +80,7 @@ def main() -> None:
                 )
             print(name + ": killed by " + expected_test)
         source.write_text(original)
+        callback_source.write_text(callback_original)
 
 
 if __name__ == "__main__":

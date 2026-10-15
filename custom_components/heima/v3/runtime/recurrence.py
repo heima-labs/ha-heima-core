@@ -1,10 +1,11 @@
 """Single-arm recurrence planning, with explicit execution references and admission."""
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..contracts.deadlines import Unrepresentable, derive_instant
-from ..contracts.instants import format_instant, parse_instant
+from ..contracts.instants import EvidenceInstant, format_instant, parse_instant
 from ..contracts.timing import AtJob, CronEntry, IntervalRecurrence, WeeklyRecurrence
 from .clock import ExecutionClockReading
 from .timing import AtJobScheduler, JobCallback
@@ -42,25 +43,28 @@ def register_interval_job(
     return None
 
 
-def plan_weekly_job(entry: CronEntry, now: ExecutionClockReading, time_zone: ZoneInfo) -> AtJob:
-    """Find the first permitted UTC due strictly after the captured wall reading.
+@dataclass(frozen=True, slots=True)
+class WeeklyOccurrence:
+    """Transient requested civil date and physical start; no generic job identity."""
 
-    This plans one arm, without timers, persistence or owner execution. A standing
-    recurrence service must also track served occurrences during clock/zone changes.
+    requested_date: date
+    start: EvidenceInstant
+
+
+def next_weekly_occurrence(
+    pattern: WeeklyRecurrence, now: EvidenceInstant, time_zone: ZoneInfo
+) -> WeeklyOccurrence:
+    """Find the next physical start strictly after now, retaining its requested date.
+
+    A consumer owns session admission, served-date memory and timezone re-arming.
+    This is a pure occurrence calculation, not a standing CronEntry definition.
     """
-    if not isinstance(entry, CronEntry):
-        raise TypeError("Weekly planning requires CronEntry")
-    if not isinstance(entry.pattern, WeeklyRecurrence):
-        raise TypeError("Weekly planning requires WeeklyRecurrence")
-    if not isinstance(now, ExecutionClockReading):
-        raise TypeError("Weekly planning requires paired execution references")
+    if not isinstance(pattern, WeeklyRecurrence):
+        raise TypeError("Weekly calculation requires WeeklyRecurrence")
     if not isinstance(time_zone, ZoneInfo):
-        raise TypeError("Weekly planning requires the configured ZoneInfo")
-    # Revalidate staging shapes before applying calendar arithmetic.
-    pattern = WeeklyRecurrence(entry.pattern.weekdays, entry.pattern.hour, entry.pattern.minute)
-    validated = CronEntry(entry.job_id, entry.owner, pattern, entry.label)
-    reading = ExecutionClockReading(now.wall, now.cycle_instant)
-    wall = parse_instant(reading.wall)
+        raise TypeError("Weekly calculation requires the configured ZoneInfo")
+    pattern = WeeklyRecurrence(pattern.weekdays, pattern.hour, pattern.minute)
+    wall = parse_instant(now)
     try:
         local_day = wall.astimezone(time_zone).date()
         # Today through the same weekday next week, inclusive; not a time horizon.
@@ -70,13 +74,7 @@ def plan_weekly_job(entry: CronEntry, now: ExecutionClockReading, time_zone: Zon
                 requested = datetime(day.year, day.month, day.day, pattern.hour, pattern.minute)
                 due = _civil_due(requested, time_zone)
                 if due > wall:
-                    return AtJob(
-                        validated.job_id,
-                        validated.owner,
-                        format_instant(due),
-                        validated.label,
-                        "wall_clock",
-                    )
+                    return WeeklyOccurrence(day, format_instant(due))
     except OverflowError as error:
         raise ValueError("Weekly due is outside the supported calendar") from error
     raise ValueError("No future weekly due in the supported calendar")

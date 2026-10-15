@@ -92,22 +92,19 @@ class IntervalRecurrence:
         object.__setattr__(self, "interval", Window(self.interval.seconds))
 
 
-type RecurrencePattern = WeeklyRecurrence | IntervalRecurrence
-
-
 @dataclass(frozen=True, slots=True)
 class CronEntry:
     job_id: str
     owner: str
-    pattern: RecurrencePattern
+    pattern: IntervalRecurrence
     label: str
 
     def __post_init__(self) -> None:
         _validate_text(self.job_id)
         _validate_text(self.owner)
         _validate_text(self.label)
-        if not isinstance(self.pattern, (WeeklyRecurrence, IntervalRecurrence)):
-            raise TypeError("Cron entry requires a recurrence pattern")
+        if not isinstance(self.pattern, IntervalRecurrence):
+            raise TypeError("Cron entry requires IntervalRecurrence")
 
 
 @dataclass(frozen=True, slots=True)

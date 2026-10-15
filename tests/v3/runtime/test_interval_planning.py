@@ -123,11 +123,23 @@ def test_late_delivery_retains_due_and_next_arm_uses_current_clock():
     assert timer.arms[-1].seconds == 0.1
 
 
+def legacy_weekly_entry():
+    entry = object.__new__(CronEntry)
+    for field, value in (
+        ("job_id", "id"),
+        ("owner", "owner"),
+        ("pattern", WeeklyRecurrence(frozenset({0}), 7)),
+        ("label", "label"),
+    ):
+        object.__setattr__(entry, field, value)
+    return entry
+
+
 @pytest.mark.parametrize(
     "definition,clock",
     [
         (None, None),
-        (CronEntry("id", "owner", WeeklyRecurrence(frozenset({0}), 1), "label"), reading()),
+        (legacy_weekly_entry(), reading()),
         (entry(), None),
     ],
 )
