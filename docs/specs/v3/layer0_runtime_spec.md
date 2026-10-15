@@ -537,6 +537,17 @@ comparison. A difference greater than **1 second** in either direction is a cloc
   wall clock behind the floor, the cycle-instant rule absorbs it and Layer 0 emits
   `clock_regression` alone; otherwise nothing is emitted.
 
+**Corrections while the floor holds.** Each discontinuity opens its own gap, whose bounds depend
+only on that correction: its direction and, for a backward correction, whether it leaves the wall
+clock behind the floor. An earlier gap still waiting for the wall clock to exceed the frozen floor
+does not change a later gap's bounds, and a later correction neither closes nor extends it; it
+ends under its own rule. A forward correction detected while the wall clock is still behind the
+floor therefore takes the forward-jump bounds and ends at the first cycle instant after its
+detection, even though that instant is still frozen: the frozen interval is already covered by
+the earlier gap, and the skipped interval by the new one. A further backward correction over
+1 second while the floor holds takes the frozen-floor bounds, starting at its own first frozen
+cycle instant.
+
 At bootstrap a wall-clock reading more than 1 second earlier than the durable floor is a backward
 discontinuity under the same rule. A forward difference at bootstrap is indistinguishable from
 downtime and is already covered by the ordinary process interruption (§4.4).
@@ -545,7 +556,9 @@ downtime and is already covered by the ordinary process interruption (§4.4).
 between cycles, is handled at detection: `wall_clock` jobs are re-armed, the diagnostic is emitted
 and the gap opens immediately. Its bounds are still cycle instants, because only cycles assign
 instants to recorded history: it starts at the last cycle instant before the check and ends at the
-first cycle instant after it, or later under the frozen-floor rule above. The next cycle compares
+first cycle instant after it, except a backward correction that leaves the wall clock behind the
+floor, which ends under the frozen-floor rule above. The detection point never changes which rule
+applies: the same correction found at a cycle start or at the check gets the same end rule. The next cycle compares
 against that check, so one correction is detected once. Until the end boundary is durably
 acknowledged, a historical read reaching past the start is incomplete (§4.4).
 `clock_discontinuity` gap boundaries use the durable observation-continuity metadata path of
@@ -2844,7 +2857,9 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
 - **Response ingress**: declared open requests per owner and rejected responses by reason (§5.1.3).
 - **Clock**: last cycle instant, last clock comparison, and every detected discontinuity with
   direction, size, detection point (cycle start or periodic check), whether the wall clock fell
-  behind the cycle floor, `clock_discontinuity` gap boundaries and re-armed `wall_clock` jobs (§3.5).
+  behind the cycle floor, its own `clock_discontinuity` gap boundaries and end rule (first cycle
+  instant after detection, or wall clock exceeding the frozen floor), and re-armed `wall_clock`
+  jobs (§3.5). Concurrently open gaps are reported individually.
 - **Retry queue**: queued bytes, current budget and its source (floor or memory limit), and, after
   ordinary overflow, per-stream discarded counts and `queue_overflow` lost intervals;
   for exceptional global overflow, the epoch start/status, latest baseline invalidation,
@@ -2949,6 +2964,16 @@ concrete checklist rather than re-deriving one:
   over the skipped interval. A history read spanning either gap is incomplete
   with `clock_discontinuity`. A bootstrap reading earlier than the durable
   floor by more than 1 s behaves as a backward jump (§3.5/§4.4).
+- Forward correction while the floor holds (relative seconds): durable floor 100;
+  bootstrap at monotonic 0 reads wall 90, cycle instant 100.000001, frozen gap
+  open. At monotonic 1 the wall reads 94 (a 3 s forward correction, still below
+  the floor). Detected at that cycle start: a new gap 100.000001 → 100.000002,
+  ended. Detected first by the periodic check: the new gap starts at 100.000001
+  and ends at the next cycle (monotonic 2, wall 95) at 100.000002, without
+  waiting for the floor. In both paths the bootstrap gap stays open until a
+  cycle whose wall reading exceeds 100, both are reported separately, and each
+  end boundary needs durable acknowledgement before a read past it is complete
+  (§3.5/§4.4/§10).
 - During a wall-clock correction, an armed `elapsed` 30-minute hold expires
   after 30 monotonic minutes. An armed `wall_clock` calendar-boundary job is
   re-armed against its unchanged due: after a forward jump past the due it

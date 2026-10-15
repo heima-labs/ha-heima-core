@@ -5174,9 +5174,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101 | 0 | 0 | 45 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–102 | 0 | 0 | 46 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97 | 0 | 0 | 13 | 0 |
-| **Total** | **101 findings** | **0** | **0** | **100** | **1** |
+| **Total** | **102 findings** | **0** | **0** | **101** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6296,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-102 — A forward correction while the floor holds had path-dependent gap bounds
+
+**Status:** DONE (2026-10-15; specification readiness). **Severity:** P2. **Origin:** Layer 0 implementation (`docs/v3/clarifications/PERIODIC_FORWARD_GAP_DURING_FREEZE.md` in the implementation worktree).
+
+**Problem.** Layer 0 §3.5 did not say how a forward correction is bounded while an earlier backward correction still holds the cycle floor. The periodic-check sentence ("or later under the frozen-floor rule above") could be read as making any gap detected below the floor wait for floor recovery, so the same +3 s correction (floor 100, wall 90 → 94 over 1 monotonic second) ended at the first following cycle when detected at a cycle start but stayed open until floor recovery when detected by the 60-second check.
+
+**Approved resolution (2026-10-15).** Each discontinuity opens its own gap, bounded only by its own correction (direction and, if backward, whether it leaves the wall clock behind the floor); the detection point never changes the end rule. A forward correction while the floor holds takes the forward-jump bounds and ends at the first cycle instant after detection, even if frozen; the earlier backward gap stays open independently until the wall clock exceeds the floor. Waiting for floor recovery was rejected: the frozen interval is already covered by the earlier gap, so the wait adds no information and widens the forward gap. A further backward correction over 1 s while the floor holds takes frozen-floor bounds from its own first frozen instant. Diagnostics report each gap and its end rule individually. Threshold, unchanged due/basis, elapsed monotonic waits and §4.4 durable acknowledgement are unchanged. See the [CA4-102 review](specs/v3/reviews/CA4-102.md); no V3 runtime test ran.
 
 #### CA4-101 — Weekly occurrences had no identity across clock and timezone changes
 
