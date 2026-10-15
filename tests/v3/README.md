@@ -88,3 +88,10 @@ on-disk batch/replay/uncertainty cases; `mutation_sqlite_clock_gaps.py` suppleme
 SQL semantics and frozen-value checks. Evidence: `docs/v3/testing/SQLITE_CLOCK_BOUNDARIES.md`
 and `SQLITE_CLOCK_BOUNDARIES_MUTANTS.md`. Receipts from inner callbacks are candidates
 until the enclosing SQLiteTransactionWriter.run successfully returns.
+
+
+Location prerequisite: `contracts/test_location.py` covers the exhaustive shape
+matrix, canonical identity/Unicode ordering, strict key-text recovery and properties;
+`mutation_location.py` supplements immutable shape and identity/order mutations.
+See `docs/v3/testing/LOCATION.md` and `LOCATION_MUTANTS.md`. This slice does not
+implement full HouseFact assembly or fact/marker SQL.

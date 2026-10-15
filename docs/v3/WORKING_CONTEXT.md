@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Latest commit 2449ea0 fixes SQLite implicit-rollback atomicity.
-> New composable SQLite clock-boundary writes/tests/evidence are uncommitted.
-> Read the final checkpoint. Planning HEAD37986ea; Layer8 CA4-103 edits in progress.
+> Latest commit0c5a637 contains composable SQLite clock-boundary writes.
+> Location foundation/tests/evidence/handoff are uncommitted; see final checkpoint.
+> Planning HEAD37986ea has Layer8 CA4-103 edits in progress; read-only for Codex.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -1509,3 +1509,64 @@ this immutable boundary mechanism does not solve general replay. Future worker/q
 owner handles admission, acknowledgements and uncertainty; HA lifecycle, startup
 timeline enumeration and retention/pruning remain unimplemented. No generic weekly
 CronEntry lifecycle or V2 migration. Git/deploy policies remain proposals.
+
+## Active slice — missing Location foundation for real fact batches
+
+Clock SQL slice committed0c5a637 after960 tests; clean afterward. PlanningHEAD37986ea
+has in-progress CA4-103 Layer8 changes, read-only. Re-read L0 §4.0/§4.1/§4.2 and
+L1 §3/§5/§10: full HouseFact/Location/FactSource assembly is still absent. Complete
+mandatory Location before introducing a fake generic fact storage record. Scope:
+contracts/location.py, behavioral tests, evidence, semantic mutation supplement,
+mutation scope, README/handoff. Rationale in testing/LOCATION.md precedes code.
+No actual fact/marker SQL, source authority, registry resolution or HA lifecycle yet.
+
+
+## Latest checkpoint — Location prerequisite for fact batches, 2026-10-15
+
+Developer requested commit and continuation. Reran960 tests and diff check, committed
+clock-boundary SQL slice as0c5a637; clean immediately afterward. PlanningHEAD37986ea
+still has Layer8 CA4-103 house-map/registry/orientation edits, owned by the other
+session. L0/L1 owning contracts unchanged. No planning writes by Codex.
+
+Dependency check before real fact SQL found full HouseFact/FactSource/Provenance
+assembly still absent. Implemented the mandatory Location prerequisite first, rather
+than persist placeholders under a fact name. Read L1 §5/§10, L0 §4.0/§4.5 and registry
+L1-LOCATION (no dependencies). No new specification choice or external dependency.
+Impact/rationale written before code in testing/LOCATION.md.
+
+contracts/location.py provides frozen/slots Location with exactly four declared
+fields, ScopeKind and LocationKey aliases. Strict scope/payload/cardinality/nonempty
+identifier validation; rooms requires frozenset of at least two IDs. Registry existence
+is deliberately not checked here. Canonical key drives equality/hash; room-set order
+is Unicode code point, with exact opaque IDs (no trim/case/NFC rewrite). Key JSON text
+uses shared RFC8785 encoder; recovery validates arity/type/order/uniqueness and rejects
+noncanonical persisted text. This is the specified key array/scalar subject format,
+not a full HouseFact/object serializer or general JSON importer. Identity and encoding
+revalidate reconstructed invalid Location values. Python hash is process-local and
+must not be used as a durable fingerprint; canonical key JSON is the persisted form.
+
+114 focused instances; full V3:1074 passed,seed3145. All32 scope/optional-field
+combinations, cardinality0/1/2/3, exact Unicode ordering, malformed key/text recovery,
+forged identity validation, follow-up scalar subject projection, two seeded PBTs.
+Ruff lint/format66files,mypy27sources,diff pass. Fresh scoped mutmut177generated,
+119killed,58individually reviewed equivalents (56 prose,1 redundant branch guard,
+1 UTF-8 codec case), zero errors/timeouts/skipped/untested/interrupted. Five
+frozen/slots/order/identity supplements killed with clean114-test baseline. Evidence:
+testing/LOCATION.md and LOCATION_MUTANTS.md. Permanent mutation scope21modules.
+New module/tests/supplement/pyproject/evidence/README/handoff uncommitted on0c5a637.
+
+No actual fact/CycleCommitMarker SQL, full HouseFact construction, producer claims,
+FactSource authority factory, Provenance or live current index exists yet. Previous
+SQLite primitives remain available for composing the future batch. Do not mistake
+this dependency slice for completion of the fact persistence milestone.
+
+### Exact next action
+
+Review/commit this Location slice when requested. Continue the remaining HouseFact
+foundation (approved builder contract, source authority and provenance), then real
+accepted-fact/AppendOrder/CycleCommitMarker schema and one end-of-cycle transaction.
+Re-read L0 §5 and L1 §3/§4 before fixing source construction; authority must remain
+non-forgeable. Read current planning working copy; do not invent restart uniqueness
+or general replay rules for mutable batches. Watermark, verified accounting-range
+assembly, bounded queue/worker, HA lifecycle, startup timeline and retention remain
+unimplemented. No deploy, migration, generic weekly CronEntry or Git-policy approval.
