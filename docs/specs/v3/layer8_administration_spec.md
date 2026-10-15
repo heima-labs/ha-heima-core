@@ -43,7 +43,8 @@ layer's store, never evaluates a guard or a policy itself, and never runs in an 
   one panel; the HA config flow only creates the integration (L8-C1). The panel shows what the
   owning layers hold; it keeps no parallel copy that could diverge.
 - **Authority is enforced in the backend.** The UI hides what a role cannot use; every command is
-  checked server-side against the authenticated HA user (§4).
+  checked server-side against the authenticated HA user (§4). The one exception is device control
+  from the house map, which is an ordinary HA service call under HA's own permissions (§9.8).
 - **Every object shows its state and its reason.** Status is never shown without the "why" (§8).
 - **Configuration changes are previewed and atomic.** No intermediate state invalidates a
   dependent (§6).
@@ -118,7 +119,8 @@ technical identifiers. Every configuration section shows the pending-changes bar
 - **Immediate actions** are governance or answer commands that are not configuration mutations:
   promotion, disablement, consent grant or revoke, consent-authority changes, proposal review,
   artifact adoption mode, Layer-3 live-signal promotion and signal-artifact adoption (Layer 3 §4.9),
-  answers to requests, finding acknowledgement, house-map layout edits.
+  answers to requests, finding acknowledgement, house-map layout saves (§9.9: presentation only,
+  so no consequence dialog).
   They take effect at once after a confirmation dialog that states their consequence, and never
   enter the change set. Accepting a learned proposal is the one immediate action that creates
   configuration: it may name the new Reaction and commits it as one composed generation with an
@@ -249,37 +251,188 @@ rendered in plain language, without identifiers.
 
 ## 9. House map (L8-C3a)
 
-The Overview shows a native map, never a third-party card.
+The Overview shows a native map, never a third-party card. Initial V3 has one form of map: an
+automatic schematic derived from the `Room` registry, `Topology` and the registered devices, which an
+administrator can adjust. A real plan (an uploaded image or SVG) is not part of Initial V3 (CA4-103).
 
-1. **Automatic schematic.** Rooms from `Topology` laid out by their connections, one tab per
-   floor, exterior rooms visually distinct.
-2. **Optional real plan.** An administrator uploads an image or SVG per floor and places each room
-   (a polygon, or an SVG element) and each device on it.
+### 9.1 What the map shows
+
+- **Floors.** One tab per distinct `Room.floor`, in ascending order, labelled from the floor number
+  through translation keys.
+- **Rooms.** Every `interior` room is a rectangular box of whole grid cells, from 1×1 to 4×3. An
+  `exterior` room (terrace, garden) is a visually distinct strip outside the interior boxes (§9.3).
+- **Openings.** Every `Opening` is a glyph on one side of its owner room's box: distinct glyphs for
+  `door`, `window` and `door_window`. Its side and position are derived (§9.5), never stored.
+- **Devices.** An `Actuator` with `opening_id` and a `Sensor` with `related_opening_id` are drawn on
+  their opening. Other registered Actuators and Sensors are drawn inside their room's box, grouped by
+  rendering kind with a count. Only Heima-registered devices appear; nothing else from HA.
+- **Orientation.** One direction is at the top of the map for the whole installation (§9.4). A
+  compass shows north; all text stays upright.
+
+### 9.2 Layout data
 
 ```python
 @dataclass(frozen=True)
-class MapPlacement:
-    target_kind: Literal["room", "actuator", "sensor", "opening"]
-    target_id: str                    # Heima identity, never an HA entity id
-    floor_id: str
-    shape: CanonicalJsonObject        # polygon points or an SVG element id, normalized coordinates
+class MapRoomPlacement:
+    room_id: str          # an interior Room; its floor is Room.floor, never stored here
+    x: int                # grid cell of the box's top-left corner, in map coordinates
+    y: int                #   (x to the right, y downward)
+    w: int                # 1..4 cells
+    h: int                # 1..3 cells
 
 @dataclass(frozen=True)
 class HouseMapLayout:
-    floor_plans: Mapping[str, str]    # floor_id -> stored plan asset id
-    placements: tuple[MapPlacement, ...]
+    revision: int                                 # incremented by every save
+    up: CompassOrientation | None                 # direction at the top; None follows §9.4's suggestion
+    placements: tuple[MapRoomPlacement, ...]      # pinned rooms only, unique room_id
 ```
 
-Plans are stored in HA's storage directory, at most 2 MiB per floor, and an SVG is sanitized (no
-scripts, no external references) before storage. The layout is Layer-8 presentation data stored
-with HA's storage helper, not Layer-1 `Topology`
-and not part of the composed generation; editing it is an immediate action. A placement whose
-target no longer exists is hidden and listed for cleanup; a renamed object updates on the map.
+`CompassOrientation` is Layer 1's closed vocabulary. The layout is Layer-8 presentation data stored
+with HA's storage helper. It is not `Topology`, not part of the composed generation, and drives no
+behavior outside the panel. Openings and devices have no stored position. A placement whose room no
+longer exists, is now `exterior`, or overlaps an earlier placement on the same floor (in `room_id`
+code-point order) is ignored, listed as a map check (§9.6) and dropped at the next save. A room that
+changes floor keeps its placement on the new floor under the same rule. A rename changes only the
+label.
 
-Overlays: room occupancy and casa presence, light and Actuator channel state, opening state where a
-registered Sensor or Actuator channel reports it,
-automations active or blocked with their reason (§8 on click). The map updates live through
-Layer 0 committed-state observers (§10.3); it never polls.
+### 9.3 Automatic proposal
+
+Every unpinned interior room receives a position from one deterministic rule. The same layout, up
+direction, rooms, openings and enclosures always give the same map, independent of registry order.
+
+1. **Map frame.** An opening's map orientation is its `orientation` rotated by the up direction in
+   45° steps. Map sides are top, right, bottom and left.
+2. **Preferred direction.** A room's preferred direction is the sum of the unit vectors of the map
+   orientations of its openings for which Layer 1's `opening_faces_exterior` is true. A zero sum
+   means no preference (a hallway, a windowless bathroom).
+3. **Connections and width.** A room's degree is the number of distinct interior rooms on the same
+   floor reached through its passable openings. A room of degree 5 or more is proposed
+   `min(3, ceil(degree / 2))` cells wide, so that a hallway can touch its rooms; every other room is
+   1×1.
+4. **Start.** Pinned rooms of the floor are placed at their stored positions. Without pinned rooms,
+   the room of highest degree (ties by `room_id`) is placed at the origin. The floor's starting room
+   is that room, or with pinned rooms the pinned room of highest degree (ties by `room_id`).
+5. **Order.** Unplaced rooms are taken breadth-first from the placed rooms (pinned ones in `room_id`
+   order). A room's neighbors are visited by descending degree, then `room_id`. Rooms not reachable
+   follow, in the same order.
+6. **Position.** A candidate is any box touching an already placed box without overlapping one. The
+   candidate with the lowest cost wins. The cost increases with: the distance to each connected room
+   it does not touch; the angle between its direction from the floor's starting room and the room's
+   preferred direction; its distance from that starting room; and the growth of the floor's bounding
+   box. Ties go to the smaller `y`, then the smaller `x`. The weights are core constants, frozen per
+   core version and covered by fixture tests (§16).
+7. **Exterior rooms.** An exterior room is a strip outside the bounding box of the interior boxes,
+   on the side most of its connecting openings face. A diagonal orientation counts for its top/bottom
+   component, and ties go bottom, top, right, left. The strip spans the connected rooms' extent. An
+   exterior room with no connecting opening sits below the interior boxes. Exterior strips are never
+   pinned or dragged.
+
+The proposal never moves a pinned room.
+
+### 9.4 Up direction
+
+The suggested up direction is the one among the eight `CompassOrientation` values that puts the most
+oriented openings on a full side (a non-diagonal map orientation). Ties go to `north`, then clockwise.
+A house whose facades face NE/SE/SW/NW is therefore drawn with `northeast` at the top without any
+input. With `up=None` the map follows the suggestion, which updates when openings change. An
+administrator can choose another direction in 45° steps or return to the suggestion. Changing the up
+direction clears the floor placements, after a warning in the editor, because every opening changes
+side. The compass and the sun direction rotate with it.
+
+### 9.5 Opening placement
+
+Derived at render time from the current boxes:
+
+- A passable opening between two interior rooms whose boxes share a wall is centered on the shared
+  segment.
+- An opening to `outside` or to an exterior room, with an orientation, is placed on the side of its
+  map orientation. For a diagonal, the side whose wall still has an exterior stretch is used,
+  top/bottom first. It is placed on the longest stretch of that side not shared with another interior
+  box. Without an orientation, it goes on the side with the longest exterior stretch (top, right,
+  bottom, left on ties).
+- A passable opening between rooms whose boxes do not touch is placed on the side facing the other
+  room, with a dashed connector to it.
+- Several openings on the same stretch are spread evenly in `opening_id` order.
+
+### 9.6 Map checks
+
+Administrators see map checks in the editor and on the Overview. Map checks are presentation
+diagnostics: they never change `Topology`, create a fact or block an apply.
+
+- "Not adjacent": a passable opening drawn with a connector.
+- "Faces another room": an oriented opening with an exterior side that has no exterior stretch.
+- "Orientation missing": the floor has exterior-facing openings without `orientation`, so the map is
+  approximate. It links to the opening in the House section, with the hint to read the direction on
+  a phone compass while looking out, or on a north-up satellite map.
+- "Placement ignored": a stored placement dropped by §9.2.
+
+### 9.7 Overlays
+
+Live state comes through Layer 0 committed-state observers (§10.3). The map never polls. Rendering
+is keyed by an Actuator channel's `channel_kind` and a Sensor's `fact_type`, never by an HA domain
+guessed from the entity. A kind with no map rendering shows HA's state icon for its entity. Colors
+follow the HA theme, and animation stops under `prefers-reduced-motion`. Initial V3 renderings:
+
+- **Room.** Occupancy fill from Layer 4 room occupancy (occupied, vacant, hatched when unavailable),
+  activity badges, casa presence in the header.
+- **Light.** A glow in the light's color and brightness when those facets are registered, otherwise
+  on/off. The glow is stronger after dark.
+- **Cover on an opening.** A band on the opening proportional to the closed fraction, marked while
+  moving. An awning extends outside the wall in proportion to its extension.
+- **Opening state.** A door leaf or window sash drawn open from the registered opening Sensor or
+  Actuator channel.
+- **Climate.** Current temperature, with heating or cooling marked.
+- **Fan and media.** Spinning blades and a playback indicator.
+- **Sun.** When the core solar-geometry Sensors are staged (Layer 2 §3.6) and the sun is above the
+  horizon: a light patch through each exterior-facing window or door-window whose orientation is
+  within 80° of the solar azimuth, attenuated by its cover and awning, plus a sun marker in the
+  azimuth's direction. Without those Sensors there is no sun overlay; the map never reads `sun.sun`
+  itself.
+- **Automations.** A badge per room: active, blocked or held with the reason. A tap opens §8.
+
+### 9.8 Device control from the map
+
+The map is also a convenient control surface, built on Home Assistant's own controls:
+
+- **Tap** toggles a light, fan or media device, and opens or closes a cover on a `window` or
+  `door_window` opening.
+- **Long press, secondary click or the details button** opens HA's standard more-info dialog for the
+  entity.
+- **Never on tap:** locks, covers on a `door` opening (garage door, gate), climate and every other
+  kind open the more-info dialog only.
+
+The panel calls the HA service through the frontend's HA connection **as the signed-in HA user**,
+with HA's own permissions. This is the one panel action that does not go through Heima's backend.
+It is neither a `heima/v3/` command nor a Heima `ApplyStep`, and no Heima authority or consent check
+applies. It is an ordinary use of HA controls, not a Heima action: the apply plan remains the only
+channel through which Heima acts on HA. Heima observes the resulting state like any other control
+use (Layer 0 §6). If it diverges from a current Reaction target, the hold follows Layer 0 §6, and
+the map shows the held automation with its §8 explanation. That explanation states only the origin
+Layer 0 verified; it never claims more about who acted. Device control is unavailable in edit mode.
+
+### 9.9 Editing the layout
+
+Administrators edit in an explicit edit mode:
+
+- drag a box to another free position, snapped to the grid;
+- resize a box from its right edge, bottom edge or corner, from 1×1 up to 4×3;
+- rotate the up direction by 45°, or return to the suggested direction;
+- reset the current floor to the automatic proposal (clears its placements);
+- undo the previous edit (Ctrl/⌘+Z included), at least 50 steps, for the current edit session;
+- save or cancel.
+
+A move or resize onto another box is refused. Edits stay local until **Save**, which sends the whole
+layout in one `map/save_layout` command carrying the `revision` it was based on. Every room box
+present at save becomes a placement. A save based on a stale revision is rejected without change,
+and the editor reloads the current layout. Saving is an immediate action without a consequence
+dialog, because it changes presentation only (§6.1). It never enters the change set and has no
+impact preview. Undo is client-side and ends with the edit session.
+
+### 9.10 Roles
+
+Residents see the same map and overlays and may use §9.8 within their HA permissions. Text is in
+plain language, without identifiers or reason codes, and with no edit mode and no map checks.
+Administrators additionally see entity ids and reason codes in details, map checks and the editor.
 
 ## 10. HA entities published by Heima (L8-C6)
 
@@ -375,7 +528,8 @@ frontend, registered as an HA custom panel and served by the integration with it
 in the package. It loads no library from an external CDN and does not reuse the V2 panel code.
 
 - The panel talks to Heima through HA's websocket API with typed commands and queries; every
-  message carries the authenticated HA user, which §4 resolves.
+  message carries the authenticated HA user, which §4 resolves. Map device control (§9.8) instead
+  calls HA services and opens HA's more-info dialog through the frontend's HA connection.
 - Queries: current state from the in-memory current index; history, timelines, diffs and
   explanations as bounded slow-path queries with explicit time windows and pagination.
 - Commands: configuration (§6) through Layer 0 §4.7; governance through Layer 5's common command
@@ -390,7 +544,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | Message | Kind | Roles | Owner path |
 |---|---|---|---|
 | `session` | query | any HA user | §4 principal and roles |
-| `overview` | query | admin, resident | map, automation state, pending items (role-filtered) |
+| `overview` | query | admin, resident | map layout and derived proposal, automation state, pending items (role-filtered) |
 | `objects/list`, `objects/get` | query | admin | active generation, per `object_kind` |
 | `change_set/validate_edit` | query | admin | owning layer's staging validator |
 | `change_set/preview` | query | admin | Layer 0 §4.7 staging |
@@ -407,7 +561,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `consent_authority/stage` | command | admin | Layer 5 §4.2 |
 | `proposals/review` | command | admin | Layer 5 §4.2 |
 | `findings/acknowledge` | command | admin | Layer-8 view state |
-| `map/save_layout`, `map/upload_plan` | command | admin | §9 |
+| `map/save_layout` | command | admin | §9.9, rejected on a stale `revision` |
 | `diagnostics` | query | admin | §14 |
 | `subscribe` | subscription | admin, resident | live updates of §10.3, role-filtered |
 - Live updates to an open panel come from committed-state observers and the in-memory projections
@@ -424,8 +578,9 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
 ## 15. Decisions taken on the draft (2026-10-13)
 
 1. **Users with no role** see only "Heima is not set up for you" (§4).
-2. **Map plan assets** are stored in HA's storage directory, at most 2 MiB per floor; an SVG is
-   sanitized (no scripts, no external references) before storage (§9).
+2. **House map** (CA4-103, 2026-10-15): automatic schematic only; no uploaded plan in Initial V3.
+   Device control from the map uses HA's own services and more-info dialog as the signed-in user,
+   outside Heima's backend (§9).
 3. **History actor names:** administrators see the actor's HA display name; residents see names
    only for their own actions and "an administrator" otherwise (§7).
 4. **Suggested automations at first start** list only descriptors whose staged prerequisites are
@@ -450,6 +605,26 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   and `data_unavailable` beyond retention.
 - The house map shows occupancy within one committed cycle of a change, with no polling; a room
   removed from configuration disappears from the map and its entity from HA.
+- House-map proposal fixture: one floor with a hallway connected by doors to living room, kitchen,
+  study, bedroom, small bathroom and entrance; a large bathroom reached only from the bedroom; a
+  terrace reached by south door-windows of living room, kitchen and study; windows N (bedroom, large
+  bathroom), E (small bathroom, study), W (living room); entrance door W. With `up=None` the
+  suggested direction is north. The hallway is 3×1, living room, kitchen and study lie along its
+  bottom edge, the terrace is a strip below them, and bedroom, small bathroom and entrance lie above
+  it. Permuting registry order gives the same layout. Rotating every orientation by 45° suggests
+  `northeast` and gives the same layout; forcing `north` on the rotated house gives a different one.
+- A pinned room never moves when another room is added; the new room touches a connected room when
+  a free touching cell exists. A window whose map side is fully shared with another interior box
+  produces "Faces another room"; a door between non-touching boxes produces "Not adjacent". Neither
+  changes `Topology`.
+- Moving or resizing a box onto another is refused; undo restores the previous layout; a save on a
+  stale revision is rejected without change. Changing the up direction clears that floor's
+  placements only after the editor's warning.
+- A tap on a light calls the HA toggle service as the signed-in user and sends no `heima/v3/`
+  message; a tap on a lock or a garage-door cover opens HA's more-info dialog and calls no service.
+  When the light is a current Reaction target, the resulting divergence follows Layer 0 §6 and the
+  map shows the held automation with its explanation.
+- With no core solar-geometry Sensors staged, the map draws no sun overlay and reads no `sun.sun`.
 - Every published entity is read-only, `unavailable` when its fact is unavailable (an activity
   entity is `off` instead), translated, and carries no free text or person identity. A room where
   `relax` and `working` are both active shows two activity entities `on`; a cooking entity is `off`,

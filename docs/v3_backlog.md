@@ -1859,6 +1859,8 @@ Decisions recorded before the Layer-8 specification was written. The approved
   Layer-8 presentation data, not Layer-1 `Topology`; rooms and devices stay Heima's own, so renames
   and removals propagate. Users who want `floorplan-card` in their own dashboards bind it to the
   HA entities Heima exposes (L8 decision on exposed entities); Heima neither bundles nor depends on it.
+  (Revised by CA4-103: no uploaded plan in Initial V3; layout editing, up direction and map device
+  control defined in Layer 8 §9.)
 - **L8-C4 — Session change set, applied atomically.** Configuration edits (Layer 0 §4.7 mutations)
   accumulate in the administrator's browser session; a bar shows the pending count and errors, and
   "Review and apply" opens one preview: what changes (field-level diff), effects on the rest of the
@@ -5174,9 +5176,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–102 | 0 | 0 | 46 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–103 | 0 | 0 | 47 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97 | 0 | 0 | 13 | 0 |
-| **Total** | **102 findings** | **0** | **0** | **101** | **1** |
+| **Total** | **103 findings** | **0** | **0** | **102** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6296,6 +6298,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-103 — The house map had no layout, orientation or control contract
+
+**Status:** DONE (2026-10-15; specification readiness). **Severity:** P2. **Origin:** Layer 8 map design review with the developer, validated on an interactive mockup built on the real V2 topology.
+
+**Problem.** Layer 8 §9 named an "automatic schematic laid out by connections" without a layout rule, so the same topology could be drawn differently by each implementation; rooms without a door, cross-floor stairs, opening sides and device placement were unstated. Opening orientation was unused, there was no rule for a house not aligned to north, and the optional uploaded plan carried asset storage and SVG sanitization for little value once boxes are editable. Whether the map could command devices was undecided.
+
+**Approved resolution (2026-10-15).** Layer 8 §9 rewritten. Rooms are grid boxes (1×1 to 4×3) proposed by one deterministic rule: pinned rooms first, otherwise the highest-degree room; breadth-first placement minimizing a cost over untouched connections, deviation from the room's preferred direction (sum of its exterior-facing opening orientations), distance and bounding-box growth; ties by y then x; frozen weights with fixture tests. A room of degree ≥5 is proposed wider. Exterior rooms are strips on their openings' side. Openings and devices are derived, never stored. One installation-wide up direction in 45° steps, suggested as the one putting the most oriented openings on a full side (NE for a 45°-rotated house); changing it clears placements after a warning. `HouseMapLayout(revision, up, placements: MapRoomPlacement)` replaces `MapPlacement`; saving is an immediate presentation action with a stale-revision check, local undo per edit session, no consequence dialog. Map checks (not adjacent, faces another room, orientation missing, placement ignored) are diagnostics only. Overlays are keyed by channel kind and fact type; the sun overlay uses only the core solar-geometry Sensors. Map device control (tap toggles lights, fans, media and window covers; long press opens HA's more-info; locks, door covers and climate only more-info) calls HA services as the signed-in user, outside Heima's backend, never as an `ApplyStep`; the resulting divergence follows Layer 0 §6. The uploaded plan, `map/upload_plan` and the plan-asset decision are removed. Reused constructs: Layer 1 `CompassOrientation` and `opening_faces_exterior`, Layer 2 channel kinds and solar Sensors, HA more-info. See the [CA4-103 review](specs/v3/reviews/CA4-103.md); no V3 runtime test ran.
 
 #### CA4-102 — A forward correction while the floor holds had path-dependent gap bounds
 

@@ -743,8 +743,9 @@ the backend; the config flow only creates the integration. Configuration edits f
 change set applied atomically after a preview of changes, effects and errors, so a multi-object
 change never passes through states that invalidate dependents; governance actions (promotion,
 consent, proposal review) are immediate. A single history timeline offers restore as a new change
-set; a "Why?" view explains every object from durable records; a native house map shows occupancy,
-devices and blocked automations; Heima publishes read-only HA entities for dashboards and user
+set; a "Why?" view explains every object from durable records; a native house map, drawn automatically from rooms and
+topology with a selectable up direction and adjustable by the administrator, shows occupancy,
+devices and blocked automations and lets users control devices through HA's own controls; Heima publishes read-only HA entities for dashboards and user
 automations; a guided first start replaces any V2 import. All user-facing text is translated.
 Holds remain internal and have no manual clear action.
 

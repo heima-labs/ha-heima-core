@@ -550,7 +550,7 @@ content by role resolved server-side from the HA user (administrator, resident, 
 config flow only creates the integration. Configuration edits accumulate in a session change set
 and apply atomically after a preview of changes, effects and errors; governance actions and answers
 are immediate. One history timeline with restore, a "Why?" chain on every object (built on
-the per-Reaction `reaction.decision.<digest>` state, trigger history and the generation of that time), a native house map,
+the per-Reaction `reaction.decision.<digest>` state, trigger history and the generation of that time), a native house map drawn from rooms and topology (device control through HA's own controls),
 read-only published HA entities fed by committed-state observers and owner projections, a guided
 first start, and fully translated text (English source, `en` and `it` shipped). The panel is a Lit
 custom panel talking to typed websocket messages; nothing runs in an evaluation cycle.
