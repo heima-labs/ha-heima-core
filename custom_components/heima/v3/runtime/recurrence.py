@@ -66,12 +66,17 @@ def next_weekly_occurrence(
     pattern = WeeklyRecurrence(pattern.weekdays, pattern.hour, pattern.minute)
     wall = parse_instant(now)
     try:
-        local_day = wall.astimezone(time_zone).date()
+        local_wall = wall.astimezone(time_zone)
+        local_day = local_wall.date()
         # Today through the same weekday next week, inclusive; not a time horizon.
         for offset in range(8):
             day = local_day + timedelta(days=offset)
             if day.weekday() in pattern.weekdays:
                 requested = datetime(day.year, day.month, day.day, pattern.hour, pattern.minute)
+                # Ignore past civil candidates before UTC conversion: near year 1
+                # they may be outside UTC's calendar while next week remains valid.
+                if requested <= local_wall.replace(tzinfo=None):
+                    continue
                 due = _civil_due(requested, time_zone)
                 if due > wall:
                     return WeeklyOccurrence(day, format_instant(due))

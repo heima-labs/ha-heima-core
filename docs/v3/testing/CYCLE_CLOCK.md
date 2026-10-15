@@ -1,3 +1,90 @@
+# Current CA4-102 checkpoint — 2026-10-15
+
+Source of truth: planning **working copy**, feat/v3-planning at base 0b82d61 with
+uncommitted CA4-102 changes; Layer 0 §3.5/§10/§13, review CA4-102 and backlog entry.
+No planning edits by Codex. This section supersedes historical descriptions below
+that made any frozen tick delay a non-frozen-mode gap.
+
+## Behavior and impact
+
+Each correction opens an independent immutable boundary intent. Both compare and
+next_cycle select await_floor_recovery only for backward discontinuity AND behind
+floor. finish never changes this mode. False closes at the first tick strictly after
+start even if that tick is frozen; True waits until raw wall strictly exceeds the
+current tick's floor. An already ended intent never changes. Periodic detection
+still opens at the preceding cycle; cycle detection of a frozen backward correction
+starts at the detecting frozen cycle, per CA4-98. The **end rule**, not necessarily
+the start instant, is independent of detection point.
+
+The exact 100/90 -> 94 reproducer now closes the new forward gap at 100.000002 in
+both paths, while the bootstrap backward gap remains open until recovery. Forward
+recovery closes both independent gaps on the same cycle; a further -5 s opens its
+own frozen gap; -0.5 s while frozen emits only the regression requirement. A periodic
+backward-ahead gap still ends on the first later cycle if a subsequent -0.5 s
+correction freezes that tick. This removes the old promotion expectation in the test
+formerly named test_ca498_periodic_gap_waits_if_next_cycle_freezes.
+
+Production search: only clock.py reads await_floor_recovery or implements finish;
+TimingClock returns the immutable comparison/tick to its observer without managing
+open gap state. Existing timing-clock tests remain green. No diagnostics emitter,
+active gap registry, persistence or §4.4 acknowledgement is implemented by this patch.
+Elapsed scheduling, due, basis and re-arm are unchanged and covered by the full suite.
+
+## Five-method evidence
+
+- Decision table: test_ca4102_gap_mode_decision_table_and_mcdc crosses direction,
+  behind/ahead and cycle_start/periodic_check. Separate scenarios cover all executable
+  rows in review CA4-102: exact reproducer, recovery of both gaps, further backward
+  gap, small regression and immutable intents. Durable acknowledgement is a future
+  storage integration obligation; an end here does not claim completeness.
+- BVA: open_floor_boundaries crosses both directions and detection paths at floor-1us,
+  floor and floor+1us. discontinuity_threshold_boundaries checks each direction at
+  1s-1us, exactly 1s, 1s+1us. frozen_gap_finish_requires_wall_strictly_above_floor checks
+  the recovery floor at -1us/0/+1us; first_cycle_end_excludes_the_start_cycle_itself
+  checks the end's strict lower boundary. Existing nanosecond threshold tests remain.
+- MC/DC, backward AND behind, in **both** detection paths: decision-table rows
+  backward/behind => True; forward/behind => False changes only direction;
+  backward/ahead => False changes only behind. Forward/ahead completes the table.
+  finish's end/strict-start/mode/behind/strict-recovery guards each have tests; no new
+  compound Boolean condition is introduced there.
+- PBT: test_property_ca4102_gap_ends_independent_of_detection_path generates 100
+  sequences (1..35 signed microsecond corrections). Paired clocks receive the same
+  wall/monotonic samples at cycles, one with a preceding periodic comparison. Every
+  open intent keeps its mode; all corresponding end instants agree at each step and
+  after recovery; no correction is detected twice. Start differences for frozen
+  backward gaps are intentionally preserved. Hypothesis seed 3145, with shrinking.
+- Mutation: fresh clock.py-only mutmut 3.8 run against all tests/v3: 216 generated,
+  199 killed, 17 reviewed equivalents, no timeout/error/skipped/untested. Initial run
+  exposed missing strict-start boundary coverage; added that behavioral test and ran
+  again with a fresh mutant directory. Five supplemental threshold/frozen-decorator
+  mutations killed with a clean baseline. Exact diffs in
+  [CYCLE_CLOCK_CA4102_MUTANT_REVIEW.md](CYCLE_CLOCK_CA4102_MUTANT_REVIEW.md).
+
+Before code changes, new tests reproduced **5 failures**, 40 passes (45 new instances).
+The added mutation-driven strict-start case brings the final addition to 46 instances.
+Final focused suite: **101 passed**; full V3 suite: **633 passed**, seed 3145. Ruff
+lint/format, mypy (21 sources), diff hygiene pass. No HA run, ARM timing benchmark,
+SQLite acknowledgement or deploy evidence is claimed.
+
+## Reproduction
+
+Use the native .venv-v3 and dedicated configs. To keep generated caches outside the
+workspace, set PYTHONDONTWRITEBYTECODE=1, HYPOTHESIS_STORAGE_DIRECTORY to a temp path,
+pytest -p no:cacheprovider and mypy --cache-dir to a temp path.
+
+```bash
+.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3/runtime/test_cycle_clock.py --hypothesis-seed=3145 -q
+.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145 -q
+.venv-v3/bin/python tests/v3/mutation_clock.py
+.venv-v3/bin/ruff check --config ruff-v3.toml custom_components/heima/v3 tests/v3
+.venv-v3/bin/ruff format --check --config ruff-v3.toml custom_components/heima/v3 tests/v3
+.venv-v3/bin/python -m mypy --config-file mypy-v3.ini custom_components/heima/v3
+```
+
+---
+
+# Historical checkpoints (superseded where inconsistent with CA4-102)
+
 # Current CA4-99 checkpoint
 
 Execution references are now separate per basis. Read

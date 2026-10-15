@@ -36,9 +36,10 @@ class ClockGap:
             return self
         if tick.when <= self.start:
             return self
-        if tick.wall_behind_floor:
-            return replace(self, await_floor_recovery=True)
+        # The end rule belongs to this correction, never to a later tick.
         if self.await_floor_recovery:
+            if tick.wall_behind_floor:
+                return self
             if tick.previous_when is not None:
                 if tick.comparison.wall <= _successor(tick.previous_when):
                     return self
@@ -149,7 +150,9 @@ class CycleClock:
         gap = None
         if comparison.requires_wall_clock_rearm:
             if self._previous is not None:
-                gap = ClockGap(self._previous, None, behind)
+                gap = ClockGap(
+                    self._previous, None, comparison.discontinuity == "backward" and behind
+                )
         return replace(
             comparison,
             detection_point="periodic_check",

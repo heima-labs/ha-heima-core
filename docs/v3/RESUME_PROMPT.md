@@ -1,7 +1,8 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: observation coverage values/composition; see final checkpoint.
-> Last signed commit 6a60bd5; new coverage slice uncommitted.
+> Latest implementation: CA4-102 clock gap end rules; read the final WORKING_CONTEXT checkpoint.
+> Last signed commit 0cc0929; CA4-102 and prior interval/review work uncommitted.
+> Periodic forward gap clarification resolved; no commit authorized for CA4-102.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -478,3 +479,51 @@ Read current §4.1/§4.4/§4.6 and dependencies; surface ambiguous endpoint case
 of choosing silently. HA lifecycle/diagnostics, watermark writer and standing config
 persistence remain future work. Preserve interval-only CronEntry and current clock
 rules. Git/deploy proposals remain pending developer review.
+
+
+## Latest checkpoint — historical intervals and critical review, 2026-10-15
+
+Committed observation coverage at user request as signed 0cc0929, feat: add V3
+observation coverage contracts and conservative composition. Clean before this slice.
+Planning checked clean/read-only 0b82d61, L0 §4.4/§13 and timing §3.1/§3.5.
+
+Added contracts/history_intervals.py: explicit bounded canonical endpoints and inclusion
+flags; point/empty intervals on microsecond grid; exact intersection or None. Inputs
+revalidated, endpoint convention never chosen implicitly. This is geometry for later
+request-clipped gap evaluation, not durable-gap/metadata assessment or a complete
+historical read. No open-gap closure or write acknowledgement is inferred.
+
+Then performed requested critical review of 0cc0929,6a60bd5,f182a37,f92639a and timing
+consumers/dependencies. Two confirmed defects fixed after 8 regression instances
+failed: (1) timedelta.total_seconds float transport could shorten canonical duration;
+new shared _countdown uses integer µs + least non-early float, no due/Window change;
+(2) past year-1 local candidate could overflow UTC and hide a valid next-week start;
+civil past-candidate prefilter avoids conversion and retains physical UTC fold check.
+Updated four old tests to exact Fraction transport bounds rather than binary nominal
+float equality; no approximate tolerance. Full report CRITICAL_REVIEW_20261015.md.
+
+Third reproduced case needs spec decision: forward correction while old backward
+floor holds has different new-gap completion for cycle vs periodic detection.
+Developer approved prompt clarifications/PERIODIC_FORWARD_GAP_DURING_FREEZE.md.
+ClockGap/CycleClock unchanged pending handoff; no hidden xfail or product policy.
+
+587 V3 tests pass, seed3145; lint/format/mypy/diff pass. Five-method evidence in
+HISTORY_INTERVALS_AND_REVIEW.md. Fresh mutmut on three affected modules: 364 generated,
+291 killed, 5 known civil-search timeouts, 68 reviewed equivalents, exact diffs in
+HISTORY_INTERVAL_REVIEW_MUTANTS.md. Supplements: 5 interval (including property logic
+excluded by mutmut) and 2 weekly occurrence mutants killed, clean baselines. Default
+scope fifteen modules. No new dependency/policy/live HA/ARM/SQLite/deployment claim.
+
+New interval geometry/review fixes/prompt remain uncommitted; last signed 0cc0929.
+HA lifecycle/diagnostic ports, SQLite writer, durable metadata/acknowledgement and
+full history assessment remain future work. Review is scoped local evidence, not
+proof of full engine integration or performance.
+
+### Exact next action
+
+Deliver approved prompt to Claude via developer; obtain normative forward-periodic-
+under-freeze rule before changing that gap path. Review/commit current geometry and
+review fixes when requested. Continue request-scoped observation assessment only
+from explicit endpoint/trust/durability inputs; do not infer empty history or continuity
+from missing metadata. Preserve interval-only CronEntry and no generic weekly lifecycle.
+Git/deploy proposals remain pending developer review.

@@ -3,6 +3,8 @@
 import heapq
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from fractions import Fraction
+from math import inf, nextafter
 from pathlib import Path
 
 import pytest
@@ -90,12 +92,12 @@ def test_deadline_boundaries_and_one_delivery(runtime, delay):
     definition = job(delay)
     scheduler.register(definition, reading(), delivered.append)
     assert delivered == []  # An immediate due still defers to the event loop.
-    assert timer.handles[-1].due == max(0, delay)
+    assert_first_float_duration(timer.handles[-1].due, max(0, delay))
     assert scheduler.pending_jobs == (definition,)
     if delay > 0:
-        timer.advance(delay / 2)
+        timer.advance(timer.handles[-1].due / 2)
         assert delivered == []
-        timer.advance(delay / 2)
+        timer.advance(timer.handles[-1].due / 2)
     else:
         timer.advance(0)
     assert delivered == [definition]
@@ -434,7 +436,7 @@ def test_ca499_basis_selects_distinct_execution_reference(basis, expected_delay)
     scheduler.register(
         job(130.000001, basis=basis), tick.comparison.execution_clock, delivered.append
     )
-    assert timer.handles[-1].due == expected_delay
+    assert_first_float_duration(timer.handles[-1].due, expected_delay)
     assert tick.when == instant(100.000001)
     timer.advance(29.5)
     assert delivered == []
@@ -470,9 +472,9 @@ def test_ca499_wall_due_boundaries_under_frozen_floor(difference):
         ExecutionClockReading(instant(98), instant(100)),
         delivered.append,
     )
-    assert timer.handles[-1].due == max(0, difference)
+    assert_first_float_duration(timer.handles[-1].due, max(0, difference))
     assert delivered == []
-    timer.advance(max(0, difference))
+    timer.advance(timer.handles[-1].due)
     assert delivered == [job(98 + difference, basis="wall_clock")]
 
 
@@ -513,3 +515,9 @@ def test_property_ca499_wall_countdown_does_not_depend_on_history_floor(floor_of
         lambda _: None,
     )
     assert timer.handles[-1].due == delay
+
+
+def assert_first_float_duration(actual, seconds):
+    exact = Fraction(str(seconds))
+    assert Fraction.from_float(actual) >= exact
+    assert Fraction.from_float(nextafter(actual, -inf)) < exact

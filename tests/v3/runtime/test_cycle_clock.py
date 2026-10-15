@@ -301,7 +301,7 @@ def test_ca498_frozen_gap_starts_at_first_frozen_cycle_and_waits_for_recovery():
     assert gap.finish(recovered).end == instant(11)
 
 
-def test_ca498_periodic_gap_waits_if_next_cycle_freezes():
+def test_ca4102_periodic_forward_gap_ends_even_if_next_correction_freezes():
     cycle = CycleClock()
     first = cycle.next_cycle(instant(10), 0)
     periodic = cycle.compare(instant(12), 0)
@@ -311,10 +311,13 @@ def test_ca498_periodic_gap_waits_if_next_cycle_freezes():
     frozen = cycle.next_cycle(instant(9), 1_000_000_000)
     pending = periodic.gap.finish(frozen)
     assert pending.start == first.when
-    assert pending.end is None
-    assert pending.await_floor_recovery is True
+    assert pending.end == frozen.when
+    assert pending.await_floor_recovery is False
+    assert frozen.comparison.gap.await_floor_recovery is True
+    assert frozen.comparison.gap.end is None
     recovered = cycle.next_cycle(instant(11), 2_000_000_000)
-    assert pending.finish(recovered).end == instant(11)
+    assert pending.finish(recovered) is pending
+    assert frozen.comparison.gap.finish(recovered).end == instant(11)
 
 
 def test_ca498_periodic_small_regression_without_freeze_has_no_diagnostic():
@@ -455,3 +458,236 @@ def test_property_execution_reading_preserves_wall_and_applies_floor_without_cyc
     else:
         assert reading.cycle_instant == reading.wall
     assert cycle.previous_instant == instant()
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+@pytest.mark.parametrize(
+    "baseline,wall,mono,mode,direction",
+    [
+        (90, 94, 1_000_000_000, False, "forward"),
+        (100, 104, 1_000_000_000, False, "forward"),
+        (90, 86, 1_000_000_000, True, "backward"),
+        (100, 105, 10_000_000_000, False, "backward"),
+    ],
+)
+def test_ca4102_gap_mode_decision_table_and_mcdc(detection, baseline, wall, mono, mode, direction):
+    cycle = CycleClock(instant(100))
+    first = cycle.next_cycle(instant(baseline), 0)
+    if detection == "cycle_start":
+        tick = cycle.next_cycle(instant(wall), mono)
+        comparison = tick.comparison
+    else:
+        comparison = cycle.compare(instant(wall), mono)
+        tick = cycle.next_cycle(instant(wall), mono)
+        assert tick.comparison.discontinuity is None
+    gap = comparison.gap
+    assert comparison.discontinuity == direction
+    assert comparison.detection_point == detection
+    assert gap.await_floor_recovery is mode
+    finished = gap.finish(tick)
+    assert finished.await_floor_recovery is mode
+    assert finished.end == (None if mode else tick.when)
+    if mode:
+        assert gap.start == (tick.when if detection == "cycle_start" else first.when)
+    else:
+        assert gap.start == first.when
+    recovered = cycle.next_cycle(instant(110), mono + 1_000_000_000)
+    assert finished.finish(recovered).end == (recovered.when if mode else tick.when)
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+def test_ca4102_exact_reproducer_and_independent_bootstrap_gap(detection):
+    cycle = CycleClock(instant(100))
+    first = cycle.next_cycle(instant(90), 0)
+    original = first.comparison.gap
+    if detection == "cycle_start":
+        tick = cycle.next_cycle(instant(94), 1_000_000_000)
+        gap = tick.comparison.gap
+    else:
+        comparison = cycle.compare(instant(94), 1_000_000_000)
+        assert comparison.gap.await_floor_recovery is False
+        tick = cycle.next_cycle(instant(95), 2_000_000_000)
+        assert tick.comparison.discontinuity is None
+        gap = comparison.gap.finish(tick)
+    assert gap.start == instant(100, 1)
+    assert gap.end == instant(100, 2)
+    assert gap.await_floor_recovery is False
+    assert original.finish(tick).end is None
+    recovered = cycle.next_cycle(instant(100.5), 3_000_000_000)
+    assert original.finish(recovered).end == instant(100.5)
+    assert gap.finish(recovered) is gap
+    assert original.end is None  # Neither an updated intent nor a durable acknowledgement.
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+def test_ca4102_forward_recovery_closes_both_independent_gaps(detection):
+    cycle = CycleClock(instant(100))
+    first = cycle.next_cycle(instant(90), 0)
+    if detection == "cycle_start":
+        tick = cycle.next_cycle(instant(101), 1_000_000_000)
+        forward = tick.comparison.gap
+    else:
+        comparison = cycle.compare(instant(101), 1_000_000_000)
+        tick = cycle.next_cycle(instant(101), 1_000_000_000)
+        forward = comparison.gap.finish(tick)
+    old = first.comparison.gap.finish(tick)
+    assert old.start == instant(100, 1)
+    assert forward.start == first.when
+    assert old.end == forward.end == instant(101)
+    assert old.await_floor_recovery is True
+    assert forward.await_floor_recovery is False
+    assert old is not forward
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+def test_ca4102_further_backward_gap_does_not_extend_earlier_gap(detection):
+    cycle = CycleClock(instant(100))
+    first = cycle.next_cycle(instant(90), 0)
+    old = first.comparison.gap
+    if detection == "cycle_start":
+        tick = cycle.next_cycle(instant(86), 1_000_000_000)
+        new = tick.comparison.gap
+    else:
+        comparison = cycle.compare(instant(86), 1_000_000_000)
+        tick = cycle.next_cycle(instant(87), 2_000_000_000)
+        new = comparison.gap
+    assert new.await_floor_recovery is True
+    assert new.start == (tick.when if detection == "cycle_start" else first.when)
+    assert old.finish(tick).end is None
+    assert new.finish(tick).end is None
+    recovered = cycle.next_cycle(instant(101), 3_000_000_000)
+    assert old.finish(recovered).end == new.finish(recovered).end == instant(101)
+    assert old.start == first.when
+    assert old.end is new.end is None
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+def test_ca4102_small_backward_while_frozen_is_diagnostic_only(detection):
+    cycle = CycleClock(instant(100))
+    first = cycle.next_cycle(instant(90), 0)
+    if detection == "cycle_start":
+        comparison = cycle.next_cycle(instant(90.5), 1_000_000_000).comparison
+    else:
+        comparison = cycle.compare(instant(90.5), 1_000_000_000)
+    assert comparison.adjustment_ns == -500_000_000
+    assert comparison.requires_clock_regression is True
+    assert comparison.requires_wall_clock_rearm is False
+    assert comparison.gap is None
+    assert first.comparison.gap.end is None
+
+
+def test_ca4102_backward_ahead_gap_is_not_promoted_by_small_regression():
+    cycle = CycleClock()
+    first = cycle.next_cycle(instant(100), 0)
+    comparison = cycle.compare(instant(100, 1), 2_000_000_000)
+    assert comparison.discontinuity == "backward"
+    assert comparison.wall_behind_floor is False
+    assert comparison.gap.await_floor_recovery is False
+    tick = cycle.next_cycle(instant(99.5, 1), 2_000_000_000)
+    assert tick.comparison.adjustment_ns == -500_000_000
+    assert tick.comparison.discontinuity is None
+    assert tick.comparison.requires_clock_regression is True
+    finished = comparison.gap.finish(tick)
+    assert finished.start == first.when
+    assert finished.end == tick.when == instant(100, 1)
+    assert finished.await_floor_recovery is False
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+@pytest.mark.parametrize("direction,baseline", [("forward", 90), ("backward", 110)])
+@pytest.mark.parametrize("floor_offset,behind", [(-1, True), (0, False), (1, False)])
+def test_ca4102_open_floor_boundaries(detection, direction, baseline, floor_offset, behind):
+    cycle = CycleClock(instant(100))
+    cycle.compare(instant(baseline), 0)
+    wall = instant(100, 1 + floor_offset)
+    if detection == "cycle_start":
+        tick = cycle.next_cycle(wall, 1_000_000_000)
+        comparison = tick.comparison
+    else:
+        comparison = cycle.compare(wall, 1_000_000_000)
+        tick = cycle.next_cycle(wall, 1_000_000_000)
+    assert comparison.discontinuity == direction
+    assert comparison.wall_behind_floor is behind
+    expected_mode = direction == "backward" and behind
+    assert comparison.gap.await_floor_recovery is expected_mode
+    assert comparison.gap.finish(tick).end == (None if expected_mode else tick.when)
+
+
+@pytest.mark.parametrize("detection", ["cycle_start", "periodic_check"])
+@pytest.mark.parametrize("direction", [-1, 1])
+@pytest.mark.parametrize("magnitude", [999_999, 1_000_000, 1_000_001])
+def test_ca4102_discontinuity_threshold_boundaries(detection, direction, magnitude):
+    cycle = CycleClock()
+    cycle.next_cycle(instant(100), 0)
+    wall = instant(101, direction * magnitude)
+    comparison = (
+        cycle.next_cycle(wall, 1_000_000_000).comparison
+        if detection == "cycle_start"
+        else cycle.compare(wall, 1_000_000_000)
+    )
+    assert comparison.adjustment_ns == direction * magnitude * 1000
+    assert (comparison.gap is not None) is (magnitude > 1_000_000)
+    assert comparison.discontinuity == (
+        ("backward" if direction < 0 else "forward") if magnitude > 1_000_000 else None
+    )
+
+
+@pytest.mark.parametrize("floor_offset", [-1, 0, 1])
+def test_ca4102_frozen_gap_finish_requires_wall_strictly_above_floor(floor_offset):
+    cycle = CycleClock(instant(100))
+    first = cycle.next_cycle(instant(90), 0)
+    tick = cycle.next_cycle(instant(100, 2 + floor_offset), 1_000_000_000)
+    finished = first.comparison.gap.finish(tick)
+    assert finished.await_floor_recovery is True
+    assert finished.end == (tick.when if floor_offset > 0 else None)
+
+
+@settings(max_examples=100)
+@given(st.lists(st.integers(-6_000_000, 6_000_000), min_size=1, max_size=35))
+def test_property_ca4102_gap_ends_independent_of_detection_path(corrections):
+    direct = CycleClock(instant(100))
+    periodic = CycleClock(instant(100))
+    initial_direct = direct.next_cycle(instant(90), 0)
+    initial_periodic = periodic.next_cycle(instant(90), 0)
+    gaps = [(initial_direct.comparison.gap, initial_periodic.comparison.gap)]
+    wall_us = 90_000_000
+    for index, correction in enumerate(corrections, 1):
+        wall_us += 1_000_000 + correction
+        wall = instant(microseconds=wall_us)
+        mono = index * 1_000_000_000
+        a = direct.next_cycle(wall, mono)
+        comparison = periodic.compare(wall, mono)
+        b = periodic.next_cycle(wall, mono)
+        assert a.when == b.when
+        assert a.comparison.discontinuity == comparison.discontinuity
+        assert b.comparison.discontinuity is None
+        if a.comparison.gap is not None:
+            assert comparison.gap is not None
+            gaps.append((a.comparison.gap, comparison.gap))
+        updated = []
+        for left, right in gaps:
+            finished_left, finished_right = left.finish(a), right.finish(b)
+            assert finished_left.await_floor_recovery is left.await_floor_recovery
+            assert finished_right.await_floor_recovery is right.await_floor_recovery
+            assert finished_left.await_floor_recovery is finished_right.await_floor_recovery
+            assert finished_left.end == finished_right.end
+            updated.append((finished_left, finished_right))
+        gaps = updated
+    recovery = instant(microseconds=max(wall_us, 100_000_000) + 100_000_000)
+    a = direct.next_cycle(recovery, (len(corrections) + 1) * 1_000_000_000)
+    b = periodic.next_cycle(recovery, (len(corrections) + 1) * 1_000_000_000)
+    for left, right in gaps:
+        assert left.finish(a).end == right.finish(b).end
+        assert left.finish(a).end is not None
+
+
+def test_ca4102_first_cycle_end_excludes_the_start_cycle_itself():
+    cycle = CycleClock()
+    first = cycle.next_cycle(instant(100), 0)
+    comparison = cycle.compare(instant(104), 1_000_000_000)
+    gap = comparison.gap
+    assert gap.await_floor_recovery is False
+    assert gap.start == first.when
+    assert gap.finish(first) is gap
+    later = cycle.next_cycle(instant(105), 2_000_000_000)
+    assert gap.finish(later).end == instant(105)

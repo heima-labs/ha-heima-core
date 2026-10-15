@@ -2,7 +2,7 @@
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
 Install runtime/development locks first; tests import real packages and the mutated
-copy under mutmut, without HA/V2 import shims. Default mutation scope: fourteen modules.
+copy under mutmut, without HA/V2 import shims. Default mutation scope: fifteen modules.
 
 ## Current contracts
 
@@ -39,3 +39,9 @@ Observation coverage foundation: `docs/v3/testing/OBSERVATION_COVERAGE.md` and i
 mutant review. Supplement: `mutation_observation.py`. Covers value invariants and
 composition of already request-clipped process/required-stream results; actual gap
 timeline assessment, SQLite durability and historical record assembly remain future.
+
+History intervals and latest critical review: `docs/v3/testing/HISTORY_INTERVALS_AND_REVIEW.md`,
+`CRITICAL_REVIEW_20261015.md` and `HISTORY_INTERVAL_REVIEW_MUTANTS.md`. Supplemental
+`mutation_history_intervals.py` covers empty-property logic outside mutmut scope.
+Fraction countdown regressions and year-1 weekly regression are now in the gate.
+Periodic forward-gap behavior during an earlier freeze awaits a normative handoff.

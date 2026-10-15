@@ -202,3 +202,9 @@ def test_merged_physical_start_keeps_distinct_requested_dates_for_consumer():
     assert friday.start == saturday.start == "2011-12-30T10:00:00.000000+00:00"
     assert friday.requested_date == date(2011, 12, 30)
     assert saturday.requested_date == date(2011, 12, 31)
+
+
+def test_past_candidate_below_calendar_minimum_does_not_hide_next_week():
+    occurrence = plan("0001-01-01T00:00:00.000000+00:00", "Etc/GMT-1", frozenset({0}), 0, 0)
+    assert occurrence.requested_date == date(1, 1, 8)
+    assert occurrence.start == "0001-01-07T23:00:00.000000+00:00"

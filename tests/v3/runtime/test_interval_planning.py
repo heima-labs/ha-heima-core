@@ -1,6 +1,8 @@
 """Interval planning/admission using canonical construction and paired references."""
 
 from datetime import timedelta
+from fractions import Fraction
+from math import inf, nextafter
 
 import pytest
 
@@ -73,7 +75,8 @@ def test_tiny_interval_rearms_after_each_current_anchor():
     assert register_interval_job(scheduler, entry(), current, callback) is None
     for us in range(1, 6):
         armed = timer.arms[-1]
-        assert armed.seconds == 1e-6
+        assert Fraction.from_float(armed.seconds) >= Fraction(1, 1000000)
+        assert Fraction.from_float(nextafter(armed.seconds, -inf)) < Fraction(1, 1000000)
         armed.callback()
         assert delivered[-1].due == format_instant(
             parse_instant(ANCHOR) + timedelta(microseconds=us)
