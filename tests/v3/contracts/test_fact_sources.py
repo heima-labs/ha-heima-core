@@ -375,3 +375,47 @@ def test_fingerprint_validates_excluded_correlation_without_subclass_dispatch():
 def test_default_runtime_mode_rejects_test_data_without_explicit_mode(cls, field):
     with pytest.raises(ValueError):
         validate_runtime_source_shape(source(cls, **{field: "test"}))
+
+
+@pytest.mark.parametrize("base", [FactSource, ApplyStepSource])
+def test_extended_operational_source_is_rejected_before_serializing_person_fields(base):
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True, slots=True)
+    class ExtendedSource(base):
+        actor_ref: str = "fixture-person"
+
+    extended = source(ExtendedSource)
+    # Concrete witness: the generic frozen-dataclass codec includes extra fields.
+    assert json.loads(canonical_json_bytes(extended))["actor_ref"] == "fixture-person"
+    with pytest.raises(TypeError):
+        validate_runtime_source_shape(extended)
+    if base is FactSource:
+        with pytest.raises(TypeError):
+            fact_source_fingerprint(extended)
+
+
+@given(
+    st.sampled_from([FactSource, ApplyStepSource]),
+    st.sampled_from(["actor_ref", "raw_payload", "extra"]),
+    opaque,
+    st.booleans(),
+)
+def test_property_operational_source_admission_rejects_any_extended_schema(
+    base, name, payload, test_mode
+):
+    from dataclasses import field, make_dataclass
+
+    extended_type = make_dataclass(
+        "ExtendedSource",
+        [(name, str, field(default=payload))],
+        bases=(base,),
+        frozen=True,
+        slots=True,
+    )
+    extended = source(extended_type)
+    with pytest.raises(TypeError):
+        validate_runtime_source_shape(extended, test_mode=test_mode)
+    if base is FactSource:
+        with pytest.raises(TypeError):
+            fact_source_fingerprint(extended)

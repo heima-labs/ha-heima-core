@@ -1,3 +1,7 @@
+> Superseded for boundary details by [critical review](SOURCE_LOCATION_CRITICAL_REVIEW.md).
+> See SOURCE_LOCATION_CRITICAL_REVIEW_MUTANTS.md and the final WORKING_CONTEXT checkpoint
+> for current evidence; the original slice results below remain historical.
+
 # Location foundation — impact and implementation choices
 
 Planning HEAD37986ea, read-only; Layer8 CA4-103 changes in progress have no effect

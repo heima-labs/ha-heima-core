@@ -1,8 +1,8 @@
 # V3 implementation working context
 
-> Latest commitcdea575 contains the canonical Location contract.
-> Source value/fingerprint slice is uncommitted; see final checkpoint.
-> Planning f191d2c clean/read-only. Source shape validation never grants authority.
+> Source/Location review fixes, regression tests and evidence are included in this checkpoint.
+> Use git log -1 for this commit; its parent is0207174. See the final checkpoint.
+> Planning f191d2c read-only. Source shape validation never grants authority.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -1637,3 +1637,74 @@ new source authority is decided here. Then implement accepted-fact/AppendOrder/
 CycleCommitMarker SQL as a single batch with stable replay/reconciliation. Mutable
 batch identity/restart rules must come from owning contracts. No planning edits,
 V2 migration, live deployment or generic weekly lifecycle; Git/deploy still proposals.
+
+
+## Latest checkpoint — critical source/Location review, 2026-10-15
+
+Committed source slice at developer request as0207174 after1243 tests/diff check;
+clean immediately afterward. Planningf191d2c clean at task start, read-only.
+Reviewed L1 §5/§10, L0 §4.0/§5/§5.1 plus serialization and SQLite clock-boundary
+connections. Two reproduced P2 defects fixed; seven regressions failed first.
+
+1. Location key used virtual post-init and identity operations trusted a virtual
+key: malformed subclasses could identify/encode as casa, or a valid room could
+present a false key. One owned _location_key helper validates via the base class
+and derives canonical key from declared fields. Base property, inherited equality/
+hash and scalar key encoder use it. Existing normal values remain byte-identical.
+2. Source boundary accepted dataclass subclasses with extra actor_ref, proven to
+serialize via the generic codec. Runtime shape now requires the concrete two source
+classes; fingerprint extraction requires concrete FactSource. Existing concrete
+inputs retain schema/behavior. No production callers were found. This tightens the
+new boundary's accepted types, with no persisted/HA contract change. Source data
+shape still grants NO authority; direct generic serialization is not admission.
+
+New properties vary all Location scopes and overridden keys, and both source types/
+modes/extra schema fields. Existing decision/BVA/MC/DC tables retained. Focused292
+instances (Location120/source172), full V3:1252 passed,seed3145. Ruff lint/format70files,
+mypy28sources,diff pass. Fresh two-module scoped mutmut339generated,253killed,
+86individually reviewed equivalents (84 prose,1 guarded recovery widening,1 codec
+case); zero error/timeout/skipped/untested/interrupted. Existing5 Location+18 source
+supplements re-run,6 new virtual-dispatch/schema seeds killed with clean baselines.
+Default mutation scope22modules unchanged. Evidence SOURCE_LOCATION_CRITICAL_REVIEW.md
+and SOURCE_LOCATION_CRITICAL_REVIEW_MUTANTS.md; older source/Location evidence now
+cross-references this checkpoint as historical. Updated Location supplement anchors.
+
+No other confirmed defect in reviewed source vocabularies/modes/correlation/stable
+fields, canonical key recovery or SQLite clock-boundary composition/reconciliation.
+No claim of completed producer authority, redaction adapter, full HouseFact or HA.
+
+At final planning check HEADf191d2c had another session's CA4-104 working changes:
+L1 Topology passage/between-floor rules, L2 opening bindings, L8 map plus registry/
+orientation/backlog and review. Read live changes: Location §5 and FactSource
+contracts unchanged, no impact on these fixes. Planning is NOT clean at task end;
+no Codex planning writes. Re-read working copy on resumption.
+
+Review fixes/tests/Location supplement/new review supplement/evidence/handoff are
+uncommitted on0207174. No dependency/policy/V2/deploy/live HA/ARM throughput changes.
+
+### Exact next action
+
+Review/commit these fixes when requested. Then continue Provenance/full HouseFact
+builder using approved payload/evidence/Location/instant/source contracts. Keep
+source admission shape distinct from actual verified producer/generation/HA ingress
+authority and redaction. Re-read L1 §3/§4 and live planning first. Actual fact/marker
+SQL, accepted prefix owner, bounded retry worker, watermark, startup timeline and
+HA lifecycle remain unimplemented. No generic weekly lifecycle or V2 migration;
+Git/deploy policies remain proposals. No further clarification was needed for these
+contract fixes; no new specification rule was invented.
+
+
+## Commit checkpoint — source/Location review fixes, 2026-10-15
+
+Developer requested commit only. Verified the12-file review set matches the previous
+handoff, reran all1252 tests (seed3145) and diff check. This commit records the two
+review fixes, regressions, updated Location supplement, new semantic review supplement,
+mutation evidence and handoff. Parent0207174; read git log -1 for the resulting hash.
+Earlier uncommitted notes describe the pre-commit review state. No new behavior,
+policy, planning edit, deployment or next implementation slice was added in this task.
+
+Next task when requested: Provenance and the approved full HouseFact builder, after
+reading current L1 §3/§4 and L0 §5. Source shape grants no authority; actual source
+admission/redaction requires registered producer/generation and verified HA ingress.
+Fact/marker SQL and HA integration remain pending. Recheck the live planning worktree
+at resumption; CA4-104 was being changed by the other session during the review.

@@ -1,3 +1,7 @@
+> Superseded for boundary details by [critical review](SOURCE_LOCATION_CRITICAL_REVIEW.md).
+> See SOURCE_LOCATION_CRITICAL_REVIEW_MUTANTS.md and the final WORKING_CONTEXT checkpoint
+> for current evidence; the original slice results below remain historical.
+
 # Source value contracts and stable fingerprint
 
 ## Impact and choices before implementation

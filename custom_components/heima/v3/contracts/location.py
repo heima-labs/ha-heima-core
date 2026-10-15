@@ -49,26 +49,30 @@ class Location:
 
     @property
     def key(self) -> LocationKey:
-        # Also reject reconstructed invalid values at the identity/encoding boundary.
-        self.__post_init__()
-        if self.scope == "room":
-            assert self.room_id is not None
-            return ("room", self.room_id)
-        if self.scope == "zone":
-            assert self.zone_id is not None
-            return ("zone", self.zone_id)
-        if self.scope == "rooms":
-            assert self.room_ids is not None
-            return ("rooms", *sorted(self.room_ids))
-        return ("casa",)
+        return _location_key(self)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Location):
             return NotImplemented
-        return self.key == other.key
+        return _location_key(self) == _location_key(other)
 
     def __hash__(self) -> int:
-        return hash(self.key)
+        return hash(_location_key(self))
+
+
+def _location_key(location: Location) -> LocationKey:
+    # Canonical identity must use owned fields, never subclass validation/key hooks.
+    Location.__post_init__(location)
+    if location.scope == "room":
+        assert location.room_id is not None
+        return ("room", location.room_id)
+    if location.scope == "zone":
+        assert location.zone_id is not None
+        return ("zone", location.zone_id)
+    if location.scope == "rooms":
+        assert location.room_ids is not None
+        return ("rooms", *sorted(location.room_ids))
+    return ("casa",)
 
 
 def location_from_key(key: LocationKey) -> Location:
@@ -97,7 +101,7 @@ def location_key_json(location: Location) -> str:
     """Canonical scalar key text for identity storage and follow-up projections."""
     if not isinstance(location, Location):
         raise TypeError("Location key encoding requires a Location")
-    return canonical_json_bytes(location.key).decode("utf-8")
+    return canonical_json_bytes(_location_key(location)).decode("utf-8")
 
 
 def location_from_key_json(text: str) -> Location:

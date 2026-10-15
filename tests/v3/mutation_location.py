@@ -22,19 +22,19 @@ MUTATIONS = (
     ),
     (
         "utf16_order_for_semantic_room_set",
-        "*sorted(self.room_ids)",
-        '*sorted(self.room_ids, key=lambda item: item.encode("utf-16-be"))',
+        "*sorted(location.room_ids)",
+        '*sorted(location.room_ids, key=lambda item: item.encode("utf-16-be"))',
         "test_rooms_array_uses_codepoint_order_and_object_keys_still_use_utf16",
     ),
     (
         "ignore_identifier_in_equality",
-        "return self.key == other.key",
+        "return _location_key(self) == _location_key(other)",
         "return self.scope == other.scope",
         "test_property_opaque_identity_changes_exactly_when_id_changes",
     ),
     (
         "ignore_identifier_in_hash",
-        "return hash(self.key)",
+        "return hash(_location_key(self))",
         "return hash(self.scope)",
         "test_four_canonical_keys_equality_hash_and_json",
     ),

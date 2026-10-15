@@ -124,8 +124,8 @@ class FactSourceFingerprint:
 
 
 def fact_source_fingerprint(source: FactSource) -> FactSourceFingerprint:
-    """Extract the stable source; revalidate correlation too, then exclude it."""
-    if not isinstance(source, FactSource):
+    """Extract the concrete source shape; validate correlation, then exclude it."""
+    if type(source) is not FactSource:
         raise TypeError("Fact source fingerprint requires a FactSource")
     FactSource.__post_init__(source)
     return FactSourceFingerprint(
@@ -148,7 +148,7 @@ def validate_runtime_source_shape(
     """
     if type(test_mode) is not bool:
         raise TypeError("Source validation mode must be boolean")
-    if not isinstance(source, (FactSource, ApplyStepSource)):
+    if type(source) not in (FactSource, ApplyStepSource):
         raise TypeError("Runtime source shape requires a typed source")
     if isinstance(source, FactSource):
         FactSource.__post_init__(source)

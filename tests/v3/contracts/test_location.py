@@ -298,3 +298,62 @@ def test_property_opaque_identity_changes_exactly_when_id_changes(scope, left, r
     assert (first == second) is (left == right)
     assert location_from_key(first.key) == first
     assert location_from_key_json(location_key_json(second)) == second
+
+
+@pytest.mark.parametrize("operation", [lambda value: value.key, hash, location_key_json])
+def test_invalid_location_subclass_cannot_skip_base_shape_validation(operation):
+    class UncheckedLocation(Location):
+        def __post_init__(self):
+            pass
+
+    invalid = UncheckedLocation("invalid")
+    with pytest.raises(ValueError):
+        operation(invalid)
+
+
+def test_location_equality_rejects_invalid_subclass_shape():
+    class UncheckedLocation(Location):
+        def __post_init__(self):
+            pass
+
+    with pytest.raises(ValueError):
+        _ = Location("casa") == UncheckedLocation("invalid")
+
+
+def test_overridden_key_cannot_change_canonical_encoding_equality_or_hash():
+    class FalseKey(Location):
+        @property
+        def key(self):
+            return ("casa",)
+
+    value = FalseKey("room", room_id="kitchen")
+    assert location_key_json(value) == '["room","kitchen"]'
+    assert value == Location("room", room_id="kitchen")
+    assert value != Location("casa")
+    assert hash(value) == hash(("room", "kitchen"))
+
+
+@given(
+    st.sampled_from(["casa", "room", "zone", "rooms"]),
+    identifiers,
+    st.lists(identifiers, max_size=4),
+)
+def test_property_subclass_key_override_cannot_change_owned_identity(scope, identifier, false_key):
+    class FalseKey(Location):
+        @property
+        def key(self):
+            return tuple(false_key)
+
+    kwargs = {}
+    if scope == "room":
+        kwargs["room_id"] = identifier
+    elif scope == "zone":
+        kwargs["zone_id"] = identifier
+    elif scope == "rooms":
+        kwargs["room_ids"] = frozenset({identifier, identifier + "other"})
+    original = Location(scope, **kwargs)
+    derived = FalseKey(scope, **kwargs)
+    assert original == derived
+    assert hash(original) == hash(derived)
+    assert location_key_json(original) == location_key_json(derived)
+    assert location_from_key_json(location_key_json(derived)) == original
