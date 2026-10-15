@@ -121,3 +121,14 @@ canonical value equality and unavailable-value exclusion. Five-method evidence:
 [FACT_STATE_MUTANTS](../../docs/v3/testing/FACT_STATE_MUTANTS.md). Run
 `.venv-v3/bin/python tests/v3/mutation_fact_state.py` for semantic supplements.
 These are comparison primitives, not coordinator/admission/storage integration.
+
+
+### Fact-type staging claims
+
+`contracts/test_fact_types.py` covers L0 §4 dotted glob grammar, independent
+language-intersection properties, ownership/emission conflicts and finite search.
+See [FACT_TYPE_CLAIMS](../../docs/v3/testing/FACT_TYPE_CLAIMS.md) and
+[mutant review](../../docs/v3/testing/FACT_TYPE_CLAIM_MUTANTS.md).
+Run `.venv-v3/bin/python tests/v3/mutation_fact_types.py` for record and termination
+supplements. HouseFact builder reuses the concrete identifier validator.
+This does not yet compose reserved core claims or admit running producers.

@@ -1940,3 +1940,63 @@ admission and coordinator ordering before state/event acceptance and SQL batch.
 Re-read live L0 §4/§4.0/§4.2/§5 and dependencies, and record concrete staging/order
 design before coding. Preserve event bypass and forced-baseline/live-transition
 separation. No clarification or regression fix is pending from this review.
+
+
+## Active slice — staging fact-type claim validation
+
+Committed review/handoff as1c8adbe at developer request. Planningaa4455a clean,
+read-only; read L0 §4/§13 and L1 §3 plus workflow/registry. Implement bounded
+FactTypeClaim grammar, matching, overlap and conflict validation in staging only;
+share concrete-name validation with the existing builder. Plan recorded in
+ testing/FACT_TYPE_CLAIMS.md. No runtime owner token or composed core registry yet.
+
+
+## Latest checkpoint — fact-type claim staging primitives, 2026-10-15
+
+Committed review/handoff as1c8adbe at developer request. Started clean; planning
+ aa4455a clean/read-only. Read planning AGENTS/workflow/registry and authoritative
+L0 §4 claim grammar/overlap/ownership/§13, L1 §3 naming rules. Rationale before
+implementation in testing/FACT_TYPE_CLAIMS.md; no new product choice or policy.
+
+Added contracts/fact_types.py with FactEmissionKind and immutable exact3-field
+FactTypeClaim plus validate_fact_type, fact_type_matches, fact_type_patterns_overlap,
+validate_fact_type_claims. Dotted glob has literal Unicode plus '*' within exactly
+one nonempty segment; no regex operators/escapes or cross-dot wildcard. Staging
+rejects overlapping patterns when owner or state/event semantic differs, accepts
+same-owner/same-kind overlap, checks every pair including after equivalent pairs.
+Uses finite product automata, iterative queue/visited states, quadratic maximum
+states in segment lengths; all-star empty paths also have nonempty witnesses.
+No recursive stack, invented pattern length or machine-speed threshold. Builder
+now reuses one concrete-name validator; accepted names/error classes unchanged,
+generic prose may differ. HouseFact fields/wire and existing comparison unchanged.
+
+91 new focused cases,201 with builder; full V3:1504 passed(seed3145). Ruff
+lint/format79files,mypy31sources,diff pass. Five-method evidence in FACT_TYPE_CLAIMS.md.
+Decision8-row ownership/kind/overlap matrix and grammar boundaries, explicit MC/DC
+witness probes,3 seeded PBTs (independent finite-language oracle/common witness/
+self-overlap). Bounded-queue invariant tests check finite state domain/edge bound.
+Fresh scoped mutmut380generated:302killed,75reviewed equivalents(72prose,3zip),
+3timeouts. All3 exact timeout diffs killed separately by finite-product supplements,
+not waived; final unequal-literal guard row added after campaign, source unchanged.
+Initial continue→break survivor exposed a test gap: added later-conflict-after-
+equivalent-pair test and restarted fresh campaign; mutant now killed. Five new
+claim supplements and11 existing builder supplements killed with clean baselines.
+Exact evidence FACT_TYPE_CLAIM_MUTANTS.md. Default scope25modules; no dependency.
+
+New module/builder refactor/tests/supplement/scope/evidence/README/handoff remain
+uncommitted. No complete reserved-core composition, static (type,Location) duplicate
+validation, producer-specific admitted port or source authority/generation checks,
+live current index, coordinator/AppendOrder, queue or fact/marker SQL added.
+Helpers run only during staging; future runtime must consume pre-resolved bindings
+instead of pattern lookup per fact. No HA/live/ARM benchmark/deployment claim.
+Planning untouched; Topology CA4-104 later, Git/deploy proposals still pending.
+
+### Exact next action
+
+Review/commit claim primitives when requested. Continue composed producer staging:
+include all mandatory core reservations, validate global static state claims and
+resolve owner/emission kind into immutable producer bindings before any runtime
+admission. Re-read live L0 §4/§5 plus L2 registration dependencies; do not confuse
+equivalent type-claim overlap with duplicate exact (fact_type,Location) producers.
+Only then wire state/event acceptance, coordinator order and fact/marker batches.
+Preserve event bypass and forced-durable-baseline/live-transition separation.

@@ -1,12 +1,12 @@
 # Prompt to resume V3 implementation
 
-> Code through50b9cc8 is committed (state identity/change comparison); d921fd6
-> contains HouseFact construction. Latest critical review found no confirmed
-> defect:1413 tests and144 extra scenarios pass, Ruff/mypy pass. Read testing/
-> FACT_CONTRACT_CRITICAL_REVIEW.md and latest WORKING_CONTEXT checkpoint.
-> Only review/handoff docs remain uncommitted. Producer authority, emission
-> routing, current index, append coordinator and fact/marker SQL remain pending.
-> Planningaa4455a read-only; Topology CA4-104 belongs to a later slice.
+> Review docs committed as1c8adbe; new fact-type staging primitives and builder
+> validator refactor are uncommitted. Read latest WORKING_CONTEXT and testing/
+> FACT_TYPE_CLAIMS.md/FACT_TYPE_CLAIM_MUTANTS.md.1504 tests, Ruff and mypy pass.
+> Dotted glob overlap is staging-only, not a hot-path lookup or authorization.
+> Next: reserved core claims + global static state claims + resolved producer
+> bindings. Runtime admission, current index, ordering and fact/marker SQL pending.
+> Planningaa4455a remains read-only; Topology CA4-104 belongs to a later slice.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

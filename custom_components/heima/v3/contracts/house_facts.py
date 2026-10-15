@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .canonical_json import canonical_json_bytes
 from .fact_sources import FactSource, validate_runtime_source_shape
+from .fact_types import validate_fact_type
 from .instants import EvidenceInstant, parse_instant
 from .location import Location, location_key_json
 from .payloads import PayloadDiagnostic, freeze_house_fact_value, prepare_evidence
@@ -88,11 +89,7 @@ def build_house_fact(
     Source shape/mode checks grant no producer, generation or actor authority.
     The runtime must verify admission and consume diagnostics before accepting it.
     """
-    if type(fact_type) is not str:
-        raise TypeError("Fact type must be a primitive string")
-    if "*" in fact_type or any(not segment for segment in fact_type.split(".")):
-        raise ValueError("Fact type must have nonempty concrete dotted segments")
-    canonical_json_bytes(fact_type)
+    validate_fact_type(fact_type)
     parse_instant(when)
     _confidence_pair(confidence, available)
     if not isinstance(where, Location):
