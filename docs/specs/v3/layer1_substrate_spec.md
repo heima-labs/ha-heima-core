@@ -829,7 +829,7 @@ A role binding adds no field to `Zone` and does not make zones exclusive or nest
 ## 7. `Topology`
 
 ```python
-OpeningType = Literal["door", "window", "door_window"]
+OpeningType = Literal["door", "window", "door_window", "passage"]
 CompassOrientation = Literal["north", "northeast", "east", "southeast",
                              "south", "southwest", "west", "northwest"]
 
@@ -842,7 +842,8 @@ class Opening:
                                        # graph data, not fact attribution, and its own `exposure_by_room`/
                                        # `floor_by_room` fields below are keyed by this same plain
                                        # `room_id`, never by `Location`
-    type: OpeningType                # closed core vocabulary; `door` and `door_window` are passable,
+    type: OpeningType                # closed core vocabulary; `door`, `door_window` and `passage` are
+                                       # passable (`passage`: no leaf, always open; CA4-104),
                                        # `window` is not
     orientation: CompassOrientation | None = None
                                        # the direction the opening faces; optional, required only by
@@ -859,7 +860,7 @@ class ResolvedConnection:
     room_a: str
     room_b: str                      # equals the opening's `other_side`; `"outside"` is the reserved
                                        # value for an opening that exits the house, not a real room
-    opening_id: str                  # the passable `door`/`door_window` `Opening` it is derived from
+    opening_id: str                  # the passable `door`/`door_window`/`passage` `Opening` it is derived from
 
 @dataclass(frozen=True)
 class Topology:
@@ -904,11 +905,21 @@ against the Room registry; unknown ids, duplicate opening/connection ids, or a b
 link are errors. `type` and `orientation` accept only their closed vocabularies; a new opening type
 or orientation needs a new core version and review. An opening's live state is never a Topology
 field: it comes from a `Sensor` with `related_opening_id` or an `Actuator` channel with
-`opening_id` (Layer 2 §3, §6). A `ResolvedConnection` exists exactly for each passable `door` or `door_window`
+`opening_id` (Layer 2 §3, §6). A `ResolvedConnection` exists exactly for each passable `door`, `door_window` or `passage`
 opening and its `room_b` equals that opening's `other_side`; a `window` has no connection. Its
 canonical fingerprint is the shared RFC-8785 serialization of those canonical
 primary data and derived views, excluding each `Opening.display_name`, which is presentation
 metadata and changes no dependent.
+
+**Passages and floors (CA4-104, 2026-10-15).** A `passage` is a passable opening without a leaf:
+an archway, an open-plan boundary, an open staircase. It is always open, cannot be closed and has no
+state of its own. Its owner room and its `other_side` must both be registered `interior` rooms;
+`other_side="outside"`, an `exterior` room on either side and an `orientation` are rejected, so
+`opening_faces_exterior` is always `False` for a passage. A closable opening is a `door`, on any
+floor. An opening whose two rooms have different `floor_by_room` values must be a `door` or a
+`passage`; a `window` or `door_window` between floors is rejected. A staircase is either such a
+connection or an ordinary `Room` on one floor (the administrator's choice) with its own openings,
+windows included; a room never spans several floors.
 
 **One physical model, purpose-specific questions (CA4-62, 2026-10-11).** Topology records only
 physical facts: each room's `enclosure` (IFC `IfcSpace` internal/external semantics: `interior` is
@@ -1041,8 +1052,10 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
 - Topology has no stored `connection_type`. `opening_faces_exterior` is `True` for a window with
   default `other_side="outside"`, for a door to a room whose enclosure is `exterior` (terrace), and
   for an opening owned by an exterior room; it is `False` for a window or door toward an `interior`
-  garage. Only `door`/`door_window` openings produce a `ResolvedConnection`, with `room_b` equal to
-  `other_side`. Thermal-envelope membership is the bound Zone's rooms, or every `interior` room when
+  garage. Only `door`/`door_window`/`passage` openings produce a `ResolvedConnection`, with `room_b`
+  equal to `other_side`. A `passage` to `outside`, to or from an `exterior` room, or with an
+  `orientation` is rejected; a `door` and a `passage` between rooms on different floors are valid, a
+  `window` or `door_window` between them is rejected (§7, CA4-104). Thermal-envelope membership is the bound Zone's rooms, or every `interior` room when
   `thermal_envelope` is unbound; a duplicate role binding, unknown zone or exterior room in the
   thermal envelope is rejected. `exposure_by_room` omits a window toward an interior garage (§6.1, §7).
 

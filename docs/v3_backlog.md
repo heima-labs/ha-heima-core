@@ -5176,9 +5176,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–103 | 0 | 0 | 47 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–105 | 0 | 0 | 49 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97 | 0 | 0 | 13 | 0 |
-| **Total** | **103 findings** | **0** | **0** | **102** | **1** |
+| **Total** | **105 findings** | **0** | **0** | **104** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6298,6 +6298,22 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-105 — House-map layout residues: unconnected rooms and several exterior rooms on one side
+
+**Status:** DONE (2026-10-15; specification readiness). **Severity:** P3. **Origin:** house-map review after CA4-103.
+
+**Problem.** CA4-103 placed a room with no same-floor connection against the other boxes, which reads as contiguity that does not exist, and let several exterior strips on one side overlap. The reasons behind the map choices and the refinements deliberately postponed were recorded only in conversation.
+
+**Approved resolution (2026-10-15).** A floor's interior rooms are laid out in connection groups; a group without pinned rooms other than the first moves as a block beside the placed boxes with one empty cell between, on its preferred side (below by default). New dismissible map check "Not connected" (`HouseMapLayout.unconnected_ok`). Several exterior strips on one side are ordered along it and stacked outward on overlap; a corner balcony stays one strip. Layer 8 §9.11 records the rationale and the deferred refinements (half cells, left/top resize, non-rectangular rooms, corner strips, multi-floor rooms, opening position override, uploaded plan, weight tuning) and the map topics still open: phone pan/zoom, Lovelace card, first-start verification step, accessible list. See the [CA4-105 review](specs/v3/reviews/CA4-105.md); no V3 runtime test ran.
+
+#### CA4-104 — Topology could not express doorless passages or connections between floors
+
+**Status:** DONE (2026-10-15; specification readiness). **Severity:** P2. **Origin:** house-map review after CA4-103 (cross-floor connections).
+
+**Problem.** `OpeningType` had only `door`, `window` and `door_window`. An archway, an open-plan boundary or an open staircase could only be declared as a `door`, which let a contact Sensor or an Actuator bind to a non-existent leaf and drew a door on the map. V2's `access_type` (`direct`/`stairs`/`elevator`) had been dropped, and nothing said whether openings between floors were valid or how the map shows them.
+
+**Approved resolution (2026-10-15).** New passable `OpeningType` `passage`: no leaf, always open, no state; owner and `other_side` must be `interior` rooms; `outside`, exterior rooms and `orientation` are rejected, so `opening_faces_exterior` is always false and no Layer-3 exchange profile or Layer-5 advice/weather descriptor can select it (verified: they all filter on that query). Closable means `door`, on any floor. Between floors only `door` and `passage` are valid. A staircase is such a connection or an ordinary one-floor `Room` with its own openings, windows included; multi-floor rooms were rejected as map-only value. Layer 2 rejects `opening_id`/`related_opening_id` on a passage. Layer 8 draws a passage as a gap, adds floor badges that switch tab, proposes floors in ascending order with a cost toward the cells of connected rooms on lower floors, and never draws a connector across floors. A separate `stairs`/`elevator` type was rejected: no consumer needs it. See the [CA4-104 review](specs/v3/reviews/CA4-104.md); no V3 runtime test ran.
 
 #### CA4-103 — The house map had no layout, orientation or control contract
 

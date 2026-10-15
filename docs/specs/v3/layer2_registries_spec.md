@@ -180,7 +180,7 @@ result, additionally obeys Layer 1's numeric domain (Layer 1 §3), so an integer
 - `Actuator.actuator_id` is unique and stable within the generation, and every HA `entity_id` belongs
   to exactly one `Actuator`. The same entity may independently back any number of `Sensor`s: reading
   and commanding are distinct roles. If `opening_id` is set, it resolves in the candidate `Topology`
-  and `where` is exactly `Location(scope="room", room_id=<Opening.room_id>)`; when it is absent, no
+  to an opening that is not a `passage` (nothing to operate; Layer 1 §7, CA4-104) and `where` is exactly `Location(scope="room", room_id=<Opening.room_id>)`; when it is absent, no
   opening relation is implied or required. `device_id` is intentionally not unique.
 - Every `FusionRule.inputs` tuple is non-empty and has no repeated logical `FactRef` key
   `(fact_type, where, previous_cycle)`. `DirectStrategy`'s existing exact-one rule remains
@@ -477,7 +477,8 @@ integrations exposing ordinary entities, not a Layer 7 concern.
 `related_opening_id` gives an observation the same optional physical precision that `Actuator.opening_id`
 gives a command endpoint (§2.4), without changing `Location`: a window contact, shutter-position
 sensor, or illuminance sensor can identify the opening it concerns, while an ordinary room temperature
-or light sensor leaves it unset. If set, the referenced opening must exist and the Sensor's `where`
+or light sensor leaves it unset. If set, the referenced opening must exist, must not be a `passage`
+(it has no state to observe; Layer 1 §7), and the Sensor's `where`
 must be exactly its owner room (not `casa`, `zone`, or `rooms`). A derived fact may preserve that
 identity only when staging can trace every contributing physical Sensor to the same
 `related_opening_id`; otherwise it is not admissible as an opening- or cover-specific binding. This
@@ -2458,6 +2459,8 @@ this layer.
   of an existing Topology opening; unknown openings, a different owner room, or a `casa`/`zone`/`rooms`
   Sensor are rejected during staging. A derived opening-specific fact with sources related to different
   openings is likewise rejected for environmental binding (§3/Layer 3 §4.8.2).
+- A `Sensor.related_opening_id` or `Actuator.opening_id` naming a `passage` is rejected during staging
+  (CA4-104).
 - A live mismatch of a Sensor's applicable registered `unit`, `expected_device_class`, or
   `expected_state_class` emits the corresponding source-shape diagnostic without changing that
   cycle's fact. A malformed raw value still follows the independently tested interpretation-failure

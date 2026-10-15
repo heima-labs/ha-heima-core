@@ -202,7 +202,7 @@ Layer 1 makes every durable house assertion answerable as WHAT, WHERE, WHEN, and
   is explicitly undefined and cannot be consumed as a stale value.
 - `Location`, `Zone`, and `Topology` model place, declared groups, and physical relation separately.
   A Zone is not a Topology edge; a room inventory is referenced, not reimplemented here. Topology
-  stores only physical facts (room enclosure, the other side of every opening, passable doors) and
+  stores only physical facts (room enclosure, the other side of every opening, passable doors and passages) and
   defines the derived queries every consumer shares; purpose-specific groupings are Zones with a
   closed core role (`thermal_envelope`, reserved `security_perimeter`).
 - Canonical JSON follows RFC 8785 where fingerprints or persisted canonical payloads require it.

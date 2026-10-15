@@ -237,7 +237,7 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   `Location` says *which* place a fact is about; `Zone` says *an explicit group someone declared*;
   `Topology` says *how rooms physically relate to each other* — each room's enclosure
   (interior/exterior, e.g. a terrace is exterior), what lies across every opening (windows included),
-  passable doors, orientation, floor. It stores only physical facts — no security or thermal
+  passable doors and doorless passages (stairs, archways), orientation, floor. It stores only physical facts — no security or thermal
   classification — and every consumer asks the same derived questions ("does this opening face
   outside?"). Purpose-specific groups (thermal envelope, a future security perimeter) are Zones with
   a closed core role, as IFC does with `IfcZone`. It is not itself a fact producer or a fusion input —

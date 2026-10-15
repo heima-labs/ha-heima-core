@@ -262,7 +262,11 @@ administrator can adjust. A real plan (an uploaded image or SVG) is not part of 
 - **Rooms.** Every `interior` room is a rectangular box of whole grid cells, from 1×1 to 4×3. An
   `exterior` room (terrace, garden) is a visually distinct strip outside the interior boxes (§9.3).
 - **Openings.** Every `Opening` is a glyph on one side of its owner room's box: distinct glyphs for
-  `door`, `window` and `door_window`. Its side and position are derived (§9.5), never stored.
+  `door`, `window`, `door_window` and `passage` (a gap in the wall, without a leaf). Its side and
+  position are derived (§9.5), never stored.
+- **Connections between floors.** A `door` or `passage` to a room on another floor carries a floor
+  badge (up or down, with the floor label). Tapping it switches to that floor and highlights the
+  connected room.
 - **Devices.** An `Actuator` with `opening_id` and a `Sensor` with `related_opening_id` are drawn on
   their opening. Other registered Actuators and Sensors are drawn inside their room's box, grouped by
   rendering kind with a count. Only Heima-registered devices appear; nothing else from HA.
@@ -285,6 +289,7 @@ class HouseMapLayout:
     revision: int                                 # incremented by every save
     up: CompassOrientation | None                 # direction at the top; None follows §9.4's suggestion
     placements: tuple[MapRoomPlacement, ...]      # pinned rooms only, unique room_id
+    unconnected_ok: tuple[str, ...] = ()          # room_ids whose "Not connected" check is dismissed
 ```
 
 `CompassOrientation` is Layer 1's closed vocabulary. The layout is Layer-8 presentation data stored
@@ -293,7 +298,7 @@ behavior outside the panel. Openings and devices have no stored position. A plac
 longer exists, is now `exterior`, or overlaps an earlier placement on the same floor (in `room_id`
 code-point order) is ignored, listed as a map check (§9.6) and dropped at the next save. A room that
 changes floor keeps its placement on the new floor under the same rule. A rename changes only the
-label.
+label. An `unconnected_ok` entry for a room that no longer exists is dropped at the next save.
 
 ### 9.3 Automatic proposal
 
@@ -309,23 +314,40 @@ direction, rooms, openings and enclosures always give the same map, independent 
    floor reached through its passable openings. A room of degree 5 or more is proposed
    `min(3, ceil(degree / 2))` cells wide, so that a hallway can touch its rooms; every other room is
    1×1.
-4. **Start.** Pinned rooms of the floor are placed at their stored positions. Without pinned rooms,
-   the room of highest degree (ties by `room_id`) is placed at the origin. The floor's starting room
-   is that room, or with pinned rooms the pinned room of highest degree (ties by `room_id`).
-5. **Order.** Unplaced rooms are taken breadth-first from the placed rooms (pinned ones in `room_id`
-   order). A room's neighbors are visited by descending degree, then `room_id`. Rooms not reachable
-   follow, in the same order.
-6. **Position.** A candidate is any box touching an already placed box without overlapping one. The
-   candidate with the lowest cost wins. The cost increases with: the distance to each connected room
-   it does not touch; the angle between its direction from the floor's starting room and the room's
-   preferred direction; its distance from that starting room; and the growth of the floor's bounding
-   box. Ties go to the smaller `y`, then the smaller `x`. The weights are core constants, frozen per
-   core version and covered by fixture tests (§16).
-7. **Exterior rooms.** An exterior room is a strip outside the bounding box of the interior boxes,
+4. **Floors.** Floors are proposed in ascending order, so every lower floor is already laid out when
+   a higher one is proposed.
+5. **Groups.** A floor's interior rooms form groups: rooms joined, directly or through other rooms,
+   by passable openings on that floor. A room with no such opening is a group of its own (a garage
+   reached only from outside). Groups are laid out one at a time: groups with a pinned room first,
+   then by descending number of rooms, then by smallest `room_id`.
+6. **Start.** In a group with pinned rooms, they keep their stored positions and the starting room is
+   the pinned room of highest degree (ties by `room_id`). Otherwise the starting room is the group's
+   room of highest degree (ties by `room_id`), placed at the origin.
+7. **Order.** A group's unplaced rooms are taken breadth-first from its placed rooms (pinned ones in
+   `room_id` order). A room's neighbors are visited by descending degree, then `room_id`.
+8. **Position.** A candidate is any box touching an already placed box of the same group without
+   overlapping any box of the floor. The candidate with the lowest cost wins. The cost increases
+   with: the distance to each connected room on the same floor it does not touch; the distance from
+   the cells of connected rooms on lower floors, so a staircase lines up across floors; the angle
+   between its direction from the group's starting room and the room's preferred direction; its
+   distance from that starting room; and the growth of the group's bounding box. Ties go to the
+   smaller `y`, then the smaller `x`. The weights are core constants, frozen per core version and
+   covered by fixture tests (§16).
+9. **Separate groups.** A group without pinned rooms, other than the floor's first, is laid out on
+   its own and then moved as one block beside the boxes already on the floor, with one empty cell
+   between them. It goes on the side of the group's preferred direction (the sum of its rooms'
+   preferred directions, by its dominant axis), or below when that sum is zero or the axes tie. It
+   is aligned with the left edge (above or below) or the top edge (left or right) of the boxes
+   already placed. Separation shows that no passage joins the groups; an administrator may still
+   drag a box against another, which is an ordinary shared wall.
+10. **Exterior rooms.** An exterior room is a strip outside the bounding box of the interior boxes,
    on the side most of its connecting openings face. A diagonal orientation counts for its top/bottom
    component, and ties go bottom, top, right, left. The strip spans the connected rooms' extent. An
-   exterior room with no connecting opening sits below the interior boxes. Exterior strips are never
-   pinned or dragged.
+   exterior room with no connecting opening sits below the interior boxes. Several strips on one
+   side are ordered along it by the position of their connected rooms (left to right, top to
+   bottom; ties by `room_id`); a strip that would overlap an earlier one moves one band further from
+   the house. An exterior room connected on several sides (a balcony around a corner) is one strip
+   on the side with most of its openings. Exterior strips are never pinned or dragged.
 
 The proposal never moves a pinned room.
 
@@ -350,8 +372,11 @@ Derived at render time from the current boxes:
   top/bottom first. It is placed on the longest stretch of that side not shared with another interior
   box. Without an orientation, it goes on the side with the longest exterior stretch (top, right,
   bottom, left on ties).
-- A passable opening between rooms whose boxes do not touch is placed on the side facing the other
-  room, with a dashed connector to it.
+- A passable opening between rooms on the same floor whose boxes do not touch is placed on the side
+  facing the other room, with a dashed connector to it.
+- An opening to a room on another floor is placed on the side with the longest stretch not shared
+  with another interior box (top, right, bottom, left on ties), with its floor badge and no
+  connector.
 - Several openings on the same stretch are spread evenly in `opening_id` order.
 
 ### 9.6 Map checks
@@ -365,6 +390,10 @@ diagnostics: they never change `Topology`, create a fact or block an apply.
   approximate. It links to the opening in the House section, with the hint to read the direction on
   a phone compass while looking out, or on a north-up satellite map.
 - "Placement ignored": a stored placement dropped by §9.2.
+- "Not connected": an interior room with no passable opening to any other room, on any floor. It
+  links to the room's openings in the House section. It is not an error (a garage reached only from
+  outside is valid), so an administrator can dismiss it per room (`unconnected_ok`); it reappears
+  if the room is recreated.
 
 ### 9.7 Overlays
 
@@ -433,6 +462,45 @@ impact preview. Undo is client-side and ends with the edit session.
 Residents see the same map and overlays and may use §9.8 within their HA permissions. Text is in
 plain language, without identifiers or reason codes, and with no edit mode and no map checks.
 Administrators additionally see entity ids and reason codes in details, map checks and the editor.
+
+### 9.11 Rationale and deferred refinements (non-normative)
+
+Why the main choices were made (CA4-103/104/105):
+
+- **Schematic, not a plan.** No smart-home product derives a map from a room graph; all start from
+  a supplied or scanned plan. An uploaded plan costs asset storage and SVG sanitization and still
+  needs every room placed by hand, while editable boxes reach a recognizable map with less work.
+- **Grid boxes, not a generated floor plan.** Floor-plan generation (rectangular duals) needs a
+  triangulated planar adjacency graph; a door graph is nearly a tree and says nothing about shared
+  walls. A coarse grid is deterministic, testable and easy to correct by hand.
+- **Orientation as a preference, up direction in 45° steps.** Houses are rarely aligned to north,
+  and opening orientations are 45° steps anyway. Arbitrary angles would skew boxes and text.
+- **Exterior rooms as strips.** They are not enclosed; keeping them outside the boxes keeps the
+  interior perimeter readable.
+- **Separate groups with a gap.** Touching boxes read as connected rooms; a gap avoids a false
+  contiguity without forbidding the administrator from closing it.
+- **Device control through HA.** The apply plan stays Heima's only channel; HA's services,
+  permissions and more-info dialog already exist. Security-relevant kinds never act on a tap.
+- **Explicit save and local undo.** The layout is presentation only, so it needs no change set or
+  impact preview; the revision check covers two administrators editing at once.
+- **Overlays by channel kind and fact type; sun only from the core solar Sensors.** The panel shows
+  what the owning layers hold and never guesses from an HA domain or reads HA state outside them.
+- **`passage` instead of `stairs`/`elevator`.** No consumer distinguishes them; one doorless
+  passable type covers archways, open plans and open staircases. One floor per room for the same
+  reason: a floor span would serve only the map.
+
+Deferred refinements, to reconsider after Initial V3 or when real houses show the need:
+
+- half-cell granularity and resizing from the left or top edge;
+- L-shaped or other non-rectangular rooms, and exterior strips that wrap a corner;
+- rooms spanning several floors (stairwells, double-height spaces);
+- an administrator override of an opening's position along its wall;
+- an uploaded real plan as an optional background;
+- tuning the proposal weights against a corpus of real topologies;
+- the remaining map topics still under discussion: pan and zoom on phones, the map as a Lovelace
+  card for wall tablets, the map as a verification step in the guided first start (§11), and an
+  accessible list alternative to the graphic map.
+
 
 ## 10. HA entities published by Heima (L8-C6)
 
@@ -625,6 +693,14 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   When the light is a current Reaction target, the resulting divergence follows Layer 0 §6 and the
   map shows the held automation with its explanation.
 - With no core solar-geometry Sensors staged, the map draws no sun overlay and reads no `sun.sun`.
+- A staircase room on floor 0 with a `door` to the entrance and a `passage` to a landing on floor 1:
+  the passage is drawn on floor 0 with a badge to floor 1 and on floor 1 with a badge to floor 0;
+  the landing is proposed in the staircase's cell when that cell is free; an archway `passage`
+  between kitchen and living room is a gap without a leaf and has no opening state (CA4-104).
+- A garage on the apartment's floor with only a door to `outside` and an east window forms its own
+  group: it is placed beside the apartment block with one empty cell between, on the east side, and
+  produces "Not connected"; dismissing it hides the check, and dragging the garage against the
+  apartment is accepted (CA4-105).
 - Every published entity is read-only, `unavailable` when its fact is unavailable (an activity
   entity is `off` instead), translated, and carries no free text or person identity. A room where
   `relax` and `working` are both active shows two activity entities `on`; a cooking entity is `off`,
