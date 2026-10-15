@@ -1,7 +1,7 @@
 # V3 implementation working context
 
-> Latest implementation: CA4-102 clock gap end rules; see final checkpoint.
-> Last signed commit 0cc0929; CA4-102 and prior interval/review work uncommitted.
+> Latest implementation: request-clipped known observation gaps; see final checkpoint.
+> Last signed commit 6cf839b (CA4-102, intervals, timing review fixes); clipping slice uncommitted.
 > Periodic forward gap clarification is resolved by CA4-102 (planning working copy).
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
@@ -1108,3 +1108,53 @@ reading current §4.1/§4.4/§4.6 and dependencies first. The periodic-forward g
 is closed by CA4-102; do not seek another product decision for it. SQLite writer,
 durable acknowledgement, runtime gap manager and HA lifecycle remain future work.
 No generic weekly lifecycle; Git/deploy proposals still await developer review.
+
+
+## Active slice — request-clipped known observation gaps
+
+Committed the preceding work as signed 6cf839b at developer request; clean after commit.
+Implement contracts/observation_gaps.py and behavioral tests using L0 §4.4/§13 and
+explicit HistoryInterval geometry. Scope: immutable known gap interval/reason plus exact
+request clipping, preserving independent records. This does not select required streams,
+certify metadata trust/acknowledgement, assign first_incomplete_at or produce a full
+HistoricalReadResult. Planning stays read-only at 0b82d61 plus working-copy CA4-102.
+
+
+## Latest checkpoint — known observation gap clipping, 2026-10-15
+
+At developer request committed all previously verified work as signed 6cf839b,
+feat: add V3 history intervals and correct timing boundary semantics. Included interval
+geometry, countdown precision/year-1 weekly review fixes and CA4-102, with evidence and
+handoff files. Clean after commit; 633 tests rerun before it.
+
+Continued with contracts/observation_gaps.py: frozen ObservationGap(interval,reason)
+and clip_observation_gaps(request,gaps). Reuses HistoryInterval intersection and closed
+reason validation; clips bounded known gap evidence to an explicit request. Preserves
+order/multiplicity/reasons, rejects malformed/reconstructed inputs even when outside or
+empty, and never turns no intersections into a completeness claim. No scope selection,
+open-gap extent inference, trust/acknowledgement or first_incomplete_at assignment.
+No new persisted record/API schema, dependencies or product policy introduced.
+
+Planning remains read-only at 0b82d61 with uncommitted CA4-102 spec changes. Read owning
+§4.4 and §13 plus §4.0/§4.3/§4.6 separation and independent clock-gap rules. Added
+58 tests: decisions, boundary/point/empty/calendar extremes, delegated MC/DC endpoint
+pairs, frozen/malformed inputs and generated finite-set oracle/idempotence. Full V3
+691 passed, seed3145; Ruff lint/format, mypy22 and diff hygiene pass. Fresh scoped
+mutmut:52 generated,40 killed,12 generic-message equivalents, no other outcomes;
+individual diffs in testing/OBSERVATION_GAP_CLIPPING_MUTANTS.md. Supplemental frozen
+record mutation killed after clean baseline. Default scope sixteen modules. Evidence
+and reproduction: testing/OBSERVATION_GAP_CLIPPING.md. No HA/ARM/SQLite/deploy claim.
+
+Clipping source/tests/supplement runner, mutation config, README/evidence/handoff changes
+remain uncommitted; parent is 6cf839b. Prior CA4-102/geometry/review work is committed.
+
+### Exact next action
+
+Review/commit this clipping slice when requested. Continue request-scoped observation
+assessment from explicit metadata-trust, durable boundary and required-stream inputs.
+Use clipping as geometry only; an empty clipped tuple cannot certify continuity.
+Read current §4.4/§4.6 and endpoint contracts before assigning first_incomplete_at or
+building HistoricalReadResult; surface any unresolved case rather than choosing a rule.
+SQLite writer/acknowledgements, process/stream timeline ownership, baseline validity,
+HA lifecycle and complete historical read assembly remain future work. CA4-102 is
+resolved; no generic weekly lifecycle. Git/deploy proposals remain pending review.

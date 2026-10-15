@@ -1,8 +1,8 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: CA4-102 clock gap end rules; read the final WORKING_CONTEXT checkpoint.
-> Last signed commit 0cc0929; CA4-102 and prior interval/review work uncommitted.
-> Periodic forward gap clarification resolved; no commit authorized for CA4-102.
+> Latest implementation: request-clipped known observation gaps; read the final WORKING_CONTEXT checkpoint.
+> Last signed commit 6cf839b includes CA4-102 and prior geometry/review fixes.
+> Current clipping slice is uncommitted; CA4-102 clarification remains resolved.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

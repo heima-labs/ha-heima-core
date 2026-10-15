@@ -2,7 +2,7 @@
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
 Install runtime/development locks first; tests import real packages and the mutated
-copy under mutmut, without HA/V2 import shims. Default mutation scope: fifteen modules.
+copy under mutmut, without HA/V2 import shims. Default mutation scope: sixteen modules.
 
 ## Current contracts
 
@@ -44,4 +44,12 @@ History intervals and latest critical review: `docs/v3/testing/HISTORY_INTERVALS
 `CRITICAL_REVIEW_20261015.md` and `HISTORY_INTERVAL_REVIEW_MUTANTS.md`. Supplemental
 `mutation_history_intervals.py` covers empty-property logic outside mutmut scope.
 Fraction countdown regressions and year-1 weekly regression are now in the gate.
-Periodic forward-gap behavior during an earlier freeze awaits a normative handoff.
+Periodic forward-gap behavior during an earlier freeze is resolved by CA4-102;
+see CYCLE_CLOCK.md and CYCLE_CLOCK_CA4102_MUTANT_REVIEW.md.
+
+
+Known observation gap clipping: `docs/v3/testing/OBSERVATION_GAP_CLIPPING.md` and
+`OBSERVATION_GAP_CLIPPING_MUTANTS.md`. Supplement: `mutation_observation_gaps.py`.
+Explicit bounded intervals/reasons are request-clipped without merging independent
+gaps or inferring completeness from absent intersections. Required-stream selection,
+metadata trust, pending boundaries and full history assembly remain future work.
