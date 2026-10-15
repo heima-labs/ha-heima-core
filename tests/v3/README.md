@@ -2,7 +2,7 @@
 
 Run `.venv-v3/bin/python -m pytest -c pytest-v3.ini tests/v3 --hypothesis-seed=3145`.
 Install runtime/development locks first; tests import real packages and the mutated
-copy under mutmut, without HA/V2 import shims. Default mutation scope: sixteen modules.
+copy under mutmut, without HA/V2 import shims. Default mutation scope: seventeen modules.
 
 ## Current contracts
 
@@ -60,3 +60,10 @@ Observation coverage assessment: `docs/v3/testing/OBSERVATION_ASSESSMENT.md` and
 metadata trust to derive sorted reasons/first limit, then composes process and only
 required streams. Unknown metadata is conservative. Durable proof, open/pending
 boundary extents and full historical record assembly remain owner responsibilities.
+
+
+Clock-gap durability projection: `docs/v3/testing/CLOCK_GAP_DURABILITY.md` and
+`CLOCK_GAP_DURABILITY_MUTANTS.md`. Supplement: `mutation_clock_gap_durability.py`.
+Exact receipt correlation prevents cross-gap/stale-boundary proof; pending ends stay
+incomplete. This is a per-gap coverage contribution, not overall process proof or
+actual SQLite receipt issuance. CA4-102 independent-gap integration is exercised.

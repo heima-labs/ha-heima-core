@@ -1,7 +1,7 @@
 # V3 implementation working context
 
-> Latest implementation: observation coverage assessment; see final checkpoint.
-> Last signed commit d965470 (known gap clipping); assessment slice uncommitted.
+> Latest implementation: clock-gap durability projection; see final checkpoint.
+> Last signed commit f628736 (observation assessment); durability slice uncommitted.
 > CA4-102 is resolved and committed in planning as 37986ea; final planning check clean.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
@@ -1215,3 +1215,63 @@ process gaps and post-overflow baseline validity separate; never restore an olde
 available fact over a newer unavailable one. Concrete SQLite writer/transaction
 schema, watermark advancement, full HistoricalReadResult and HA lifecycle remain
 future work. No generic weekly lifecycle; Git/deploy proposals still await review.
+
+
+## Active slice — clock-gap durability projection
+
+Committed assessment as signed f628736; clean after commit. Read planning 37986ea
+L0 §3.5/§4.4/§4.6. Implement storage/clock_gaps.py and tests: explicit independent
+opening/closing durable proof, caller-declared endpoints, conservative request coverage
+while a closing intent is unconfirmed. This is a pure per-gap contribution, not a
+SQLite writer or an overall process-continuity certificate. No planning edits.
+
+
+## Latest checkpoint — clock-gap durability projection, 2026-10-15
+
+Committed prior assessment at developer request as signed f628736, feat: assess V3
+observation coverage from explicit continuity evidence. Clean after commit;745 tests
+rerun before it. Planning checked clean/read-only 37986ea, owning §3.5/§4.4 and ordered
+continuity metadata §4.6; no planning edits.
+
+Added storage/clock_gaps.py: frozen ClockGapBoundaryReceipt and ClockGapDurability,
+plus clock_gap_observation_coverage(request,durability). Receipts correlate exact
+owner-assigned gap id, opening/closing side, canonical instant and inclusion flag.
+Bare proof booleans rejected as insufficient against cross-gap/stale-end receipts.
+This is an internal calculation interface, not a chosen SQL record or actual receipt
+issuer. Future owner ensures unique ids; writer issues receipt only after durable
+success. Snapshot validation rejects unmatched/malformed proof, including closing
+proof for no closing instant. Out-of-order receipts remain representable.
+
+A missing closing receipt cannot turn a pending end into historical completeness:
+project potentially open extent through request end. A known open gap keeps clock
+reason; absent opening proof or pending closing proof also adds unknown metadata,
+using existing conservative assessment. Exact closing proof allows only this gap's
+restriction to end at its declared boundary. Caller must still combine mandatory
+process coverage and every other relevant gap/required stream; unrelated unknown
+process metadata cannot be healed. Endpoint policy stays explicit, no state fallback.
+Revalidation precedes early empty/before-gap returns. Fixed work per gap, two receipt
+slots; no I/O, runtime queue, live state mutation or SQLite schema introduced.
+
+56 new focused instances (including actual CycleClock CA4-102 independent-gap sequence)
+and full V3:801 passed,seed3145. Ruff lint/format54files,mypy23sources,diff pass. Fresh
+mutmut scope clock_gaps.py:205 generated,165 killed,40 reviewed generic error-prose
+equivalents; no timeout/error/skipped/untested. Initial behavioral survivor prompted
+malformed/reversed pending-end tests and a fresh uncached rerun. Both frozen-decorator
+supplements killed after clean 56-test baseline. Default scope seventeen modules.
+Evidence: testing/CLOCK_GAP_DURABILITY.md and CLOCK_GAP_DURABILITY_MUTANTS.md. No new
+dependency/policy/HA/ARM/SQLite/live/deploy claim.
+
+Current durability source/tests/supplement/config/evidence/README/handoff uncommitted;
+parent f628736. Prior assessment/clipping/CA4-102 work is committed.
+
+### Exact next action
+
+Review/commit this slice when requested. Continue ordered persistence accounting and
+writer integration so actual committed boundary results can issue matching receipts;
+read current §4.2/§4.4/§4.6 and atomic cycle marker/barrier rules before implementing
+that owner. Track all accepted facts, independent audit items and durable loss
+boundaries through the full barrier, not merely a largest received ordinal. Do not
+mint receipts on queue admission or callbacks before commit, and do not derive gap
+ids from timestamps. SQLite schema/worker, watermark advancement, process/stream
+journal ownership, overflow baseline validity and full HistoricalReadResult remain
+future work. Git/deploy proposals still await review; no generic weekly lifecycle.

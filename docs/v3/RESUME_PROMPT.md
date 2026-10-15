@@ -1,8 +1,8 @@
 # Prompt to resume V3 implementation
 
-> Latest implementation: observation coverage assessment; read the final WORKING_CONTEXT checkpoint.
-> Last signed commit d965470 contains known gap clipping.
-> Assessment slice is uncommitted; CA4-102 committed in planning as 37986ea.
+> Latest implementation: clock-gap durability projection; read the final WORKING_CONTEXT checkpoint.
+> Last signed commit f628736 contains observation coverage assessment.
+> Durability slice is uncommitted; planning checked clean at 37986ea.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
