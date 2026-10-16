@@ -108,6 +108,12 @@
       "depends_on": ["L5-STEP-SLOT", "L5-STEP-HOLD"]
     },
     {
+      "id": "L0-RUNTIME-ERROR",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "10.1 Runtime error condition (CA4-109)",
+      "depends_on": ["L0-COMPOSED-GENERATION"]
+    },
+    {
       "id": "L0-RECOVERY-CLASSIFICATION",
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "7.1 Cycle-level classification",
@@ -705,7 +711,7 @@
       "id": "L6-DELIVERY",
       "owner": "docs/specs/v3/layer6_notification_spec.md",
       "heading": "7.3 Retries and fallback",
-      "depends_on": ["L6-RECIPIENTS", "L0-NOTIFICATION-OUTBOX"]
+      "depends_on": ["L6-RECIPIENTS", "L0-NOTIFICATION-OUTBOX", "L8-PANEL-ADDRESSES"]
     },
     {
       "id": "L6-RESPONSES",
@@ -778,6 +784,24 @@
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "8. Explanations (L8-C5)",
       "depends_on": ["L5-DECISION-RECORD", "L0-COMPOSED-GENERATION"]
+    },
+    {
+      "id": "L8-PANEL-ADDRESSES",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "5.1 Panel addresses (CA4-106)",
+      "depends_on": ["L8-ROLES", "L0-RESPONSE-INGRESS"]
+    },
+    {
+      "id": "L8-PANEL-STATES",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "5.2 Panel states (CA4-108)",
+      "depends_on": ["L8-PROJECTIONS", "L0-RECOVERY-CLASSIFICATION"]
+    },
+    {
+      "id": "L8-SUGGESTIONS",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "6.5 Configuration suggestions (CA4-107)",
+      "depends_on": ["L8-CHANGE-SET", "L2-ROOM-REGISTRY", "L1-TOPOLOGY", "L1-ZONE-ROLES"]
     },
     {
       "id": "L8-HOUSE-MAP",
@@ -1710,6 +1734,50 @@
       "contracts": ["L8-HOUSE-MAP", "L1-TOPOLOGY"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-106",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-106.md",
+      "contracts": ["L8-PANEL-ADDRESSES", "L6-DELIVERY", "L8-ROLES", "L0-RESPONSE-INGRESS"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-107",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-107.md",
+      "contracts": ["L8-SUGGESTIONS", "L8-CHANGE-SET", "L8-BACKEND", "L2-ROOM-REGISTRY", "L1-TOPOLOGY", "L1-ZONE-ROLES"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-108",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-108.md",
+      "contracts": ["L8-PANEL-STATES", "L8-PROJECTIONS", "L0-RECOVERY-CLASSIFICATION"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-109",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-109.md",
+      "contracts": ["L0-RUNTIME-ERROR", "L0-NOTIFICATION-OUTBOX", "L6-NOTIFICATION-KINDS", "L6-DELIVERY", "L8-PROJECTIONS", "L8-PANEL-STATES"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
     }

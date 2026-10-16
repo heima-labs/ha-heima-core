@@ -102,7 +102,8 @@ class NotificationKindDescriptor:
 | `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents | by descriptor namespace (§6.1) | info | the one notice | none |
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
 | `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened`, `reissued` (`closed` clears) | `layer5.household_consent`: grant / decline |
-| `proposal.review_pending` | `ProposalReviewOccurrence` (Layer 5 §6.0) | administrators | governance | info | `created`, `approvable_again`, grouped by the digest (§6.3) | none; link to the Layer-8 panel |
+| `proposal.review_pending` | `ProposalReviewOccurrence` (Layer 5 §6.0) | administrators | governance | info | `created`, `approvable_again`, grouped by the digest (§6.3) | none; link to the Layer-8 panel (§7.2) |
+| `system.health` | `RuntimeHealthOccurrence` (Layer 0 §10.1) | administrators | attention | error | `error_opened`, `causes_changed`, `restored` | none |
 
 Every Initial-V3 kind uses `context_version=1`. A future context change registers a new version and
 keeps the previous template while retained history can contain it (Layer 1 §3.1).
@@ -256,7 +257,19 @@ For each resolved recipient, Layer 6 sends one call to each endpoint `notify.*` 
 - the rendered title and message (§8);
 - `data.tag`: the item tag (§7.4), so a retry or later phase replaces, never duplicates;
 - `data.actions`: only for an actionable phase and only on an endpoint with `supports_actions`;
-- `data.url` (or `clickAction`) for a proposal digest, pointing to the Layer-8 panel;
+- `data.url` (or `clickAction`): the Layer-8 panel address (Layer 8 §5.1) of what the item
+  concerns, built from the item's own ids:
+
+  | Kind | Address |
+  |---|---|
+  | `recovery.confirmation_request` | `/heima/todo/request/<request_id>` |
+  | `reaction.consent_request`, `reaction.advisory` | `/heima/todo/request/<response_request_id>` |
+  | `reaction.follow_up`, `reaction.action_notice` | `/heima/automations/reaction/<reaction_id>?at=<occurrence instant>` |
+  | `automation.availability` | `/heima/automations` (its input carries no `reaction_id`) |
+  | `proposal.review_pending` (digest) | `/heima/automations/proposal` |
+  | advisory digest (§6.4) | `/heima/todo` |
+  | `system.health` | `/heima/system/health` |
+
 - the push priority of §6.1.
 
 A recipient is reached when at least one of its endpoints accepted the call. The per-call payload
@@ -269,7 +282,8 @@ Failed endpoint calls are retried after 30 seconds, 2 minutes and 10 minutes (co
 least one resolved recipient is still unreached after the last retry, when a consent authority has
 no recipient record (§5.2), or when the audience has no reachable recipient, Layer 6 creates one `persistent_notification` with `notification_id` equal to
 the item tag. HA cannot address it to one user: every HA user sees it in the panel. This is accepted
-for Initial V3 and revisited if it proves noisy. An actionable phase delivered only through the fallback carries no buttons; it remains
+for Initial V3 and revisited if it proves noisy. The fallback message ends with the same panel
+address as a Markdown link. An actionable phase delivered only through the fallback carries no buttons; it remains
 answerable from the Layer-8 surface through the same ingress (C2). The record becomes `delivered`
 once every resolved recipient was reached or the fallback accepted. A failed fallback keeps the
 record `ready` and is retried every 30 minutes; diagnostics expose it.
@@ -284,6 +298,7 @@ The item tag identifies one notified item across its phases:
 | `recovery.confirmation_request` | `request_id` |
 | `reaction.consent_request` | `reaction_id`, `configuration_generation_id`, `authority_transition_id` |
 | `proposal.review_pending` | one fixed digest tag per audience |
+| `system.health` | one fixed tag per installation, so the phone shows only the current health |
 | `automation.availability` | `automation_scope_id`, subject |
 | other kinds | the record's `notification_key` |
 
@@ -493,6 +508,15 @@ are routed with the new recipients.
 - Digest windows restart from the current open set; the 4-hour spacing is not persisted, so a
   restart may send one extra digest.
 - The availability tracker starts empty (Layer 3 §6.3.1).
+- `system.health`: an error still present after the restart arrives as a new `error_opened`
+  (Layer 0 §10.1); the fixed tag replaces the previous message.
+
+**`system.health` without storage or configuration (CA4-109).** While `persistence_write_failing`
+holds, the `ready` transaction can fail; Layer 6 then delivers that phase once, best effort from
+memory, without a record or audit fact, and diagnoses it (Layer 0 §4.5). While
+`no_active_manifest` holds there are no configured recipients, so the phase goes to the fallback
+`persistent_notification` (§7.3). The `restored` phase uses the ordinary durable path once storage
+works again.
 
 ## 12. Diagnostics
 
@@ -524,6 +548,17 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - **CA4-77** — actionable phases with an open request are never silenced (§6.2).
 
 ## 14. Initial acceptance criteria
+
+- `system.health`: an `error_opened` reaches every administrator recipient with the `attention`
+  family (held during quiet hours, silenceable), severity `error` and the address
+  `/heima/system/health`; `restored` replaces it on the phone through the fixed tag. With durable
+  writes failing it is still delivered once from memory and diagnosed; with no active manifest it
+  appears as a `persistent_notification` (CA4-109).
+
+- Every delivered phase carries the Layer-8 panel address of §7.2 for its kind, built only from the
+  item's ids (no name, no `entity_id`); a recovery request delivered without buttons opens
+  `/heima/todo/request/<request_id>`, and the fallback `persistent_notification` ends with the same
+  address as a Markdown link (CA4-106).
 
 - Each Initial-V3 kind: a valid occurrence produces exactly one fact and one `ready` record under
   its operation id; an exact retry produces none; a conflicting retry is rejected; an invalid

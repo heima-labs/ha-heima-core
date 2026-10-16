@@ -534,7 +534,7 @@ handling, normal exit, next-step hold release, restart and consent rules once:
   imported temporal profile needs its own contract before it can replace the core generator.
 
 **Layer 6 (defined).** [Layer 6](layer6_notification_spec.md) is the one path for pushed
-notifications. A closed registry of seven kinds turns typed occurrences into one audited event fact
+notifications. A closed registry of eight kinds turns typed occurrences into one audited event fact
 per phase with no stored text, committed with its outbox record. Recipients are people, optionally linked to an HA user,
 with endpoints and closed audiences (`consent_authorities` derived from
 `HouseholdConsentAuthority`). Closed families drive quiet hours (`safety` bypasses; Reaction notices

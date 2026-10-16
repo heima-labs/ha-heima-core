@@ -101,6 +101,63 @@ Sections are organized by the user's question, not by layer.
 The resident Overview shows the house map and what Heima is doing, in plain language and without
 technical identifiers. Every configuration section shows the pending-changes bar (§6).
 
+### 5.1 Panel addresses (CA4-106)
+
+Every section and object has a stable address, so notifications, explanations and other objects
+can link to exactly what they concern. The scheme is a public contract that other layers use
+without calling Layer 8:
+
+```text
+/heima/<section>[/<type>[/<id>]][?at=<EvidenceInstant>]
+```
+
+| `section` | `type` → `id` |
+|---|---|
+| `overview` | none |
+| `todo` | `request` → Layer 0 response-ingress `request_id` |
+| `automations` | `reaction` → `reaction_id`; `proposal` → `proposal_id` |
+| `house` | `room` → `room_id`; `opening` → `opening_id`; `zone` → `zone_id`; `map` (no id) |
+| `devices` | `sensor` → `sensor_id`; `actuator` → `actuator_id`; `fusion_rule` → `fusion_id` |
+| `understanding` | `resolver` → `resolver_id` |
+| `learning` | `definition` → learning definition id |
+| `notifications` | `item` → Layer 6 item tag |
+| `system` | `history` → `composed_generation_id`; `health` (no id) |
+
+- Sections and types are closed English tokens, independent of the viewer's language. A `type`
+  without `id` opens that list (for example `/heima/automations/proposal`).
+- Ids are Heima's stable identities, percent-encoded; never a name or a Home Assistant `entity_id`,
+  so an address carries no personal data and survives a rename. A `request_id` in an address grants
+  nothing: answering still goes through the authenticated ingress (Layer 0 §5.1.3).
+- `?at=` opens the object's "Why?" view at that instant (§8). Where it is meaningless it is ignored.
+- `todo` opens the resident To do section; for an administrator it opens the Overview's items to do
+  with that request selected.
+- An address whose object no longer exists, or which the viewer's roles cannot see, opens its
+  section with the same "This item is no longer available" notice in both cases, so it never
+  reveals whether a hidden object exists. Authorization stays in the backend (§4); an unknown
+  section or type opens the Overview.
+
+### 5.2 Panel states (CA4-108)
+
+The panel always says whether what it shows is live and whether Heima is working. The states come
+from the connection itself, the health projection and the Layer 0 recovery state (§10.3); nothing
+polls.
+
+| Situation | Administrator | Resident |
+|---|---|---|
+| Backend unreachable (integration not loaded, HA restarting, websocket lost on load) | Full-page "Heima is not reachable"; retries on reconnection | Same |
+| Live subscription interrupted while open | Last values stay, dimmed, with "updated at <time>"; resynchronized on reconnection | Same |
+| `startup_recovery`, before the first committed cycle | Banner "Heima is starting"; map without live overlays | Same |
+| No active configuration yet (first start not done) | Empty Overview with "Start setup" (§11) | "Heima is not set up yet; ask an administrator" |
+| `power_recovery` or `degraded_recovery` | Banner naming the recovery kind, the pending recovery confirmations and a link to System | "Heima is resuming after an interruption"; confirmations are already in To do |
+| Health `degraded` | Banner listing the active degradation diagnostics, linked to System | No banner; affected objects already show as unavailable |
+| Health `error` | Banner with the cause, linked to System | "Heima has a problem and may not act as expected" |
+
+At most one banner shows: the most severe, ordered error, unreachable states, recovery, starting,
+degraded. `recovery_settling` and `normal` show none. Administrators are also notified of the
+error state and its end by the Layer-6 `system.health` notification, which links to
+`/heima/system/health` (CA4-109). Resident text is plain language without codes
+or identifiers (§12). Every situation's full detail stays in System (§14).
+
 ## 6. Editing configuration (L8-C4)
 
 ### 6.1 Two kinds of action
@@ -193,6 +250,46 @@ If the active generation changed meanwhile, Layer 0 rejects it without mutation;
 the edits on the new base — an edit whose `expected_fingerprint` no longer matches is a conflict
 the administrator resolves field by field — and shows the preview again. An exact retry with the
 same `operation_id` returns the first result.
+
+### 6.5 Configuration suggestions (CA4-107)
+
+Lower layers define what Heima may suggest; Layer 8 shows the suggestions where they apply and turns
+an accepted one into an ordinary edit. The sources form a closed list:
+
+| Suggestion | Source | Shown in |
+|---|---|---|
+| A `Room` for an HA area not yet linked: name from the area, floor from the area's HA floor level when it has one | Layer 2 §2.6 | House |
+| A `Zone` from an HA label on areas, or from the rooms of one floor | Layer 1 §6, §7.1 | House |
+| A `Sensor` from an `EnvironmentalDiscoveryCandidate` (`auto_compatible` or `review_required`) | Layer 2 §3.4 | Devices, under the room of its suggested location |
+| Another role of a registered device: an unregistered entity with the same HA `device_id` | Layer 2 §3 (`device_id`) | Devices, on that device |
+
+```python
+SuggestionSource = Literal["ha_area", "ha_label", "floor", "discovery_entity", "device_sibling"]
+
+@dataclass(frozen=True)
+class SuggestionKey:
+    source: SuggestionSource
+    source_id: str      # area id, label id, floor number, entity id plus read path, or device id plus entity id
+```
+
+- **Computed on demand.** `suggestions/list` is a slow-path query over the active generation and
+  HA's area, floor, label, device and entity registries and current state objects. Suggestions are
+  never stored, never evaluated in a cycle and never reach a lower layer as data.
+- **Accepting** opens the ordinary add form, prefilled. Every `required_admin_decisions` item of a
+  discovery candidate, and every field the source cannot determine (a room's `enclosure`, a floor
+  the area does not give, a Sensor's indoor or outdoor meaning, its opening relation), is marked and
+  mandatory. The result is an `add` edit in the change set, validated, previewed and applied like
+  any other (§6.2–§6.4); nothing is created without apply.
+- **Multiple selection** is offered only for rooms from areas, whose only decisions are floor and
+  enclosure; each Sensor needs its own semantic decisions.
+- **Dismissing** records the `SuggestionKey` as Layer-8 view state, like finding acknowledgement:
+  installation-wide, stored with HA's storage helper, never part of the composed generation.
+  "Show dismissed" lists them and restores any. A key whose source no longer exists is dropped.
+  A suggestion that the configuration now satisfies (the area is linked, the entity is registered)
+  disappears without being dismissed.
+- **First start (§11)** draws on the same suggestions for its rooms, topology and devices steps.
+- Automations are not suggested here: suggested automations remain Layer 5 proposals (Automations
+  section) and the first-start descriptor list (§11).
 
 ## 7. History and restore (L8-C4a)
 
@@ -555,17 +652,18 @@ read-only to Layer 8 as an additional consumer:
 |---|---|
 | Automation state | Layer 5 authority transitions (mode), the active composed generation (catalog entries, and `configuration_invalid` from each commit's invalidated dependents), Layer-6 availability tracker episodes (block and reason) |
 | Pending items | Layer 5 proposal-review, consent and advisory occurrences, Layer 0 recovery-confirmation occurrences |
-| Heima health | Layer 0 health snapshots and degradation-diagnostic changes |
+| Heima health | Layer 0 runtime-error occurrences (§10.1), health snapshots, degradation-diagnostic changes and recovery-state changes (§5.2) |
 
-Health is `error` when no committed manifest is active or persistence writes are failing,
-`degraded` when any degradation diagnostic is active, `ok` otherwise. At process start every
+Health is `error` while Layer 0's runtime error condition holds (Layer 0 §10.1: no active manifest,
+or failing durable writes), the same predicate as the `system.health` notification; `degraded` when any degradation diagnostic is active, `ok` otherwise. At process start every
 projection is rebuilt from the owners' current state (authority projection, open proposals and
 requests, current diagnostics), so nothing is persisted and nothing polls.
 
 ## 11. First start (L8-C8)
 
 The config flow creates the integration only. On first opening, the panel runs a guided procedure:
-rooms → topology → devices → people and notifications → suggested automations. Suggested
+rooms → topology → devices → people and notifications → suggested automations, using the
+configuration suggestions of §6.5 in the first three steps. Suggested
 automations are only the descriptors whose staged prerequisites are met by what is configured; each
 opens an ordinary direct-staging form, and nothing is created without apply. Each step is an
 ordinary change set with its preview. Applied steps stay applied; on return the procedure derives
@@ -629,6 +727,8 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `consent_authority/stage` | command | admin | Layer 5 §4.2 |
 | `proposals/review` | command | admin | Layer 5 §4.2 |
 | `findings/acknowledge` | command | admin | Layer-8 view state |
+| `suggestions/list` | query | admin | §6.5, computed from the active generation and HA registries |
+| `suggestions/dismiss`, `suggestions/restore` | command | admin | Layer-8 view state (§6.5) |
 | `map/save_layout` | command | admin | §9.9, rejected on a stale `revision` |
 | `diagnostics` | query | admin | §14 |
 | `subscribe` | subscription | admin, resident | live updates of §10.3, role-filtered |
@@ -705,6 +805,20 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   entity is `off` instead), translated, and carries no free text or person identity. A room where
   `relax` and `working` are both active shows two activity entities `on`; a cooking entity is `off`,
   never `unavailable`, while the hob is off or unreadable.
+- Panel states (CA4-108): during `startup_recovery` both roles see "Heima is starting" and a map
+  without live overlays; with health `degraded` an administrator sees a banner linked to System and a
+  resident sees none; with health `error` and a pending power-recovery confirmation, only the error
+  banner shows; a dropped live subscription dims the last values with their update time and
+  resynchronizes on reconnection without a page reload.
 - No user-facing literal string exists outside translation resources; switching the HA user's
   language to an unshipped locale shows English.
+- With an HA area "Studio" on HA floor level 1 and no linked room, House suggests a room "Studio" on
+  floor 1; accepting adds an `add` edit with `enclosure` to confirm, and nothing exists until apply.
+  Dismissing it hides it for every administrator until restored; linking the area to a room removes
+  the suggestion. A weather entity yields one Sensor suggestion per usable attribute, each requiring
+  its outdoor meaning before the edit validates (CA4-107).
+- `/heima/automations/reaction/<id>?at=<T>` opens that Reaction's "Why?" at T; after the Reaction is
+  removed the same address opens Automations with "This item is no longer available". A resident
+  opening an administrator-only object address sees that same notice, byte-identical to the one for
+  a missing object (§5.1).
 - No panel query or command delays an evaluation cycle.

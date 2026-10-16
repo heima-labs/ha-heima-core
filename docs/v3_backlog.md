@@ -5176,9 +5176,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–105 | 0 | 0 | 49 | 1 |
-| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97 | 0 | 0 | 13 | 0 |
-| **Total** | **105 findings** | **0** | **0** | **104** | **1** |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–109 | 0 | 0 | 52 | 1 |
+| P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97, CA4-105 | 0 | 0 | 14 | 0 |
+| **Total** | **109 findings** | **0** | **0** | **108** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6298,6 +6298,38 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-109 — Heima's own error state reached nobody unless the panel was open
+
+**Status:** DONE (2026-10-16; specification readiness). **Severity:** P2. **Origin:** CA4-108 follow-up.
+
+**Problem.** Health `error` (no active manifest, failing durable writes) was only a Layer-8 projection and a published entity; no Layer-6 kind existed, so an administrator learned of it only by opening the panel or automating the entity. The predicate lived in Layer 8 although both causes are Layer-0 facts.
+
+**Approved resolution (2026-10-16).** Layer 0 §10.1 owns the runtime error condition (`no_active_manifest`, `persistence_write_failing`) and emits `RuntimeHealthOccurrence` (`error_opened`, `causes_changed`, `restored`; per-run episodes) outside any cycle to Layer 6 and to Layer 8's health projection, which now share one predicate. New Layer-6 kind `system.health`: administrators, family `attention`, severity `error`, one fixed tag, link `/heima/system/health`. With failing storage the phase is delivered once best effort from memory (existing Layer 0 §4.5 rule); with no active manifest it reaches the fallback `persistent_notification`. `degraded` does not notify. See the [CA4-109 review](specs/v3/reviews/CA4-109.md); no V3 runtime test ran.
+
+#### CA4-108 — The panel had no defined behavior when Heima is unreachable, starting or unhealthy
+
+**Status:** DONE (2026-10-16; specification readiness). **Severity:** P2. **Origin:** Layer 8 completeness review.
+
+**Problem.** Layer 8 defined the health projection (`ok`/`degraded`/`error`) and Layer 0 hands it the recovery state, but nothing said what either role sees when the backend is unreachable, the live subscription drops, Heima is starting or recovering, no configuration exists yet, or health is degraded or in error.
+
+**Approved resolution (2026-10-16).** Layer 8 §5.2: one table of seven situations with administrator and resident rendering; a single banner, the most severe (error, unreachable, recovery, starting, degraded); dimmed last values with their update time when the live subscription drops; residents see no degraded banner and never codes. The health projection now also takes recovery-state changes. A Layer-6 `system.health` notification for administrators was raised and left for a separate decision. See the [CA4-108 review](specs/v3/reviews/CA4-108.md); no V3 runtime test ran.
+
+#### CA4-107 — Configuration suggestions had sources but no surface
+
+**Status:** DONE (2026-10-16; specification readiness). **Severity:** P2. **Origin:** Layer 8 completeness review.
+
+**Problem.** Layer 1 (Zone suggestions from HA labels and Topology), Layer 2 (rooms from HA areas, `EnvironmentalDiscoveryCandidate`, sibling roles by `device_id`) defined suggestion-only sources "for the admin panel", but Layer 8 never said where they appear, how one is accepted, or what dismissing does.
+
+**Approved resolution (2026-10-16).** Layer 8 §6.5: a closed list of four sources shown in House and Devices, computed on demand by a slow-path `suggestions/list` from the active generation and HA registries, never stored or evaluated. Accepting opens the prefilled add form with every admin decision mandatory and yields an ordinary `add` edit through preview and apply. Multiple selection only for rooms from areas. Dismissal is installation-wide Layer-8 view state keyed by `SuggestionKey`, restorable, dropped when its source disappears; a satisfied suggestion disappears by itself. First start uses the same suggestions; automation suggestions stay Layer 5 proposals. Layer 5 needs no change. See the [CA4-107 review](specs/v3/reviews/CA4-107.md); no V3 runtime test ran.
+
+#### CA4-106 — Notifications linked to "the panel" without any panel address
+
+**Status:** DONE (2026-10-15; specification readiness). **Severity:** P2. **Origin:** Layer 8 completeness review.
+
+**Problem.** Layer 6 put a link "to the Layer-8 panel" only on the proposal digest, and Layer 8 defined no addresses, so a notification could only open the panel's home. A request delivered without buttons, or through the fallback `persistent_notification`, gave no direct way to the item to answer; an automation notice could not open its "Why?".
+
+**Approved resolution (2026-10-15).** Layer 8 §5.1 defines a public address scheme `/heima/<section>[/<type>[/<id>]][?at=<instant>]` with closed English sections and types and Heima's stable ids only (no names, no `entity_id`); `?at=` opens "Why?" at that instant. A missing or role-hidden object opens its section with one identical notice, revealing nothing; authorization stays in the backend. Layer 6 §7.2 sets the address per kind (requests to `todo/request`, Reaction notices to `automations/reaction?at=`, digests to their lists) and the fallback message ends with it as a Markdown link. Layer 6 builds addresses from its own ids and never calls Layer 8. See the [CA4-106 review](specs/v3/reviews/CA4-106.md); no V3 runtime test ran.
 
 #### CA4-105 — House-map layout residues: unconnected rooms and several exterior rooms on one side
 

@@ -2874,6 +2874,33 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   cycle-latency sample count/distribution, and the last probe failure. These diagnostics expose
   measurement only; they do not claim a Layer-3 admission decision.
 
+### 10.1 Runtime error condition (CA4-109)
+
+Heima is in **error** while at least one closed cause holds:
+
+```python
+RuntimeErrorCause = Literal[
+    "no_active_manifest",          # no committed composed configuration is active (§4.7)
+    "persistence_write_failing",   # durable writes are failing (§4.1, §4.4, §4.5)
+]
+
+@dataclass(frozen=True)
+class RuntimeHealthOccurrence:
+    operation_id: str     # sha256 of "system.health.operation.v1:" + RFC-8785
+                          # [run_id, episode_sequence, phase, causes]
+    phase: Literal["error_opened", "causes_changed", "restored"]
+    causes: tuple[RuntimeErrorCause, ...]   # non-empty, distinct, ASCII order; the current causes,
+                                            # or the ended episode's last causes for "restored"
+    detected_at: EvidenceInstant
+```
+
+`run_id` is a fresh per-process identity and `episode_sequence` counts error episodes within the run.
+Layer 0 evaluates the condition outside any cycle, whenever one of its causes changes, and once after
+bootstrap. It hands one occurrence per transition, read-only, to Layer 6 (`system.health`) and to
+Layer 8's health projection, so the panel and the notification use the same predicate. The occurrence
+is not a `HouseFact` input, cannot be read by a resolver or policy, and causes no action. A condition
+still present after a restart opens a new episode of the new run.
+
 ---
 
 ## 11. Relationship to the core DAG
@@ -2897,6 +2924,12 @@ by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3
 ---
 
 ## 13. Acceptance criteria (for the eventual implementation phase)
+
+- Runtime error condition (CA4-109): a durable write failure produces one `error_opened` with
+  `persistence_write_failing`; a later loss of the active manifest produces `causes_changed` with
+  both causes; recovery of both produces one `restored` carrying the last causes. Retries of the same
+  transition reuse the `operation_id`; a restart with the condition still present opens a new episode
+  with a new `run_id`. No resolver, policy or `ApplyStep` can read the occurrence (§10.1).
 
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:
