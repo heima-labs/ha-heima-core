@@ -633,9 +633,9 @@ Deferred refinements, to reconsider after Initial V3 or when real houses show th
   and residents, which also covers a guest with an HA account; it waits for the guest model
   (backlog, open question 5), and like §9.14's scope it would not be a security boundary;
 - tuning the proposal weights against a corpus of real topologies;
-- the remaining map topic still under discussion: the map as a verification step in the guided
-  first start (§11). The accessible list alternative is now §9.12 (CA4-111), pan and zoom are §9.13
-  (CA4-112), and the Lovelace card is §9.14 (CA4-113).
+- no map topic remains under discussion: the accessible list alternative is §9.12 (CA4-111), pan
+  and zoom are §9.13 (CA4-112), the Lovelace card is §9.14 (CA4-113) and the map check in the guided
+  first start is §11 (CA4-114).
 
 
 ### 9.12 List view (CA4-111)
@@ -764,12 +764,28 @@ requests, current diagnostics), so nothing is persisted and nothing polls.
 ## 11. First start (L8-C8)
 
 The config flow creates the integration only. On first opening, the panel runs a guided procedure:
-rooms → topology → devices → people and notifications → suggested automations, using the
-configuration suggestions of §6.5 in the first three steps. Suggested
+rooms → topology → map check → devices → people and notifications → suggested automations, using
+the configuration suggestions of §6.5 in the rooms, topology and devices steps. Suggested
 automations are only the descriptors whose staged prerequisites are met by what is configured; each
 opens an ordinary direct-staging form, and nothing is created without apply. Each step is an
 ordinary change set with its preview. Applied steps stay applied; on return the procedure derives
 its progress from what is configured, so only the unapplied edits of the current step can be lost.
+
+**Map check (CA4-114).** After topology, the procedure shows the house map so the administrator can
+see whether Heima understood the house before devices and automations depend on it:
+
+- The map is the §9.3 proposal over the active generation, with the §9.4 suggested up direction,
+  all floors available. Topology is already applied at this point; no staged composition is drawn.
+- The §9.6 map checks are listed at the top. Each has a "Fix" link that opens the topology step's
+  form inside the procedure; the fix is an ordinary change set, and the map redraws after its apply.
+- Three plain-language prompts guide the look: whether the floors are right, whether connected rooms
+  touch, and whether exterior windows are on the right sides. They are help text and record nothing.
+- The layout editor (§9.9) is available but optional.
+- The step never blocks: map checks block nothing (§9.6), and "Continue" and "Skip" are always
+  available.
+- The step has no configuration of its own. It is shown when topology is applied and no device is
+  registered yet; once a device is registered, the procedure treats it as passed. After the first
+  start the same view stays at `/heima/house/map`.
 
 V2 cutover follows Layer 2 §1.1 unchanged: nothing is imported, and the panel never reads,
 displays or interprets a V2 export.
@@ -915,6 +931,11 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   section scrolls horizontally; the back gesture after opening a Reaction from a notification
   returns to the previous view; the map's list view offers the same states and controls, and a tap
   on a lock in it opens more-info.
+- First-start map check (CA4-114): after the topology step is applied, the map step shows the
+  proposal with its map checks; "Fix" on "Orientation missing" opens the topology form inside the
+  procedure, and after its apply the map redraws without the check; "Continue" with open checks
+  moves to devices; returning to the procedure with a device already registered skips the step;
+  without devices and with topology applied, the step is shown again.
 - Map card and access (CA4-113): an HA user with no role opens the panel and sees only the Overview
   map in resident wording, and `objects/list` from that user is rejected; a card added to a
   dashboard renders without any resource step; with `control_rooms: [guest_room]` a tap on the
