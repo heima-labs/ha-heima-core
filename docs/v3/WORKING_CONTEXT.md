@@ -1,10 +1,10 @@
 # V3 implementation working context
 
-> Latest checkpoint — 2026-10-16: fixed-source producer ports committed as `4cef5a9`.
+> Latest checkpoint — 2026-10-16: live index/order committed as `816e784`.
 > Upstream remains `47a4dd4`; no push requested in this task.
-> New live current-index / append-order slice is uncommitted and unpushed.
-> Read the final checkpoint and testing/STATE_ACCEPTANCE.md plus mutant review.
-> This is the comparison/order handoff; buffer/queue publication and fact SQL remain pending.
+> New state-transition buffer retention slice is uncommitted and unpushed.
+> Read final checkpoint and testing/STATE_BUFFER.md plus STATE_BUFFER_MUTANTS.md.
+> 1731 V3 tests, Ruff and mypy pass. Queue / frozen-view integration still pending.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -2262,3 +2262,70 @@ before connecting to the real cycle coordinator. Actual activation + all-layer
 boundary swap, variable-route/verified actor/event producers and fact-marker SQL
 remain obligations, not implied by this slice. No planning edits or clarification
 pending; CA4-104 Topology and CA4-106 panels remain later slices.
+
+
+## Active slice — short-term state transition retention
+
+Committed previous live index/order slice as `816e784`; no push requested.
+Build the state-only buffer described in testing/STATE_BUFFER.md, retaining every
+accepted transition plus the necessary at-or-before-horizon predecessor. Horizons
+are supplied by trusted staging; event buffers, frozen history completeness and
+bounded queue/recovery remain separate integrations. No planning edits.
+
+
+## Latest checkpoint — short-term state transition retention, 2026-10-16
+
+Committed the verified live index/order slice as `816e784` at developer request.
+No push this turn: upstream remains `47a4dd4`. Planning remains `aa4455a` with
+Claude's CA4-106 edits (L6/L8/registry/backlog/review), read-only. Read current
+L0 §4.0–§4.3 and §13 buffer/sparse predecessor acceptance; before-code impact and
+five-method evidence are in testing/STATE_BUFFER.md.
+
+Added runtime/state_buffer.py, a state-only retention subcomponent consuming
+trusted AcceptedStateTransition outputs. Caller supplies a complete staged key /
+maximum-declared-horizon map; horizons are owned snapshots, max(900 s, supplied
+Window). No per-append pattern lookup, disk read, serialization or maintenance
+scan. Every transition is retained in global append order, including same-cycle
+on/off/on. Invalid/repeated/backward positions and inconsistent cycle instants
+reject before mutation, including across separate keys. Order/id gaps are valid.
+
+Explicit maintenance takes a non-regressing cycle-clock instant outside evaluation;
+future appends cannot predate it. Per-stream deques evict only a superseded record
+whose successor is already in effect at the horizon's start, preserving the final
+predecessor even if arbitrarily old and keeping latest indefinitely. Shared
+canonical-decimal derive_instant determines successor expiration; overflow leaves
+it retained. Work is O(streams + removed records), not a scan of all retained facts.
+Raw tuple snapshots preserve immutable records after later append/maintenance;
+they are not policy reads and do not certify complete observation coverage.
+
+28 focused tests, 1731 full V3 tests pass (seed 3145); Ruff lint/format 94 files,
+mypy 36 sources, diff checks pass. Boundary tests include expiry ±1 µs, horizon
+900 ±1 µs, fractional 900.0000001 s and unrepresentable expiration, empty/sparse/
+same-instant streams and clock/order failures. Decision rows and one seeded PBT
+for predecessor + all later transitions, suffix retention/latest/idempotence.
+MC/DC N/A (sequential single-condition guards, no compound predicate). Fresh
+mutmut 102 generated: 61 killed, 41 reviewed equivalents (40 prose, 1 initial
+sentinel), zero errors/timeouts/skips/untested/interrupted. All 8 semantic seeds
+killed on clean 28-test baseline; exact diffs/proofs in STATE_BUFFER_MUTANTS.md.
+Permanent mutation scope is 30 modules. No new dependency, schema, HA public
+contract or product/Git/deploy policy. No live/HA/ARM-throughput/crash claim.
+
+New buffer/source/test/supplement/evidence/config/handoff changes are uncommitted
+and unpushed. No event-buffer admission, typed requirement union, atomic horizon
+swap/shrink, frozen barrier/source-age completeness, previous-cycle snapshot,
+buffer-byte diagnostics, publication to durable queue or fact SQL implemented.
+Current-index/order coordinator is unchanged and still requires synchronous
+forwarding of its returned transitions to the future buffer+queue owner. Forced
+durable recovery baselines must not add duplicate live buffer edges.
+
+### Exact next action
+
+Review/commit this retention slice when requested. Re-read L0 §4.1/§4.2/§4.4/§4.6
+before designing the bounded durable queue and publication around live acceptance.
+Queue byte accounting must use canonical UTF-8 fact and continuity metadata,
+preserve append ordering / retry after disk failure and obey ordinary versus
+irreducible global overflow with per-key acknowledged recovery. Do not introduce
+an unbounded interim journal or treat queue admission as durable acknowledgement.
+Events, typed requirement staging and FrozenHistoryView remain later integrations;
+raw buffer snapshots must not be exposed as proof of history completeness.
+Planning remains Claude-owned; no new clarification is pending from this slice.

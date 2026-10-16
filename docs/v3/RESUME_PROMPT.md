@@ -1,15 +1,10 @@
 # Prompt to resume V3 implementation
 
-> Latest checkpoint — 2026-10-16: fixed-source producer ports committed as `4cef5a9`.
+> Latest checkpoint — 2026-10-16: live index/order committed as `816e784`.
 > Upstream remains `47a4dd4`; no push requested in this task.
-> New live current-index / append-order slice is uncommitted and unpushed.
-> Read the final checkpoint and testing/STATE_ACCEPTANCE.md plus mutant review.
-> This is the comparison/order handoff; buffer/queue publication and fact SQL remain pending.
-> 1703 V3 tests and Ruff/mypy pass; see full mutation evidence in testing/.
-> Cycle context owns when/origin/generation; index compares state fingerprint,
-> assigns order only on change, returns transitions for future buffer+queue owner.
-> Actual activation, source verification, buffer/queue/events/baselines/SQL pending.
-> Planning `aa4455a` has Claude's CA4-106 edits; read-only. Topology later.
+> New state-transition buffer retention slice is uncommitted and unpushed.
+> Read final checkpoint and testing/STATE_BUFFER.md plus STATE_BUFFER_MUTANTS.md.
+> 1731 V3 tests, Ruff and mypy pass. Queue / frozen-view integration still pending.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

@@ -175,3 +175,15 @@ Evidence: [STATE_ACCEPTANCE](../../docs/v3/testing/STATE_ACCEPTANCE.md) and
 `mutation_state_producers.py`. This is the live comparison/order step: the next
 owner must publish returned transitions to buffer and durable queue synchronously.
 No retry journal, forced baseline, event admission or fact SQL is implemented here.
+
+
+### State transition buffer retention
+
+`runtime/test_state_buffer.py` checks per-key horizons, equal-time transitions,
+sparse predecessors, explicit maintenance and immutable snapshots. Evidence:
+[STATE_BUFFER](../../docs/v3/testing/STATE_BUFFER.md) and
+[mutation review](../../docs/v3/testing/STATE_BUFFER_MUTANTS.md). Run
+`.venv-v3/bin/python tests/v3/mutation_state_buffer.py` for semantic supplements.
+The buffer consumes trusted accepted state transitions; raw records do not certify
+observation completeness. Frozen views, event streams and queue publication remain
+separate integrations.
