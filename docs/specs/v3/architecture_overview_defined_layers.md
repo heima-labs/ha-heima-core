@@ -543,7 +543,8 @@ items, and item tags let later phases replace or clear a notification. Delivery 
 growing retries and a single `persistent_notification` fallback; buttons go through
 `mobile_app_notification_action` to Layer 0's ingress. Text is rendered at delivery per recipient
 locale. The `AvailabilityPublicationGeneration`, recipients and family options form the Layer-6
-generation of the composed configuration generation.
+generation of the composed configuration generation. Each person's own preferences (language,
+level per family, own endpoints) live in a separate Layer-6 store outside the generation (CA4-116).
 
 **Layer 8 (defined).** [Layer 8](layer8_administration_spec.md) is the single Heima panel, with
 content by role resolved server-side from the HA user (administrator, resident, or no access). The

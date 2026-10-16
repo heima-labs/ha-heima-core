@@ -59,7 +59,8 @@ Assistant only configuration: the system language and the registered `notify.*` 
   counted in diagnostics.
 - **Home Assistant infrastructure first.** Delivery uses `notify.*` services, mobile notification
   `tag`s, `clear_notification`, the `mobile_app_notification_action` event, `persistent_notification`
-  and one `heima_notification` bus event. Heima adds no own push channel, scheduler UI or user store.
+  and one `heima_notification` bus event. Heima adds no own push channel, scheduler UI or user
+  accounts; recipient preferences (§5.4) are keyed by `recipient_id`, not a user store.
 - **Delivery preference is not authority.** Being in an audience grants nothing. Every answer is
   verified by Layer 0's ingress and decided by its owner.
 - **No hot-path work.** Adapters run when an occurrence arrives, never inside a Layer-2–5
@@ -146,7 +147,6 @@ class NotificationEndpoint:
 class NotificationRecipient:
     recipient_id: str                 # stable, administrator-chosen, e.g. "stefano"
     ha_user_id: str | None            # links the person to HA authentication
-    locale: str | None                # HA language code with an available translation; None: household locale (§8.2)
     endpoints: tuple[NotificationEndpoint, ...]
     audiences: frozenset[Literal["residents", "administrators"]]
 ```
@@ -169,6 +169,46 @@ V2 groups and free routes are not carried over. The administrator only assigns e
 
 If an audience resolves to no recipient with at least one endpoint, the notification is delivered
 through the fallback channel (§7.3). This is also the behavior of an unconfigured installation.
+Recipients excluded by their own preferences (§5.4) are not unreachable: they chose not to receive
+it, so their exclusion never triggers the fallback.
+
+### 5.4 Recipient preferences (CA4-116)
+
+Each person may adjust their own notifications. Preferences are Layer-6 data stored with HA's
+storage helper, outside the composed generation: they have no dependents, are saved at once with no
+change set or impact preview, and do not require configuration authority.
+
+```python
+PersonalFamily = Literal["attention", "suggestion", "governance"]
+FamilyLevel = Literal["default", "quiet_silent", "off"]
+
+@dataclass(frozen=True)
+class RecipientPreferences:
+    recipient_id: str
+    revision: int                                   # incremented by every save
+    locale: str | None                              # None: household locale (§8.2)
+    family_levels: Mapping[PersonalFamily, FamilyLevel]   # a missing family is "default"
+    disabled_endpoints: frozenset[str]              # notify services of this recipient's endpoints
+```
+
+- **Family levels.** `default` follows the household behavior (§6.2). `quiet_silent` applies §6.2's
+  silent rule to this person only. `off` excludes this person from that family at all times.
+  `safety` has no personal level.
+- **Never filtered.** A phase with answer buttons whose request is still open (a consent request, a
+  recovery confirmation) reaches the person whatever the family level (CA4-77), and `safety` is
+  never filtered by family.
+- **Endpoints.** Delivery skips the disabled endpoints. A save that would disable every endpoint of
+  the recipient is rejected. If an administrator later removes endpoints so that only disabled ones
+  remain, the disabled set is ignored until the next save and a diagnostic is raised.
+- **Who saves.** The person through `notifications/set_preferences` for their own `recipient_id`
+  (the recipient linked to their `ha_user_id`), an administrator for any recipient (Layer 8 §13).
+  A save carries the `revision` it was based on; a stale one is rejected without change. A `locale`
+  without a translation resource, a family outside `PersonalFamily` or an endpoint the recipient
+  does not have is rejected.
+- **Lifecycle.** A missing entry means every value is default. When a generation swap removes a
+  recipient or one of its endpoints, the entry or the endpoint reference is dropped.
+- **Personal quiet hours** with their own schedule are not part of Initial V3: Layer 6 has no
+  schedule of its own and uses the casa `quiet_hours.active` fact.
 
 ## 6. Families, quiet hours and digests
 
@@ -214,6 +254,11 @@ is still open (a recovery confirmation, a consent request) is never silenced: it
 delivered when quiet hours end, and retires undelivered only if its request closes or expires
 first (§7.5). While `quiet_hours.active` is unavailable, Layer 6
 treats quiet hours as not active, so nothing is held indefinitely.
+
+Personal levels (§5.4) combine with this table per recipient, the most restrictive winning: `off`
+excludes the person; `quiet_silent`, or the household's silent option for that family, makes the
+family silent for the person during quiet hours. For `suggestion`, `quiet_silent` excludes the
+person from the end-of-quiet-hours digest. The household option is unchanged for everyone else.
 
 ### 6.3 Proposal digest (C4)
 
@@ -321,7 +366,10 @@ A `ready` record retires undelivered only when:
 - its item expired (a recovery request past `expires_at`);
 - its family is silent during quiet hours and the phase is informative (§6.2);
 - it is a pre-restart advisory without a closing phase (Layer 5 §6.0);
-- it is a consent opening superseded by a `reissued` phase of the same request (§9.3).
+- it is a consent opening superseded by a `reissued` phase of the same request (§9.3);
+- every resolved recipient is excluded by their own preferences (§5.4), cause
+  `recipient_preferences`. When only some recipients are excluded, the record is delivered to the
+  others; each exclusion is counted per recipient.
 
 The audit fact always remains. Each retirement increments a diagnostic counter by kind and cause.
 
@@ -383,8 +431,8 @@ the device off (Layer 3 §6.3.1).
 
 ### 8.2 Locale
 
-The household locale is HA's `hass.config.language`; a recipient may declare its own `locale`,
-which staging accepts only if a translation resource exists for it. Initial V3 ships `en` and `it`
+The household locale is HA's `hass.config.language`; a recipient may choose its own `locale` in
+its preferences (§5.4), accepted only if a translation resource exists for it. Initial V3 ships `en` and `it`
 resources; a locale without a resource, or a key missing from one, falls back to `en`. Dates,
 times, numbers and units are formatted with the locale and HA's unit system, never hard-coded. A digest covering several
 recipients is rendered per recipient. The fallback channel uses the household locale. Layer 8
@@ -490,7 +538,8 @@ class Layer6Generation:
     silenced_families: frozenset[Literal["attention", "governance"]]
 ```
 
-Publication keys enter Layer 0's dependency index. Recipients and family options have no
+Recipient preferences (§5.4) are not part of the generation. Publication keys enter Layer 0's
+dependency index. Recipients and family options have no
 dependents: changing them produces an empty impact record and needs no confirmation. The
 generation swaps between cycles with the rest of the composed generation; records not yet delivered
 are routed with the new recipients.
@@ -508,6 +557,8 @@ are routed with the new recipients.
 - Digest windows restart from the current open set; the 4-hour spacing is not persisted, so a
   restart may send one extra digest.
 - The availability tracker starts empty (Layer 3 §6.3.1).
+- Recipient preferences (§5.4) are loaded before the scheduler is rebuilt; a corrupt or unreadable
+  store means default preferences for everyone and a diagnostic, never a blocked delivery.
 - `system.health`: an error still present after the restart arrives as a new `error_opened`
   (Layer 0 §10.1); the fixed tag replaces the previous message.
 
@@ -528,6 +579,9 @@ Layer 6 contributes to the existing diagnostics surface:
 - fallback deliveries and failed fallbacks;
 - held items by family and digest state (window open, next allowed digest);
 - audiences with no reachable recipient;
+- per recipient: personal family levels, disabled endpoints, exclusions by family, and the
+  ignored-disabled-set diagnostic (§5.4); per audience and family, whether every recipient is
+  `off`, shown to administrators as a warning in Layer 8's Notifications section;
 - responses forwarded to the ingress, and ignored action events.
 
 Diagnostics never contain rendered text or person identities beyond `recipient_id`.
@@ -593,6 +647,14 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   abstention once through a `BindingEnablementChange` revision; disabling it closes a notified
   binding with `binding_deactivated`; a repeated change is ignored; neither the authority
   transition nor any evaluation cycle waits, and the revision touches only that Reaction's keys.
+- Recipient preferences (CA4-116): with `attention` `off` for one resident, a follow-up reaches the
+  other residents only; with `attention` `off` for every resident, it retires undelivered with cause
+  `recipient_preferences`, no fallback is created, and administrators see the warning; with
+  `governance` `off`, an open consent request still reaches the person; `safety` reaches everyone;
+  `quiet_silent` retires a night follow-up for that person while others get it in the morning; a
+  disabled endpoint is skipped, and disabling the last enabled one is rejected; a resident saving
+  another recipient's preferences is rejected; a stale revision is rejected; a recipient with
+  `locale="it"` receives Italian text while the household locale is `en`.
 - Items held during quiet hours are released by the committed-state delivery of
   `quiet_hours.active=False`, with no polling job; after a restart the initial delivery of the
   current value decides whether ready records are held.

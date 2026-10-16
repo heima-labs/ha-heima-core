@@ -95,11 +95,11 @@ Sections are organized by the user's question, not by layer.
 | Understanding | admin | How does Heima understand the situation? | Semantic resolver definitions: occupancy, presence, activity (Layer 4) |
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption, consent authority (Layer 5) |
 | Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
-| Notifications | admin | Who receives what? | Recipients, family options, notification history (Layer 6) |
+| Notifications | admin | Who receives what? | Recipients, family options, each recipient's preferences, notification history (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
 | To do | resident | What do I need to answer? | Consent requests, recovery confirmations, advisories with feedback, including requests delivered without buttons |
 | Automations | resident | What do automations do for me? | Read-only state and decisions with reasons; own consents with revoke |
-| Notifications | resident | What did Heima tell me? | Notifications addressed to the resident's audiences (Layer 6 records audiences, not per-person deliveries) |
+| Notifications | resident | What did Heima tell me? | Notifications addressed to the resident's audiences (Layer 6 records audiences, not per-person deliveries); "My preferences": language, level per family, own endpoints (Layer 6 §5.4) |
 
 The resident Overview shows the house map and what Heima is doing, in plain language and without
 technical identifiers. Every configuration section shows the pending-changes bar (§6).
@@ -838,6 +838,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `history/restore` | query | admin | builds a change set (§7), applies nothing |
 | `explain` | query | admin, resident | §8 (resident rendering for residents) |
 | `notifications/history` | query | admin, resident | Layer 6 facts, audience-filtered for residents |
+| `notifications/set_preferences` | command | admin (any recipient), resident (own recipient only) | Layer 6 §5.4, rejected on a stale `revision` |
 | `todo` | query | resident | pending-items projection for the resident's audiences |
 | `requests/answer` | command | admin, resident (the owner's declared categories and own checks apply) | Layer 0 response ingress |
 | `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |

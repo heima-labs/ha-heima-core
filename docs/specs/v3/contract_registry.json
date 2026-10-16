@@ -732,6 +732,12 @@
       "depends_on": ["L6-FAMILIES"]
     },
     {
+      "id": "L6-RECIPIENT-PREFERENCES",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "5.4 Recipient preferences (CA4-116)",
+      "depends_on": ["L6-RECIPIENTS", "L6-FAMILIES", "L6-QUIET-HOURS", "L6-RENDERING"]
+    },
+    {
       "id": "L6-GENERATION",
       "owner": "docs/specs/v3/layer6_notification_spec.md",
       "heading": "10. Configuration generation",
@@ -1860,6 +1866,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-115.md",
       "contracts": ["L8-DIAGNOSTICS-EXPORT", "L8-ROLES", "L8-PROJECTIONS", "L0-RUNTIME-ERROR", "L0-FACT-SOURCE"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-116",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-116.md",
+      "contracts": ["L6-RECIPIENT-PREFERENCES", "L6-RECIPIENTS", "L6-QUIET-HOURS", "L6-DELIVERY", "L6-GENERATION", "L8-ROLES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
