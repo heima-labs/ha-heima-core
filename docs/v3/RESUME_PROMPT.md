@@ -1,13 +1,13 @@
 # Prompt to resume V3 implementation
 
-> Producer staging committed as66f885b. New generation record foundation is
-> uncommitted: LayerGenerationRef and ComposedGenerationManifest, canonical five
-> layers, explicit effective_at and immutable metadata.1642 tests,Ruff/mypy pass.
-> Read latest WORKING_CONTEXT and testing/COMPOSED_GENERATION.md plus mutant review.
-> Constructor/manifest object is not proof of durable activation or actor/source
-> authority. Next integration still needs active-generation reference/fence and
-> concrete producer ports; writer/activation/index/queue/fact-marker SQL pending.
-> Planningaa4455a remains read-only; Topology CA4-104 belongs to a later slice.
+> Committed and pushed47a4dd4 to new origin/feat/v3-implementation (tracking set).
+> New generation-fenced fixed-source state builder slice is uncommitted/unpushed.
+> Read latest WORKING_CONTEXT and testing/STATE_PRODUCER_PORTS.md plus mutant review.
+> 1664 tests,Ruff/mypy pass. Ports check installed snapshot identity before/after
+> build and assign staged source fields; they return FactBuildResult, not an append.
+> Actual activation, source-owner verification, coordinator/index/queue/SQL pending.
+> Variable-route fusion, verified actor ingress and events need separate ports.
+> Planningaa4455a has Claude's CA4-106 L6/L8 link edits; read-only. Topology later.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

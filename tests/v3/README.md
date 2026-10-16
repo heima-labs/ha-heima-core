@@ -152,3 +152,14 @@ order, immutable metadata and explicit UTC effective_at. Evidence:
 [mutants](../../docs/v3/testing/COMPOSED_GENERATION_MUTANTS.md).
 Run `.venv-v3/bin/python tests/v3/mutation_generations.py` for semantic supplements.
 Constructing a manifest does not prove durable commit or activate a generation.
+
+
+### Generation-fenced fixed-source state builders
+
+`runtime/test_state_producers.py` exercises staged source assignment, installed-
+snapshot identity, pre/post-build fencing, explicit correlation and diagnostic
+preservation. No pattern resolution is allowed during build. Evidence:
+[STATE_PRODUCER_PORTS](../../docs/v3/testing/STATE_PRODUCER_PORTS.md) and
+[mutants](../../docs/v3/testing/STATE_PRODUCER_PORT_MUTANTS.md). Supplements:
+`.venv-v3/bin/python tests/v3/mutation_state_producers.py`.
+These builders return facts; actual accepted append/index/queue remain separate.

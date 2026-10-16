@@ -2123,3 +2123,75 @@ manifest object as independent proof of authority. Producer staging's resolved
 metadata must feed concrete ports without per-fact pattern lookup. Preserve
 state/event separation and durable-baseline/live-transition distinctions. Git and
 deploy policies remain proposals; no clarification is pending from this slice.
+
+
+## Active slice — generation-fenced fixed-source state builders
+
+Committed generation contracts as47a4dd4 and pushed new origin/feat/v3-implementation
+at developer request, upstream set; local/remote SHA matched. Planningaa4455a now
+has CA4-106 link changes in L6/L8/registry/backlog, read-only and outside current
+L0/L1 scope. Build staged fixed-source state ports with explicit active-generation
+reader and pre/post-construction fence. Plan testing/STATE_PRODUCER_PORTS.md.
+
+
+## Latest checkpoint — pushed branch and fixed-source state ports, 2026-10-16
+
+At developer request committed generation records as47a4dd4 and pushed with
+`git push --set-upstream origin feat/v3-implementation`: new remote branch,
+tracking set, local/upstream SHA47a4dd4094e91be178b4aff44a1fc4f0adfa661b matched.
+Only previously committed code was pushed; new port work below is uncommitted.
+PlanningHEADaa4455a now has uncommitted CA4-106 (L6/L8 notification links plus
+registry/backlog/review); read it, no impact on owning L0/L1 contracts. Planning
+remained read-only. Read L0 §4/§4.7/§5.1/§5.2 and L2 §2.3/§2.5 for this slice.
+Impact/design before code in testing/STATE_PRODUCER_PORTS.md.
+
+Added runtime/state_producers.py: trusted core staging prepares immutable
+FixedStateProducerRegistration and factory-only PreparedStateProducerGeneration
+against an existing composed static claim. Checks declaration/owner, production
+source shape, duplicate registration; owns copied source/claim snapshots and a
+read-only lookup map. A staged subset is explicit, not all-producer completeness.
+Staging-only bind captures a fixed-source state port and explicit active-snapshot
+reader owned by the serialized coordinator. Build rejects before payload access
+unless that exact prepared object is installed; checks again before return in case
+field access reenters. Equal IDs/record values cannot bypass snapshot identity.
+
+Fact type/place/kind/identity/actor/config/route come from trusted staging; runtime
+build accepts value/confidence/availability/evidence plus explicit cycle instant
+and correlation only. No UUID default, source override, pattern lookup, I/O or
+await. Existing build_house_fact returns FactBuildResult with diagnostics unchanged.
+Variable fusion routes, per-edge actor ingress and events are not served by this
+fixed-source port. No code here proves source/digest authenticity or durably
+activates a snapshot: the real registry/coordinator must supply coherent staged
+inputs and expose its installed image only after §4.7 commit + boundary swap.
+
+22 focused,1664 full V3 tests passed(seed3145). Ruff lint/format88files,mypy34sources,
+diff pass. Decision/current-generation and boundary/source/diagnostic cases,2 seeded
+PBTs; no compound Boolean decision introduced. Local deadline=None for these two
+functional PBTs fixes a reproduced Hypothesis timing-only FlakyFailure without
+weakening domain assertions or changing global policy. Fresh verified mutmut226:
+161killed,65reviewed equivalents(60prose,3temporary optional validation fields,
+2discarded staging placeholders), zero errors/timeouts/skipped/untested/interrupted.
+Earlier timeout campaigns discarded and restarted. Strengthened UUID test before
+staging kills a genuine purity mutant; production source already explicit. All12
+semantic supplements killed with clean22-test baseline. No hot-path pattern lookup
+fixture passes. Evidence STATE_PRODUCER_PORTS.md/STATE_PRODUCER_PORT_MUTANTS.md.
+Default scope28modules, no dependency/new policy/persisted-schema/HA contract change.
+
+New source/tests/supplement/scope/evidence/README/handoff remain uncommitted and
+unpushed. No actual acceptance/live index, AppendOrder, queue/fact-marker SQL,
+authenticated ingress, event port, generation transaction/controller or HA runtime
+wiring. Port result is not a durable receipt or later publication authorization.
+No HA/live/ARM benchmark/deploy claim. Git/deploy proposals still pending.
+
+### Exact next action
+
+Review/commit this fixed-source port slice when requested. Continue serialized
+coordinator/state acceptance: capture installed generation/cycle context, consume
+construction diagnostics, compare against live current index and assign ordered
+accepted transitions. Re-read L0 §4.0/§4.1/§4.2/§4.7/§5 before concrete order design.
+Keep actual durable activation + all-pointer boundary swap as the coordinator/
+configuration writer integration obligation, never infer authority from objects or
+ids alone. Fixed-source subset does not replace variable-route/verified-ingress/
+event owners. Preserve ordinary state versus forced-durable baseline paths and
+use pre-resolved bindings without per-fact patterns. Planning CA4-106 remains
+Claude-owned; Topology CA4-104 later. No clarification pending from this slice.
