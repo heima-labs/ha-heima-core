@@ -74,9 +74,12 @@ from client data:
 - `resident` — the HA user is linked to a Layer-6 recipient or is a `HouseholdConsentAuthority`
   actor.
 
-One person may hold both roles. An HA user with neither role sees only a page saying Heima is not
-set up for them. The panel is registered once in the HA sidebar and visible to non-administrator
-users; content and commands depend on the roles. Every command declares the roles it accepts, and
+One person may hold both roles. The house map is open to every authenticated HA user, with or
+without a role (CA4-113): HA already shows every entity state to every user, so the map reveals
+little beyond the automations' short reasons. An HA user with neither role sees the Overview with
+the map only, in resident wording, without links to explanations, items to do or other sections.
+The panel is registered once in the HA sidebar and visible to non-administrator users; content and
+commands depend on the roles. Every command declares the roles it accepts, and
 the backend rejects any other caller before reaching the owning layer. Layer 5 and Layer 0 still
 apply their own checks (for example consent authority, ingress verification).
 
@@ -156,7 +159,8 @@ At most one banner shows: the most severe, ordered error, unreachable states, re
 degraded. `recovery_settling` and `normal` show none. Administrators are also notified of the
 error state and its end by the Layer-6 `system.health` notification, which links to
 `/heima/system/health` (CA4-109). Resident text is plain language without codes
-or identifiers (§12). Every situation's full detail stays in System (§14).
+or identifiers (§12). Every situation's full detail stays in System (§14). A user with no role
+(§4) and the map card (§9.14) show the resident text.
 
 ### 5.3 Phones and accessibility (CA4-111)
 
@@ -374,7 +378,8 @@ rendered in plain language, without identifiers.
 
 ## 9. House map (L8-C3a)
 
-The Overview shows a native map, never a third-party card. Initial V3 has one form of map: an
+The Overview shows a native map, never a third-party card; the same map is also Heima's own
+Lovelace card (§9.14). Initial V3 has one form of map: an
 automatic schematic derived from the `Room` registry, `Topology` and the registered devices, which an
 administrator can adjust. A real plan (an uploaded image or SVG) is not part of Initial V3 (CA4-103).
 
@@ -586,7 +591,9 @@ impact preview. Undo is client-side and ends with the edit session.
 ### 9.10 Roles
 
 Residents see the same map and overlays and may use §9.8 within their HA permissions. Text is in
-plain language, without identifiers or reason codes, and with no edit mode and no map checks.
+plain language, without identifiers or reason codes, and with no edit mode and no map checks. A user
+with no role (§4) sees the resident map; tapping an automation badge shows its short reason but opens
+no explanation.
 Administrators additionally see entity ids and reason codes in details, map checks and the editor.
 
 ### 9.11 Rationale and deferred refinements (non-normative)
@@ -622,10 +629,13 @@ Deferred refinements, to reconsider after Initial V3 or when real houses show th
 - rooms spanning several floors (stairwells, double-height spaces);
 - an administrator override of an opening's position along its wall;
 - an uploaded real plan as an optional background;
+- a per-HA-user control scope (rooms a user may control from the map), editable by administrators
+  and residents, which also covers a guest with an HA account; it waits for the guest model
+  (backlog, open question 5), and like §9.14's scope it would not be a security boundary;
 - tuning the proposal weights against a corpus of real topologies;
-- the remaining map topics still under discussion: the map as a Lovelace card for wall tablets, and
-  the map as a verification step in the guided first start (§11). The accessible list alternative is
-  now §9.12 (CA4-111); pan and zoom are §9.13 (CA4-112).
+- the remaining map topic still under discussion: the map as a verification step in the guided
+  first start (§11). The accessible list alternative is now §9.12 (CA4-111), pan and zoom are §9.13
+  (CA4-112), and the Lovelace card is §9.14 (CA4-113).
 
 
 ### 9.12 List view (CA4-111)
@@ -658,6 +668,38 @@ The map scrolls and zooms inside its own frame (§5.3):
   (§5.1) or the revision. Switching floor returns to the fitted view. A floor badge (§9.1) or an
   address that names a room centers the view on that room.
 - **Motion.** Under `prefers-reduced-motion`, pan and zoom changes jump without animation.
+
+### 9.14 Lovelace card (CA4-113)
+
+The map is also a Lovelace card, `custom:heima-map-card`, for dashboards and wall tablets. It is
+shipped in the integration's frontend build and registered by the integration as a frontend module,
+so no manual resource step is needed. It is the same component as the Overview map, not a second
+map: rendering, overlays (§9.7), floor badges, pan and zoom (§9.13), the list view (§9.12) and
+device control (§9.8) are identical.
+
+- **Access.** Any authenticated HA user, as for the map in the panel (§4).
+- **Content.** The map only: no editor, map checks, items to do, notifications or identifiers. An
+  automation badge shows its short plain-language reason; its full "Why?" link opens the panel
+  address (§5.1) and works only for a viewer with a role.
+- **Options**, set in HA's visual card editor:
+  - `floor`: the floor shown at load and after an idle reset; the lowest floor by default. Floor
+    tabs stay available.
+  - `controls`: `true` by default; `false` makes the card view only.
+  - `control_rooms`: optional list of `room_id`s chosen by name. When set, §9.8 control works only
+    on devices drawn in those rooms or on their openings; everything else is shown but neither a
+    tap nor a long press does anything.
+  - `idle_reset`: seconds without interaction after which the card returns to `floor` and the
+    fitted view; off by default.
+- **Scope is not a security boundary.** HA has no per-entity permissions, so the card's HA user can
+  control the same entities elsewhere in HA. `control_rooms` restricts only what the card offers; it
+  is effective on a tablet locked to one dashboard, for example a guest-room tablet. It is
+  configured by whoever edits the dashboard, an HA administrator.
+- **Unknown references.** A `floor` or `control_rooms` entry that no longer exists is ignored, and
+  the card editor flags it.
+- **Size and accessibility.** The card fills its area and follows HA's sections grid; §5.3 applies.
+- **Continuity.** On websocket reconnection the card re-reads `overview` and resubscribes. §5.2
+  states show as one compact line inside the card, in resident wording. A layout saved in the panel
+  reaches open cards and panels through `subscribe` as a new `revision`.
 
 ## 10. HA entities published by Heima (L8-C6)
 
@@ -752,6 +794,7 @@ displays or interprets a V2 export.
 **Frontend technology (L8-C9).** The panel is a Lit web component, the same base as HA's own
 frontend, registered as an HA custom panel and served by the integration with its build included
 in the package. It loads no library from an external CDN and does not reuse the V2 panel code.
+The integration also registers the map card (§9.14) from the same build.
 
 - The panel talks to Heima through HA's websocket API with typed commands and queries; every
   message carries the authenticated HA user, which §4 resolves. Map device control (§9.8) instead
@@ -770,7 +813,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | Message | Kind | Roles | Owner path |
 |---|---|---|---|
 | `session` | query | any HA user | §4 principal and roles |
-| `overview` | query | admin, resident | map layout and derived proposal, automation state, pending items (role-filtered) |
+| `overview` | query | any HA user (map part only without a role) | map layout and derived proposal, automation state, pending items (role-filtered) |
 | `objects/list`, `objects/get` | query | admin | active generation, per `object_kind` |
 | `change_set/validate_edit` | query | admin | owning layer's staging validator |
 | `change_set/preview` | query | admin | Layer 0 §4.7 staging |
@@ -791,7 +834,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `suggestions/dismiss`, `suggestions/restore` | command | admin | Layer-8 view state (§6.5) |
 | `map/save_layout` | command | admin | §9.9, rejected on a stale `revision` |
 | `diagnostics` | query | admin | §14 |
-| `subscribe` | subscription | admin, resident | live updates of §10.3, role-filtered |
+| `subscribe` | subscription | any HA user (map overlays and layout revisions only without a role) | live updates of §10.3 and map layout revisions (§9.14), role-filtered |
 - Live updates to an open panel come from committed-state observers and the in-memory projections
   of §10.3, pushed over an HA websocket subscription; never polling.
 
@@ -805,7 +848,8 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
 
 ## 15. Decisions taken on the draft (2026-10-13)
 
-1. **Users with no role** see only "Heima is not set up for you" (§4).
+1. **Users with no role** see the Overview with the house map only (§4; CA4-113 replaced the
+   earlier "Heima is not set up for you" page).
 2. **House map** (CA4-103, 2026-10-15): automatic schematic only; no uploaded plan in Initial V3.
    Device control from the map uses HA's own services and more-info dialog as the signed-in user,
    outside Heima's backend (§9).
@@ -871,6 +915,13 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   section scrolls horizontally; the back gesture after opening a Reaction from a notification
   returns to the previous view; the map's list view offers the same states and controls, and a tap
   on a lock in it opens more-info.
+- Map card and access (CA4-113): an HA user with no role opens the panel and sees only the Overview
+  map in resident wording, and `objects/list` from that user is rejected; a card added to a
+  dashboard renders without any resource step; with `control_rooms: [guest_room]` a tap on the
+  guest-room light toggles it, while a tap or long press on the living-room light does nothing; with
+  `controls: false` no tap acts; after `idle_reset` the card returns to its `floor` and fitted view;
+  a layout saved in the panel redraws an open card; after a websocket drop the card shows the
+  interrupted state and resynchronizes; a removed room in `control_rooms` is ignored and flagged.
 - Map pan and zoom (CA4-112): at 360 CSS pixels a floor wider than the frame opens at the minimum
   scale with 44-pixel device targets and pans inside the frame; at the fitted view a one-finger swipe
   scrolls the page, and after a pinch it pans the map; a single tap on a light toggles it without

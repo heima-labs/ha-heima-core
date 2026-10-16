@@ -2093,6 +2093,21 @@ inside the config flow itself.
    whether a *reaction* is offered in a room; AT1/AT3 are `HouseStateDomain`/`SecurityDomain` reading
    topology directly inside their own per-cycle `compute()` — a different layer, complementary, not
    overlapping. Both phases stay `DEFERRED` as-is; only the written rationale is sharpened here.
+5. **Guests — open, to discuss in depth (raised 2026-10-16 during CA4-113).** Schedule: right after
+   the Layer 8 completeness review, before any further guest-touching work. Initial V3 has no guest
+   concept: Layer 4 §3 and Layer 3 explicitly defer a guest context, and Layer 8 offers guests only
+   the map (CA4-113) with a card-level `control_rooms` scope that is not a security boundary.
+   Questions to settle:
+   - who a guest is: an HA account (companion app), a shared tablet without account, or both;
+   - what a guest may do beyond seeing the map, and who grants it (administrator, or also a
+     resident) — e.g. a per-HA-user control scope (Layer 8 §9.11);
+   - time limits: access that ends with the stay, and who ends it;
+   - enforcement: HA has only administrator/non-administrator, so any restriction on an HA account
+     is presentational unless control goes through a backend check, which would conflict with the
+     apply plan being Heima's only channel to HA;
+   - guest presence as context: whether automations, learning and notifications should behave
+     differently while guests are present (a guest context fact, its source and authority);
+   - privacy: what guests see of residents (presence, automation reasons, history).
 
 ---
 
@@ -5176,9 +5191,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–112 | 0 | 0 | 55 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–113 | 0 | 0 | 56 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97, CA4-105 | 0 | 0 | 14 | 0 |
-| **Total** | **112 findings** | **0** | **0** | **111** | **1** |
+| **Total** | **113 findings** | **0** | **0** | **112** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6298,6 +6313,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-113 — No map outside the panel, and no map for users without a role
+
+**Status:** DONE (2026-10-16; specification readiness). **Severity:** P2. **Origin:** Layer 8 completeness review.
+
+**Problem.** The map existed only in the panel, so a wall tablet or dashboard could not show it; and an HA user with neither role, typically a tablet's dedicated user or a guest account, saw only "Heima is not set up for you".
+
+**Approved resolution (2026-10-16).** Layer 8 §4: the house map is open to every authenticated HA user; a user with no role sees the Overview with the map only, in resident wording, without explanations or other sections (§15.1 updated). §9.14: Heima's own `custom:heima-map-card`, auto-registered, the same component as the Overview map, map only; options `floor`, `controls`, `control_rooms` (control limited to listed rooms, explicitly not a security boundary because HA has no per-entity permissions) and `idle_reset`; resynchronization on reconnection and compact §5.2 states. §13: `overview` and `subscribe` accept any HA user for the map part; `subscribe` also carries layout revisions. A per-HA-user control scope and the guest model are deferred (§9.11; open question 5). See the [CA4-113 review](specs/v3/reviews/CA4-113.md); no V3 runtime test ran.
 
 #### CA4-112 — The map had no pan and zoom behavior on phones
 
