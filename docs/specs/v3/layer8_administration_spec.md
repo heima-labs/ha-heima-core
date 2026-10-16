@@ -158,6 +158,31 @@ error state and its end by the Layer-6 `system.health` notification, which links
 `/heima/system/health` (CA4-109). Resident text is plain language without codes
 or identifiers (§12). Every situation's full detail stays in System (§14).
 
+### 5.3 Phones and accessibility (CA4-111)
+
+The panel is fully usable from the HA companion app on a phone and with assistive technology. It
+reuses HA's frontend components, themes and layout breakpoints wherever they exist.
+
+- **Width.** Every section works from 360 CSS pixels wide without horizontal page scrolling; only
+  wide tables and the map scroll inside their own frame. Below HA's narrow breakpoint the section
+  navigation collapses into a menu, tables become card lists, forms use one column and the
+  pending-changes bar stays fixed at the bottom.
+- **Touch.** Interactive targets are at least 44×44 CSS pixels. Every function, the map editor
+  included, works by touch.
+- **History.** Every view is an address (§5.1), so the phone's back gesture returns to the previous
+  view instead of leaving the panel.
+- **Standard.** WCAG 2.2 level AA is the target:
+  - the whole panel is operable by keyboard, with a visible focus and a logical order;
+  - controls have accessible roles and names; live updates are announced politely and grouped, so a
+    screen reader is not interrupted at every cycle;
+  - color never carries information alone: occupancy, states and severities also have text, an icon
+    or a pattern; contrast holds in light and dark HA themes;
+  - text scales to 200% without loss of content or function;
+  - animation stops under `prefers-reduced-motion`.
+- **Direction.** Styles use logical properties (start/end), so a future right-to-left locale needs
+  only its resource file (§12).
+- **Map.** The house map has an equivalent list view (§9.12).
+
 ## 6. Editing configuration (L8-C4)
 
 ### 6.1 Two kinds of action
@@ -595,9 +620,18 @@ Deferred refinements, to reconsider after Initial V3 or when real houses show th
 - an uploaded real plan as an optional background;
 - tuning the proposal weights against a corpus of real topologies;
 - the remaining map topics still under discussion: pan and zoom on phones, the map as a Lovelace
-  card for wall tablets, the map as a verification step in the guided first start (§11), and an
-  accessible list alternative to the graphic map.
+  card for wall tablets, and the map as a verification step in the guided first start (§11). The
+  accessible list alternative is now §9.12 (CA4-111).
 
+
+### 9.12 List view (CA4-111)
+
+A button, reachable by keyboard, switches the map to an equivalent list: per floor, each room with
+its occupancy, activities, devices with their state, openings with their state and automations with
+their badge reason. The same §9.8 controls are available on each device, with the same rules (tap
+toggles only the allowed kinds; locks, door covers and climate open HA's more-info). The list is the
+screen-reader and keyboard path for the map. It is also offered on very narrow screens. It has no
+layout editor; editing stays in the map (§9.9).
 
 ## 10. HA entities published by Heima (L8-C6)
 
@@ -805,6 +839,12 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   entity is `off` instead), translated, and carries no free text or person identity. A room where
   `relax` and `working` are both active shows two activity entities `on`; a cooking entity is `off`,
   never `unavailable`, while the hob is off or unreadable.
+- Phones and accessibility (CA4-111): an automated accessibility check (axe-core) of every section,
+  in both roles and in light and dark themes, reports no WCAG 2.2 AA violation; keyboard-only
+  scenarios answer a request, apply a change set and save the map layout; at 360 CSS pixels no
+  section scrolls horizontally; the back gesture after opening a Reaction from a notification
+  returns to the previous view; the map's list view offers the same states and controls, and a tap
+  on a lock in it opens more-info.
 - Panel states (CA4-108): during `startup_recovery` both roles see "Heima is starting" and a map
   without live overlays; with health `degraded` an administrator sees a banner linked to System and a
   resident sees none; with health `error` and a pending power-recovery confirmation, only the error

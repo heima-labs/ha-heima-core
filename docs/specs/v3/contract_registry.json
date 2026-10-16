@@ -798,6 +798,12 @@
       "depends_on": ["L8-PROJECTIONS", "L0-RECOVERY-CLASSIFICATION"]
     },
     {
+      "id": "L8-ACCESSIBILITY",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "5.3 Phones and accessibility (CA4-111)",
+      "depends_on": ["L8-PANEL-ADDRESSES", "L8-HOUSE-MAP", "L8-LANGUAGES"]
+    },
+    {
       "id": "L8-SUGGESTIONS",
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "6.5 Configuration suggestions (CA4-107)",
@@ -1787,6 +1793,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-110.md",
       "contracts": ["L0-RUNTIME-ERROR", "L0-NOTIFICATION-OUTBOX", "L6-NOTIFICATION-KINDS", "L6-DELIVERY"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-111",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-111.md",
+      "contracts": ["L8-ACCESSIBILITY", "L8-HOUSE-MAP", "L8-PANEL-ADDRESSES", "L8-LANGUAGES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
