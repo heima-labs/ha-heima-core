@@ -103,7 +103,7 @@ class NotificationKindDescriptor:
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
 | `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened`, `reissued` (`closed` clears) | `layer5.household_consent`: grant / decline |
 | `proposal.review_pending` | `ProposalReviewOccurrence` (Layer 5 §6.0) | administrators | governance | info | `created`, `approvable_again`, grouped by the digest (§6.3) | none; link to the Layer-8 panel (§7.2) |
-| `system.health` | `RuntimeHealthOccurrence` (Layer 0 §10.1) | administrators | attention | error | `error_opened`, `causes_changed`, `restored` | none |
+| `system.health` | `RuntimeHealthOccurrence` (Layer 0 §10.1) | administrators | attention | error | `error_opened`, `restored` (`causes_changed` is audit only; the panel shows current causes live) | none |
 
 Every Initial-V3 kind uses `context_version=1`. A future context change registers a new version and
 keeps the previous template while retained history can contain it (Layer 1 §3.1).
@@ -551,7 +551,8 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 
 - `system.health`: an `error_opened` reaches every administrator recipient with the `attention`
   family (held during quiet hours, silenceable), severity `error` and the address
-  `/heima/system/health`; `restored` replaces it on the phone through the fixed tag. With durable
+  `/heima/system/health`; `restored` replaces it on the phone through the fixed tag; a
+  `causes_changed` produces its audit fact and no delivery (CA4-110). With durable
   writes failing it is still delivered once from memory and diagnosed; with no active manifest it
   appears as a `persistent_notification` (CA4-109).
 

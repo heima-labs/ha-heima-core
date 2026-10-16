@@ -2887,14 +2887,41 @@ RuntimeErrorCause = Literal[
 @dataclass(frozen=True)
 class RuntimeHealthOccurrence:
     operation_id: str     # sha256 of "system.health.operation.v1:" + RFC-8785
-                          # [run_id, episode_sequence, phase, causes]
+                          # [run_id, transition_sequence]
+    transition_sequence: int   # 1-based count of transitions emitted in this run
     phase: Literal["error_opened", "causes_changed", "restored"]
     causes: tuple[RuntimeErrorCause, ...]   # non-empty, distinct, ASCII order; the current causes,
                                             # or the ended episode's last causes for "restored"
     detected_at: EvidenceInstant
 ```
 
-`run_id` is a fresh per-process identity and `episode_sequence` counts error episodes within the run.
+`run_id` is a fresh per-process identity. Each transition has its own identity
+`[run_id, transition_sequence]`; `phase` and `causes` are content, not identity (CA4-110). A return to
+causes seen earlier in the same episode is a new transition with a new identity, because a real
+change happened in between; an exact retry of one transition reuses its whole occurrence.
+
+**Persistence write outcomes (CA4-110).** A *durable write* is a transaction submitted to the common
+writer that mutates Heima's durable state. Opening or configuring the connection that a durable write
+needs is part of that write. The persistence host reports each durable write's outcome: committed,
+failed, or uncertain (treated as failed). Each failure names its write kind (the owning durable path:
+accepted facts with their commit marker, a notification `ready` with its audit fact, a composed
+generation, continuity metadata, the recovery checkpoint) and whether its owner retains the failed
+work for a later attempt. Reads, connection setup with no durable write pending, a transaction that
+commits without mutating anything, and a refusal by a writer already closed after a failure are not
+outcomes: they neither raise nor clear the cause.
+
+`persistence_write_failing` holds while either:
+
+1. a write kind has retained work whose latest attempt failed; or
+2. no durable write has committed since the latest failure.
+
+It begins at the first failure while it does not hold and ends when neither condition holds. A
+write kind stops counting under 1 when its latest attempt commits, or when its owner no longer
+retains the failed work (for example retry-queue loss under §4.6, which stays a degradation
+diagnostic). Failures while the cause holds produce no transition. A backlog may remain when it
+ends. No probe, timer, grace interval or queue drain is involved: the cause follows only actual
+write outcomes and retained-work state that the owners already have.
+
 Layer 0 evaluates the condition outside any cycle, whenever one of its causes changes, and once after
 bootstrap. It hands one occurrence per transition, read-only, to Layer 6 (`system.health`) and to
 Layer 8's health projection, so the panel and the notification use the same predicate. The occurrence
@@ -2930,6 +2957,17 @@ by this layer; CA4-20, CA4-28 and CA4-38 were closed in §3.1/§3.5, Layer 1 §3
   both causes; recovery of both produces one `restored` carrying the last causes. Retries of the same
   transition reuse the `operation_id`; a restart with the condition still present opens a new episode
   with a new `run_id`. No resolver, policy or `ApplyStep` can read the occurrence (§10.1).
+- Persistence write outcomes (CA4-110), active manifest present throughout: (1) an accepted-fact
+  transaction fails and its facts stay queued: `error_opened`; (2) the connection is reopened with
+  nothing written: no change; (3) a transaction commits without mutating: no change; (4) a metadata
+  write commits while the failed facts are still queued: no change, condition 1 holds; (5) the fact
+  retry commits while other work remains queued: `restored`; (6) a new fact transaction fails:
+  `error_opened` of a new episode. A failed composed-generation apply, returned to the caller and not
+  retained, opens the cause; the next committed checkpoint ends it. Repeated refusals by the closed
+  writer produce nothing.
+- Transition identity (CA4-110): in one run and one open episode, causes A, A+B, A, A+B give four
+  occurrences with `transition_sequence` 1–4 and four distinct `operation_id`s (transitions 2 and 4
+  differ despite equal causes); an exact retry of transition 2 returns the identical occurrence.
 
 Not part of this design spec's approval gate — recorded so the implementation phase inherits a
 concrete checklist rather than re-deriving one:

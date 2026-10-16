@@ -5176,9 +5176,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–109 | 0 | 0 | 52 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–110 | 0 | 0 | 53 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97, CA4-105 | 0 | 0 | 14 | 0 |
-| **Total** | **109 findings** | **0** | **0** | **108** | **1** |
+| **Total** | **110 findings** | **0** | **0** | **109** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6298,6 +6298,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-110 — Runtime error: undefined end of write failure and colliding transition identities
+
+**Status:** DONE (2026-10-16; specification readiness). **Severity:** P2. **Origin:** Layer 0 implementation review (`docs/v3/clarifications/RUNTIME_HEALTH_CA4109.md` in the implementation worktree).
+
+**Problem.** CA4-109 said "durable writes are failing" without saying which observed success ends it (a reconnect, a read, an empty commit or one small write could each be mistaken for recovery), nor how open/setup failures and a closed writer's refusals are reported. Its `operation_id` over `[run_id, episode_sequence, phase, causes]` gave equal ids to distinct transitions that return to earlier causes (A, A+B, A, A+B), so the outbox would treat a real change as a retry or reject it.
+
+**Approved resolution (2026-10-16).** Identity is `[run_id, transition_sequence]`; phase and causes are content; `episode_sequence` removed. Only `error_opened` and `restored` are delivered; `causes_changed` is audit only. Write outcomes come from actual durable writes (mutating transactions, including their connection setup); reads, setup without pending writes, empty commits and closed-writer refusals are not outcomes. `persistence_write_failing` holds while a write kind has retained failed work, or no durable write has committed since the latest failure. A per-kind rule without retained work was rejected: a failed one-shot write (a generation apply) would keep a false error for days. Requiring every failed kind to succeed again was likewise rejected. A rule clearing on any success was rejected because one permanently failing kind would flap. See the [CA4-110 review](specs/v3/reviews/CA4-110.md); no V3 runtime test ran.
 
 #### CA4-109 — Heima's own error state reached nobody unless the panel was open
 
