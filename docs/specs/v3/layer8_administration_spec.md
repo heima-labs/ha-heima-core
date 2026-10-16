@@ -181,7 +181,8 @@ reuses HA's frontend components, themes and layout breakpoints wherever they exi
   - animation stops under `prefers-reduced-motion`.
 - **Direction.** Styles use logical properties (start/end), so a future right-to-left locale needs
   only its resource file (§12).
-- **Map.** The house map has an equivalent list view (§9.12).
+- **Map.** The house map has an equivalent list view (§9.12) and touch, keyboard and button
+  navigation (§9.13).
 
 ## 6. Editing configuration (L8-C4)
 
@@ -572,6 +573,9 @@ Administrators edit in an explicit edit mode:
 - undo the previous edit (Ctrl/⌘+Z included), at least 50 steps, for the current edit session;
 - save or cancel.
 
+A selected box also has buttons that move it by one cell and change its width or height by one
+cell, so that every edit has a single-pointer alternative to dragging (§9.13).
+
 A move or resize onto another box is refused. Edits stay local until **Save**, which sends the whole
 layout in one `map/save_layout` command carrying the `revision` it was based on. Every room box
 present at save becomes a placement. A save based on a stale revision is rejected without change,
@@ -619,9 +623,9 @@ Deferred refinements, to reconsider after Initial V3 or when real houses show th
 - an administrator override of an opening's position along its wall;
 - an uploaded real plan as an optional background;
 - tuning the proposal weights against a corpus of real topologies;
-- the remaining map topics still under discussion: pan and zoom on phones, the map as a Lovelace
-  card for wall tablets, and the map as a verification step in the guided first start (§11). The
-  accessible list alternative is now §9.12 (CA4-111).
+- the remaining map topics still under discussion: the map as a Lovelace card for wall tablets, and
+  the map as a verification step in the guided first start (§11). The accessible list alternative is
+  now §9.12 (CA4-111); pan and zoom are §9.13 (CA4-112).
 
 
 ### 9.12 List view (CA4-111)
@@ -632,6 +636,28 @@ their badge reason. The same §9.8 controls are available on each device, with t
 toggles only the allowed kinds; locks, door covers and climate open HA's more-info). The list is the
 screen-reader and keyboard path for the map. It is also offered on very narrow screens. It has no
 layout editor; editing stays in the map (§9.9).
+
+### 9.13 Pan and zoom (CA4-112)
+
+The map scrolls and zooms inside its own frame (§5.3):
+
+- **Initial view.** The current floor fits the frame's width. The scale never drops below the one
+  that keeps device targets inside boxes at 44×44 CSS pixels; a floor that fits only at a smaller
+  scale stays at that minimum and pans inside the frame.
+- **Gestures.** A pinch zooms. One finger pans only when the map is zoomed beyond its initial view;
+  at the initial view the gesture scrolls the page, so the map never traps page scrolling. Double tap
+  does not zoom, so the §9.8 tap is not delayed.
+- **Buttons and keyboard.** Zoom in, zoom out and fit buttons are always visible. With focus on the
+  map, arrow keys pan and +/− zoom. With a mouse, Ctrl/⌘+wheel or a trackpad pinch zooms; the wheel
+  alone scrolls the page.
+- **Range.** From the fitted view to 3×. Below a threshold scale, device groups show only their glyph
+  and count. Text stays upright at every scale.
+- **Edit mode.** Dragging a selected box moves it; dragging empty space pans. A selected box has
+  44-pixel resize handles and the §9.9 move and size buttons.
+- **View state.** Zoom and pan are local to the client: not part of `HouseMapLayout`, the address
+  (§5.1) or the revision. Switching floor returns to the fitted view. A floor badge (§9.1) or an
+  address that names a room centers the view on that room.
+- **Motion.** Under `prefers-reduced-motion`, pan and zoom changes jump without animation.
 
 ## 10. HA entities published by Heima (L8-C6)
 
@@ -845,6 +871,12 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   section scrolls horizontally; the back gesture after opening a Reaction from a notification
   returns to the previous view; the map's list view offers the same states and controls, and a tap
   on a lock in it opens more-info.
+- Map pan and zoom (CA4-112): at 360 CSS pixels a floor wider than the frame opens at the minimum
+  scale with 44-pixel device targets and pans inside the frame; at the fitted view a one-finger swipe
+  scrolls the page, and after a pinch it pans the map; a single tap on a light toggles it without
+  delay; the zoom buttons and arrow/+/− keys reach every room; in edit mode a box is moved and
+  resized with buttons only; a save leaves the layout revision unaffected by zoom and pan; a floor
+  badge switches floor and centers the connected room.
 - Panel states (CA4-108): during `startup_recovery` both roles see "Heima is starting" and a map
   without live overlays; with health `degraded` an administrator sees a banner linked to System and a
   resident sees none; with health `error` and a pending power-recovery confirmation, only the error

@@ -5176,9 +5176,9 @@ This is an internal specification-coherence audit, not a V2 implementation audit
 |---|---|---:|---:|---:|---:|
 | P0 — Critical | CA4-01 | 0 | 0 | 1 | 0 |
 | P1 — High | CA4-02–19, CA4-31, CA4-33–34, CA4-36, CA4-39–47, CA4-51–52, CA4-64–66, CA4-70, CA4-86–87, CA4-99–100 | 0 | 0 | 41 | 0 |
-| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–111 | 0 | 0 | 54 | 1 |
+| P2 — Medium | CA4-20–28, CA4-32, CA4-35, CA4-37–38, CA4-48–50, CA4-53–58, CA4-61–63, CA4-67–69, CA4-71–76, CA4-79, CA4-83, CA4-85, CA4-88–92, CA4-95–96, CA4-98, CA4-101–104, CA4-106–112 | 0 | 0 | 55 | 1 |
 | P3 — Low | CA4-29–30, CA4-59–60, CA4-77–78, CA4-80–82, CA4-84, CA4-93–94, CA4-97, CA4-105 | 0 | 0 | 14 | 0 |
-| **Total** | **111 findings** | **0** | **0** | **110** | **1** |
+| **Total** | **112 findings** | **0** | **0** | **111** | **1** |
 
 **Tracking rule.** On taking an item, change its status to `IN_PROGRESS` and record owner and start date. Mark it `DONE` only after the owning specification, affected references, and acceptance criteria agree; attach the change and verification references. If subsequent evidence rejects an item, retain it as `NOT_APPLICABLE` with the reason. Update the counts above. Specification closure and runtime implementation are separate activities.
 
@@ -6298,6 +6298,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-112 — The map had no pan and zoom behavior on phones
+
+**Status:** DONE (2026-10-16; specification readiness). **Severity:** P2. **Origin:** Layer 8 completeness review.
+
+**Problem.** §5.3 let the map scroll inside its own frame but defined no zoom, no gesture split between map panning and page scrolling, no single-pointer alternative to dragging in the editor (WCAG 2.5.7) and no view state rules.
+
+**Approved resolution (2026-10-16).** Layer 8 §9.13: fitted-width initial view with a minimum scale that keeps 44-pixel device targets; pinch zoom, one-finger pan only beyond the fitted view, no double-tap zoom; always-visible zoom/fit buttons, arrow and +/− keys, Ctrl/⌘+wheel; range up to 3× with glyph-only device groups below a threshold; in edit mode drag on a box moves it, on empty space pans, plus §9.9 move and size buttons; zoom and pan are client-only, reset on floor switch, and a floor badge or room address centers the room; reduced motion jumps. §9.11 no longer lists pan and zoom as open. See the [CA4-112 review](specs/v3/reviews/CA4-112.md); no V3 runtime test ran.
 
 #### CA4-111 — The panel had no phone or accessibility requirements
 

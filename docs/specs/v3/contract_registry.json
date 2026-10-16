@@ -1808,6 +1808,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-112",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-112.md",
+      "contracts": ["L8-HOUSE-MAP", "L8-ACCESSIBILITY", "L8-PANEL-ADDRESSES"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }
