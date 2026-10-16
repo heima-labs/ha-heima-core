@@ -80,6 +80,12 @@ MUTATIONS = (
         "return FactBuildResult(result.fact, ())",
         "test_hard_value_failure_and_soft_evidence_diagnostic_are_preserved",
     ),
+    (
+        "omit_explicit_guard_installed_check",
+        "self._require_active()\n\n    def build",
+        "pass\n\n    def build",
+        "test_explicit_cycle_generation_guard_also_requires_installed_snapshot",
+    ),
 )
 
 

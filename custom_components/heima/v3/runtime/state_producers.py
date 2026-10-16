@@ -97,6 +97,12 @@ class FixedSourceStateProducer:
         if self._read_active() is not self._generation:
             raise InactiveProducerGeneration("Producer generation is not active")
 
+    def require_generation(self, expected: PreparedStateProducerGeneration) -> None:
+        """Core coordinator guard: require both the captured and installed image."""
+        if self._generation is not expected:
+            raise InactiveProducerGeneration("Producer belongs to another cycle generation")
+        self._require_active()
+
     def build(
         self,
         *,

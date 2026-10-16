@@ -1,13 +1,15 @@
 # Prompt to resume V3 implementation
 
-> Committed and pushed47a4dd4 to new origin/feat/v3-implementation (tracking set).
-> New generation-fenced fixed-source state builder slice is uncommitted/unpushed.
-> Read latest WORKING_CONTEXT and testing/STATE_PRODUCER_PORTS.md plus mutant review.
-> 1664 tests,Ruff/mypy pass. Ports check installed snapshot identity before/after
-> build and assign staged source fields; they return FactBuildResult, not an append.
-> Actual activation, source-owner verification, coordinator/index/queue/SQL pending.
-> Variable-route fusion, verified actor ingress and events need separate ports.
-> Planningaa4455a has Claude's CA4-106 L6/L8 link edits; read-only. Topology later.
+> Latest checkpoint — 2026-10-16: fixed-source producer ports committed as `4cef5a9`.
+> Upstream remains `47a4dd4`; no push requested in this task.
+> New live current-index / append-order slice is uncommitted and unpushed.
+> Read the final checkpoint and testing/STATE_ACCEPTANCE.md plus mutant review.
+> This is the comparison/order handoff; buffer/queue publication and fact SQL remain pending.
+> 1703 V3 tests and Ruff/mypy pass; see full mutation evidence in testing/.
+> Cycle context owns when/origin/generation; index compares state fingerprint,
+> assigns order only on change, returns transitions for future buffer+queue owner.
+> Actual activation, source verification, buffer/queue/events/baselines/SQL pending.
+> Planning `aa4455a` has Claude's CA4-106 edits; read-only. Topology later.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.

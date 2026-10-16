@@ -1,8 +1,10 @@
 # V3 implementation working context
 
-> Parentc9b6c62; Provenance/HouseFact builder and CA4-104 context update are uncommitted.
-> Read the final checkpoint and testing/HOUSE_FACT_BUILDER.md.
-> Planning aa4455a read-only; Topology and runtime source authority remain unimplemented.
+> Latest checkpoint — 2026-10-16: fixed-source producer ports committed as `4cef5a9`.
+> Upstream remains `47a4dd4`; no push requested in this task.
+> New live current-index / append-order slice is uncommitted and unpushed.
+> Read the final checkpoint and testing/STATE_ACCEPTANCE.md plus mutant review.
+> This is the comparison/order handoff; buffer/queue publication and fact SQL remain pending.
 
 > **Current state — 2026-10-15, CA4-101:** CronEntry is interval-only. Use
 > next_weekly_occurrence(pattern,now,zone) for civil occurrences, not plan_weekly_job.
@@ -2195,3 +2197,68 @@ ids alone. Fixed-source subset does not replace variable-route/verified-ingress/
 event owners. Preserve ordinary state versus forced-durable baseline paths and
 use pre-resolved bindings without per-fact patterns. Planning CA4-106 remains
 Claude-owned; Topology CA4-104 later. No clarification pending from this slice.
+
+
+## Active slice — live state acceptance and append order
+
+Committed ports as4cef5a9 at developer request; no new push requested. Planning
+ aa4455a unchanged CA4-106 scope, read-only. Implement explicit cycle context,
+live current index and ordered state transitions, integrating fixed-source port
+and diagnostic sink. Plan recorded in testing/STATE_ACCEPTANCE.md before code.
+No buffer/queue/SQL publication integration or event/forced-baseline path yet.
+
+
+## Latest checkpoint — live current state and coordinator order, 2026-10-16
+
+Committed previous fixed-source producer ports as `4cef5a9` at developer request.
+No push this turn; tracking branch remains at `47a4dd4`. Planning remains read-only
+at `aa4455a` with Claude's CA4-106 L6/L8/registry/backlog/review changes; no change
+to owning L0/L1 requirements. Read L0 §4.0/§4.1/§4.2/§4.7, §3.5 and §5.2.
+The pre-implementation impact is recorded in testing/STATE_ACCEPTANCE.md.
+
+New runtime/state_acceptance.py implements the live comparison/order step:
+- Immutable cycle context captures installed prepared snapshot, supplied instant
+  and explicit correlation. Cycle ids increase from an explicit seed (default 0);
+  restoring that seed across restart belongs to the durable coordinator.
+- Fixed-source port must belong to the cycle's exact installed snapshot; new
+  require_generation checks both captured and installed identities.
+- Consume builder diagnostics, compare canonical state fingerprint with O(1)
+  current lookup, allocate AppendOrder only on change and update current index.
+  Equal-time on/off/on returns three ordered immutable transitions. Time, origin
+  and evidence alone do not change current or consume an ordinal.
+- AppendOrder is external metadata; HouseFact/Provenance fields are unchanged.
+  Shared allocator permits future event ordering, not event admission.
+- Reentrancy, closed/old contexts and generation replacement are rejected.
+  Construction/diagnostic failure leaves current/order untouched; recheck snapshot
+  after callbacks. Failed/stale cycle can close without claiming durable completion.
+
+Each returned transition must be forwarded synchronously to the future buffer/
+queue owner before the next admission. This component stores only last current
+per key, not a process journal or history. It does not yet implement atomic
+buffer+queue publication, forced durable epoch/reseed baselines, retention/overflow,
+event admission, observer delivery, generation invalidation or fact-marker SQL.
+Installed reader remains a dependency on the future durable activation controller;
+no source/digest/SQL authenticity is inferred from a prepared object.
+
+Verification: 61 focused tests (38 coordinator, 23 ports), 1703 full V3 tests pass,
+seed 3145; Ruff lint/format 91 files, mypy 35 sources. Decision tables and boundary
+cases plus two seeded transition-sequence properties; no compound Boolean
+predicate introduced (MC/DC N/A for sequential guards). Mutation details are in
+STATE_ACCEPTANCE_MUTANTS.md: fresh 447 generated, 302 killed, 145 reviewed equivalent
+survivors, zero errors/timeouts/skips/untested/interrupted; all 14 coordinator and
+13 port semantic seeds killed. Functional properties locally disable timing deadlines,
+not semantic assertions. No performance/HA/live/crash/deploy evidence claimed.
+No dependencies, persisted schema, HA contract or product/Git/deploy policy changed.
+New slice/source/tests/evidence/scope/handoff remain uncommitted and unpushed.
+
+### Exact next action
+
+Review/commit the live comparison/order slice if requested. Re-read current L0
+§4.1/§4.2, §4.4 and §7 before implementing short-term history + bounded durable queue
+publication around returned transitions. Preserve all changes within a cycle and
+live current on durable failure; forced durable baselines have a separate path.
+Explicitly design publication failure semantics and overflow/recovery integration
+before connecting to the real cycle coordinator. Actual activation + all-layer
+boundary swap, variable-route/verified actor/event producers and fact-marker SQL
+remain obligations, not implied by this slice. No planning edits or clarification
+pending; CA4-104 Topology and CA4-106 panels remain later slices.

@@ -324,3 +324,15 @@ def test_runtime_build_uses_no_claim_pattern_lookup(monkeypatch):
     monkeypatch.setattr(producer_staging, "fact_type_matches", forbidden)
     monkeypatch.setattr(producer_staging.ComposedFactProducers, "resolve_type", forbidden)
     assert build(port).fact.value == 20
+
+
+def test_explicit_cycle_generation_guard_also_requires_installed_snapshot():
+    prepared = generation()
+    active = {"value": prepared}
+    port = prepared.bind(CLAIM, lambda: active["value"])
+    port.require_generation(prepared)
+    with pytest.raises(InactiveProducerGeneration):
+        port.require_generation(generation())
+    active["value"] = None
+    with pytest.raises(InactiveProducerGeneration):
+        port.require_generation(prepared)

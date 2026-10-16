@@ -163,3 +163,15 @@ preservation. No pattern resolution is allowed during build. Evidence:
 [mutants](../../docs/v3/testing/STATE_PRODUCER_PORT_MUTANTS.md). Supplements:
 `.venv-v3/bin/python tests/v3/mutation_state_producers.py`.
 These builders return facts; actual accepted append/index/queue remain separate.
+
+
+### Live current index and append order
+
+`runtime/test_state_acceptance.py` exercises cycle-owned time/origin, fixed-source
+producer fencing, write-on-change against live current, and ordered transitions.
+Evidence: [STATE_ACCEPTANCE](../../docs/v3/testing/STATE_ACCEPTANCE.md) and
+[mutants](../../docs/v3/testing/STATE_ACCEPTANCE_MUTANTS.md). Supplements:
+`.venv-v3/bin/python tests/v3/mutation_state_acceptance.py` and the updated
+`mutation_state_producers.py`. This is the live comparison/order step: the next
+owner must publish returned transitions to buffer and durable queue synchronously.
+No retry journal, forced baseline, event admission or fact SQL is implemented here.
