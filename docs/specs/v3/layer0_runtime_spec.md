@@ -1536,8 +1536,18 @@ Choose a fresh complete HA intake barrier and the full append boundary of its
 completed evaluation cycle, including later DAG facts that share its cycle instant.
 Every accepted fact, audit item and continuity boundary through that full boundary
 must be durably acknowledged or have its loss durably declared; the intake
-`max_append_ordinal` alone cannot certify later same-cycle facts. A failed write or a further overflow loss while this boundary is being
-established leaves the global gap open and requires a new closure attempt. Persist the
+`max_append_ordinal` alone cannot certify later same-cycle facts. Let B be the chosen full
+append boundary (CA4-117). A failed write of an item at or before B, or the loss of such an item,
+before the closure is durably committed leaves the global gap open and requires a new closure
+attempt. The closing transaction starts only after every item at or before B is durably
+acknowledged or has its loss durably declared, so no item at or before B remains in the queue and
+later overflow can only discard items after B. A loss at an append position after B that occurs
+before the closure is durably committed does not reopen or extend the closing epoch: it opens a
+new global overflow epoch, with its own first-loss instant and baseline-invalidation boundary at
+its own append position, even when ordinary per-stream overflow would otherwise suffice. Admission
+never waits for the closing COMMIT. The writer persists the new epoch's opening boundary after the
+closure record and before, or atomically with, any retained item after that loss position. Under
+§4.4 the continuity watermark cannot pass the discarded item until that opening is durable. Persist the
 closing boundary and its intake identity/accounting acknowledgement atomically, after
 or with the ordered writes they certify. Ordinary cycle batches retain their own
 `CycleCommitMarker` atomicity; the final boundary need not contain all recovery baselines.
@@ -1548,8 +1558,10 @@ incomplete with `queue_overflow` from the request's first intersecting uncertain
 until a valid acknowledged baseline, even outside the now-closed global interval. Other
 keys' unrecovered status does not affect it. Ordinary source unavailability still applies
 and is not relabeled as storage loss. Durable validity survives restart. A crash before
-the opening boundary is durable uses the unadvanced watermark/process-interruption rule;
-a durable open gap stays open until a valid closure, and a crash after closure cannot
+the opening boundary is durable uses the unadvanced watermark/process-interruption rule.
+This includes a crash after the closure COMMIT and before a subsequent epoch's opening is durable:
+the database shows the older epoch closed, and the interruption gap starting no later than the
+last durable watermark covers the later loss. A durable open gap stays open until a valid closure, and a crash after closure cannot
 restore an unseeded key from pre-invalidation history. No recovery action changes the
 live current index, short-term history, holds or §4.8 observers solely because storage
 validity changed.
@@ -1559,7 +1571,8 @@ hot-path windows and current-state admission are unaffected. Discarding emits th
 `durable_queue_overflow` diagnostic with per-stream counts and lost intervals; queue bytes,
 budget and its source are always visible in diagnostics (§10). During a global epoch,
 diagnostics expose its start, open/closed status and aggregate discarded counts without
-requiring an unbounded per-stream list. A discarded hold-audit fact
+requiring an unbounded per-stream list. They also count closures followed by a new epoch opened
+before the closure was durable (CA4-117). A discarded hold-audit fact
 follows the same rule as any other event: the live hold is unaffected and the audit stream
 reports the lost interval.
 
@@ -3079,6 +3092,12 @@ concrete checklist rather than re-deriving one:
   or §4.8 delivery. Unavailable HA input is acknowledged as unavailable, not replaced
   by an old available value. Another irreducible loss invalidates earlier recovery
   baselines; crashes before/during/after closure preserve conservative per-key validity.
+  A closure whose COMMIT is held while admission causes an irreducible loss after B
+  commits the older closure without waiting; the loss opens a new epoch persisted after
+  the closure and before any later retained item. With a crash injected between the
+  closure COMMIT and that opening, the restart shows the older epoch closed and the
+  interruption gap from the last durable watermark covering the loss. A failed write of an
+  item at or before B aborts the closure (CA4-117).
   With a known 1 GiB memory limit
   the budget is 51.2 MiB; without a known limit it is 32 MiB; a lower recomputed
   budget does not retroactively discard items (§4.4/§4.6).
