@@ -849,7 +849,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `suggestions/list` | query | admin | §6.5, computed from the active generation and HA registries |
 | `suggestions/dismiss`, `suggestions/restore` | command | admin | Layer-8 view state (§6.5) |
 | `map/save_layout` | command | admin | §9.9, rejected on a stale `revision` |
-| `diagnostics` | query | admin | §14 |
+| `diagnostics` | query | admin | §14; optional `window` (`24h`, `7d`) returns the §14.1 file |
 | `subscribe` | subscription | any HA user (map overlays and layout revisions only without a role) | live updates of §10.3 and map layout revisions (§9.14), role-filtered |
 - Live updates to an open panel come from committed-state observers and the in-memory projections
   of §10.3, pushed over an HA websocket subscription; never polling.
@@ -861,6 +861,40 @@ and each layer's own): timing, observation continuity, recovery, holds (no manua
 retry queue, committed-state observers, generation and impact history, learning and artifact state,
 notification delivery. It also shows Layer 8's own counters: rejected commands by reason, preview
 and apply outcomes, rebases and conflicts, published entities and their availability.
+
+### 14.1 Downloadable diagnostics (CA4-115)
+
+An administrator can download the diagnostics as one JSON file, to inspect it or hand it to a
+developer or a script.
+
+- **Entry points.** A "Download" button in System and HA's standard "Download diagnostics" on the
+  integration use the same builder. In the panel it is the `diagnostics` query with a `window`
+  parameter; HA's download passes none and uses the default.
+- **Content.** `schema: "heima_diagnostics_v1"`, `generated_at`, and one section per owner:
+  - versions: core, HA, and every persisted schema;
+  - the active composed generation id, its manifest and the full active configuration;
+  - everything System renders: Layer 0 §10 and each layer's own diagnostics;
+  - the health projection (§10.3) and the recovery state;
+  - the map layout (§9.2);
+  - within the window: decisions, apply outcomes, holds, runtime errors, availability episodes and
+    rejected commands.
+
+  Raw fact history and learning datasets are not included.
+- **Window.** 24 hours by default, or 7 days from the System button.
+- **Redaction.** Person names, HA user ids, notification recipient targets (phone numbers, email
+  addresses, notify targets), coordinates and every secret are replaced by a pseudonym that is
+  stable within the file, so the same value always maps to the same token and correlations survive.
+  Heima ids and HA `entity_id`s stay, because debugging needs them. Sources already redacted by
+  their owners (Layer 0 `FactSource`/`ApplyStepSource`, Layer 5 redacted snapshots) are copied as
+  they are.
+- **Bounds.** At most 5 MB. A section over its share is truncated with
+  `truncated: {kept, dropped}`; a section whose builder fails reports `section_error` with its
+  reason, and the rest of the file is still produced.
+- **Availability.** A slow-path query, never in a cycle, administrators only. It works with health
+  `error`, during recovery and without an active manifest. When the integration is not loaded,
+  only HA's own logs remain.
+- **Stability.** The file is the input for scripts and snapshot comparisons. New keys may be added
+  within `heima_diagnostics_v1`; a change of meaning requires a new schema version.
 
 ## 15. Decisions taken on the draft (2026-10-13)
 
@@ -931,6 +965,13 @@ and apply outcomes, rebases and conflicts, published entities and their availabi
   section scrolls horizontally; the back gesture after opening a Reaction from a notification
   returns to the previous view; the map's list view offers the same states and controls, and a tap
   on a lock in it opens more-info.
+- Downloadable diagnostics (CA4-115): the System download and HA's "Download diagnostics" produce
+  the same sections for the same window; a recipient's phone number and a person's name appear only
+  as pseudonyms, the same value with the same token throughout the file, while `entity_id`s stay;
+  with health `error` and no active manifest the file is still produced, with the runtime error
+  section filled; a section whose builder raises reports `section_error` and the others are
+  complete; a 7-day window over a busy house stays within 5 MB with `truncated` markers; a resident
+  calling `diagnostics` is rejected.
 - First-start map check (CA4-114): after the topology step is applied, the map step shows the
   proposal with its map checks; "Fix" on "Orientation missing" opens the topology form inside the
   procedure, and after its apply the map redraws without the check; "Continue" with open checks

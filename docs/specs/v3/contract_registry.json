@@ -822,6 +822,12 @@
       "depends_on": ["L8-HOUSE-MAP", "L8-ROLES", "L8-PANEL-STATES"]
     },
     {
+      "id": "L8-DIAGNOSTICS-EXPORT",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "14.1 Downloadable diagnostics (CA4-115)",
+      "depends_on": ["L8-ROLES", "L8-PROJECTIONS", "L0-RUNTIME-ERROR", "L0-FACT-SOURCE"]
+    },
+    {
       "id": "L8-PUBLISHED-ENTITIES",
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "10.1 Contract",
@@ -1843,6 +1849,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-114.md",
       "contracts": ["L8-HOUSE-MAP", "L8-CHANGE-SET", "L8-SUGGESTIONS"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-115",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-115.md",
+      "contracts": ["L8-DIAGNOSTICS-EXPORT", "L8-ROLES", "L8-PROJECTIONS", "L0-RUNTIME-ERROR", "L0-FACT-SOURCE"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
