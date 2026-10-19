@@ -2,8 +2,8 @@
 
 Status: **model approved 2026-10-19 and applied to the V3 specs in CA4-118..125; not itself a spec.**
 Opened 2026-10-19 from `v3_backlog.md`, open question 5 (guests). The layer specs are authoritative;
-this file preserves the model, its decisions and the sweep. Incongruence warnings (§8) remain open as
-backlog open question 6.
+this file preserves the model, its decisions and the sweep. Incongruence warnings (§8) are specified
+in CA4-126 (`safety.posture_check`).
 
 ## 1. Why this exists
 

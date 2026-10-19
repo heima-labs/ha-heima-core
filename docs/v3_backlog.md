@@ -2110,7 +2110,7 @@ inside the config flow itself.
    - guest presence as context: whether automations, learning and notifications should behave
      differently while guests are present (a guest context fact, its source and authority);
    - privacy: what guests see of residents (presence, automation reasons, history).
-6. **Incongruence warnings — open (raised 2026-10-19 during CA4-124).** The people model (§8) lists
+6. ~~**Incongruence warnings**~~ **Resolved 2026-10-19 — specified in CA4-126.** The people model (§8) lists
    warnings that depend only on occupancy and observed device state, never on who is inside: alarm
    `armed_away` while casa occupancy is `present`, a door unlocked while the house is empty, windows
    open while the house is empty and it rains. Heima only observes lock and alarm entities and never
@@ -6321,6 +6321,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-126 — No warning when security posture contradicted occupancy
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P2. **Origin:** backlog open question 6 (people model §8).
+
+**Problem.** Nothing warned residents when the observed alarm, lock or opening state contradicted whether anyone is inside, and alarm, lock and contact states had no standard fact types.
+
+**Approved resolution (2026-10-19).** Layer 2 §2.10: core fact types `security.alarm_mode` (casa), `security.lock` and `opening.open` (per opening) with closed vocabularies. Layer 5 §7.5: advice-only `safety.posture_check`, `admin_direct`, no consent, never a command, residents only, `safety` family (immediate, quiet hours included). Checks: alarm armed away/vacation while occupied (5 min, 1–30), entry not locked while empty (10 min, 2–120), exterior opening open while empty during a weather-protection rain hazard, excluding protected openings (0, 0–30), alarm disarmed while empty (15 min, 5–120). See the [CA4-126 review](specs/v3/reviews/CA4-126.md); no V3 runtime test ran.
 
 #### CA4-125 — Guests, devices and installers saw resident text and data
 

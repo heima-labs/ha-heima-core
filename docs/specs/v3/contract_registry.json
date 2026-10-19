@@ -810,6 +810,18 @@
       "depends_on": ["L3-SAMPLE-TIME", "L4-CASA-CLAIMS", "L2-DECLARED-CONTEXT"]
     },
     {
+      "id": "L2-SECURITY-STATE",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "2.10 Security and opening state facts (CA4-126)",
+      "depends_on": ["L2-ROOM-REGISTRY"]
+    },
+    {
+      "id": "L5-POSTURE-CHECK",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "7.5 Initial-V3 direct descriptor: `safety.posture_check` (CA4-126)",
+      "depends_on": ["L2-SECURITY-STATE", "L4-CASA-CLAIMS", "L5-REACTION-AUTHORITY", "L6-FAMILIES"]
+    },
+    {
       "id": "L2-DECLARED-CONTEXT",
       "owner": "docs/specs/v3/layer2_registries_spec.md",
       "heading": "2.9 Declared household context (CA4-121)",
@@ -2042,6 +2054,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-125.md",
       "contracts": ["L8-TEXT-REGISTERS", "L8-CONTROL-SCOPE", "L8-ROLES", "L8-EXPLANATIONS", "L8-MAP-CARD"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-126",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-126.md",
+      "contracts": ["L2-SECURITY-STATE", "L5-POSTURE-CHECK", "L5-REACTION-AUTHORITY", "L6-FAMILIES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

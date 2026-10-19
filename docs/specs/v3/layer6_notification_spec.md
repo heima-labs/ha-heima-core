@@ -251,7 +251,8 @@ binding it is delivered for), through one closed core table:
 | `environment.*`, `security.*`, `routine.*` | `attention` |
 
 So a window held open while weather protection is active, a weather-protection step left
-unconfirmed, and the weather-protection action notice are all `safety` notices. A future descriptor
+unconfirmed, the weather-protection action notice and every `safety.posture_check` advisory
+(Layer 5 §7.5) are all `safety` notices. A future descriptor
 namespace must add its row with the descriptor's core release; bootstrap fails if a registered
 Reaction descriptor's namespace has no row, so no namespace falls into a family by default.
 

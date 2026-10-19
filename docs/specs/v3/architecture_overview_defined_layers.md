@@ -236,6 +236,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
   each Reaction descriptor version fixes `continue` or `pause` for it, and behavior learning censors
   it. Absence programs pause and resume, ending only on a household return; the comfort trajectory
   also needs a minimum absence derived from the learned thermal response (default 48 h, CA4-122).
+- **Posture checks** (`safety.posture_check`) advise residents, never commanding, when observed alarm,
+  lock or opening state contradicts casa occupancy: alarm armed away while occupied, entry unlocked or
+  exterior opening open in rain while empty, alarm disarmed while empty (CA4-126).
 - **Behavior learning only learns the household:** every learner instance is classified behavior or
   physical from its inputs; behavior samples are censored while the house is occupied without
   residents and, during a guest stay, in the guest rooms; physical learning continues (CA4-123).
@@ -385,7 +388,8 @@ action.
 - A `ConfiguredReaction` has one stable identity and immutable append-only configuration generations.
   Its compiled canonical plan is persisted without callables; administrative enablement and any
   household consent are separate authority transitions, so neither can silently rewrite policy meaning.
-  All seven Initial-V3 descriptors declare resident consent as required. An awaiting or
+  Seven of the eight Initial-V3 descriptors declare resident consent as required; the
+  advice-only `safety.posture_check` (CA4-126) does not. An awaiting or
   revoked consent blocks commands as an authority state, not as an unavailable input.
 - The frozen descriptor version supplies the base typed plan grammar. A
   learner relation profile narrows it; a profile-free admin-direct Reaction

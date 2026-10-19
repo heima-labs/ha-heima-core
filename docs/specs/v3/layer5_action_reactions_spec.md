@@ -507,7 +507,7 @@ and `presence.return` request that evaluation. The suppression records the evalu
 |---|---|
 | `environment.planned_comfort_trajectory` | `pause` |
 | `security.presence_simulation` | `pause` |
-| `environment.solar_shading`, `environment.external_exchange`, `environment.air_extraction`, `safety.weather_protection`, `routine.actuation_bundle` | `continue` |
+| `environment.solar_shading`, `environment.external_exchange`, `environment.air_extraction`, `safety.weather_protection`, `safety.posture_check`, `routine.actuation_bundle` | `continue` |
 
 Behavior learning is not a descriptor concern: Layer 3 censors its own episodes from the same claim.
 
@@ -653,12 +653,13 @@ activation id, enforces step-id idempotency, applies common guards, hold and
 ownership admission, and translates an admitted target through the one
 `ApplyStep` path. It never dispatches directly from this pure result.
 `requires_household_consent` is an exact, frozen descriptor-version property. The
-registry rejects a missing or non-boolean value. All seven
+registry rejects a missing or non-boolean value. Seven of the eight
 Initial-V3 descriptor registrations declare `True`:
 `environment.solar_shading`, `environment.external_exchange`,
 `environment.air_extraction`, `environment.planned_comfort_trajectory`,
 `security.presence_simulation`, `routine.actuation_bundle` and
-`safety.weather_protection`. This records
+`safety.weather_protection`; `safety.posture_check` (§7.5) declares `False` because it only
+advises and moves nothing. This records
 the choice for each descriptor;
 future descriptor versions must declare their own value instead of inheriting a
 global default. Consent is a common authority gate, not a `ReactionGuardCapability`.
@@ -861,9 +862,10 @@ for an opening without an Actuator, only an `opening_id` for which `opening_face
 (Layer 1 §7); a command member always needs an Actuator. Advice members pass the same staging,
 trigger, conditions, envelope and guards as command members, but no hold, command-ownership,
 physical-state or arbitration gate, because they move nothing. Initial-V3 `advisory_intents` are
-`open_for_exchange` and `close_to_retain` (`environment.external_exchange`) and `increase_shading`
-and `decrease_shading` (`environment.solar_shading`); every other Initial-V3 descriptor declares
-none.
+`open_for_exchange` and `close_to_retain` (`environment.external_exchange`), `increase_shading`
+and `decrease_shading` (`environment.solar_shading`), and `check_alarm`, `lock_entry` and
+`close_opening` (`safety.posture_check`, §7.5); every other Initial-V3 descriptor declares
+none. Only `check_alarm` may name neither an Actuator nor an opening: its subject is casa.
 
 **Delivery depends on authority, not only on the member.** In `notification_only` a Reaction
 issues no command and no user-facing notification: its evaluations feed only the
@@ -1850,7 +1852,7 @@ and the closed codes of §4.0, never a descriptor-invented string.
    revocation cancels affected future jobs. An administrator role alone
    never substitutes for resident consent authority.
 
-These commands apply to all seven Initial-V3 descriptors under one
+These commands apply to all eight Initial-V3 descriptors under one
 `ConfiguredReaction` lifecycle. Descriptor-specific preparation, such as
 `stage_comfort_trajectory_prerequisite_generation`, may create an immutable
 input referenced by a later configuration, but cannot duplicate these
@@ -3560,7 +3562,7 @@ descriptor with a `safe_direction_intents` entry (`environment.external_exchange
   confirmation admission. This path does not change the descriptor's
   `normal_exit_contract=None` or `hold_release_mode="fixed_duration"`.
 
-All seven Initial-V3 descriptors use the common §4.2 Layer-8 command surface
+All eight Initial-V3 descriptors use the common §4.2 Layer-8 command surface
 for configuration creation or proposal review, promotion, consent and
 disablement. The presence-simulation descriptor and the other
 `admin_direct`-capable descriptors use `stage_admin_direct_reaction` with
@@ -4263,7 +4265,7 @@ A learner may propose only values permitted by that same active descriptor.
 
 ### 7.3 Initial-V3 catalog matrix and valid examples
 
-This matrix is the single owner summary of the seven Initial-V3 registrations; the referenced
+This matrix is the single owner summary of the eight Initial-V3 registrations; the referenced
 sections stay authoritative for their details. Every Initial-V3 descriptor is registered at
 version `"1"`, and every listed profile is `RelationProfileRef(profile_id=..., version="1")`.
 
@@ -4276,6 +4278,7 @@ version `"1"`, and every listed profile is `RelationProfileRef(profile_id=..., v
 | `environment.planned_comfort_trajectory` | learned only | `hvac_thermal_response` -> `hvac_thermal_response.policy_output.v1` | `planned_comfort_reachability -> follow_comfort_trajectory` | from its prerequisite generation (§7.1) | step-programmed, `planned_absence_program` v"1" |
 | `security.presence_simulation` | direct only | none | none (direct `light_state`) | `security.presence_simulation.interior_lighting.v1` | step-programmed, `planned_absence_program` v"1" |
 | `safety.weather_protection` | direct only | none | none (direct `secure_for_weather`) | `safety.weather_protection.guards.v1` | step-programmed per hazard episode; safe: `secure_for_weather` |
+| `safety.posture_check` | direct only | none | none (advice only: `check_alarm`, `lock_entry`, `close_opening`) | none | trigger-driven, one activation per check instance |
 
 Only environmental-response members carry a `NumericOutcomeRequirement`, in the registered outcome's
 canonical unit; comfort-trajectory and routine members carry `None`, and presence simulation has no
@@ -4361,6 +4364,56 @@ profile or learner, and declares `requires_household_consent=True`,
   binding set. With the awning extended and the window open, both are secured; with the window held
   open by the resident, only the awning is retracted and a `manual_hold_active` occurrence is
   emitted for the window.
+
+### 7.5 Initial-V3 direct descriptor: `safety.posture_check` (CA4-126)
+
+This descriptor tells residents when the house's observed security posture contradicts whether
+anyone is inside. It **only advises**: it has no command member, never commands a lock or an alarm
+panel, and never draws a security conclusion of its own. Every check depends only on casa
+`occupancy` (Layer 4 §9.2) and observed device state (Layer 2 §2.10), never on who is inside.
+
+It is `admin_direct` only, casa-scoped, with no relation profile or learner, and declares
+`requires_household_consent=False`, `on_site_actionable=False` (security posture never reaches the
+`house` audience, Layer 8 §4.1), `when_occupied_without_residents="continue"`,
+`resident_action_notice=False`, `hold_release_mode="fixed_duration"` (unused: it holds nothing) and
+`advisory_intents={"check_alarm", "lock_entry", "close_opening"}`. Its namespace places its
+advisories in the `safety` notification family (Layer 6 §6.1): they are delivered immediately,
+quiet hours included, to residents only.
+
+```python
+PostureCheckId = Literal[
+    "alarm_armed_while_occupied",      # a
+    "entry_unlocked_while_empty",      # b
+    "opening_open_while_empty_in_rain",  # c
+    "alarm_disarmed_while_empty",      # d
+]
+
+@dataclass(frozen=True)
+class PostureCheckConfiguration:
+    check_id: PostureCheckId
+    delay: Window                      # within the check's core bounds below
+```
+
+| Check | Condition (each input available and stable) | Advice intent and subject | Default delay | Bounds |
+|---|---|---|---|---|
+| `alarm_armed_while_occupied` | `security.alarm_mode` in `armed_away`, `armed_vacation` and `occupancy@casa=present` | `check_alarm`, casa | 5 min | 1–30 min |
+| `entry_unlocked_while_empty` | a `security.lock` is not `locked` (`unlocked` or `jammed`) and `occupancy@casa=absent` | `lock_entry`, that opening | 10 min | 2–120 min |
+| `opening_open_while_empty_in_rain` | an `opening.open=True` on an opening for which `opening_faces_exterior` holds, `occupancy@casa=absent`, and the precipitation hazard state of a staged `safety.weather_protection` Reaction is `True` | `close_opening`, that opening | 0 | 0–30 min |
+| `alarm_disarmed_while_empty` | `security.alarm_mode=disarmed` and `occupancy@casa=absent` | `check_alarm`, casa | 15 min | 5–120 min |
+
+- **Configuration.** The administrator enables a subset of checks and may set each `delay` within its
+  bounds; the bounds are fixed by the descriptor version. A check requires its inputs at staging:
+  the alarm Sensor for a/d, at least one lock Sensor for b, at least one exterior opening contact
+  and a staged precipitation `safety.weather_protection` Reaction for c.
+- **Activations.** One activation per check instance (per lock or opening for b and c, one for a and
+  d), started when its condition has held continuously for `delay`, and ended with
+  `activation_ended` as soon as the condition stops holding. An unavailable input never starts an
+  activation and ends an open one without a conclusion. `arming` and `pending` never satisfy a.
+- **No duplication with weather protection.** Check c excludes an opening whose window actuator is a
+  protected endpoint of the referenced `safety.weather_protection` Reaction: that Reaction already
+  secures it and reports a held channel as a `safety` notice.
+- **Delivery.** Each activation produces one `reaction.advisory` to residents with the ordinary
+  `done`, `dismiss` and `not_useful` feedback (§6.0); no `house` delivery and no command.
 
 ## 8. Initial acceptance criteria
 
@@ -4631,7 +4684,7 @@ profile or learner, and declares `requires_household_consent=True`,
   fresh promotion and consent. Changing only that Sensor's reliability is
   `semantic_only`: generation and authority stay unchanged and the Reaction
   appears in the impact record (§4.2; Layer 0 §4.7).
-- Each of the seven Initial-V3 descriptors can reach its permitted
+- Each of the eight Initial-V3 descriptors can reach its permitted
   `notification_only` creation path through `stage_admin_direct_reaction`
   or `review_proposal`, and uses the same `promote_reaction_automatic_action`,
   `set_reaction_household_consent` when its consent property is true,
@@ -4780,8 +4833,9 @@ profile or learner, and declares `requires_household_consent=True`,
   same Layer-3 canonical reason tuple. Every occurrence reaches Layer 6's transient
   `AvailabilityEpisodeTracker` regardless of the current binding set; Layer 5 cannot query the
   publication index, render, persist or deliver `automation.availability`.
-- All seven Initial-V3 descriptor registrations named in §3.2 each declare
-  `requires_household_consent=True`. After admin promotion without a resident
+- The seven consent-gated Initial-V3 descriptor registrations named in §3.2 each declare
+  `requires_household_consent=True`; `safety.posture_check` declares `False` and becomes
+  `automatic` through administrative authorization alone. After admin promotion without a resident
   grant, each projects `authorized_awaiting_household_consent` and sends no
   `ApplyStep`; revocation blocks subsequent dispatch, including the next call
   of a partly executed step. These authority states emit no
@@ -5086,6 +5140,15 @@ profile or learner, and declares `requires_household_consent=True`,
   positive per-member `NumericOutcomeRequirement` only for a registered
   numeric-response member, rejects it for routine and comfort members, and
   validates their whole-bundle or thermal effect from exact typed evidence.
+- Posture check (CA4-126): arming `armed_away` with a 60 s exit delay yields no advisory (5 min
+  default); a house sitter inside with `armed_away` for 6 min yields one `check_alarm` advisory to
+  residents only, never to `house`; a front door `unlocked` with the house empty for 10 min at 03:00
+  yields a `safety` `lock_entry` advisory despite quiet hours, which closes with `activation_ended`
+  when the door is locked; a `jammed` lock counts as not locked; an open window without an actuator,
+  house empty and precipitation hazard active yields `close_opening`, while a window protected by
+  weather protection yields none; `disarmed` with the house empty for 15 min yields `check_alarm`;
+  an unavailable alarm Sensor yields nothing; a delay outside a check's bounds is rejected at
+  staging; the descriptor never emits an `ApplyStep`.
 - Occupied without residents (CA4-122): during a 10-day absence a sitter inside for one hour makes
   `occupied_without_residents=True`; comfort trajectory and presence simulation record
   `occupied_without_residents_pause`, send nothing, keep their activation and next-step slot, and

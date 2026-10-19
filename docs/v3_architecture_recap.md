@@ -498,7 +498,8 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   no finite lift and cannot make a proposal eligible.
   A configured Reaction has one stable identity plus immutable append-only configuration generations; its canonical compiled
   plan is persisted without callables, while authorization and consent remain separate runtime-authority
-  transitions. All seven Initial-V3 descriptors require resident consent. Missing
+  transitions. Seven of the eight Initial-V3 descriptors require resident consent; the advice-only
+  `safety.posture_check` does not (CA4-126). Missing
   consent blocks commands through authority state rather than an availability
   suppression. Reaction guards use one bootstrap-frozen core capability registry and typed,
   versioned household guard-profile generations, not per-descriptor condition expressions.

@@ -494,6 +494,25 @@ class HouseholdDeclaration:
 - If any configured calendar read fails, the fact is `available=False`: a missing source could move
   the end, so neither `active` nor the end is certain.
 
+### 2.10 Security and opening state facts (CA4-126)
+
+Heima observes, and never commands, alarm panels, locks and opening contacts. Three core fact types
+with closed vocabularies make their state comparable across integrations; each is an ordinary
+`Sensor` with a `StateReadBinding` and a `MappingInterpretation` whose mapping covers every state the
+bound HA entity can report (staging rejects a partial mapping without `NO_DEFAULT`; an unmapped or
+unavailable state yields `available=False`).
+
+| Fact type | `where` | Values |
+|---|---|---|
+| `security.alarm_mode` | casa | `disarmed`, `armed_home`, `armed_away`, `armed_night`, `armed_vacation`, `arming`, `pending`, `triggered` |
+| `security.lock` | the room owning the opening, with `related_opening_id` | `locked`, `unlocked`, `jammed` |
+| `opening.open` | the room owning the opening, with `related_opening_id` | boolean (`True` = open) |
+
+At most one `security.alarm_mode` Sensor exists, and at most one `security.lock` and one
+`opening.open` Sensor per opening. These facts are read only by Layer-5 policies (for example
+`safety.posture_check`, Layer 5 §7.5); no Layer-4 security claim is introduced, and Heima never
+derives a security conclusion of its own from them.
+
 ## 3. `Sensor`
 
 ```python
@@ -2338,6 +2357,10 @@ this layer.
   after `unavailable_grace`. A resident whose HA person has no tracker is excluded with a diagnostic,
   and alone at home yields `presence.household=False` while casa occupancy is `True`. A guest's
   person never feeds `presence.household`.
+- Security and opening state (§2.10, CA4-126): an `alarm_control_panel` bound to
+  `security.alarm_mode` with a mapping missing `armed_vacation` is rejected; a `security.lock`
+  Sensor without `related_opening_id`, or a second one for the same opening, is rejected; an
+  unmapped lock state yields `available=False`.
 - Declared household context (§2.9, CA4-121): a calendar event matching only the guest-stay keywords
   activates `household.guest_stay` with the default guest rooms; a resident's panel declaration
   "guests, room 2" with no end keeps it active until ended; a guest or device-account declaration is
