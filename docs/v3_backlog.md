@@ -2093,7 +2093,9 @@ inside the config flow itself.
    whether a *reaction* is offered in a room; AT1/AT3 are `HouseStateDomain`/`SecurityDomain` reading
    topology directly inside their own per-cycle `compute()` — a different layer, complementary, not
    overlapping. Both phases stay `DEFERRED` as-is; only the written rationale is sharpened here.
-5. **Guests — open, to discuss in depth (raised 2026-10-16 during CA4-113).** Schedule: right after
+5. **Guests — model approved 2026-10-19, spec pass in progress (CA4-117..124).** The approved people
+   model, its decisions and the systematic sweep are in `docs/v3_people_model_draft.md`; the layer
+   changes follow it in eight bounded issues. Original question (raised 2026-10-16 during CA4-113): Schedule: right after
    the Layer 8 completeness review, before any further guest-touching work. Initial V3 has no guest
    concept: Layer 4 §3 and Layer 3 explicitly defer a guest context, and Layer 8 offers guests only
    the map (CA4-113) with a card-level `control_rooms` scope that is not a security boundary.
