@@ -545,7 +545,8 @@ guessed from the entity. A kind with no map rendering shows HA's state icon for 
 follow the HA theme, and animation stops under `prefers-reduced-motion`. Initial V3 renderings:
 
 - **Room.** Occupancy fill from Layer 4 room occupancy (occupied, vacant, hatched when unavailable),
-  activity badges, casa presence in the header.
+  activity badges. The header shows house occupancy to every viewer and household presence only to
+  residents (CA4-120).
 - **Light.** A glow in the light's color and brightness when those facets are registered, otherwise
   on/off. The glow is stronger after dark.
 - **Cover on an opening.** A band on the opening proportional to the closed fraction, marked while
@@ -725,7 +726,8 @@ that Heima reads (Sensors) and commands (Actuators). They are read-only: Heima p
 
 | Entity | HA platform / class | Source | Default |
 |---|---|---|---|
-| Casa presence | `binary_sensor` / presence | Layer 4 `presence@casa` | enabled |
+| House occupancy | `binary_sensor` / occupancy | Layer 4 `occupancy@casa` (anyone inside) | enabled |
+| Household presence | `binary_sensor` / presence | Layer 4 `presence@casa` (any resident home) | enabled |
 | Room occupancy (one per room with an occupancy resolver) | `binary_sensor` / occupancy | Layer 4 room occupancy | enabled |
 | Activity (one per activity resolver: scope × `activity_id`) | `binary_sensor` | Layer 4 `activity.<activity_id>` | enabled |
 | Automation state (one per Reaction) | `sensor` / enum: `automatic`, `trial`, `awaiting_consent`, `blocked`, `invalid` | Layer 5 mode and current block | diagnostic, disabled |

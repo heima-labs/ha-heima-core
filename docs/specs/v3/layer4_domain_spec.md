@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Layer 4 resolves named **semantic claims**: a current `SemanticState` such as room occupancy or casa presence, or a `SemanticEpisode` whose bounded occurrence has meaning of its own. It is the only layer between raw/fused facts and action policy that may combine typed facts, upstream semantic claims, and one authorized learning hint into a current conclusion.
+Layer 4 resolves named **semantic claims**: a current `SemanticState` such as room or casa occupancy or household presence, or a `SemanticEpisode` whose bounded occurrence has meaning of its own. It is the only layer between raw/fused facts and action policy that may combine typed facts, upstream semantic claims, and one authorized learning hint into a current conclusion.
 
 Layer 2 says what observations mean; Layer 3 analyzes history and may emit bounded evidence; Layer 4 resolves semantic claims; Layer 5 decides whether a `ConfiguredReaction` may act. Learning is evidence, not authority; a semantic resolver is not a reaction engine.
 
@@ -43,14 +43,15 @@ It has no runtime dependency on policy configuration or action results. A policy
 
 A `SemanticState` is one current, independently meaningful assertion at one explicit scope. Its value is
 readable only while `available=True`; `available=False` means the resolver cannot form a conclusion.
-Examples are `occupancy` for one room and `presence` for `casa`.
+Examples are `occupancy` for one room or for `casa`, and `presence` (the household) for `casa`.
 
 A `SemanticEpisode` is not an automatic event mirror for a state transition. It is permitted only when
 its occurrence has an independently declared identity, boundary, evidence contract, and consumer use
 that would be lost by reading ordinary state history. An episode resolver emits only its declared event
-occurrences; it has no latest-value slot. Initial V3 registers exactly one core
-`StateTransitionEpisodeAdapter` on the casa `presence` state. It emits only the reviewed
-`presence.departure` and `presence.return` occurrences of §9.3; no other initial state transition
+occurrences; it has no latest-value slot. Initial V3 registers exactly two core
+`StateTransitionEpisodeAdapter`s, on the casa `occupancy` state and on the casa `presence` state. They
+emit only the reviewed `occupancy.departure`/`occupancy.return` and
+`presence.departure`/`presence.return` occurrences of §9.3; no other initial state transition
 is mirrored automatically, and another episode producer needs its own approved lifecycle contract.
 
 ```python
@@ -305,7 +306,7 @@ payload.
 | `indirect.semantic_assist.v1` / `activity.relax.indirect.v1` | `activity` | Exact room scope routes only to the `relax` profile; positive `active` evidence only, never inactivity. |
 | `indirect.semantic_assist.v1` / `activity.working.indirect.v1` | `activity` | Exact room scope routes only to the `working` profile; positive domestic `active` evidence only, never inactivity. |
 
-No initial signal is authorized for `presence`: casa presence/absence remains deterministic. A signal-consuming semantic claim cannot become feature, reference, label, or target of its contributing Layer-3 learner; provenance identifies the signal contribution to prevent that feedback path. The monolithic `house_state.approved_context.v1` signal is retired: any future learned signal must name one approved semantic claim and cannot reintroduce a composite house-state vocabulary.
+No initial signal is authorized for casa `occupancy` or `presence`: both remain deterministic. A signal-consuming semantic claim cannot become feature, reference, label, or target of its contributing Layer-3 learner; provenance identifies the signal contribution to prevent that feedback path. The monolithic `house_state.approved_context.v1` signal is retired: any future learned signal must name one approved semantic claim and cannot reintroduce a composite house-state vocabulary.
 
 ## 7. Availability and Layer 6
 
@@ -333,12 +334,13 @@ priorities, transition stability, availability, provenance, and acceptance crite
 in §9.1–§9.7; any later resolver kind requires its own review:
 
 1. `room_occupancy`: room-scoped `SemanticState`, built from physical room evidence plus an authorized positive indirect hint.
-2. `presence`: deterministic casa presence only, with the closed `present | away` vocabulary.
-3. `activity`: independently scoped `activity.<activity_id>` `SemanticState`s without forcing activities into one classifier or global enum. `cooking`, `sleeping`, `relax`, and `working` are the first fully specified profiles.
+2. `casa_occupancy`: deterministic casa `occupancy` (is anyone physically in the house), with the closed `present | absent` vocabulary.
+3. `presence`: deterministic household presence at casa (is any resident home), with the closed `home | away` vocabulary.
+4. `activity`: independently scoped `activity.<activity_id>` `SemanticState`s without forcing activities into one classifier or global enum. `cooking`, `sleeping`, `relax`, and `working` are the first fully specified profiles.
 
-The casa `presence` resolver additionally has the one registered transition-episode adapter in §9.3.
-It produces the two initial episode types; it is not a fourth semantic-state resolver or a generic
-transition mirror.
+The casa `occupancy` and `presence` resolvers each additionally have one registered transition-episode
+adapter in §9.3. They produce the four initial episode types; they are not further semantic-state
+resolvers or a generic transition mirror.
 
 `house_state` is deliberately not an initial claim: its V2 vocabulary mixed presence, activity, quiet/sleep context, planned absence, and guest context. A future quiet/sleep context, planned absence, guest context, identity inference, multi-occupant counting, learned absence, HVAC control, environmental policy evaluation, and security policy each need a separate claim and authority/safety contract.
 
@@ -360,64 +362,86 @@ The indirect signal never overrides an available physical conclusion and never p
 owns fast-on/slow-off temporal behavior. Its provenance identifies whether the semantic state came from
 physical fusion or the bounded indirect assist; the latter is never eligible as the model's own label.
 
-### 9.2 `presence`
+### 9.2 `casa_occupancy` and `presence` (CA4-120)
 
-`presence` materializes the casa-scoped `SemanticState` with the closed value vocabulary
-`present | away`. It has exactly one required Layer-2 boolean input `presence.physical` at
-`Location(scope="casa")` and no initial `InferenceSignal` input. Physical `True` resolves to `present`,
-physical `False` resolves to `away`, and an unavailable physical input resolves to `available=False`.
-A room whose enclosure is `exterior` (terrace, garden) is part of `casa`: evidence the administrator
-binds from it is ordinary presence evidence, and enclosure never excludes it (Layer 1 §7).
+Two distinct casa claims answer two distinct questions; every consumer names the one it reads.
 
-Layer 4 adds no dwell, grace, or retained state to this base claim: Layer 2's `presence.physical`
-fusion owns source quorum, explicit evidence admission/correlation, and transition stability. Layer 4
-never reclassifies a camera's generic motion or object output as a person. A future elapsed-absence, planned-absence, guest,
-identity, or multi-occupant semantic claim must consume this state through its own reviewed resolver or
-episode contract; none is a hidden timer or value inside `presence`.
+**`casa_occupancy`** materializes the casa-scoped `occupancy` claim with the closed vocabulary
+`present | absent`. It has exactly one required Layer-2 boolean input `occupancy.physical` at
+`Location(scope="casa")`, fused from physical evidence only plus optional corroborating person
+evidence (Layer 2 §2.8.1), and no `InferenceSignal` input. Physical `True` resolves to `present`,
+`False` to `absent`, unavailable to `available=False`. A room whose enclosure is `exterior` (terrace,
+garden) is part of `casa`: evidence the administrator binds from it is ordinary occupancy evidence,
+and enclosure never excludes it (Layer 1 §7). It says that someone is physically inside, whoever it is.
 
-### 9.3 `presence.departure` and `presence.return`
+**`presence`** materializes the casa-scoped household claim `presence` with the closed vocabulary
+`home | away`. It has exactly one required Layer-2 boolean input `presence.household` at casa
+(Layer 2 §2.8.1), produced only from residents' HA persons. `True` resolves to `home`, `False` to
+`away`, unavailable to `available=False`. It says that at least one resident is home; a guest, a
+device account or anyone else inside never makes it `home`.
 
-The core attaches one `StateTransitionEpisodeAdapter` to the casa `presence` output with the finite
-transition table `present -> away => presence.departure` and
-`away -> present => presence.return`. Both are `SemanticEpisodeOccurrence(phase="observed")` values;
-they are observations of a semantic change, not a claim about the exact physical instant a resident
-crossed a threshold.
+**Occupied without residents.** `occupancy=present` with `presence=away` is a normal, expected
+combination (a guest alone, a house sitter, a cleaner, an untracked resident). Neither claim
+overrides the other.
 
-The adapter keeps the last available `presence` value and its `when` in its declared in-memory state.
-For a newly available different value it emits exactly one episode with the following closed payload:
+Layer 4 adds no dwell, grace, or retained state to either claim: the Layer-2 fusions own source
+quorum, explicit evidence admission/correlation, and transition stability. Layer 4 never reclassifies
+a camera's generic motion or object output as a person. A future elapsed-absence, identity or
+multi-occupant semantic claim must consume these states through its own reviewed resolver or
+episode contract; none is a hidden timer or value inside them.
+
+### 9.3 Casa transition episodes
+
+The core attaches one `StateTransitionEpisodeAdapter` to each casa claim, with these finite
+transition tables:
+
+| Claim | Transition | Episode |
+|---|---|---|
+| `occupancy@casa` | `present -> absent` | `occupancy.departure` |
+| `occupancy@casa` | `absent -> present` | `occupancy.return` |
+| `presence@casa` | `home -> away` | `presence.departure` |
+| `presence@casa` | `away -> home` | `presence.return` |
+
+All are `SemanticEpisodeOccurrence(phase="observed")` values; they are observations of a semantic
+change, not a claim about the exact physical instant someone crossed a threshold. Occupancy episodes
+delimit periods with nobody inside (physical learning, Layer 3); presence episodes mark the household
+leaving and returning (absence programs, Layer 5).
+
+Each adapter keeps the last available value of its claim and its `when` in its declared in-memory
+state. For a newly available different value it emits exactly one episode with the following closed
+payload, whose `from`/`to` use that claim's vocabulary:
 
 ```python
-PresenceTransitionValue = {
-    "from": Literal["present", "away"],
-    "to": Literal["present", "away"],
+CasaTransitionValue = {
+    "from": Literal["present", "absent"] | Literal["home", "away"],   # the claim's vocabulary
+    "to": Literal["present", "absent"] | Literal["home", "away"],
     "continuity": Literal["contiguous", "reconciled_after_gap"],
     "last_available_when": EvidenceInstant,
     "observed_at": EvidenceInstant,             # equal to the event HouseFact.when
 }
 ```
 
-`continuity="contiguous"` means no unavailable `presence` output occurred after
+`continuity="contiguous"` means no unavailable output of that claim occurred after
 `last_available_when`; `continuity="reconciled_after_gap"` means one or more unavailable outputs did
 occur. In both cases `last_available_when < observed_at`, which Layer 0 §3.5 guarantees by giving
 every cycle a strictly later cycle instant; for a reconciled episode, the physical
 transition is known only to have occurred in `(last_available_when, observed_at]`. The deterministic
-`episode_key` is the RFC-8785/SHA-256 digest of `(presence resolver id, from, to,
-last_available_when, observed_at)`.
+`episode_key` is the RFC-8785/SHA-256 digest of `(resolver id, from, to, last_available_when,
+observed_at)`.
 
 An unavailable output never emits an episode and never discards the retained last available baseline.
 If availability resumes with the same value, it clears the gap and emits nothing; if it resumes with a
 different value, it emits the reconciled episode above. With no retained available baseline, including
 after restart or an impacted reload, the first available value seeds the adapter and emits nothing.
-The adapter is O(1), makes no history/HA/I/O call, and its state resets under the ordinary Layer-4
+Each adapter is O(1), makes no history/HA/I/O call, and its state resets under the ordinary Layer-4
 reload and recovery rules. A future policy trigger may explicitly accept `contiguous`,
-`reconciled_after_gap`, or both; no policy obtains either episode implicitly from a bare `presence`
-state change.
+`reconciled_after_gap`, or both; no policy obtains either episode implicitly from a bare state change.
 
 ### 9.4 `activity` kernel and initial `cooking` profile
 
 An `activity` claim is scoped, not person-identified: `activity.cooking` at one explicitly configured
 kitchen scope says that a cooking activity is currently supported there, not which resident is cooking.
-It is an independent semantic axis. No activity profile can set, clear, or supersede `presence`,
+It is an independent semantic axis. No activity profile can set, clear, or supersede `occupancy` or `presence`,
 `occupancy`, `relax`, `sleeping`, `working`, or another activity merely because they coexist.
 
 ```python
@@ -612,9 +636,11 @@ room; it cannot suppress urgent safety/security communication or establish an ac
 - A state-transition adapter accepts only its staged finite transition table, emits at most one event
   per observed value change, distinguishes `contiguous` from `reconciled_after_gap`, and resets with
   no retained baseline after restart or an impacted reload.
-- Initial V3 registers exactly the casa `presence` transition adapter: `present -> away` emits one
-  `presence.departure`, `away -> present` emits one `presence.return`, and an unchanged or unavailable
-  value emits none. The first post-restart available value seeds its baseline without inventing a
+- Initial V3 registers exactly two casa transition adapters (CA4-120): on `occupancy@casa`,
+  `present -> absent` emits one `occupancy.departure` and `absent -> present` one `occupancy.return`;
+  on `presence@casa`, `home -> away` emits one `presence.departure` and `away -> home` one
+  `presence.return`; an unchanged or unavailable value emits none. A guest alone at home after the
+  last resident leaves yields `presence.departure` and no occupancy episode. The first post-restart available value seeds its baseline without inventing a
   transition. Staging rejects an unregistered initial episode producer or transition table.
 - An activity definition resolves only a frozen core `ActivityProfile`; staging rejects an unknown
   profile, illegal scope, an unresolved/mis-typed role binding, a context-only positive route, an

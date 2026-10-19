@@ -6316,6 +6316,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-120 — One casa presence claim meant two different things
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model D2 (`docs/v3_people_model_draft.md`).
+
+**Problem.** Casa `presence`, fused from any evidence including phone trackers, meant "someone is inside" or "the household is home" depending on the administrator's bindings, so a guest or house sitter alone made absence programs, routines and thermal learning behave inconsistently.
+
+**Approved resolution (2026-10-19).** Layer 2: casa `occupancy.physical` from physical evidence only (trackers rejected), plus core-derived corroborating person evidence for every classified Person; core-generated `presence.household` from tracked residents' HA persons (untracked excluded with a diagnostic; an unavailable resident makes it unavailable). Layer 4: claims `occupancy@casa` (`present|absent`) and `presence@casa` (`home|away`), two transition adapters (`occupancy.*`, `presence.*`). Layer 5: guard capability `occupancy` replaces `presence`; `planned_absence_program` reads household presence. Layer 3: thermal absence cohorts use occupancy episodes. Layer 8: two read-only entities; header shows household presence only to residents. See the [CA4-120 review](specs/v3/reviews/CA4-120.md); no V3 runtime test ran.
+
 #### CA4-119 — Manual control mixed how and who
 
 **Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model D6 (`docs/v3_people_model_draft.md`).

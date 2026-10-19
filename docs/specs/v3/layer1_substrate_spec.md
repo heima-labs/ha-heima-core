@@ -229,7 +229,7 @@ prior value, or anything else; it carries no meaning either way, and no consumer
 without checking `available` first, full stop.
 
 **Naming convention for `fact_type`**: dot-separated, namespaced, stable identifiers — `presence`,
-`occupancy`, `activity.<activity_id>`, `presence.planned_absence`, `room_signal.bucket`,
+`occupancy`, `activity.<activity_id>`, `household.planned_absence`, `room_signal.bucket`,
 `heating.temperature_rate`,
 `manual_hold.lifecycle` (Layer 0 §6), `external.<slot>` (`slot` names one externally-sourced context
 value — e.g. outdoor temperature or a weather-safety flag from an adapter like OWM or Protezione

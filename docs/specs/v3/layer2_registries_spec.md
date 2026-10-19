@@ -155,8 +155,8 @@ result, additionally obeys Layer 1's numeric domain (Layer 1 §3), so an integer
 `[-(2**53 - 1), 2**53 - 1]`; configuration numbers keep only the constraints of their own contract.
 
 - `Sensor.reliability` is in `[0.0, 1.0]`.
-- A `Sensor` whose fact type is exactly `occupancy.evidence.<kind>.<sensor_id>` at a room, or
-  `presence.evidence.<kind>.<sensor_id>` at `casa`, declares a non-empty
+- A `Sensor` whose fact type is exactly `occupancy.evidence.<kind>.<sensor_id>` at a room or at
+  `casa`, declares a non-empty
   `physical_evidence_admission` and `correlation_group`; the suffix equals that Sensor's stable
   `sensor_id`. Every other Sensor leaves both fields `None`. These are explicit per-reading choices:
   no HA device class, entity category, or `reliability` value supplies an implicit default. A
@@ -372,10 +372,40 @@ class Person:
 - **Validation** rejects an empty or duplicate `ha_person_id`, a duplicate non-null `ha_user_id`,
   an `ha_person_id` absent from HA's person registry at staging, and an `ha_user_id` absent from HA's
   user registry at staging.
-- **Dependents.** Layer-6 recipients (Layer 6 §5.1) and `HouseholdConsentAuthority` (Layer 5
-  §7.1.1) reference `ha_person_id`. Removing or reclassifying a referenced `Person` is a
+- **Dependents.** Layer-6 recipients (Layer 6 §5.1), `HouseholdConsentAuthority` (Layer 5
+  §7.1.1) and the person-derived producers of §2.8.1 reference `ha_person_id`. Removing or reclassifying a referenced `Person` is a
   configuration edit whose impact record lists them; Layer 5's rule for authority removal applies in
   the same change set.
+
+#### 2.8.1 Person-derived evidence and household presence (CA4-120)
+
+The core derives these producers from the `Person` registry at staging; an administrator does not
+author them, and they change only with a `Person` commit.
+
+- **Person evidence for casa occupancy.** For each `Person`, resident or guest, one Sensor
+  `occupancy.evidence.person.<ha_person_id>` at casa reads the HA person's state: `home` maps to
+  `True`, `not_home` or any zone to `False`, `unknown`/`unavailable` to `available=False`. It is
+  always `physical_evidence_admission="corroborating"`, with its own `correlation_group`. An
+  administrator may include it in the casa occupancy `FusionRule`; a phone at home is a supporting
+  vote that someone is inside, never sufficient alone without the rule's explicit confirmation
+  dwell (§5.3).
+- **Household presence evidence.** For each `Person` with `household_role="resident"` whose HA
+  person has at least one device tracker, one Sensor `presence.evidence.person.<ha_person_id>` at
+  casa reads the HA person's state with the same mapping. A resident whose HA person has no device
+  tracker is **untracked**: it contributes nothing and a diagnostic names it. A guest never
+  contributes household presence evidence.
+- **Household presence.** One core-generated `FusionRule` produces the boolean
+  `presence.household` at casa from every resident evidence Sensor, with
+  `WeightedQuorumStrategy(threshold=1.0)` (any resident home is `True`) and `min_available_weight`
+  equal to the number of tracked residents: while a tracked resident is unavailable the result is
+  `available=False`, never `False` (an unavailable resident may be home). With no tracked resident it
+  is `available=False`. Its `stability` is a `Stability` the administrator may edit on the generated
+  rule (default `Stability(to_true=Window(seconds=120), to_false=Window(seconds=600),
+  unavailable_grace=Window(seconds=300))`); its non-null `to_true` is the return-confirmation dwell
+  that Layer 5 requires (Layer 5 §3.2 `planned_absence_program`).
+- **Untracked residents.** Household presence is computed over tracked residents only. An untracked
+  resident alone at home reads as household `away` while casa occupancy is `present`: the house is
+  "occupied without residents" for every consumer, which is harmless by design.
 
 ## 3. `Sensor`
 
@@ -418,7 +448,7 @@ class Sensor:
     binding: ReadBinding
     where: Location            # Layer 1 §5
     fact_type: str             # Layer 1 §3 naming convention — e.g. "occupancy.evidence.motion.pir_a",
-                                 # "room_signal.illuminance", "presence", "external.outdoor_temp"
+                                 # "room_signal.illuminance", "external.outdoor_temp"
     interpretation: Interpretation
     device_id: str | None = None   # HA device_registry id, reference only — never a live dependency,
                                      # same pattern as Zone↔Label (Layer 1 §6). Groups sibling
@@ -451,8 +481,8 @@ class Sensor:
                                      # there (§3.2) regardless of reliability, because confidence
                                      # describes trust in an observation, and there is none to trust.
     physical_evidence_admission: PhysicalEvidenceAdmission | None = None
-                                     # Required only for occupancy.evidence.*.* and
-                                     # presence.evidence.*.* paths. "immediate" is an explicit
+                                     # Required only for occupancy.evidence.*.* paths
+                                     # (room or casa). "immediate" is an explicit
                                      # assertion that this normalized semantic evidence may be a
                                      # primary positive input; "corroborating" may contribute only
                                      # through a configured quorum or confirmation path. There is no
@@ -487,16 +517,24 @@ alone resolves the canonical semantic `occupancy`. `occupancy.physical` is the s
 physical room-occupancy ground truth a core learner may bind; individual evidence facts are never
 training labels. Only the evidence layer carries a per-sensor suffix.
 
-**Casa-presence evidence follows the same boundary.** A physical or externally normalized reading
-that contributes to casa presence produces `presence.evidence.<kind>.<sensor_id>` at
-`Location(scope="casa")`; a Layer-2 `FusionRule` may aggregate only those declared inputs into the
-boolean `presence.physical`. Layer 2 never claims the semantic `presence` fact itself.
+**Casa occupancy evidence follows the same boundary.** Whether anyone is physically in the house is
+occupancy at casa scope, the same fact family as a room (CA4-120). A physical reading that
+contributes to it produces `occupancy.evidence.<kind>.<sensor_id>` at `Location(scope="casa")`; a
+Layer-2 `FusionRule` may aggregate only those declared inputs into the boolean `occupancy.physical`
+at casa. Casa occupancy evidence is physical only (motion, mmWave, contact, a person classification
+from vision): a Sensor in this namespace may not bind an identity tracker (`device_tracker.*`,
+`person.*`). The one exception is the core-derived person evidence of §2.8.1, always
+`corroborating`. Layer 2 never claims the semantic `occupancy` fact itself.
+
+Whether a resident is home is a different question, household presence, produced only from
+residents' HA persons (§2.8.1) as `presence.household` at casa; Layer 4 resolves the semantic
+`presence` claim from it. Occupancy says someone is inside; presence says the household is home.
 
 **Physical-evidence quality is explicit and generic.** Every sensor in either reserved evidence
 namespace declares both `physical_evidence_admission` and `correlation_group`; every other Sensor
 must leave both unset. An integration that distinguishes a person from generic motion maps only its
 declared `person` classification to a person-evidence fact (for example
-`presence.evidence.vision_person.front_camera`). Generic motion, unknown-object, or object-class
+`occupancy.evidence.vision_person.front_camera`). Generic motion, unknown-object, or object-class
 observations are distinct normalized facts and cannot silently become person evidence. A camera/model
 whose person classification can be confused with moving equipment is registered `corroborating`, not
 `immediate`, unless an administrator deliberately accepts that risk for the specific logical reading.
@@ -950,15 +988,15 @@ mean "no interpretable value." The in-memory sentinel is the frozen dataclass si
 not the sentinel. This makes total vs. partial mappings mechanically distinguishable in tests and in
 admin-authored config.
 
-**Physical room occupancy vs. whole-house presence — independently tuned, never a shared timing policy.**
+**Room occupancy, casa occupancy and household presence — independently tuned, never a shared timing policy.**
 Layer 2 consumes the per-sensor evidence namespace above and produces `occupancy.physical` through
-its own `FusionRule`; Layer 4 resolves the canonical semantic `occupancy` from that conclusion and
-an optional authorized indirect hint. Layer 2 similarly produces `presence.physical` from only declared
-casa-presence evidence; Layer 4 resolves the semantic `presence` claim. Physical occupancy and physical
-presence each carry their own strategy and `stability` (§5.2) — physical room occupancy keeps a
-fast-on/slow-off default (`Stability(to_true=None, to_false=Window(seconds=120))`), while
-whole-house presence can use a more conservative pair. They run independently per cycle; sharing
-evidence vocabulary never shares a blocking path or timing policy.
+its own `FusionRule` per room and at casa; Layer 4 resolves the canonical semantic `occupancy` from
+that conclusion (and, for a room, an optional authorized indirect hint). Layer 2 separately produces
+`presence.household` from residents' persons (§2.8.1); Layer 4 resolves the semantic `presence`
+claim. Each carries its own strategy and `stability` (§5.2) — physical room occupancy keeps a
+fast-on/slow-off default (`Stability(to_true=None, to_false=Window(seconds=120))`), while casa
+occupancy and household presence can use more conservative pairs. They run independently per cycle;
+sharing evidence vocabulary never shares a blocking path or timing policy.
 
 ---
 
@@ -1537,7 +1575,7 @@ once, in its Sensor registration, instead of copying it into every fusion that u
 
 Its `validate_binding` permits exactly one of two homogeneous shapes: it either produces
 `occupancy.physical` at a room from same-room `occupancy.evidence.<kind>.<sensor_id>` inputs, or it
-produces `presence.physical` at `casa` from `presence.evidence.<kind>.<sensor_id>` inputs. It permits
+produces `occupancy.physical` at `casa` from casa `occupancy.evidence.<kind>.<sensor_id>` inputs. It permits
 no `previous_cycle=True` input. Every referenced Sensor has the required evidence profile from §2.4,
 and the one-to-one configuration binding/index contract is verified during staging. `<kind>` remains
 opaque: a new normalized evidence kind needs a Sensor binding, not a formula-code change.
@@ -2205,6 +2243,14 @@ this layer.
   `ha_person_id` or `ha_user_id`, or an unknown HA person or user, is rejected at staging.
   Reclassifying a `resident` who is in `HouseholdConsentAuthority` to `guest` without the authority
   disposition in the same change set is rejected (Layer 5 §7.1.1).
+- Casa occupancy and household presence (§2.8.1, CA4-120): a casa `occupancy.evidence` Sensor
+  bound to a `device_tracker.*` or `person.*` entity is rejected; the core-derived
+  `occupancy.evidence.person.<id>` is `corroborating` and alone never makes casa occupancy `True`
+  without a positive true dwell. With two tracked residents, one `home` gives `presence.household`
+  `True`; both `not_home` give `False`; one `not_home` and one `unavailable` give `available=False`
+  after `unavailable_grace`. A resident whose HA person has no tracker is excluded with a diagnostic,
+  and alone at home yields `presence.household=False` while casa occupancy is `True`. A guest's
+  person never feeds `presence.household`.
 - An Actuator with `is_external=True`, in an `exterior` room, or with `is_external=None` on an
   opening facing an exterior side (including a plain window with default `other_side`) is
   `weather_exposed`; one with `is_external=False` in an `interior` room, or on a window toward an
@@ -2329,7 +2375,7 @@ this layer.
   `InheritedFormulaResult` selecting the unavailable position is rejected for that cycle with a
   diagnostic (§5.3/§5.5).
 - `physical_evidence.weighted_evidence` accepts both validated shapes (`occupancy.physical` in one
-  room and `presence.physical` at casa), returns immediate `True` from an available non-conflicted
+  room and `occupancy.physical` at casa), returns immediate `True` from an available non-conflicted
   `primary` source only when its Sensor admission is `immediate`, and returns `False` only after every
   required-for-false group contributes an available `False` vote and the false score reaches the
   configured threshold. A corroborating source cannot take the primary shortcut. Two inputs from the

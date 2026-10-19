@@ -305,7 +305,7 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   including unavailable facts, so it can distinguish missing from negative evidence without I/O or
   hidden state. `physical_evidence.weighted_evidence` additionally receives a typed per-input binding
   of role, true/false weights, false requirement, explicit admission, and correlation group. It
-  supports both room `occupancy.physical` and casa `presence.physical`: one correlated physical source
+  supports both room and casa `occupancy.physical` (CA4-120): one correlated physical source
   family contributes at most one vote, and only explicitly immediate evidence may take the fast
   primary path. New sensor kinds alter configuration rather than formula code. A formula configuration
   is persisted as bounded canonical JSON and compiled once during generation staging into that
@@ -586,7 +586,7 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   envelope may have the one empty-key cell while learned proposals retain
   supported context cells; direct trigger and guard checks remain mandatory.
   The routine bundle (direct "scene on event" or learned) always requires current
-  casa presence and inherits the safety guards of the same physical action; its learned
+  casa occupancy (someone inside, CA4-120) and inherits the safety guards of the same physical action; its learned
   path is gated by a core-frozen release calibration and a keyed temporal-block report.
   External-exchange guard requirements use its validated purpose variant,
   rather than requiring every purpose's capabilities together; closing, a declared

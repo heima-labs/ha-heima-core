@@ -1471,7 +1471,7 @@ operational path.
 `ContextRegimeNoveltyModel` is the first concrete `UnsupervisedModel`. It detects that a complete,
 explicitly scoped room or house-context vector is unlike the operating regimes already observed; it
 does not declare a fault, safety violation, resident intent, or a causal explanation. Known security
-posture requirements, such as an alarm mode incompatible with current `presence=away`, remain
+posture requirements, such as an alarm armed away while casa `occupancy=present`, remain
 deterministic future Layer-5 policies. A model that learned an unsafe posture as historically common
 must never normalize, suppress, or replace that rule.
 
@@ -2426,8 +2426,8 @@ safe step. It cannot select or cap a target, choose an endpoint, schedule recove
 `InferenceSignal`, or command an Actuator. The same validated artifact may be consumed only by Layer
 5's `environment.planned_comfort_trajectory`, under its separate current-absence, calendar,
 comfort/energy, guard and shadow-validation contract; that descriptor requires a current stabilized
-`presence=away` claim plus an active matching plan, uses `departure` only for live-process reevaluation,
-and treats committed `return` as terminal cancellation. This profile never
+household `presence=away` claim plus an active matching plan, uses `presence.departure` only for
+live-process reevaluation, and treats committed `presence.return` as terminal cancellation. This profile never
 creates a recovery schedule itself. Without an
 explicitly bound energy measurement, its validation and
 proposal may claim only bounded thermal
@@ -4047,8 +4047,9 @@ otherwise and every cited cross-layer dependency is complete.
    `ThermalResponseParameter` consumed by the registered HVAC descriptor as a reachability estimate.
    It becomes eligible only with complete calibrated evidence, exact-context coverage and thermal
    shadow validation; the already-defined Layer-5 prerequisite, comfort/safety, shadow/promotion and
-   automatic-action consent gates then govern its operational use. Historical `departure`/`return` episodes may
-   delimit an absence cohort but the live descriptor alone may use a frozen Layer-0 calendar-plan
+   automatic-action consent gates then govern its operational use. Historical
+   `occupancy.departure`/`occupancy.return` episodes may delimit an absence cohort (nobody inside,
+   whoever lives there; household `presence` episodes never do, CA4-120) but the live descriptor alone may use a frozen Layer-0 calendar-plan
    binding to schedule against an expected return; that plan never labels calibration data as absence.
    No fixed default target is permitted. A candidate without an explicit energy measurement binding
    must omit energy-savings claims and energy-benefit promotion metrics.
@@ -4604,7 +4605,8 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   `ThermalResponseParameter` for the registered HVAC descriptor; it cannot contain an endpoint, target
   temperature, recovery schedule, signal or action. A test proves an absent energy binding removes
   energy-savings claims and energy-benefit promotion metrics rather than substituting a default.
-  Complete observed Layer-4 `departure`/`return` episodes may delimit historical absence cohorts, but
+  Complete observed Layer-4 `occupancy.departure`/`occupancy.return` episodes may delimit historical
+  absence cohorts (a house sitter inside is not an absence for physics), but
   a calendar plan cannot label a cohort, become a feature, or substitute for either observed boundary.
 - `ResidentPresentationPreferenceModel` accepts only a closed explicit-feedback event for one staged
   non-safety `presentation_scope`; a missing response is censored. Tests reject a raw HA entity or

@@ -296,9 +296,12 @@ class ReactionGuardProfileGeneration:
 
 The initial core registry assembles the following capability ids, each at version `1`:
 `opening_security`, `precipitation`, `wind`, `thermal_bounds`, `co2_bounds`, `humidity_bounds`,
-`outdoor_air_quality`, `presence`, `privacy`, and `quiet_hours.v1`. The list is a bootstrap registry inventory,
+`outdoor_air_quality`, `occupancy`, `privacy`, and `quiet_hours.v1`. The list is a bootstrap registry inventory,
 not a `Literal`: a future core entry is added in one reviewed registry registration with a new
-contract/version, while existing configurations retain their exact references. `manual_hold`
+contract/version, while existing configurations retain their exact references. The `occupancy`
+capability (CA4-120, formerly `presence`) binds exactly the casa `occupancy` claim (Layer 4 §9.2):
+whether anyone is physically inside, never household presence. Each guard contract states which value
+passes (a routine requires `present`, presence simulation requires `absent`); unavailable vetoes. `manual_hold`
 and `confirmed_physical_state` are not guard capabilities or profile bindings: Layer 5 checks
 hold admission and physical confirmation for every affected Actuator channel under §6.0,
 independently of the descriptor. Guard entries may expose only their own typed current
@@ -327,7 +330,7 @@ required-capability sets unless their own versioned contract explicitly names it
 
 The Initial-V3 direct descriptor guard contract is
 `ReactionGuardContractRef(guard_contract_id="security.presence_simulation.interior_lighting.v1",
-version="1")`. It permits only `ReactionGuardCapabilityRef(capability_id="presence",
+version="1")`. It permits only `ReactionGuardCapabilityRef(capability_id="occupancy",
 version="1")` and requires that same capability for its sole
 `(light_state, default)` action variant. It introduces no new capability or
 evaluator.
@@ -369,11 +372,11 @@ version="1")`. It permits `opening_security`, `precipitation`, `wind`, `thermal_
 
 `environment.air_extraction` uses `ReactionGuardContractRef(guard_contract_id=
 "environment.air_extraction.guards.v1", version="1")` for its direct path and its learned profile.
-It permits `quiet_hours.v1`, `presence` and `privacy`, each optional. Its variants
+It permits `quiet_hours.v1`, `occupancy` and `privacy`, each optional. Its variants
 `(activate_extraction, default)`, `(adjust_extraction, default)` and `(stop_extraction, default)`
 require none: `activate_extraction` and `adjust_extraction` are `low_risk_intents` (rationale: a room
 extraction fan moves air out of the room it serves and creates no exterior, security or thermal
-hazard; requiring presence would wrongly block extraction after the resident leaves), and
+hazard; requiring occupancy would wrongly block extraction after the resident leaves), and
 `stop_extraction` is a `safe_direction_intents` entry.
 
 `safety.weather_protection` uses `ReactionGuardContractRef(guard_contract_id=
@@ -383,9 +386,10 @@ hazard; requiring presence would wrongly block extraction after the resident lea
 
 `routine.actuation_bundle` uses `ReactionGuardContractRef(guard_contract_id=
 "routine.actuation_bundle.guards.v1", version="1")` for its direct path and its learned profile. It
-permits `presence`, `privacy`, `quiet_hours.v1`, `opening_security`, `precipitation` and `wind`. Every
-member variant requires `presence`, whose binding references the casa `presence` claim (Layer 4
-§9.2) even for a room-scoped Reaction: a routine never acts while the house is away. A member also
+permits `occupancy`, `privacy`, `quiet_hours.v1`, `opening_security`, `precipitation` and `wind`. Every
+member variant requires `occupancy`, whose binding references the casa `occupancy` claim (Layer 4
+§9.2) even for a room-scoped Reaction: a routine never acts while the house is empty, and it does act
+for whoever is inside, resident or not. A member also
 requires the safety capabilities that an environmental descriptor requires for the same physical
 action, so a routine cannot bypass them: `open_for_exchange` adds `opening_security`,
 `precipitation` and `wind`; `increase_shading` on a `weather_exposed` cover (variant
@@ -884,10 +888,11 @@ override a family rule.
 1. **Calendar binding.** The configuration has exactly one `CalendarPlanBinding` with
    `expected_category="planned_absence"` (§5.1), selected by the binding's union rule.
 2. **Effective absence.** True only when a selected planned-absence interval is *active* (never
-   merely upcoming) and the current casa `presence` claim is a committed `away` (already
-   stabilized by the Layer-2 fusion). Staging also requires the casa presence `FusionRule` to
-   declare a non-null `Stability.to_true`: this is the return-confirmation dwell, so a brief false
-   `present` reading cannot commit a `presence.return` and end the program (rule 4). A failed
+   merely upcoming) and the current household `presence` claim (Layer 4 §9.2) is a committed `away`
+   (already stabilized by the Layer-2 fusion). It reads the household, never casa occupancy: someone
+   else inside does not end an absence. Staging also requires the household presence `FusionRule`
+   (Layer 2 §2.8.1) to declare a non-null `Stability.to_true`: this is the return-confirmation dwell,
+   so a brief false `home` reading cannot commit a `presence.return` and end the program (rule 4). A failed
    calendar read or unavailable presence makes the state undecidable, never true.
 3. **Start.** The family's start criterion is effective absence. During a running process an
    observed `presence.departure` episode requests an immediate fresh evaluation; at bootstrap the
@@ -3478,7 +3483,7 @@ descriptor with a `safe_direction_intents` entry (`environment.external_exchange
   `Location(scope="room", room_id="living")`, `relation_profile=None`, trigger
   `state_transition(projector.power@living, off -> on)`, three `light_state` members setting
   three living-room lights to low brightness, the zero-axis empty-key envelope and a guard-profile
-  generation binding `presence`; the required capabilities are exactly `presence`. The same bundle
+  generation binding `occupancy`; the required capabilities are exactly `occupancy`. The same bundle
   with an `open_for_exchange` member, where admitted, also requires `opening_security`,
   `precipitation` and `wind`.
 
@@ -4024,20 +4029,21 @@ bootstrap behavior, normal exit, next-step hold release, restart rule and consen
 This section specifies only what is specific to presence simulation.
 Its `supported_profile_refs` is empty and its exact descriptor-level
 `direct_guard_contract` is `security.presence_simulation.interior_lighting.v1`: for `light_state` it
-permits and requires only the stabilized `presence` capability. Manual hold, command ownership and
+permits and requires only the stabilized `occupancy` capability, passing only on casa `occupancy=absent`
+(nobody inside, whoever it would be). Manual hold, command ownership and
 confirmed state remain the ordinary common admission checks rather than profile capabilities.
 This descriptor version declares `permitted_envelope_axes=()` and
 `permitted_direct_envelope=CanonicalEnvelope(axes=(), supported_cells={CoverageCell(
 axis_values=(), support=None, calibrated=None)})`. The sole empty-key cell
 adds no context restriction and supplies no fabricated learning evidence;
-the active planned-absence interval, stabilized presence, session, guard,
+the active planned-absence interval, stabilized household presence, casa occupancy, session, guard,
 authority and physical admission checks remain mandatory. Staging rejects a
 supplied axis, other cell, or non-null support/calibration field. Its activation
 start criterion is the family's effective absence; the session determines the
 next eligible step, not a second activation.
 
 Its casa-scoped immutable configuration generation contains one `CalendarPlanBinding` for
-`planned_absence`, the exact required `presence` guard-profile generation, a canonical non-empty set of
+`planned_absence`, the exact required `occupancy` guard-profile generation, a canonical non-empty set of
 selected lighting endpoint/channel identities, typed `light_state` targets, one
 `PresenceSimulationActivitySession`, and one closed activity density (`quiet`, `ordinary`, or `active`). At
 staging, an administrator may select registered endpoints and/or rooms; each room expands once to the
@@ -4103,7 +4109,7 @@ follow the endpoint-level exit rule only for its validated normal cancellation
 or completion.
 
 The descriptor uses ordinary enablement, resident consent, manual-hold, command-ownership,
-confirmed-state, cooldown and idempotency checks, plus its exact stabilized-presence guard. Weather,
+confirmed-state, cooldown and idempotency checks, plus its exact stabilized-occupancy guard. Weather,
 opening, thermal and unspecified privacy guards are not required merely because the common registry
 contains them. A held or resident-controlled endpoint may be excluded only before admission: Layer 5
 may freshly derive a complete plausible alternate bundle whose every member passes ordinary admission,
@@ -4251,7 +4257,7 @@ candidate. Valid examples:
   `modify_up` class only when that cell is eligible.
 - **Learned routine:** `routine.actuation_bundle` `"1"`, the living room, `routine_actuation_bundle@1`,
   `objective_id="reproduce_resident_routine"`, the observed three-light bundle with
-  `numeric_outcome_requirement=None` for every member, required guard exactly `presence`, and the
+  `numeric_outcome_requirement=None` for every member, required guard exactly `occupancy`, and the
   context cells of its eligible `RoutineBundleFrequencyCell`s.
 
 No example requires a placeholder outcome unit, a fictitious measured effect, an invented relation
@@ -4377,7 +4383,7 @@ profile or learner, and declares `requires_household_consent=True`,
   activation starts until humidity first returns to `end_level`; a learned `adjust_extraction`
   without an eligible `modify_up` cell is suppressed; `start_level > max_level` is rejected.
 - `routine.actuation_bundle` stages the §7 direct example with required capabilities exactly
-  `presence`; it rejects a configuration without a `presence` binding, and a member whose physical
+  `occupancy`; it rejects a configuration without an `occupancy` binding, and a member whose physical
   action requires safety guards in an environmental descriptor inherits them. A learned candidate is
   proposal-eligible only under `routine_actuation_bundle` v"1" with a matching report entry that
   passes every `RoutineEvidenceGateCalibration` gate (Layer 3 §4.4.3).
@@ -4990,7 +4996,7 @@ profile or learner, and declares `requires_household_consent=True`,
   name collides.
 - Both Initial-V3 planned-absence descriptors declare
   `program_family=("planned_absence_program", "1")`, and staging rejects either one if its
-  configuration lacks the `planned_absence` calendar binding, its casa presence fusion has a null
+  configuration lacks the `planned_absence` calendar binding, its household presence fusion has a null
   `Stability.to_true`, or its descriptor version contradicts a family rule (hold release, restart,
   consent). Given the same calendar and presence trace — departure, bootstrap during an active
   absence, early return, calendar removal, calendar outage, interval end — the family component
