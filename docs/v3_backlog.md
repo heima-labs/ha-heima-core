@@ -2110,6 +2110,12 @@ inside the config flow itself.
    - guest presence as context: whether automations, learning and notifications should behave
      differently while guests are present (a guest context fact, its source and authority);
    - privacy: what guests see of residents (presence, automation reasons, history).
+6. **Incongruence warnings — open (raised 2026-10-19 during CA4-124).** The people model (§8) lists
+   warnings that depend only on occupancy and observed device state, never on who is inside: alarm
+   `armed_away` while casa occupancy is `present`, a door unlocked while the house is empty, windows
+   open while the house is empty and it rains. Heima only observes lock and alarm entities and never
+   commands them. They need their own notification kinds, a `security` family decision and an
+   observation contract for alarm and lock state; to be specified after CA4-125.
 
 ---
 
@@ -6315,6 +6321,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-124 — Notifications had one audience and a fallback visible to everyone
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model §8, Q3, Q4, Q11 (`docs/v3_people_model_draft.md`).
+
+**Problem.** Each kind had one audience; guest-room tablets and guests received nothing; the fallback `persistent_notification` showed resident content to every HA user; administrator kinds were not guaranteed free of resident data for a non-resident administrator.
+
+**Approved resolution (2026-10-19).** Layer 6: kinds declare audience sets; new `house` audience, admissible only for advisories and action notices and always with `residents`, resolving to `HouseEndpoint`s, guest recipients while a guest stay is active and the map-card banner; no buttons, no digest, household quiet hours, never a fallback trigger. Layer 5: descriptor flag `on_site_actionable` copied into occurrences as `house_delivery` (external exchange and solar shading advice, weather-protection notices). The fallback carries no content. `administrators` kinds carry no resident personal data. Layer 8: house banner on the map card. Incongruence warnings stay a separate backlog item (open question 6). See the [CA4-124 review](specs/v3/reviews/CA4-124.md); no V3 runtime test ran.
 
 #### CA4-123 — Learning absorbed guests' behavior
 

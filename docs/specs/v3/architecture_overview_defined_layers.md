@@ -552,7 +552,9 @@ notifications. A closed registry of eight kinds turns typed occurrences into one
 per phase with no stored text, committed with its outbox record. Recipients are people, optionally
 linked to a Layer-2 `Person`, with endpoints; `residents` and `consent_authorities` derive from the
 Person's classification and `HouseholdConsentAuthority`, and only `administrators` is configured on
-the recipient (CA4-118). Closed families drive quiet hours (`safety` bypasses; Reaction notices
+the recipient (CA4-118). A kind declares a set of audiences; the `house` audience (device endpoints
+such as a guest-room tablet, the map-card banner, guests during a stay) receives on-site advice and
+notices only, and the fallback carries no content (CA4-124). Closed families drive quiet hours (`safety` bypasses; Reaction notices
 take their family from the descriptor namespace), proposal and advisory digests group low-urgency
 items, and item tags let later phases replace or clear a notification. Delivery uses `notify.*`,
 growing retries and a single `persistent_notification` fallback; buttons go through

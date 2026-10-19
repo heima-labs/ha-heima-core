@@ -484,6 +484,7 @@ class RegisteredReactionDescriptor:
     low_risk_intents: Mapping[str, str]     # intent -> registered rationale for no required guard (§3.2)
     advisory_intents: frozenset[str]        # intents a member may deliver as resident advice (§3.2)
     resident_action_notice: bool            # notify residents of completed commands (§6.0)
+    on_site_actionable: bool                # its advice/notices also reach the `house` audience (§6.0)
     when_occupied_without_residents: Literal["continue", "pause"]  # fixed per version (below)
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
@@ -2449,6 +2450,7 @@ class ReactionAdvisoryOccurrence:
     opening_id: str | None
     actuator_id: str | None
     controlled_channel: str | None
+    house_delivery: bool              # = the descriptor version's on_site_actionable (CA4-124)
     closed_reason: Literal["activation_ended", "authorization_disabled", "superseded"] | None
     response_request_id: str | None   # the feedback request id on "opened"; None on "closed"
     occurred_at: EvidenceInstant
@@ -2465,6 +2467,19 @@ notice; an advice already delivered is only cleared silently from the device thr
 (Layer 6 §7.4), never retracted with a message. An activation never survives a restart, so
 Layer 6 treats an `opened` advisory from before the current process start without a `closed` phase
 as closed: it retires an undelivered record without delivery and appends no fact.
+
+#### On-site delivery (CA4-124)
+
+Some advice and notices ask for, or explain, an action in the house right now; they matter to whoever
+is inside, not only to residents. Each descriptor version fixes `on_site_actionable`, chosen by the
+core developer and never an administrator setting, and Layer 5 copies it into each advisory and
+action-notice occurrence as `house_delivery`, so Layer 6 never reads the descriptor registry. When it
+is `True`, Layer 6 also delivers that item to the `house` audience (device endpoints, the map card
+and guests during a stay, Layer 6 §5.2), always in addition to residents. Initial-V3 values: `True`
+for `environment.external_exchange` and `environment.solar_shading` (their advice: open or close a
+window, raise or lower shading) and `safety.weather_protection` (its action notice: windows and
+awnings secured); `False` for every other descriptor. Recovery, consent, follow-up, availability and
+proposal items never reach `house`.
 
 #### Resident action notice
 
@@ -2491,12 +2506,14 @@ class ReactionActionNoticeOccurrence:
     snapshot_id: str
     subject: Location
     channels: tuple[ChannelNoticeOutcome, ...]  # canonical key order; bounded by staged endpoints
+    house_delivery: bool              # = the descriptor version's on_site_actionable (CA4-124)
     occurred_at: EvidenceInstant
 ```
 
 Layer 6 appends it as one `reaction.action_notice` event fact with severity `info` and renders its
-text at delivery (for example "windows and awnings secured for rain; living-room window left open
-by you"). It summarizes and does
+text at delivery (for example "windows and awnings secured for rain; living-room window left as set
+manually"); the text never addresses the reader as the person who acted, because a notice may reach
+the `house` audience. It summarizes and does
 not replace a channel's `manual_hold_active` availability notice or a `reaction.follow_up` warning.
 
 #### Proposal review notice
@@ -5077,6 +5094,10 @@ profile or learner, and declares `requires_household_consent=True`,
   simulation but not the trajectory (`absence_below_minimum`, default or derived minimum above 30 h);
   a derived minimum of 80 h blocks a 3-day absence; a 3-week absence with `end_beyond_horizon=true`
   passes; a parameter with an 8-day conservative recovery yields `recovery_beyond_horizon`.
+- On-site delivery (CA4-124): an `environment.external_exchange` advisory occurrence carries
+  `house_delivery=True` and a `safety.weather_protection` action notice carries it too; a
+  comfort-trajectory or routine occurrence carries `False`; staging rejects a descriptor version
+  without the field.
 - Both planned-absence descriptors read only `household.planned_absence` (CA4-121). The same absence
   declared from the panel or from the calendar yields the same `AbsenceProgramState`; an unavailable
   fact (calendar outage) yields an undecidable state, never a normal exit; the union, coalescing and

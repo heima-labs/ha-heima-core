@@ -77,14 +77,14 @@ cannot add a kind. Each entry fixes everything that is not configuration:
 
 ```python
 NotificationFamily = Literal["safety", "attention", "suggestion", "governance"]
-NotificationAudience = Literal["residents", "administrators", "consent_authorities"]
+NotificationAudience = Literal["residents", "administrators", "consent_authorities", "house"]
 
 @dataclass(frozen=True)
 class NotificationKindDescriptor:
     notification_kind: str                 # equals the event fact_type and the Layer-0 claim
     claim_owner_id: str                    # Layer 0 FactTypeClaim owner, e.g. "layer6.reaction_advisory"
     input_type: str                        # the closed typed occurrence the adapter accepts
-    audience: NotificationAudience
+    audiences: frozenset[NotificationAudience]  # non-empty; "house" only where admissible (§5.2)
     default_family: NotificationFamily | None   # None: resolved from the descriptor namespace (§6.1)
     severity: EventSeverity                # fixed per kind (Layer 1 §3.1)
     delivered_phases: frozenset[str]       # phases that reach people; other phases are audit only
@@ -95,12 +95,12 @@ class NotificationKindDescriptor:
 
 ### 4.2 Initial-V3 kinds
 
-| Kind | Input | Audience | Family | Severity | Delivered phases | Answer |
+| Kind | Input | Audiences | Family | Severity | Delivered phases | Answer |
 |---|---|---|---|---|---|---|
 | `reaction.follow_up` | `ReactionFollowUpOccurrence` (Layer 5 §6.0) | residents | by descriptor namespace (§6.1) | warning | the one outcome | none |
 | `automation.availability` | `AvailabilitySuppressionOccurrence` via the tracker (§9.2) | residents | by descriptor namespace (§6.1) | warning | `abstaining`, `reason_changed`, `restored` | none |
-| `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents | suggestion | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
-| `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents | by descriptor namespace (§6.1) | info | the one notice | none |
+| `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents, house (when `house_delivery`) | suggestion | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
+| `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents, house (when `house_delivery`) | by descriptor namespace (§6.1) | info | the one notice | none |
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
 | `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened`, `reissued` (`closed` clears) | `layer5.household_consent`: grant / decline |
 | `proposal.review_pending` | `ProposalReviewOccurrence` (Layer 5 §6.0) | administrators | governance | info | `created`, `approvable_again`, grouped by the digest (§6.3) | none; link to the Layer-8 panel (§7.2) |
@@ -108,6 +108,11 @@ class NotificationKindDescriptor:
 
 Every Initial-V3 kind uses `context_version=1`. A future context change registers a new version and
 keeps the previous template while retained history can contain it (Layer 1 §3.1).
+
+A kind declares a set of audiences (CA4-124); the column above lists it. Only `reaction.advisory` and
+`reaction.action_notice` admit `house`, always together with `residents`, and deliver to it only
+when the occurrence's `house_delivery` is `True` (Layer 5 §6.0, on-site delivery). Every other kind
+never reaches `house`.
 
 ### 4.3 Adapter contract
 
@@ -157,7 +162,8 @@ V2 groups and free routes are not carried over. Household membership is never co
 recipient: a recipient belongs to `residents` exactly when its Person is a `resident`. The
 administrator only decides `administrator`. A recipient without a Person is admitted only with
 `administrator=True` (for example an installer in a B2B deployment, who may have no HA person). A
-recipient whose Person is a `guest` belongs to no household audience. Staging rejects duplicate
+recipient whose Person is a `guest` belongs to no household audience; it is reached only through
+`house` while a guest stay is active (§5.2). Staging rejects duplicate
 `recipient_id`s, two recipients for the same `ha_person_id`, an `ha_person_id` with no active
 `Person`, a recipient without a Person and without `administrator`, a duplicate endpoint within one
 recipient, an unknown `notify.*` service and `supports_actions=True` on a service that is not a
@@ -167,7 +173,15 @@ principal (Layer 8 §4), is its Person's stored `ha_user_id`.
 ### 5.2 Audience resolution
 
 - `residents` is derived: the recipients whose Person is a `resident`.
-- `administrators` is the recipients with `administrator=True`.
+- `house` (CA4-124) is whoever is in the house and is not addressed as a person: every configured
+  `HouseEndpoint` (a device account such as the guest-room tablet), every recipient whose Person is a
+  `guest` while `household.guest_stay` (Layer 2 §2.9) is active, and the Heima map card's banner
+  (Layer 8 §9.14). A `house` item's content is safe for anyone present: closed fields, room and
+  device names only, never a person's identity or a personal fact. Being in `house` never makes a
+  guest a resident and grants nothing.
+- `administrators` is the recipients with `administrator=True`. An administrator may be a non-resident
+  (an installer, B2B), so an `administrators` kind (`proposal.review_pending`, `system.health`)
+  carries no resident personal data: no person identity, presence or household context.
 - `consent_authorities` is derived, never configured: the recipients whose `ha_person_id` is in the
   current `HouseholdConsentAuthority` (Layer 5 §7.1.1). A consent-authorized person without a
   recipient record counts as unreachable, so the fallback applies (§7.3).
@@ -177,7 +191,9 @@ principal (Layer 8 §4), is its Person's stored `ha_user_id`.
 ### 5.3 No silent drop
 
 If an audience resolves to no recipient with at least one endpoint, the notification is delivered
-through the fallback channel (§7.3). This is also the behavior of an unconfigured installation.
+through the fallback channel (§7.3). The `house` audience is the exception: it is always declared
+together with `residents`, so an empty `house` (no device endpoint, no guest, no open card) is
+normal and never triggers the fallback. This is also the behavior of an unconfigured installation.
 Recipients excluded by their own preferences (§5.4) are not unreachable: they chose not to receive
 it, so their exclusion never triggers the fallback.
 
@@ -288,6 +304,9 @@ person from the end-of-quiet-hours digest. The household option is unchanged for
 
 ### 6.4 Advisory digest (C3)
 
+The digest applies to residents only; `house` delivery is never digested: the map card shows open
+items, and a device endpoint receives each phase under the same quiet-hours rule as the household.
+
 During quiet hours, each `reaction.advisory` `opened` record is held. When quiet hours end, Layer 6
 selects the held advisories whose activation is still open (no `closed` phase yet) and delivers them
 per resident as one notification. A closed advisory retires undelivered. A digest that contains one
@@ -307,11 +326,13 @@ timer; it has no own timer.
 
 ### 7.2 Primary channel
 
-For each resolved recipient, Layer 6 sends one call to each endpoint `notify.*` service with:
+For each resolved recipient, and for each `HouseEndpoint` of a `house` delivery, Layer 6 sends one
+call to each endpoint `notify.*` service with:
 
 - the rendered title and message (§8);
 - `data.tag`: the item tag (§7.4), so a retry or later phase replaces, never duplicates;
-- `data.actions`: only for an actionable phase and only on an endpoint with `supports_actions`;
+- `data.actions`: only for an actionable phase, only on an endpoint with `supports_actions`, and never
+  to a `house` target (a guest or a device never answers; advisory feedback is resident evidence);
 - `data.url` (or `clickAction`): the Layer-8 panel address (Layer 8 §5.1) of what the item
   concerns, built from the item's own ids:
 
@@ -336,9 +357,11 @@ persisted.
 Failed endpoint calls are retried after 30 seconds, 2 minutes and 10 minutes (core-fixed). When at
 least one resolved recipient is still unreached after the last retry, when a consent authority has
 no recipient record (§5.2), or when the audience has no reachable recipient, Layer 6 creates one `persistent_notification` with `notification_id` equal to
-the item tag. HA cannot address it to one user: every HA user sees it in the panel. This is accepted
-for Initial V3 and revisited if it proves noisy. The fallback message ends with the same panel
-address as a Markdown link. An actionable phase delivered only through the fallback carries no buttons; it remains
+the item tag. HA cannot address it to one user: every HA user, guests and device accounts included,
+sees it. It therefore carries **no content** (CA4-124): only the core text "Heima has an undelivered
+message for residents" (or "for administrators"), in the household locale, and the panel address as a
+Markdown link. The content is read only in the role-filtered panel; a viewer without the role sees
+nothing there. An actionable phase delivered only through the fallback carries no buttons; it remains
 answerable from the Layer-8 surface through the same ingress (C2). The record becomes `delivered`
 once every resolved recipient was reached or the fallback accepted. A failed fallback keeps the
 record `ready` and is retried every 30 minutes; diagnostics expose it.
@@ -412,7 +435,7 @@ response itself; an unknown prefix is ignored. The response request id comes fro
 ### 7.8 Home Assistant bus event
 
 After each delivery (including the fallback and each digest) Layer 6 fires one
-`heima_notification` event with closed fields only: `notification_kind`, `family`, `audience`,
+`heima_notification` event with closed fields only: `notification_kind`, `family`, `audiences`,
 `phase`, `operation_id` (or the digest's covered count) and `channel` (`notify` or
 `persistent_notification`). It carries no text, recipient or person identity. Users may build their
 own automations on it; Heima never consumes it.
@@ -436,7 +459,7 @@ kind and identifiers.
 Rendered output is bounded: title at most 120 and message at most 600 UTF-8 bytes in every locale,
 checked by template tests. Templates must respect the content rules already fixed upstream, for
 example the follow-up labels an observation with its time and never claims an interrupted command
-completed (Layer 5 §6.0), and an unmanaged-after-restart notice never asserts that Heima switched
+completed (Layer 5 §6.0), a `house` item never addresses the reader as the person who acted, and an unmanaged-after-restart notice never asserts that Heima switched
 the device off (Layer 3 §6.3.1).
 
 ### 8.2 Locale
@@ -545,11 +568,22 @@ class Layer6Generation:
     definition_fingerprint: str
     publication: AvailabilityPublicationGeneration
     recipients: tuple[NotificationRecipient, ...]          # canonical recipient_id order
+    house_endpoints: tuple[HouseEndpoint, ...]             # canonical endpoint_id order (CA4-124)
     silenced_families: frozenset[Literal["attention", "governance"]]
 ```
 
+```python
+@dataclass(frozen=True)
+class HouseEndpoint:
+    endpoint_id: str                  # stable, administrator-chosen, e.g. "guest_room_tablet"
+    service: str                      # notify.* of a device account, validated at staging
+```
+
+A `HouseEndpoint` belongs to no person and has no preferences; staging rejects a duplicate id or
+service and an unknown `notify.*` service.
+
 Recipient preferences (§5.4) are not part of the generation. Publication keys enter Layer 0's
-dependency index. Recipients and family options have no
+dependency index. Recipients, house endpoints and family options have no
 dependents: changing them produces an empty impact record and needs no confirmation. The
 generation swaps between cycles with the rest of the composed generation; records not yet delivered
 are routed with the new recipients.
@@ -665,6 +699,15 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   disabled endpoint is skipped, and disabling the last enabled one is rejected; a resident saving
   another recipient's preferences is rejected; a stale revision is rejected; a recipient with
   `locale="it"` receives Italian text while the household locale is `en`.
+- House audience (CA4-124): an `environment.external_exchange` advisory with `house_delivery=True`
+  during a guest stay reaches residents, the guest-room `HouseEndpoint` without buttons, the guest's
+  own endpoints and the map-card banner; without a stay the guest is not reached; a
+  `safety.weather_protection` action notice with no `HouseEndpoint` configured reaches residents and
+  the banner and creates no fallback; a recovery confirmation never reaches `house`; at night the
+  device endpoint follows the household quiet-hours rule and no `house` digest exists. An unreached
+  resident recipient produces one `persistent_notification` whose text is only "Heima has an
+  undelivered message for residents" plus the panel link; the `heima_notification` event carries
+  `audiences`.
 - Recipients and Persons (CA4-118): a recipient whose Person is a `resident` receives `residents`
   kinds; reclassifying that Person to `guest` removes it from `residents` at the next delivery with
   no recipient edit; an installer recipient without a Person and with `administrator=True` receives

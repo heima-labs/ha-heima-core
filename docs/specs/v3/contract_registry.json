@@ -696,6 +696,12 @@
       "depends_on": ["L1-OPERATIONAL-EVENT", "L0-NOTIFICATION-OUTBOX"]
     },
     {
+      "id": "L6-AUDIENCES",
+      "owner": "docs/specs/v3/layer6_notification_spec.md",
+      "heading": "5.2 Audience resolution",
+      "depends_on": ["L6-RECIPIENTS", "L2-DECLARED-CONTEXT"]
+    },
+    {
       "id": "L6-RECIPIENTS",
       "owner": "docs/specs/v3/layer6_notification_spec.md",
       "heading": "5.1 Recipient model (C1)",
@@ -2002,6 +2008,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-123.md",
       "contracts": ["L3-HOUSEHOLD-CENSORING", "L3-SAMPLE-TIME", "L3-ROUTINE-PATTERN", "L3-CORRECTION-COUNT", "L3-SIGNAL-EGRESS"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-124",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-124.md",
+      "contracts": ["L6-NOTIFICATION-KINDS", "L6-AUDIENCES", "L6-DELIVERY", "L6-DIGESTS", "L6-RENDERING", "L6-GENERATION", "L8-MAP-CARD"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

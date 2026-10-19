@@ -696,9 +696,14 @@ map: rendering, overlays (§9.7), floor badges, pan and zoom (§9.13), the list 
 device control (§9.8) are identical.
 
 - **Access.** Any authenticated HA user, as for the map in the panel (§4).
-- **Content.** The map only: no editor, map checks, items to do, notifications or identifiers. An
-  automation badge shows its short plain-language reason; its full "Why?" link opens the panel
-  address (§5.1) and works only for a viewer with a role.
+- **Content.** The map only: no editor, map checks, items to do, notifications or identifiers, except
+  the house banner below. An automation badge shows its short plain-language reason; its full "Why?"
+  link opens the panel address (§5.1) and works only for a viewer with a role.
+- **House banner (CA4-124).** The card shows the open items of the Layer-6 `house` audience (Layer 6
+  §5.2), for example "close the windows: it is warmer outside", to any viewer: their content is safe
+  for anyone present. A banner has no answer buttons; closing it hides it on that card only, with no
+  effect on Heima, and it disappears when its item closes. The panel's Overview shows the same items
+  to viewers with a role.
 - **Options**, set in HA's visual card editor:
   - `floor`: the floor shown at load and after an idle reset; the lowest floor by default. Floor
     tabs stay available.
@@ -874,7 +879,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `suggestions/dismiss`, `suggestions/restore` | command | admin | Layer-8 view state (§6.5) |
 | `map/save_layout` | command | admin | §9.9, rejected on a stale `revision` |
 | `diagnostics` | query | admin | §14; optional `window` (`24h`, `7d`) returns the §14.1 file |
-| `subscribe` | subscription | any HA user (map overlays and layout revisions only without a role) | live updates of §10.3 and map layout revisions (§9.14), role-filtered |
+| `subscribe` | subscription | any HA user (map overlays, layout revisions and open `house` items only without a role) | live updates of §10.3, map layout revisions and the house banner (§9.14), role-filtered |
 - Live updates to an open panel come from committed-state observers and the in-memory projections
   of §10.3, pushed over an HA websocket subscription; never polling.
 
@@ -946,6 +951,9 @@ developer or a script.
   administrator answering a recovery confirmation from To do within 2 hours of opening is rejected
   with `awaiting_resident_answer` while a resident recipient exists, and accepted afterwards.
   Classifying persons and editing consent authority live in the People section.
+- House banner (CA4-124): with an open on-site advisory, the map card on the guest-room tablet (no
+  role) shows the banner without buttons; closing it hides it on that card only; it disappears when
+  the advisory closes; a recovery confirmation never appears on the card.
 - Declared context (CA4-121): a resident declares "Guests are staying" from the Overview and
   `household.guest_stay` becomes active in the next cycle; a guest account or the guest-room tablet
   calling `household/declare` is rejected before Layer 2; "We are away until…" without an end is
