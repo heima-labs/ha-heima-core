@@ -327,6 +327,43 @@ observation window. A `FutureStateFractionOutcome` likewise requires complete
 observation and retention for its entire interval and a valid state at its anchor;
 an incomplete fraction is excluded, never filled from a later matching state.
 
+#### Household-context censoring (CA4-123)
+
+Heima learns the household's behavior, never a guest's, a house sitter's or a cleaner's, while
+the physics of the house is learned whoever is inside.
+
+**Behavior or physical, derived per instance.** At staging every learner instance is classified from
+its declared inputs, never by an administrator. It is **behavior** learning when any feature, outcome
+or learner-specific episode member reads a person-related fact: `occupancy` (room or casa) and its
+`occupancy.physical`/`occupancy.evidence.*` inputs, `presence`, `presence.household`,
+`occupied_without_residents`, `activity.*`, `actuator.manual_control`, `actuator.correction`,
+`reaction.advisory_feedback`, or any `household.*` fact. Otherwise it is **physical** learning. A
+slot used only as a sample anchor or as a cohort boundary does not count, so a thermal model that
+uses `occupancy.departure`/`occupancy.return` only to delimit empty-house periods stays physical
+(§4.8). The person-related list is core-owned; a new person-related fact type joins it in the same
+reviewed change.
+
+**Censoring, behavior instances only.** The common builder, and every learner-specific episode
+assembler (§4.4.2, §4.4.3), excludes a sample or episode with the reason
+`censored_by_household_context` when its observation interval (earliest feature window start to the
+end of its outcome or assembly window):
+
+1. intersects a period in which the Layer-4 claim `occupied_without_residents` (Layer 4 §9.2) was
+   `True` or unavailable, anywhere in the house; or
+2. intersects an active `household.guest_stay` (Layer 2 §2.9) and its subject, or any feature,
+   outcome or member slot, is a room in that stay's `guest_room_ids`; while `household.guest_stay` is
+   unavailable, its default guest rooms are used. Other rooms keep learning.
+
+A censored sample is never a negative example, a zero outcome or a "no action" observation, and the
+builder declares the retention and `ObservationCoverage` of both facts for every behavior binding; a
+missing history for either excludes the sample like any other required coverage. Physical instances
+are unchanged.
+
+**Live egress.** While the current household context would censor its subject, a behavior instance's
+live output (an `InferenceSignal`, a `DiagnosticFinding`, a context-novelty result) abstains with a
+diagnostic: a household pattern applied to a guest is wrong, and a stay is novel by definition, so it
+never raises a "context regime novel" finding.
+
 #### Causal window semantics
 
 One versioned feature resolver implements these rules for historical construction and live
@@ -1504,7 +1541,11 @@ Chronological validation records score stability across later blocks, the observ
 operating-envelope coverage, feature-group availability, artifact-to-artifact score comparability only
 where schema/baseline permits, and administrative false-positive/false-negative feedback where supplied.
 There is no claim of conventional supervised accuracy without labels. The artifact may become
-diagnostic-only or unavailable when score stability, coverage, or alert-rate gates fail. Its sole egress
+diagnostic-only or unavailable when score stability, coverage, or alert-rate gates fail. An instance
+whose vector includes a person-related feature is behavior learning (§4.2 household-context
+censoring): it trains without, and raises no finding during, periods occupied without residents or,
+for guest-room features, guest stays; an instance of physical features only (HVAC, temperatures,
+power) is unaffected. Its sole egress
 is a deduplicated `DiagnosticFinding` with the registered `context_regime_novel.v1` schema or a
 bounded request for ordinary evidence inspection/retraining; it cannot create a notification, signal,
 fact, policy, hold, action, or security conclusion. Its frozen `shadow_requirement` is
@@ -4446,6 +4487,15 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   switch power cut that makes a bulb unavailable, or a missing/double join
   cannot become a resident routine member or a complete no-action negative
   (§4.4.3; Layer 0 §5.1.1).
+- Household-context censoring (CA4-123): a routine-learner episode while a house sitter is inside
+  with every resident away is `censored_by_household_context`, never `no_resident_control`; during a
+  three-day guest stay with residents home, samples whose subject or slots are in the stay's guest
+  room are censored and living-room samples are kept; an unavailable `occupied_without_residents`
+  censors; an unavailable `household.guest_stay` censors the default guest rooms. A novelty instance
+  with an occupancy feature is behavior learning and raises no finding during the stay; one with only
+  HVAC and temperature features is physical and unaffected; a thermal instance using occupancy
+  episodes only as cohort boundaries stays physical. An occupancy-assist signal for the guest room
+  abstains during the stay.
 - Manual-control actors (CA4-119): the same brightness change from a resident who is an
   administrator is a member; from a `guest`, a guest-room tablet (`device`) or an installer
   (`administrator`) it is never a member, and on a required channel it makes that candidate's

@@ -236,6 +236,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
   each Reaction descriptor version fixes `continue` or `pause` for it, and behavior learning censors
   it. Absence programs pause and resume, ending only on a household return; the comfort trajectory
   also needs a minimum absence derived from the learned thermal response (default 48 h, CA4-122).
+- **Behavior learning only learns the household:** every learner instance is classified behavior or
+  physical from its inputs; behavior samples are censored while the house is occupied without
+  residents and, during a guest stay, in the guest rooms; physical learning continues (CA4-123).
 - A **Sensor** has one HA `ReadBinding`, one typed `Interpretation`, one fact type, and one explicit
   `Location`. Raw HA state/attributes/calendar data do not escape this boundary as learning or policy
   inputs.

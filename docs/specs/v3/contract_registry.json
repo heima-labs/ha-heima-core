@@ -798,6 +798,12 @@
       "depends_on": ["L4-CASA-CLAIMS"]
     },
     {
+      "id": "L3-HOUSEHOLD-CENSORING",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "Household-context censoring (CA4-123)",
+      "depends_on": ["L3-SAMPLE-TIME", "L4-CASA-CLAIMS", "L2-DECLARED-CONTEXT"]
+    },
+    {
       "id": "L2-DECLARED-CONTEXT",
       "owner": "docs/specs/v3/layer2_registries_spec.md",
       "heading": "2.9 Declared household context (CA4-121)",
@@ -1985,6 +1991,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-122.md",
       "contracts": ["L4-CASA-CLAIMS", "L5-DESCRIPTOR-PLAN", "L5-DIAGNOSTIC-REGISTRY", "L5-PROGRAM-FAMILY", "L5-COMFORT-TRAJECTORY", "L5-PRESENCE-SIMULATION", "L2-DECLARED-CONTEXT"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-123",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-123.md",
+      "contracts": ["L3-HOUSEHOLD-CENSORING", "L3-SAMPLE-TIME", "L3-ROUTINE-PATTERN", "L3-CORRECTION-COUNT", "L3-SIGNAL-EGRESS"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
