@@ -627,8 +627,8 @@ validation table, not a second facts registry or a hot-path abstraction.
 
 The core reserves `FactTypeClaim(fact_type_pattern="manual_hold.lifecycle",
 owner_id="layer0.divergence_hold", emission_kind="event")` for hold lifecycle audit (§6).
-It also reserves `FactTypeClaim(fact_type_pattern="actuator.resident_control",
-owner_id="layer0.resident_control_ingress", emission_kind="event")` for the verified direct-control
+It also reserves `FactTypeClaim(fact_type_pattern="actuator.manual_control",
+owner_id="layer0.manual_control_ingress", emission_kind="event")` for the verified manual-control
 edge in §5.1.1. That owner alone constructs its closed three-field canonical value; no Layer-2
 Actuator registration or plugin may claim the same event type.
 The core reserves `FactTypeClaim(fact_type_pattern="actuator.channel_state.*",
@@ -1817,7 +1817,17 @@ class UserActor:
     household_role: HouseholdRole   # from the user's classified Person (Layer 2 §2.8); "none" for a
                                     # user with no Person (a device account) or an unclassified person
     ha_admin: bool                  # HA's own administrator flag, an independent axis
+
+ControlActor = Literal["resident", "guest", "device", "administrator", "physical"]
 ```
+
+**Control actor.** Who performed a manual control is recorded as one coarse `ControlActor`, never an
+identity, derived deterministically: `household_role="resident"` gives `resident` whatever the
+administrator flag; `guest` gives `guest`; `none` with `ha_admin=True` gives `administrator` (a
+non-resident administrator, for example an installer); `none` with `ha_admin=False` gives `device`
+(an account with no Person, for example a guest-room tablet); a core-approved physical-control
+adapter gives `physical`. Only `resident` and `physical` controls can be resident learning evidence
+(Layer 3); every class creates a hold (§6).
 
 **Two independent actor axes.** An authenticated user is described by its household role and by HA's
 administrator flag, never by one combined category. Learning evidence and household authority
@@ -1860,17 +1870,17 @@ never silently trusted. This is what protects against, among other things, a Lay
 about its own declared capability tier. Both `FactSource` and `ApplyStepSource` are redacted before
 they reach diagnostics or storage (no secrets, tokens, or raw payloads retained).
 
-### 5.1.1 Trusted resident-control edge
+### 5.1.1 Trusted manual-control edge
 
 The other `user_response` boundary is a verified direct manual control of a registered logical Actuator channel.
 At HA event ingress, before raw context is discarded, Layer 0 may emit the immutable event fact
-`actuator.resident_control` only when all of these are true:
+`actuator.manual_control` only when all of these are true:
 
 1. the edge addresses a Layer-2 registered `actuator_id` and its registered `controlled_channel`;
 2. it changes that channel's valid observable physical state, rather than only availability or an
    unrelated entity attribute;
-3. the edge is linked to a direct authenticated device command by a user whose household role is
-   `resident` (§5), or to a core-approved physical-control adapter; a propagated HA user context, automation, integration, service, unknown context, or merely an entity state change is insufficient;
+3. the edge is linked to a direct authenticated device command by any user (§5), whatever its
+   household role or administrator flag, or to a core-approved physical-control adapter; a propagated HA user context, automation, integration, service, unknown context, or merely an entity state change is insufficient;
 4. the edge has a fresh non-forgeable ingress identity and passes the ordinary duplicate filter.
 
 The event is a Layer-1 event fact at the Actuator's registered `Location`, with
@@ -1879,14 +1889,15 @@ The event is a Layer-1 event fact at the Actuator's registered `Location`, with
 for a core-approved physical-control adapter, `actor_type="physical"` with no `UserActor`. Its canonical value contains only
 the internal `actuator_id`, `controlled_channel`, and non-forgeable `control_edge_id`; the
 `HouseFact.when` is the observed edge instant. It retains no HA entity id, HA user identity, raw event
-context, state payload, or service data. The event is evidence of a resident operating a channel, not
-evidence that the operation corrected Heima. Layer 5 alone compares it to a successful compatible
+context, state payload, or service data. Its `ControlActor` (§5) follows from the provenance. The
+event is evidence of someone operating a channel manually, not evidence that the operation corrected
+Heima, and only a `resident` or `physical` control is resident evidence (Layer 3). Layer 5 alone compares it to a successful compatible
 `ApplyStep` and may create the separately specified `actuator.correction` event (§6.1 of Layer 5).
 
 This shares the Divergence Hold Manager's verified-origin ingress boundary; it introduces no
 per-cycle poll, HA I/O, lookup over unregistered entities, or new persistent live-state table. A
-physical/integration event without an authenticated resident identity, including a typical dumb wall
-switch that merely makes a smart bulb disappear, deliberately emits no resident-control event. A
+physical/integration event without an authenticated user or approved adapter, including a typical dumb wall
+switch that merely makes a smart bulb disappear, deliberately emits no manual-control event. A
 future core-approved hardware provenance adapter may add a separately verified local-control boundary;
 generic state divergence is never treated as that adapter.
 
@@ -1901,8 +1912,8 @@ one HA change share the edge id and revision; duplicate changes do not receive a
 Layer 5 consumes this normalized record for physical confirmation and later divergence (§6.0.1);
 Layer 0 never reads Layer 2's registry or evaluates the action matcher itself. The record is not
 a HouseFact; its bounded state projection below is. The separate
-`actuator.resident_control` event above is emitted only for the verified
-direct-resident subset and keeps its exact three-field value.
+`actuator.manual_control` event above is emitted only for the verified
+manual subset and keeps its exact three-field value.
 
 **Durable channel-state projection.** Each registered channel has one distinct
 state `fact_type`, `actuator.channel_state.<digest>`, where `<digest>` is the
@@ -1923,8 +1934,8 @@ ChannelStateValue = {
     "observable_state_contract_id": str,
     "observed_facets": dict[str, str],  # all valid channel facets as canonical JSON text
     "changed_facets": list[str],  # sorted/unique, nonempty only for a physical change edge
-    "control_edge_id": str | None,     # same id as the verified resident event, if any
-    "origin": Literal["initial", "heima", "resident_manual", "admin_manual",
+    "control_edge_id": str | None,     # same id as the verified manual-control event, if any
+    "origin": Literal["initial", "heima", "manual",
                       "external_automation", "external_integration", "unknown"],
 }
 ```
@@ -1938,17 +1949,17 @@ the observation edge instant, or the first valid barrier instant for an
 initial state. A durable-only re-seed after global queue overflow (§4.6) uses a fresh
 validated current observation projected with `changed_facets=[]`, `control_edge_id=None`
 and `origin="initial"` at its validation-cycle instant. It does not mint a physical
-edge, change the live observation epoch/revision, emit resident-control/correction
+edge, change the live observation epoch/revision, emit manual-control/correction
 or reset a live hold. A real newly observed physical change retains its ordinary
 edge projection exactly once and can establish the baseline itself.
 On unavailable input it emits `available=False`; its value is
-undefined and no edge id or resident event is fabricated. If a verified
-resident control changes the channel, the state fact and unchanged
-three-field `actuator.resident_control` event share the same
+undefined and no edge id or manual-control event is fabricated. If a verified
+manual control changes the channel, the state fact and unchanged
+three-field `actuator.manual_control` event share the same
 `control_edge_id`/`HouseFact.when` and enter the same ordered cycle batch.
-The edge id is a join key, never a proof of resident identity by itself:
-Layer 3 requires the separately claimed resident event. An edge linked to
-a Heima `ApplyCall` has `origin="heima"` and cannot join a resident event.
+The edge id is a join key, never a proof of who acted by itself:
+Layer 3 requires the separately claimed manual-control event and its `ControlActor`. An edge linked to
+a Heima `ApplyCall` has `origin="heima"` and cannot join a manual-control event.
 External/unknown changed edges remain visible as confounders without being
 promoted to resident actions.
 The first valid observation after a process restart is force-written for
@@ -1965,14 +1976,14 @@ data, user id, personal identity or unregistered attribute is retained.
 The projection is a history source and read-only current observation; it
 never authorizes an `ApplyStep`, restores a hold or asserts causal origin
 from an unavailable transition. Layer 0 persists its state and the paired
-resident event atomically in the ordinary end-of-cycle fact batch; a failed
+manual-control event atomically in the ordinary end-of-cycle fact batch; a failed
 batch/uncertain crash follows §4.4's incomplete-history rule.
 
-A direct resident/admin origin requires a matched authenticated device command or a versioned
+A `manual` origin requires a matched authenticated device command or a versioned
 core-approved physical-control adapter. A propagated HA user id or parent id alone is insufficient.
 An automation or integration label requires its own verified execution/link; otherwise use unknown.
 An edge linked to a Heima ApplyCall is tagged internally as Heima-originated and excluded from
-external hold and resident-control attribution before the public HoldOrigin is assigned. No raw HA
+external hold and manual-control attribution before the public HoldOrigin is assigned. No raw HA
 context, personal identity, service payload, or full entity attributes are retained.
 
 ### 5.1.1.2 Durable managed-episode projection
@@ -2019,7 +2030,7 @@ actions.
 Layer 0 persists the channel's normal unavailable state transition under the
 `actuator.channel_state.*` contract above (independent registered Sensors
 retain their own claims), but emits
-neither `actuator.resident_control` nor an implicit conclusion from that transition. Consumers that
+neither `actuator.manual_control` nor an implicit conclusion from that transition. Consumers that
 need complete observation windows must treat an interval containing an unavailable channel as
 interrupted rather than as a negative observation. In particular, a later count learner must mark a
 post-`ApplyStep` target window with such an interruption as `censored_by_unavailability`, not as zero
@@ -2160,8 +2171,7 @@ activation. Layer 5 §6 defines admission and step recognition.
 
 ```python
 HoldOrigin = Literal[
-    "resident_manual", "admin_manual", "external_automation",
-    "external_integration", "unknown",
+    "manual", "external_automation", "external_integration", "unknown",
 ]
 HoldOriginProof = Literal[
     "direct_authenticated_command", "approved_physical_control",
@@ -2207,6 +2217,7 @@ class HoldLifecycleValue:
     anchor_target_fingerprint: str
     origin: HoldOrigin
     origin_evidence: HoldOriginProof  # closed proof class; "none" exactly for unknown
+    manual_actor: ControlActor | None  # §5; set exactly when origin == "manual"
     observation_context: Literal["normal", "after_observation_break"]
     expected_values: dict[str, str]  # facet -> bounded canonical JSON text
     observed_values: dict[str, str]  # current or last known before break; same facets
@@ -2221,13 +2232,15 @@ class HoldLifecycleValue:
 ```
 
 The origin is assigned at ingress from verified causal evidence, not guessed from the state value,
-time, location, or a propagated HA `user_id` alone. `resident_manual`/`admin_manual` require a
-matched direct authenticated device command or a separately approved physical-control adapter;
+time, location, or a propagated HA `user_id` alone. `manual` requires a
+matched direct authenticated device command or a separately approved physical-control adapter, and
+records who acted only as its `ControlActor`: how a change happened (origin) and who made it
+(`manual_actor`) are separate fields;
 an automation descendant of a user action is not that direct command. `external_automation`
 requires a verified automation execution or service-call link; `external_integration` requires a
 verified integration link. Heima's own pending or completed command is excluded before origin
 classification. If no such proof exists, the origin is `unknown`, and the hold still applies.
-The proof class is direct_authenticated_command for a matched resident/admin call,
+The proof class is direct_authenticated_command for a matched authenticated user call,
 approved_physical_control for a core-approved physical adapter, automation_execution for a
 verified automation link, integration_link for a verified integration link, and none only for
 unknown. Neither the live view nor durable audit retains a personal identity, raw HA context,
@@ -3188,16 +3201,16 @@ concrete checklist rather than re-deriving one:
   the boundary; and `kind="user_response"` is verified against
   its two distinct boundaries: an active confirmation request, or a matched direct Actuator
   command. Propagated user context, an unregistered channel, or a duplicate ingress identity
-  cannot establish resident control.
+  cannot establish manual control.
 - An authenticated user action retains the attributable actor only in its
   governance transition; its `ApplyStepSource`, `ApplyStep` and execution audit carry no
   `actor_id` or equivalent personal identity. A correlation id links the records without
   authorizing a command or exposing the actor in the operational projection (§5).
-- Bootstrap composes exclusive `event` claims for `actuator.resident_control` (Layer 0)
+- Bootstrap composes exclusive `event` claims for `actuator.manual_control` (Layer 0)
   and `actuator.correction` (Layer 5). A competing exact or overlapping claim from another
   owner, including a plugin, is rejected before producers run. Each accepted fact has its
   owner's closed value and is read as an event, never current state (§4; Layer 5 §6.1).
-- A verified resident, admin, automation, or integration edge receives only its proven origin
+- A verified manual, automation, or integration edge receives only its proven origin
   (§6.1). An unproven but valid post-confirmation divergence activates a channel hold with
   `origin="unknown"`. A pending Heima action, unconfirmed command timeout, availability change,
   and first observation after restart or an observation break create no hold. A later valid edge
@@ -3491,20 +3504,22 @@ concrete checklist rather than re-deriving one:
   CPU/memory/pressure parsing; an unavailable or non-enforceable platform value remains absent with its
   capability unset, never a guessed host allocation. Probe failure and percentile aggregation neither
   block a cycle nor produce a `HouseFact`, semantic-resolver input, policy decision, or action (§9).
-- A verified control edge by a `resident` user or an approved physical-control adapter on a
-  registered Actuator channel emits one redacted
-  `actuator.resident_control` event with `user_response` provenance and no raw HA identity/context.
-  The same edge from an unavailable channel, an unknown/automation/service/admin context, or a duplicate
-  ingress report emits none. A device that becomes unavailable after a dumb wall switch power-cut is
-  persisted as an unavailable channel-state transition; it never becomes `off`, a resident-control event, an implicit
+- A verified manual control edge by any authenticated user or an approved physical-control adapter
+  on a registered Actuator channel emits one redacted `actuator.manual_control` event with
+  `user_response` provenance and no raw HA identity/context; its `ControlActor` is `resident` for a
+  resident (also when an administrator), `guest`, `administrator` for an installer with no Person,
+  `device` for a tablet user with no Person, and `physical` for the adapter (CA4-119). Every class
+  creates a hold with `origin="manual"` and that `manual_actor`. The same edge from an unavailable
+  channel, an unknown/automation/service context, or a duplicate ingress report emits none. A device that becomes unavailable after a dumb wall switch power-cut is
+  persisted as an unavailable channel-state transition; it never becomes `off`, a manual-control event, an implicit
   hold, or a zero-correction observation, and recovery of availability cannot synthesize the missing
   intervening history (§5.1.1/§5.1.2).
 - A staged channel publishes one bounded `actuator.channel_state.<digest>`
   state fact on first valid observation, physical change, availability change
   and the first post-restart observation, but no fact per identical HA report.
-  A verified resident edge joins the unchanged three-field resident event
+  A verified manual edge joins the unchanged three-field manual-control event
   by its unique edge id in the same durable cycle; an external/unknown or
-  Heima-linked edge has no resident event. Two Actuators in one room retain
+  Heima-linked edge has no manual-control event. Two Actuators in one room retain
   distinct fact identities, and an oversized/ambiguous facet projection
   fails staging (§4/§5.1.1.1; Layer 2 §6.1).
 - An eligible managed-episode opening and closure each append one bounded

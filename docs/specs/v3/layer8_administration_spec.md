@@ -383,6 +383,13 @@ When the needed facts are beyond retention, the chain ends with a `data_unavaila
 never guesses. Administrators see the full chain with codes and links; residents see the same chain
 rendered in plain language, without identifiers.
 
+A hold node says how the channel changed ("changed manually", "changed by another automation",
+"changed by an integration", "changed for an unknown reason") from the hold's `origin`. For a
+`manual` hold, administrators and residents also see who acted as the coarse `manual_actor` (Layer 0
+§5): "by a resident", "by a guest", "from a device account" (for example the guest-room tablet), "by
+an administrator", "from a wall switch". It is never a name or an HA user; a viewer without a role
+never sees `manual_actor` (CA4-119).
+
 ## 9. House map (L8-C3a)
 
 The Overview shows a native map, never a third-party card; the same map is also Heima's own
@@ -572,7 +579,7 @@ applies. It is an ordinary use of HA controls, not a Heima action: the apply pla
 channel through which Heima acts on HA. Heima observes the resulting state like any other control
 use (Layer 0 §6). If it diverges from a current Reaction target, the hold follows Layer 0 §6, and
 the map shows the held automation with its §8 explanation. That explanation states only the origin
-Layer 0 verified; it never claims more about who acted. Device control is unavailable in edit mode.
+Layer 0 verified and its coarse `manual_actor`; it never claims more about who acted. Device control is unavailable in edit mode.
 
 ### 9.9 Editing the layout
 

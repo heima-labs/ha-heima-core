@@ -314,7 +314,7 @@ producer-owned operation-id protocols are exceptions: `manual_hold.lifecycle` re
 idempotent under Layer 0 §6.4, every Layer-6 notification kind (including `reaction.follow_up`
 and `automation.availability`) is appended once per `(notification_kind, operation_id)` under §4.5,
 and `actuator.target_lifecycle`, `actuator.correction`,
-`actuator.resident_control` and `reaction.advisory_feedback` deduplicate by
+`actuator.manual_control` and `reaction.advisory_feedback` deduplicate by
 their own stable keys under Layer 0 §4.2. None uses
 `notification_key` as fact identity. Layer 6 uses that key for delivery identity; it has no
 time-based deduplication or rate-limiting window, and repeats on a device are replaced through
@@ -323,7 +323,7 @@ trail, while `severity` may affect rendering, route selection, escalation, and d
 the fact's identity, ownership, retention semantics, or causal correlation. Event consumers must not
 derive a live state from this value; a current claim needs a separate `state` fact by Layer 0 §4.
 
-`actuator.resident_control` and `actuator.correction` are also reserved V3 `event` fact types,
+`actuator.manual_control` and `actuator.correction` are also reserved V3 `event` fact types,
 but are audit/learning evidence, not rendered `HeimaEvent`s. Their sole producers and closed
 values are Layer 0 §5.1.1 and Layer 5 §6.1 respectively, under Layer 0 §4's exclusive
 `FactTypeClaim`s. Neither uses `OperationalEventValue` or creates a resident notification by

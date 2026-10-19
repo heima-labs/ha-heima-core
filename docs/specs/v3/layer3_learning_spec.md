@@ -1034,7 +1034,8 @@ target was observed. The counted corrections come **only** from Layer 5
 censoring inputs additionally require the same section's
 `actuator.target_lifecycle` event phases and Layer 0 §5.1.1.1's
 per-channel state/coverage history; no raw ApplyStep audit is a learner API.
-A usable correction record has `classification="resident_manual_override"`, a
+A usable correction record has `classification="manual_override"` with `control_actor`
+`resident` or `physical` (a `guest`, `device` or `administrator` correction is never counted), a
 non-null unique `anchor_apply_step_id`, matching logical `actuator_id`/`controlled_channel`,
 complete-target observation time, correction time, and deduplication identity; service completion
 time is optional for `already_satisfied` and failed/timed-out calls. Layer 3 reads these durable
@@ -1195,11 +1196,12 @@ The trigger may be an ordinary observed physical transition even where its resid
 known; provenance becomes mandatory only for the learned actuation outcome.
 
 An `ActuationRoutineEpisode` starts at that trigger. It contains the canonical ordered bundle formed
-only from subsequent verified Layer-0 `actuator.resident_control` facts joined to their
+only from subsequent verified Layer-0 `actuator.manual_control` facts whose `ControlActor` (Layer 0
+§5) is `resident` or `physical`, joined to their
 canonical channel-state edges inside the declared assembly
 window. Facts with the same `when` are concurrent members of one observation group, irrespective of
 `AppendOrder`; their deterministic canonical member order is the registered descriptor's closed ordering,
-not a claim that one caused another. A resident-control fact in the trigger's own concurrent group is
+not a claim that one caused another. A manual-control fact in the trigger's own concurrent group is
 not subsequent and cannot be an outcome member: it may describe the same real-world interaction, but
 cannot establish a trigger-to-outcome relation. A complete, observable window with no subsequent
 resident control is retained with the closed training-outcome tag
@@ -1212,7 +1214,10 @@ has `resident_bundle` and a non-empty canonical bundle. It is rejected if that b
 is over the descriptor's bound, repeats an `(actuator_id, controlled_channel)`, has a missing/invalid
 member target, or cannot be mapped to the descriptor's permitted member vocabulary. A member attributed
 to Heima, another automation, an external/unknown source, or an unavailable observation never becomes
-resident outcome evidence. A known policy action that overlaps the assembly window censors the episode
+resident outcome evidence. A manual control by a `guest`, `device` or `administrator` is a
+confounding control like an external one: it never becomes a member, and on a channel a candidate
+requires it makes that candidate's window ambiguous and excluded, never a negative example. A known
+policy action that overlaps the assembly window censors the episode
 rather than being relabelled as a resident omission or a negative example. An external/unknown control
 on a channel required by a candidate likewise makes that candidate's window ambiguous and excluded;
 it is not evidence that the resident chose no action.
@@ -1220,10 +1225,11 @@ it is not evidence that the resident chose no action.
 **Historical join for routine outcomes.** The registered channel's
 `actuator.channel_state.<digest>` history provides its complete canonical
 post-edge facet snapshot and exact changed-facet set; the unchanged
-three-field `actuator.resident_control` event proves resident origin only
-when its `(actuator_id, controlled_channel, control_edge_id)` joins exactly
-one available channel-state transition with the same `when`, and that
-transition has `origin="resident_manual"`. A missing, duplicate,
+three-field `actuator.manual_control` event proves a resident outcome only
+when its `ControlActor` is `resident` or `physical`, its `(actuator_id,
+controlled_channel, control_edge_id)` joins exactly one available
+channel-state transition with the same `when`, and that transition has
+`origin="manual"`. A missing, duplicate,
 unavailable, initial-after-gap, Heima-linked or mismatched edge cannot
 become a resident member. The descriptor's staged channel/intent adapter
 projects the observed canonical state and changed facets into the exact
@@ -4438,6 +4444,12 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   switch power cut that makes a bulb unavailable, or a missing/double join
   cannot become a resident routine member or a complete no-action negative
   (§4.4.3; Layer 0 §5.1.1).
+- Manual-control actors (CA4-119): the same brightness change from a resident who is an
+  administrator is a member; from a `guest`, a guest-room tablet (`device`) or an installer
+  (`administrator`) it is never a member, and on a required channel it makes that candidate's
+  window ambiguous and excluded, not a `no_resident_control` negative; from an approved physical
+  switch adapter (`physical`) it is a member. A `manual_override` with `control_actor="guest"`
+  never enters the correction count.
 - `IndirectSemanticAssistModel-v1` accepts only a frozen `IndirectAssistanceContract`. The
   same signal type may serve multiple resolver kinds only through distinct frozen contracts;
   staging rejects one `(signal_type, contract_id/version)` routed to two resolver kinds, a different

@@ -471,7 +471,19 @@
       "id": "L0-CHANNEL-STATE",
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "5.1.1.1 Normalized observation edge and origin proof",
-      "depends_on": ["L0-STATE-HISTORY", "L0-OBSERVATION-COVERAGE", "L2-ACTUATOR-CHANNEL"]
+      "depends_on": ["L0-STATE-HISTORY", "L0-OBSERVATION-COVERAGE", "L2-ACTUATOR-CHANNEL", "L0-MANUAL-CONTROL"]
+    },
+    {
+      "id": "L0-MANUAL-CONTROL",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "5.1.1 Trusted manual-control edge",
+      "depends_on": ["L0-FACT-SOURCE", "L2-ACTUATOR-CHANNEL"]
+    },
+    {
+      "id": "L0-HOLD-ORIGIN",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "6.1 Identity, origin, and lifecycle",
+      "depends_on": ["L0-FACT-SOURCE", "L0-CHANNEL-STATE"]
     },
     {
       "id": "L0-MANAGED-EPISODE",
@@ -1905,6 +1917,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-118.md",
       "contracts": ["L2-PERSONS", "L0-FACT-SOURCE", "L0-RESPONSE-INGRESS", "L0-RECOVERY-CONFIRMATION", "L5-REACTION-AUTHORITY", "L6-RECIPIENTS", "L6-RECIPIENT-PREFERENCES", "L8-ROLES"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-119",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-119.md",
+      "contracts": ["L0-FACT-SOURCE", "L0-MANUAL-CONTROL", "L0-CHANNEL-STATE", "L0-HOLD-ORIGIN", "L5-TARGET-EVIDENCE", "L3-CORRECTION-COUNT", "L3-ROUTINE-PATTERN", "L8-EXPLANATIONS"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

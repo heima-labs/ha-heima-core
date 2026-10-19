@@ -146,7 +146,7 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   One bounded `actuator.channel_state.<digest>` state stream per registered
   channel records physical/availability changes and the first fresh
   post-restart state. Its edge id joins the unchanged three-field verified
-  `actuator.resident_control` event. Layer-5
+  `actuator.manual_control` event (with its coarse `ControlActor`, CA4-119). Layer-5
   `actuator.target_lifecycle` phases record admitted target decisions,
   first complete observations and closures; Layer 3 joins these with
   `actuator.correction` and typed coverage for routine and correction

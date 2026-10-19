@@ -3033,7 +3033,7 @@ facet was confirmed but the coherent complete target was not, or `unconfirmed` w
 One normalized observation containing later valid divergences from confirmed facets may activate
 or update the channel hold in one atomic transition even while another facet is pending; the channel ownership lease remains unresolved until the whole step
 is reconciled. A nonmatching edge on an as-yet unconfirmed facet during pending is not itself a
-hold or resident correction. Verified direct resident evidence is retained, but §6.1 cannot
+hold or manual correction. Verified manual-control evidence is retained, but §6.1 cannot
 attribute a correction until the complete coherent target has been observed.
 
 At deadline, an unconfirmed facet receives an explicit `unconfirmed` outcome, with reason
@@ -3148,19 +3148,22 @@ denominator under Layer 0 §4.4. These facts are historical evidence only:
 live command/hold authority remains the process-local admission and pending
 state of §6.0–§6.0.1.
 
-Layer 5 owns the attribution of a resident correction to a recorded, admitted target decision whose
+Layer 5 owns the attribution of a manual correction to a recorded, admitted target decision whose
 complete target was observed. This is a strictly narrow Layer-5 -> Layer-3 evidence path: Layer 5 is
 the only layer that has both the accepted `ApplyStep` audit identity and the policy/Actuator channel
 semantics needed to make the association; Layer 3 consumes the resulting history but may never reconstruct attribution from raw HA state changes.
 It is not a feedback command path, a live signal, an action outcome usable by Layer 4, or a generic
 cross-layer event bus.
 
-Only after Layer 0's verified `actuator.resident_control` event arrives may Layer 5 emit a
-`resident_manual_override` attribution. A verified external/integration or
+Only after Layer 0's verified `actuator.manual_control` event arrives may Layer 5 emit a
+`manual_override` attribution, carrying that event's `ControlActor` (Layer 0 §5) as
+`control_actor`. Only a `manual_override` whose `control_actor` is `resident` or `physical` is
+resident learning evidence; one by a `guest`, `device` or `administrator` records that someone
+corrected Heima without teaching Heima anything. A verified external/integration or
 unknown-origin normalized channel edge may separately yield an
 `external_or_unknown_correction` diagnostic when it diverges from a
 confirmed compatible target; it never supplies resident learning evidence
-or claims a resident acted. Both cases use the one immutable Layer-1 event fact
+or claims a person acted. Both cases use the one immutable Layer-1 event fact
 `actuator.correction`, with
 `FactSource.kind="reaction"` and an exact `value` named `CorrectionAttributionEvent`:
 
@@ -3168,9 +3171,10 @@ or claims a resident acted. Both cases use the one immutable Layer-1 event fact
 CorrectionAttributionEvent = {
     "correction_id": str,                 # stable, non-forgeable event identity
     "classification": Literal[
-        "resident_manual_override",
+        "manual_override",
         "external_or_unknown_correction",
     ],
+    "control_actor": ControlActor | None,  # Layer 0 §5; set exactly for manual_override
     "actuator_id": str,                   # Layer-2 logical actuator, never an HA entity id
     "controlled_channel": str,            # registered Layer-2 logical channel
     "reaction_id": str | None,
@@ -3193,14 +3197,14 @@ fact envelope. It contains no HA state object, entity identifier, service payloa
 resident identity, or mutable runtime buffer. Layer 5 requests its normal append through Layer 1; it
 does not own fact persistence, retention, or a private historical store.
 
-The resident-control event and anchor are eligible only when their logical `actuator_id` and
+The manual-control event and anchor are eligible only when their logical `actuator_id` and
 `controlled_channel` match and Layer 5 recorded an admitted `ApplyStep` decision whose complete
-target was observed with valid, available canonical values before that resident edge (§6.0.1).
+target was observed with valid, available canonical values before that manual edge (§6.0.1).
 The match covers every targeted facet under the versioned core matcher, not just the facet the
-resident changed; the joined Layer-0 `actuator.channel_state.*` edge must
+person changed; the joined Layer-0 `actuator.channel_state.*` edge must
 prove that at least one **targeted** facet changed away from its expected
 value under that matcher. A change only to an omitted facet is not a
-correction of this target. The latest valid state before the resident edge must still match that complete
+correction of this target. The latest valid state before the manual edge must still match that complete
 target. `already_satisfied`, completed calls, and failed or timed-out calls may all supply an anchor
 once the full target is observed. The actor that produced the matching state does not decide
 eligibility: verified external origin or `unknown` remains in provenance and is never relabeled as
@@ -3218,10 +3222,10 @@ under §6.0.1 and Layer 0 §6. The runtime lease still requires the post-termina
 current-authority reconciliation of §6.0.1 before another command.
 
 An unobserved or only partially matched target, hypothetical decision, or edge with no normalized
-facet/target linkage cannot be called a resident correction. The association is one-to-one at emission: the most recent
+facet/target linkage cannot be called a manual correction. The association is one-to-one at emission: the most recent
 unique eligible anchor wins. A raw HA state change, unavailable transition, or any event other
-than `actuator.resident_control` is never a **resident** attribution input. Zero or ambiguous eligible anchors
-produce no `resident_manual_override` event and a diagnostic reason; Layer 5 must not guess. A
+than `actuator.manual_control` is never a **manual** attribution input. Zero or ambiguous eligible anchors
+produce no `manual_override` event and a diagnostic reason; Layer 5 must not guess. A
 verified nonresident automation or integration change, or a change with unknown origin, may be
 recorded as `external_or_unknown_correction` for diagnostics, but it is never eligible learning
 evidence for a resident-correction model. Duplicate reports of one correction share a
@@ -4844,8 +4848,11 @@ profile or learner, and declares `requires_household_consent=True`,
   channel boundary. Revocation stops
   unsent calls without waiting for any channel's outbox (§6.0; Layer 0 §4.5).
 - A resident correction is evidence for learning only through one deduplicated, uniquely anchored
-  `actuator.correction` event from §6.1. Raw HA state changes, ambiguous anchors and non-resident
-  origins cannot become a `resident_manual_override` by a Layer-3 inference or configuration choice.
+  `actuator.correction` event from §6.1 with `classification="manual_override"` and
+  `control_actor` `resident` or `physical`. Raw HA state changes, ambiguous anchors and external
+  origins cannot become a `manual_override` by a Layer-3 inference or configuration choice. A guest
+  turning off a light Heima turned on yields a hold with `manual_actor="guest"` and a
+  `manual_override` with `control_actor="guest"`, never resident evidence (CA4-119).
 - An admitted `already_satisfied` target produces exactly one decision and
   one complete-observation `actuator.target_lifecycle` event with one
   `apply_step_id`, and no HA call. A dispatched target with only partial
@@ -4856,11 +4863,11 @@ profile or learner, and declares `requires_household_consent=True`,
   closes the earlier anchor with one typed reason; a resident correction
   alone does not. All phases fit the bounded Layer-1 event value, and
   service completion alone never creates a learning anchor (§6.0.1/§6.1).
-- A verified resident edge joined to an available channel-state record
+- A verified manual edge joined to an available channel-state record
   that changes only an omitted facet is not a target correction. An
   external/unknown normalized edge may produce only the diagnostic
   `external_or_unknown_correction` classification; an unavailable edge,
-  raw HA change or propagated user context cannot be relabelled resident
+  raw HA change or propagated user context cannot be relabelled manual
   (§6.1; Layer 0 §5.1.1).
 - A one-shot routine's calls complete and a later resident edge diverges from its
   confirmed target: with no registered normal-exit contract, the fixed-duration

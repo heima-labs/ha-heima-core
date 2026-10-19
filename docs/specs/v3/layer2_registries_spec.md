@@ -2003,7 +2003,7 @@ registered room with `enclosure="exterior"`.
 
 An `Actuator` owns one HA command endpoint; an `ActuatorChannel` identifies one logical, observable
 control dimension of that endpoint. `controlled_channel` is stable across cycles and unique within the
-owning `actuator_id`; it is the identity used by Layer 0 resident-control evidence, Layer 3 candidate
+owning `actuator_id`; it is the identity used by Layer 0 manual-control evidence, Layer 3 candidate
 membership, and Layer 5 correction attribution. It is neither an HA entity attribute name nor a free
 policy label. Staging rejects duplicate channel ids, an unknown `channel_kind`, state contract, or
 adapter id, and any channel whose core contracts cannot bind to the Actuator's registered endpoint.
@@ -2016,7 +2016,7 @@ be represented as an `Actuator`; it gains a registered channel only when a revie
 exists for it.
 
 The observable-state contract defines the valid physical state and edge shapes for that channel. At
-composition it supplies Layer 0 the frozen ingress binding used to recognize a resident control edge;
+composition it supplies Layer 0 the frozen ingress binding used to recognize a manual control edge;
 Layer 0 never performs a live Layer-2 lookup or infers a channel from an arbitrary HA attribute. The
 adapter binding identifies a core translation family available to Layer 5. It does not store an HA
 service name, service parameters, or a copy of supported features, and this Layer does not issue a

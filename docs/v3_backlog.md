@@ -6316,6 +6316,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-119 — Manual control mixed how and who
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model D6 (`docs/v3_people_model_draft.md`).
+
+**Problem.** `actuator.resident_control` was emitted only for residents, so a guest's or tablet's manual control left no record of who acted; `HoldOrigin` `resident_manual`/`admin_manual` mixed how with who, and a resident who is also an administrator was excluded from learning as `admin_manual`.
+
+**Approved resolution (2026-10-19).** Layer 0 §5 `ControlActor` (`resident`, `guest`, `device`, `administrator`, `physical`) derived from `UserActor` or the approved physical adapter. `actuator.manual_control` replaces `actuator.resident_control` for every verified manual control; origin `manual` replaces `resident_manual`/`admin_manual`, with `HoldLifecycleValue.manual_actor`. Layer 5 `manual_override` with `control_actor`. Layer 3 accepts only `resident` and `physical` as resident evidence; other classes are confounders. Layer 8 explanations show origin and, to residents and administrators, the coarse actor. CA4-01 examples recomputed. See the [CA4-119 review](specs/v3/reviews/CA4-119.md); no V3 runtime test ran.
+
 #### CA4-118 — Every non-administrator was a resident
 
 **Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model (backlog open question 5, `docs/v3_people_model_draft.md`).

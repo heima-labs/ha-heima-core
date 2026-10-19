@@ -113,7 +113,8 @@ Layer 0 standardizes the machinery every higher layer needs:
   Each staged Actuator channel also publishes one bounded normalized
   `actuator.channel_state.<digest>` state stream on physical/availability
   changes and one fresh post-restart boundary. Its edge id joins the
-  existing three-field verified `actuator.resident_control` event; Layer 5
+  existing three-field verified `actuator.manual_control` event (its `ControlActor` says who
+  acted: resident, guest, device, administrator or physical switch; CA4-119); Layer 5
   appends `actuator.target_lifecycle` phases only for admitted target
   decisions, complete observations and closure. Layer 3 uses these
   declared streams with correction facts and coverage to build routine
