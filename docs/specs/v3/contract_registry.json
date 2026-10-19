@@ -219,7 +219,7 @@
       "id": "L5-REACTION-AUTHORITY",
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "4.2 `ConfiguredReaction` configuration and authority lifecycle",
-      "depends_on": ["L5-REACTION-GUARDS"]
+      "depends_on": ["L5-REACTION-GUARDS", "L2-PERSONS"]
     },
     {
       "id": "L3-AVAILABILITY-SUPPRESSION",
@@ -279,7 +279,7 @@
       "id": "L0-FACT-SOURCE",
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "5. `FactSource` / `ApplyStepSource`",
-      "depends_on": []
+      "depends_on": ["L2-PERSONS"]
     },
     {
       "id": "L2-QUANTITATIVE-UNITS",
@@ -291,7 +291,7 @@
       "id": "L0-RECOVERY-CONFIRMATION",
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "7.4.1 Runtime confirmation of a recovery target",
-      "depends_on": ["L0-CHECKPOINT", "L0-RECOVERY-CLASSIFICATION", "L5-REACTION-GUARDS"]
+      "depends_on": ["L0-CHECKPOINT", "L0-RECOVERY-CLASSIFICATION", "L5-REACTION-GUARDS", "L0-RESPONSE-INGRESS", "L6-RECIPIENTS"]
     },
     {
       "id": "L2-ENVIRONMENTAL-FORMULAS",
@@ -651,7 +651,7 @@
       "id": "L0-RESPONSE-INGRESS",
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "5.1.3 Authenticated response ingress",
-      "depends_on": ["L0-NOTIFICATION-OUTBOX"]
+      "depends_on": ["L0-NOTIFICATION-OUTBOX", "L0-FACT-SOURCE", "L2-PERSONS"]
     },
     {
       "id": "L5-MEMBER-DELIVERY",
@@ -687,7 +687,7 @@
       "id": "L6-RECIPIENTS",
       "owner": "docs/specs/v3/layer6_notification_spec.md",
       "heading": "5.1 Recipient model (C1)",
-      "depends_on": ["L5-REACTION-AUTHORITY"]
+      "depends_on": ["L5-REACTION-AUTHORITY", "L2-PERSONS"]
     },
     {
       "id": "L6-FAMILIES",
@@ -762,10 +762,16 @@
       "depends_on": ["L2-ROOM-REGISTRY"]
     },
     {
+      "id": "L2-PERSONS",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "2.8 `Person` registry",
+      "depends_on": ["L2-PRESENTATION-NAMES"]
+    },
+    {
       "id": "L8-ROLES",
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "4. Roles and access",
-      "depends_on": ["L5-REACTION-AUTHORITY", "L6-RECIPIENTS"]
+      "depends_on": ["L5-REACTION-AUTHORITY", "L6-RECIPIENTS", "L2-PERSONS", "L0-FACT-SOURCE"]
     },
     {
       "id": "L8-CHANGE-SET",
@@ -1888,6 +1894,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-117.md",
       "contracts": ["L0-RETRY-QUEUE", "L0-OBSERVATION-COVERAGE", "L0-RECOVERY-BASELINE"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-118",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-118.md",
+      "contracts": ["L2-PERSONS", "L0-FACT-SOURCE", "L0-RESPONSE-INGRESS", "L0-RECOVERY-CONFIRMATION", "L5-REACTION-AUTHORITY", "L6-RECIPIENTS", "L6-RECIPIENT-PREFERENCES", "L8-ROLES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

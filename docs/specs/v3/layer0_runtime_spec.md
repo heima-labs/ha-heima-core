@@ -1731,6 +1731,7 @@ class FactSource:
     route_fingerprint: str | None = None   # stable contributing-input route for a trusted derived
                                           # producer; not the producer's configuration identity
     actor_type: FactSourceActorType = "heima"
+    user_actor: UserActor | None = None     # required exactly when actor_type == "user"
     correlation_id: str = field(default_factory=lambda: str(uuid4()))  # see §5.2 — this default is
                                               # a safety net only, never relied on in production code
     # no actor identity in operational fact/action provenance; authenticated decisions retain
@@ -1745,6 +1746,7 @@ class ApplyStepSource:
     source_type: str | None = None
     configuration_fingerprint: str | None = None
     actor_type: FactSourceActorType = "heima"
+    user_actor: UserActor | None = None     # required exactly when actor_type == "user"
     correlation_id: str = field(default_factory=lambda: str(uuid4()))
 
 FactSourceKind = Literal[
@@ -1765,12 +1767,12 @@ FactSourceKind = Literal[
     "reaction",            # a fact recorded as a byproduct of a Reaction firing (Layer 5) — distinct
                             # from the ApplyStep(s) the same Reaction issues, which carry
                             # ApplyStepSource with this same kind on the action side
-    "admin_command",        # a direct consequence of an admin-panel action or of an administrator's
-                            # verified ingress response, assignable only after HA confirms the
-                            # user is an admin (§5.1, §5.1.3)
-    "resident_response",    # a direct consequence of a verified non-admin response to an active
+    "admin_command",        # a direct consequence of an admin-panel command, assignable only after
+                            # HA confirms the user is an admin (§5.1)
+    "user_response",        # a direct consequence of a verified user response to an active
                             # response-ingress request (§5.1.3) or a matched direct Actuator control
-                            # edge — two distinct boundary checks; see §5.1
+                            # edge — two distinct boundary checks; see §5.1. The kind names the
+                            # path; who acted is the separate `user_actor`
     "timeout",              # recorded because an expected response/confirmation window elapsed with
                             # nothing arriving — assignable only by the in-process timeout controller
     "recovery",             # produced by Recovery/Checkpoint itself (§7) — e.g. a recovery diagnostic after a restart (§6.3)
@@ -1783,8 +1785,8 @@ FactSourceKind = Literal[
 
 ApplyStepSourceKind = Literal[
     "reaction",            # ordinary automatic policy action, authorized by Layer 5
-    "admin_command",       # direct authenticated administrator action
-    "resident_response",   # verified resident response/control action
+    "admin_command",       # direct authenticated administrator panel command
+    "user_response",       # verified user response/control action; who acted is `user_actor`
     "timeout",             # in-process timeout controller action
     "recovery",            # explicit recovery/reconciliation action
     "system",              # system-owned infrastructure action not covered above
@@ -1792,12 +1794,14 @@ ApplyStepSourceKind = Literal[
 ]
 
 FactSourceActorType = Literal[
-    "ha_admin",    # a Home Assistant user confirmed as admin by HA's own permission check
-    "resident",    # a non-admin resident (a mobile-app response or verified direct device control)
+    "user",        # an authenticated Home Assistant user; who it is in the household is the
+                    # separate `UserActor`, never an identity
+    "physical",    # a manual control through a core-approved physical-control adapter (for
+                    # example a wall switch): manual, but with no authenticated user and no identity
     "heima",       # Heima itself, autonomously — no human in the loop for this specific fact/action;
                     # the default
     "scheduler",   # Timing's own execution (an AtJob/CronEntry firing), not a semantic conclusion
-    "service",     # an external HA service call not attributable to a specific admin/resident (e.g.
+    "service",     # an external HA service call not attributable to a specific user (e.g.
                     # an automation outside Heima calling into a Heima service)
     "system",      # Heima's own startup/runtime infrastructure (Recovery, Persistence), not a semantic resolver
                     # or a human
@@ -1805,11 +1809,27 @@ FactSourceActorType = Literal[
     "unknown",     # could not be determined — never treated as authoritative for anything requiring
                     # a specific actor
 ]
+
+HouseholdRole = Literal["resident", "guest", "none"]
+
+@dataclass(frozen=True)
+class UserActor:
+    household_role: HouseholdRole   # from the user's classified Person (Layer 2 §2.8); "none" for a
+                                    # user with no Person (a device account) or an unclassified person
+    ha_admin: bool                  # HA's own administrator flag, an independent axis
 ```
+
+**Two independent actor axes.** An authenticated user is described by its household role and by HA's
+administrator flag, never by one combined category. Learning evidence and household authority
+(consent, request answers, advisory feedback) read the household role; Heima configuration reads the
+administrator flag. An administrator is not necessarily a resident (an installer or property manager
+in a B2B deployment), and a resident is not necessarily an administrator. At every authenticated
+boundary Layer 0 derives `ha_admin` from HA's own permission check and `household_role` from the
+active Layer-2 `Person` whose stored `ha_user_id` matches the HA user, never from client data.
 
 One provenance taxonomy has two shapes with distinct closed fact/action kinds, never two
 independently evolving designs. `ApplyStepSource` carries the action-side kind, source identity,
-actor category and correlation id, but no person/service identity. Authenticated admin and resident
+actor axes and correlation id, but no person/service identity. Authenticated user
 authorization is attributable in the separate Layer-5 governance ledger, not copied into an
 `ApplyStep`, execution audit or fact payload. A `correlation_id` links bounded operational
 projections without becoming an authorization proof or an actor identifier.
@@ -1824,9 +1844,10 @@ is derived by the code at the boundary that assigns it, never read off the data 
   connection's user is an admin;
 - a response can produce a source only after it arrives through the authenticated response
   ingress (§5.1.3), matches an active request of its registered owner and, for a recovery
-  confirmation, passes the current-proposal recheck in §7.4.1. Its kind follows the verified actor
-  category: `resident` gives `kind="resident_response"` (one of the two `resident_response`
-  boundaries) and `ha_admin` gives `kind="admin_command"`;
+  confirmation, passes the current-proposal recheck in §7.4.1. Its kind is always
+  `kind="user_response"` (one of the two `user_response` boundaries), with `actor_type="user"` and
+  the verified `UserActor`; an administrator answering a request is still a response, with
+  `ha_admin=True`;
 - a third-party plugin (Layer 7) can produce `kind="third_party_plugin"`, but nothing it returns can
   make the core treat it as `kind="sensor"` or `kind="recovery"`.
 - `configuration_fingerprint`, when present, is assigned only by the active composed generation; a
@@ -1841,19 +1862,21 @@ they reach diagnostics or storage (no secrets, tokens, or raw payloads retained)
 
 ### 5.1.1 Trusted resident-control edge
 
-The other `resident_response` boundary is a verified direct manual control of a registered logical Actuator channel.
+The other `user_response` boundary is a verified direct manual control of a registered logical Actuator channel.
 At HA event ingress, before raw context is discarded, Layer 0 may emit the immutable event fact
 `actuator.resident_control` only when all of these are true:
 
 1. the edge addresses a Layer-2 registered `actuator_id` and its registered `controlled_channel`;
 2. it changes that channel's valid observable physical state, rather than only availability or an
    unrelated entity attribute;
-3. the edge is linked to a direct authenticated non-admin resident device command or a core-approved physical-control adapter; a propagated HA user context, automation, integration, service, unknown context, or merely an entity state change is insufficient;
+3. the edge is linked to a direct authenticated device command by a user whose household role is
+   `resident` (§5), or to a core-approved physical-control adapter; a propagated HA user context, automation, integration, service, unknown context, or merely an entity state change is insufficient;
 4. the edge has a fresh non-forgeable ingress identity and passes the ordinary duplicate filter.
 
 The event is a Layer-1 event fact at the Actuator's registered `Location`, with
-`FactSource.kind="resident_response"`, `source_id=<actuator_id>`,
-`source_type="actuator_control"`, and `actor_type="resident"`. Its canonical value contains only
+`FactSource.kind="user_response"`, `source_id=<actuator_id>`,
+`source_type="actuator_control"`, and either `actor_type="user"` with the verified `UserActor` or,
+for a core-approved physical-control adapter, `actor_type="physical"` with no `UserActor`. Its canonical value contains only
 the internal `actuator_id`, `controlled_channel`, and non-forgeable `control_edge_id`; the
 `HouseFact.when` is the observed edge instant. It retains no HA entity id, HA user identity, raw event
 context, state payload, or service data. The event is evidence of a resident operating a channel, not
@@ -2016,7 +2039,8 @@ class ResponseRequestDeclaration:
     request_id: str                   # core-minted, unguessable, unique across process runs
     owner_id: str                     # registered response owner
     allowed_actions: frozenset[str]   # closed per owner, e.g. {"approve", "dismiss"}
-    allowed_actor_categories: frozenset[Literal["resident", "ha_admin"]]
+    admitted_actors: frozenset[Literal["resident", "admin"]]  # "resident": household_role ==
+                                      # "resident"; "admin": ha_admin; either suffices
     expires_at: EvidenceInstant
 
 @dataclass(frozen=True)
@@ -2024,7 +2048,7 @@ class VerifiedResponse:
     request_id: str
     owner_id: str
     action: str
-    actor_category: Literal["resident", "ha_admin"]
+    actor: UserActor                  # both verified axes (§5)
     actor_ref: str                    # for the owner's governance record only
     ingress_id: str                   # non-forgeable, deduplicated
     received_at: EvidenceInstant
@@ -2038,22 +2062,25 @@ automation from a notification, needs its own reviewed registration. An owner de
 becomes actionable and withdraws it when it closes; only a currently declared, unexpired request
 accepts a response.
 
-At ingress Layer 0 verifies the Home Assistant user through HA's own authentication, maps it to
-`ha_admin` when HA confirms the user is an administrator and to `resident` otherwise, sets
-`actor_ref` to that HA user id, assigns a fresh non-forgeable `ingress_id`, mints the causal
-`correlation_id` (§5.2), and drops a duplicate report of the same ingress. It then rejects an unknown,
-withdrawn or expired `request_id`, an action outside `allowed_actions` and an actor outside
-`allowed_actor_categories`, all without calling the owner. Only a fully verified `VerifiedResponse`
-reaches the owner, which alone decides the outcome under its own contract (for a recovery
-confirmation, the compare-and-swap of §7.4.1). The actor reference reaches only the owner's
-governance record; operational facts and `ApplyStep`s carry only the actor category (§5). A request
-id, action or response arriving by any other path is never a response. Rejections are diagnostics.
+At ingress Layer 0 verifies the Home Assistant user through HA's own authentication, derives its
+`UserActor` (§5: `ha_admin` from HA's permission check, `household_role` from the matching Layer-2
+`Person`), sets `actor_ref` to that HA user id, assigns a fresh non-forgeable `ingress_id`, mints the
+causal `correlation_id` (§5.2), and drops a duplicate report of the same ingress. It then rejects an
+unknown, withdrawn or expired `request_id`, an action outside `allowed_actions` and an actor matching
+none of `admitted_actors`, all without calling the owner. A guest or a user with no `Person` is
+admitted only through `"admin"` when it is an HA administrator. Only a fully verified
+`VerifiedResponse` reaches the owner, which alone decides the outcome under its own contract (for a
+recovery confirmation, the compare-and-swap and the last-resort rule of §7.4.1). The actor reference
+reaches only the owner's governance record; operational facts and `ApplyStep`s carry only the
+`UserActor` (§5). A request id, action or response arriving by any other path is never a response.
+Rejections are diagnostics.
 
-The actor category describes the HA account, not household membership: one person may be an
-administrator and a household member. An owner whose request a household member may answer
-therefore declares both `resident` and `ha_admin` and applies any narrower membership rule itself
-(for household consent, `HouseholdConsentAuthority`, Layer 5 §7.1.1). All three Initial-V3 owners
-declare both categories.
+The two axes are independent: one person may be an administrator and a resident, an administrator may
+be a non-resident (B2B), and a resident may not be an administrator. An owner applies any narrower
+rule itself (for household consent, membership of `HouseholdConsentAuthority`, Layer 5 §7.1.1; for a
+recovery confirmation, the last-resort rule for a non-resident administrator, §7.4.1). The Initial-V3
+owners admit: `layer0.recovery_confirmation` `{"resident", "admin"}`; `layer5.household_consent`
+`{"resident"}`; `layer5.advisory_feedback` `{"resident"}`.
 
 ### 5.2 `correlation_id`: generation and propagation
 
@@ -2541,7 +2568,7 @@ class RecoveryFacetBaseline:
     authority_kind: Literal["reaction", "direct"]
     reaction_id: str | None                   # required exactly for reaction authority
     configuration_generation_id: str | None  # required exactly for reaction authority
-    direct_source_kind: Literal["admin_command", "resident_response"] | None
+    direct_source_kind: Literal["admin_command", "user_response"] | None
                                              # required exactly for direct authority
 
 @dataclass(frozen=True)
@@ -2689,8 +2716,18 @@ accepted. If the current complete observation already satisfies the target, it c
 different proposal may create a fresh request after the current-cycle checks.
 
 The request is declared to the authenticated response ingress (§5.1.3) when it becomes `open`,
-with actions `approve` and `dismiss` and actor categories `resident` and `ha_admin`, and withdrawn on every
+with actions `approve` and `dismiss` and admitted actors `resident` and `admin`, and withdrawn on every
 terminal transition.
+
+**Last resort for a non-resident administrator.** A recovery confirmation is a household decision;
+an administrator whose `household_role` is not `resident` (for example an installer, B2B) may answer
+only as a last resort. The owner accepts such a response only when, at the response's cycle input
+barrier, either the request has been `open` for at least the core-fixed escalation window of
+**2 hours** without a resident answer, or the active Layer-6 generation has no recipient whose Person
+is a `resident` with at least one endpoint (no resident can receive it). Otherwise the owner rejects
+it with the diagnostic `awaiting_resident_answer` and the request stays open. An administrator who is
+also a resident is a resident and answers at any time. Changing the window requires a new core
+contract version.
 
 Layer 0 hands each request to Layer 6 twice through one typed occurrence: when it opens, so the
 resident receives an actionable notification, and when it reaches a terminal state, so Layer 6
@@ -3008,10 +3045,14 @@ concrete checklist rather than re-deriving one:
 - A response to a recovery confirmation through the ingress reaches the owner only with a valid HA
   user of an allowed category, a declared unexpired request and an allowed action; a forged,
   duplicate, expired or withdrawn request, an actor outside the declared categories, or an action
-  outside the vocabulary reaches no owner. A non-admin resident's approval yields an `ApplyStep`
-  with `kind="resident_response"` and an HA administrator's yields `kind="admin_command"`, each
-  with its own actor category. The owner's record keeps the actor reference (the HA user id); the
-  resulting `ApplyStep` carries only the actor category (§5.1, §5.1.3, §7.4.1).
+  outside the vocabulary reaches no owner. An approval yields an `ApplyStep` with
+  `kind="user_response"` and the verified `UserActor`, whether the actor is a resident or an
+  administrator. The owner's record keeps the actor reference (the HA user id); the resulting
+  `ApplyStep` carries only the `UserActor` (§5.1, §5.1.3, §7.4.1). A guest, or a user with no
+  `Person` that is not an administrator, is rejected at the ingress. A non-resident administrator's
+  approval within 2 hours of opening is rejected by the owner with `awaiting_resident_answer` while a
+  resident recipient exists; after 2 hours, or when the Layer-6 generation has no resident recipient
+  with an endpoint, it is accepted.
 
 - A `HistoryViewRequirement` stages only for a registered state/event stream
   with its matching slice kind, unique id and retained positive `Window`.
@@ -3143,11 +3184,12 @@ concrete checklist rather than re-deriving one:
   were present, never that a forgery attempt is actually rejected), for every listed case in §5.1:
   a fabricated `kind="admin_command"` from a non-admin connection is rejected/reassigned
   non-authoritative; a fabricated `kind="third_party_plugin"` result is never upgraded to
-  `kind="sensor"`/`kind="recovery"`; and `kind="resident_response"` is verified against
+  `kind="sensor"`/`kind="recovery"`; a client-supplied `UserActor` is ignored and re-derived at
+  the boundary; and `kind="user_response"` is verified against
   its two distinct boundaries: an active confirmation request, or a matched direct Actuator
   command. Propagated user context, an unregistered channel, or a duplicate ingress identity
   cannot establish resident control.
-- An authenticated admin or resident action retains the attributable actor only in its
+- An authenticated user action retains the attributable actor only in its
   governance transition; its `ApplyStepSource`, `ApplyStep` and execution audit carry no
   `actor_id` or equivalent personal identity. A correlation id links the records without
   authorizing a command or exposing the actor in the operational projection (§5).
@@ -3449,8 +3491,9 @@ concrete checklist rather than re-deriving one:
   CPU/memory/pressure parsing; an unavailable or non-enforceable platform value remains absent with its
   capability unset, never a guessed host allocation. Probe failure and percentile aggregation neither
   block a cycle nor produce a `HouseFact`, semantic-resolver input, policy decision, or action (§9).
-- A verified non-admin HA control edge on a registered Actuator channel emits one redacted
-  `actuator.resident_control` event with `resident_response` provenance and no raw HA identity/context.
+- A verified control edge by a `resident` user or an approved physical-control adapter on a
+  registered Actuator channel emits one redacted
+  `actuator.resident_control` event with `user_response` provenance and no raw HA identity/context.
   The same edge from an unavailable channel, an unknown/automation/service/admin context, or a duplicate
   ingress report emits none. A device that becomes unavailable after a dumb wall switch power-cut is
   persisted as an unavailable channel-state transition; it never becomes `off`, a resident-control event, an implicit

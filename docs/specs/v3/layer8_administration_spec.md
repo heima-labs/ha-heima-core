@@ -62,19 +62,24 @@ PanelRole = Literal["administrator", "resident"]
 @dataclass(frozen=True)
 class PanelPrincipal:
     ha_user_id: str
+    actor: UserActor                  # household_role and ha_admin (Layer 0 §5)
     roles: frozenset[PanelRole]
-    recipient_id: str | None          # Layer 6 recipient linked through ha_user_id
-    consent_authority: bool           # member of HouseholdConsentAuthority (Layer 5 §7.1.1)
+    person_id: str | None             # ha_person_id of the Layer-2 Person linked to this user
+    recipient_id: str | None          # Layer 6 recipient of that Person
+    consent_authority: bool           # that Person is in HouseholdConsentAuthority (Layer 5 §7.1.1)
 ```
 
 The principal is resolved by the backend for every request from the HA-authenticated user, never
 from client data:
 
 - `administrator` — the HA user is an HA administrator;
-- `resident` — the HA user is linked to a Layer-6 recipient or is a `HouseholdConsentAuthority`
-  actor.
+- `resident` — the HA user is the stored `ha_user_id` of a Layer-2 `Person` classified `resident`
+  (Layer 2 §2.8).
 
-One person may hold both roles. The house map is open to every authenticated HA user, with or
+The two roles follow the two independent actor axes. One person may hold both roles; an
+administrator may be a non-resident (an installer or property manager in a B2B deployment), and a
+resident may not be an administrator. A guest, and a device account with no `Person` (a guest-room
+tablet), has no role. Being a Layer-6 recipient grants no role. The house map is open to every authenticated HA user, with or
 without a role (CA4-113): HA already shows every entity state to every user, so the map reveals
 little beyond the automations' short reasons. An HA user with neither role sees the Overview with
 the map only, in resident wording, without links to explanations, items to do or other sections.
@@ -93,7 +98,8 @@ Sections are organized by the user's question, not by layer.
 | House | admin | How is the house made? | Rooms (`enclosure`), openings (`other_side`), topology, zones and zone roles (Layer 1/2) |
 | Devices | admin | What does Heima see and command? | Sensors with interpretations, Actuators, fusion rules and formulas (Layer 2) |
 | Understanding | admin | How does Heima understand the situation? | Semantic resolver definitions: occupancy, presence, activity (Layer 4) |
-| Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption, consent authority (Layer 5) |
+| People | admin | Who lives here? | Persons: HA persons classified `resident` or `guest` and their HA user link (Layer 2 §2.8); consent authority (Layer 5 §7.1.1) |
+| Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption (Layer 5) |
 | Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
 | Notifications | admin | Who receives what? | Recipients, family options, each recipient's preferences, notification history (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
@@ -120,6 +126,7 @@ without calling Layer 8:
 | `todo` | `request` → Layer 0 response-ingress `request_id` |
 | `automations` | `reaction` → `reaction_id`; `proposal` → `proposal_id` |
 | `house` | `room` → `room_id`; `opening` → `opening_id`; `zone` → `zone_id`; `map` (no id) |
+| `people` | `person` → `ha_person_id`; `consent_authority` (no id) |
 | `devices` | `sensor` → `sensor_id`; `actuator` → `actuator_id`; `fusion_rule` → `fusion_id` |
 | `understanding` | `resolver` → `resolver_id` |
 | `learning` | `definition` → learning definition id |
@@ -238,7 +245,7 @@ the Layer-2 generation, Layer 0 §4.7):
 
 | `owner_layer` | `object_kind` |
 |---|---|
-| `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `sensor`, `fusion_rule`, `actuator` |
+| `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `person`, `sensor`, `fusion_rule`, `actuator` |
 | `layer3` | `learning_definition` (including its family enabled state) |
 | `layer4` | `semantic_resolver_definition` |
 | `layer5` | `reaction` (admin-direct configuration; `display_name`, removal or unchanged-configuration revalidation for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
@@ -840,7 +847,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `notifications/history` | query | admin, resident | Layer 6 facts, audience-filtered for residents |
 | `notifications/set_preferences` | command | admin (any recipient), resident (own recipient only) | Layer 6 §5.4, rejected on a stale `revision` |
 | `todo` | query | resident | pending-items projection for the resident's audiences |
-| `requests/answer` | command | admin, resident (the owner's declared categories and own checks apply) | Layer 0 response ingress |
+| `requests/answer` | command | admin, resident (the owner's admitted actors and own checks apply: a non-resident administrator only where the owner admits `admin`, Layer 0 §5.1.3) | Layer 0 response ingress |
 | `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |
 | `learning/promote_signal`, `learning/adopt_signal_artifact`, `learning/set_signal_adoption_mode` | command | admin | Layer 3 §4.9 (initial `live_signal_eligible` promotion, `adopt_pinned_signal_artifact`, `set_signal_artifact_adoption_mode`) |
 | `reactions/set_consent` | command | resident with consent authority | Layer 5 §4.2 |
@@ -916,6 +923,13 @@ developer or a script.
 
 - A resident cannot call any administrator command even by crafting a request; an administrator
   without consent authority cannot grant consent; both are rejected before the owning layer.
+- People and roles (CA4-118): an HA user linked to a `Person(resident)` gets `resident`; the same
+  user as HA administrator gets both roles; an installer administrator with no `Person` gets only
+  `administrator`; a user linked to a `Person(guest)` and a tablet user with no `Person` get no role
+  and see only the Overview map; a recipient with no `Person` grants no role. A non-resident
+  administrator answering a recovery confirmation from To do within 2 hours of opening is rejected
+  with `awaiting_resident_answer` while a resident recipient exists, and accepted afterwards.
+  Classifying persons and editing consent authority live in the People section.
 - Replacing a sensor used by an automatic Reaction in one change set (remove, add, rebind) applies
   with no breaking effect and keeps the Reaction automatic; applying the removal alone shows a
   breaking effect that would invalidate the Reaction, losing promotion and consent.

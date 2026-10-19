@@ -1807,8 +1807,8 @@ and the closed codes of §4.0, never a descriptor-invented string.
    configuration, evidence, proposal and audit intact. Re-enablement uses
    ordinary promotion checks again.
 7. `stage_household_consent_authority` changes the household's complete
-   explicit resident-authority list against its expected authority
-   generation. An authenticated administrator removing an actor must supply
+   explicit resident-authority list (Persons classified `resident` with an HA
+   user, §7.1.1) against its expected authority generation. An authenticated administrator removing an actor must supply
    exactly one `retain_current_consent` or `revoke_current_consent`
    disposition for each current consent that actor granted. Missing or extra
    dispositions reject the whole request. Retention audits an admin
@@ -2549,9 +2549,9 @@ class ConsentRequestOccurrence:
 
 Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1); Layer 6 appends it as
 one `reaction.consent_request` event fact per phase. The notice is actionable: on `opened` the
-response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and actor categories
-`resident` and `ha_admin`, expiring when the request closes. A `VerifiedResponse` is applied only if its
-`actor_ref` (the HA user id) is currently in `HouseholdConsentAuthority`, whatever its category: `grant` appends exactly the authority
+response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and admitted actors
+`{"resident"}`, expiring when the request closes. A `VerifiedResponse` is applied only if its
+`actor_ref` (the HA user id) is the stored `ha_user_id` of a `Person` currently in `HouseholdConsentAuthority`, whatever its administrator flag: `grant` appends exactly the authority
 transition of `set_reaction_household_consent` against the opening authority transition as its
 precondition, using the ingress id as the operation id; `decline` changes no authority and closes
 the request with `declined` for the whole household, so the first answer from any authorized
@@ -2569,11 +2569,12 @@ available; both paths share one authority rule.
 
 Each `ReactionAdvisoryOccurrence(opened)` is actionable for feedback only: before giving it to
 Layer 6, the owner `layer5.advisory_feedback` declares a request, whose id the occurrence carries
-as `response_request_id`, with actions `done`, `dismiss` and `not_useful`, actor
-categories `resident` and `ha_admin`, open for as long as the activation lasts and withdrawn at its `closed` phase;
-there is no separate feedback window. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
-(`advisory_operation_id`, `action`, `actor_category`, `recorded_at`), once per advisory and
-action. Feedback grants no authority, sends no command, changes no Reaction state and is never a
+as `response_request_id`, with actions `done`, `dismiss` and `not_useful`, admitted actors
+`{"resident"}`, open for as long as the activation lasts and withdrawn at its `closed` phase;
+there is no separate feedback window. Feedback is resident evidence: a guest, a device account and a
+non-resident administrator cannot give it. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
+(`advisory_operation_id`, `action`, `recorded_at`), once per advisory and action; its provenance
+carries the `UserActor`, whose `household_role` is always `resident`. Feedback grants no authority, sends no command, changes no Reaction state and is never a
 correction of Heima. It is bounded explicit evidence for the future
 `ResidentPresentationPreferenceModel` (Layer 3 §4.8.3); an unanswered advisory is censored, not a
 negative answer.
@@ -2952,7 +2953,7 @@ The three Reaction identity fields are present together exactly when the
 step is attached to a current admitted Reaction activation. They are all
 `None` for a standalone direct-admin, resident-approved or recovery-only
 target without a Reaction. `source.kind="reaction"` requires the three
-fields; `source.kind="recovery"`, `"resident_response"` or `"admin_command"` may carry them
+fields; `source.kind="recovery"`, `"user_response"` or `"admin_command"` may carry them
 only when Layer 5 has separately admitted that exact Reaction identity.
 The source kind never fabricates a Reaction anchor. `snapshot_id`, channel,
 target and the ordinary dispatch fence remain mandatory in both variants.
@@ -2962,7 +2963,7 @@ At accepted-target bookkeeping, Layer 5 supplies Layer 0 §7.4 with the trusted
 per-facet recovery authority anchor. For a current admitted Reaction it is the
 exact `reaction_id` and configuration generation, regardless of whether a later
 reconciliation step carries `ApplyStepSource.kind="recovery"`. For a standalone
-direct admin or verified resident command it is the direct source kind; an
+direct admin or verified user command it is the direct source kind; an
 external/unknown observation supplies no desired-target anchor. Recovery checks
 each Reaction anchor against the current automatic authority projection and
 consent before retaining its facet. A removed, edited, disabled or revoked
@@ -3878,12 +3879,17 @@ descriptor-specific alias of a common authority command is registered.
 `HouseholdConsentAuthority` is a Layer-5 governance record of household access, staged by
 `stage_household_consent_authority` (§4.2) and administered from Layer 8, separate from a trajectory
 prerequisite generation and from the consent value itself. It contains one or more explicitly assigned
-authenticated resident actor references; each reference is a Home Assistant user id (`ha_user_id`),
-the identity Layer 0's response ingress verifies (Layer 0 §5.1.3) and Layer 6 matches to recipients. Only an actor carrying this explicit resident authorization
-may issue `set_reaction_household_consent`; an administrator role alone is insufficient, although one person may hold both
-roles through separate grants. A configuration-generation successor starts with consent disabled and
-never inherits it from its predecessor. Retention at authority removal is an explicit administrative
-decision about a pre-existing household consent, not an administrative consent grant.
+resident references; each reference is the `ha_person_id` of a Layer-2 `Person` (Layer 2 §2.8) whose
+`household_role` is `resident` and whose stored `ha_user_id` is set, the HA user Layer 0's response
+ingress verifies (Layer 0 §5.1.3) and Layer 6 resolves through the recipient's Person. Staging
+rejects a reference to an unknown Person, a `guest`, or a Person without an HA user. Only an actor
+carrying this explicit resident authorization may issue `set_reaction_household_consent`; the HA
+administrator flag alone is insufficient, and a non-resident administrator (B2B) can never hold
+consent authority. Removing or reclassifying a referenced Person is an authority removal: the same
+change set must carry the authority change with one disposition per current consent that person
+granted (§4.2 command 7), or it is rejected. A configuration-generation successor starts with consent
+disabled and never inherits it from its predecessor. Retention at authority removal is an explicit
+administrative decision about a pre-existing household consent, not an administrative consent grant.
 
 The panel's shadow view is read-only. For each reaction it may expose the prerequisite/artifact/profile
 identity, evidence freshness, current readiness, bounded duration/temperature summaries, would-be
@@ -4314,6 +4320,12 @@ profile or learner, and declares `requires_household_consent=True`,
   id is rejected by the ingress. An
   advisory answered `not_useful` appends one `reaction.advisory_feedback` and nothing else; a
   second identical answer appends none; an unanswered advisory records nothing.
+- People and authority (CA4-118): staging `HouseholdConsentAuthority` with a `guest` Person, a
+  Person without an HA user or an unknown `ha_person_id` is rejected; a non-resident administrator
+  answering a consent request or advisory feedback is rejected at the ingress; an administrator who
+  is also a resident in the authority grants consent normally; reclassifying an authority member to
+  `guest` without a disposition for each consent they granted rejects the whole change set, and with
+  `revoke_current_consent` it revokes those consents and cancels their future jobs.
 - A weather-protection activation that secures two channels and skips one held channel produces
   one `ReactionActionNoticeOccurrence` with three channel outcomes, once, after every confirmation
   window; a descriptor with `resident_action_notice=False` produces none. A new proposal produces

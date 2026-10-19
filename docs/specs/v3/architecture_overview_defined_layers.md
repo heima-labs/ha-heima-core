@@ -225,6 +225,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
 
 ### Main mechanisms
 
+- A **Person** classifies one HA `person` as `resident` or `guest` and stores its HA user link.
+  It decides household membership and authority: a guest is never a resident, and an HA user with
+  no `Person` is a device account. The HA administrator flag is a separate actor axis (CA4-118).
 - A **Sensor** has one HA `ReadBinding`, one typed `Interpretation`, one fact type, and one explicit
   `Location`. Raw HA state/attributes/calendar data do not escape this boundary as learning or policy
   inputs.
@@ -535,9 +538,10 @@ handling, normal exit, next-step hold release, restart and consent rules once:
 
 **Layer 6 (defined).** [Layer 6](layer6_notification_spec.md) is the one path for pushed
 notifications. A closed registry of eight kinds turns typed occurrences into one audited event fact
-per phase with no stored text, committed with its outbox record. Recipients are people, optionally linked to an HA user,
-with endpoints and closed audiences (`consent_authorities` derived from
-`HouseholdConsentAuthority`). Closed families drive quiet hours (`safety` bypasses; Reaction notices
+per phase with no stored text, committed with its outbox record. Recipients are people, optionally
+linked to a Layer-2 `Person`, with endpoints; `residents` and `consent_authorities` derive from the
+Person's classification and `HouseholdConsentAuthority`, and only `administrators` is configured on
+the recipient (CA4-118). Closed families drive quiet hours (`safety` bypasses; Reaction notices
 take their family from the descriptor namespace), proposal and advisory digests group low-urgency
 items, and item tags let later phases replace or clear a notification. Delivery uses `notify.*`,
 growing retries and a single `persistent_notification` fallback; buttons go through
@@ -547,7 +551,8 @@ generation of the composed configuration generation. Each person's own preferenc
 level per family, own endpoints) live in a separate Layer-6 store outside the generation (CA4-116).
 
 **Layer 8 (defined).** [Layer 8](layer8_administration_spec.md) is the single Heima panel, with
-content by role resolved server-side from the HA user (administrator, resident, or no access). The
+content by role resolved server-side from the HA user (administrator from HA's flag, resident from
+the user's Layer-2 `Person`, or no access for guests and device accounts; CA4-118). The
 config flow only creates the integration. Configuration edits accumulate in a session change set
 and apply atomically after a preview of changes, effects and errors; governance actions and answers
 are immediate. One history timeline with restore, a "Why?" chain on every object (built on

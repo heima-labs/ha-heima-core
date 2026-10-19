@@ -193,8 +193,8 @@ administrator who is also a resident has the union of both columns.
 - The consent authority accepts residents only.
 - **Recovery confirmation, last resort:** a non-resident administrator may answer from the panel
   only when no resident can: the request has stayed unanswered by residents for a core-fixed
-  escalation window, or no resident is reachable (the residents' delivery fell back, Q3). The
-  window value is set in the spec pass.
+  escalation window (2 hours, CA4-118), or the active notification configuration has no resident
+  recipient with an endpoint.
 
 ## 7. Visibility matrix
 

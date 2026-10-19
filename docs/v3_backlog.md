@@ -2093,7 +2093,7 @@ inside the config flow itself.
    whether a *reaction* is offered in a room; AT1/AT3 are `HouseStateDomain`/`SecurityDomain` reading
    topology directly inside their own per-cycle `compute()` — a different layer, complementary, not
    overlapping. Both phases stay `DEFERRED` as-is; only the written rationale is sharpened here.
-5. **Guests — model approved 2026-10-19, spec pass in progress (CA4-117..124).** The approved people
+5. **Guests — model approved 2026-10-19, spec pass in progress (CA4-118..125).** The approved people
    model, its decisions and the systematic sweep are in `docs/v3_people_model_draft.md`; the layer
    changes follow it in eight bounded issues. Original question (raised 2026-10-16 during CA4-113): Schedule: right after
    the Layer 8 completeness review, before any further guest-touching work. Initial V3 has no guest
@@ -6315,6 +6315,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-118 — Every non-administrator was a resident
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model (backlog open question 5, `docs/v3_people_model_draft.md`).
+
+**Problem.** V3 had no person classification. The Layer-0 ingress mapped every non-administrator to `resident`, a Layer-6 recipient link made a Layer-8 resident, and consent authority accepted any HA user, so a guest with an account or a guest-room tablet counted as a resident; an administrator's response was recorded as `admin_command`, mixing path and actor; a B2B administrator who is not a resident was indistinguishable from the household.
+
+**Approved resolution (2026-10-19).** Layer 2 §2.8 `Person(ha_person_id, household_role resident|guest, ha_user_id)` classifies HA persons, stored and committed like `Room`; unclassified persons and users with no Person count for nothing. Layer 0 §5: `UserActor(household_role, ha_admin)` with two independent axes, `actor_type="user"`/`"physical"`, `user_response` replaces `resident_response`; ingress `admitted_actors` (`resident`, `admin`). Owners: recovery confirmation admits residents and, as a last resort after 2 hours or with no resident recipient, a non-resident administrator; consent and advisory feedback admit residents only. Layer 5: consent authority references resident Persons with an HA user; reclassification needs dispositions. Layer 6: recipients reference a Person, `residents` derives from it, a recipient without a Person must be an administrator. Layer 8: roles from the two axes, new People section and `people` addresses. See the [CA4-118 review](specs/v3/reviews/CA4-118.md); no V3 runtime test ran.
 
 #### CA4-117 — Global overflow closure raced with nonblocking admission
 

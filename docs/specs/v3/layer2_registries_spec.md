@@ -221,7 +221,7 @@ result, additionally obeys Layer 1's numeric domain (Layer 1 §3), so an integer
 
 **Resolved 2026-09-09.** A registry reload is one immutable `RegistryGeneration`, never a sequence of
 live unregister/register calls. Staging happens outside evaluation and constructs candidate Room
-(including its `floor` and `enclosure` attributes), Zone, `ZoneRoleBinding`, Topology, Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
+(including its `floor` and `enclosure` attributes), Zone, `ZoneRoleBinding`, Topology, `Person`, Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
 Before it can replace the active generation, one complete validation pass resolves every spatial
 reference and checks §2.3 producer uniqueness, fact ownership, numeric/cardinality constraints,
 formula availability and binding validation (§5.3), Fusion DAG order, and §5.7 source/destination
@@ -335,8 +335,47 @@ One rule governs the name of every object shown to people: `Room`, `Zone` (Layer
   a composed name that would collide needs an explicit `display_name`. A live Home Assistant name
   is outside Heima's control and may change after staging, so it is not checked (HA itself keeps
   area names unique).
+- **Person.** A `Person` (§2.8) has no `display_name`: its name is always the HA person's
+  current name, read at render time, and is never checked for uniqueness by Heima.
 - **Validation** of a name runs at the owning layer's staging, so the Layer-8 change set reports a
   collision next to the edited field (Layer 8 §6.2).
+
+### 2.8 `Person` registry
+
+A `Person` is the classification Heima adds to one Home Assistant `person`. Heima keeps no person
+directory of its own: identity, name and device trackers stay in Home Assistant, and Heima stores
+only what decides authority and household membership. It is staged with the rest of the registry
+generation (§2.5).
+
+```python
+@dataclass(frozen=True)
+class Person:
+    ha_person_id: str                              # HA person storage id; stable; never the entity_id
+    household_role: Literal["resident", "guest"]
+    ha_user_id: str | None                         # stored link to the person's HA user, if any
+```
+
+- **Only classified persons count.** An HA person without a `Person` is ignored by every household
+  concept. An HA user that no `Person` links to (a shared guest-room tablet, a wall panel) is a
+  device account: `household_role="none"` (Layer 0 §5). A guest is never a resident: no recipient
+  link, consent authority, panel role or actor axis turns a `guest` into a `resident`.
+- **Semantic attributes are stored, never read live.** `household_role` and `ha_user_id` decide
+  authority (Layer 0 §5, Layer 5 §7.1.1, Layer 8 §4), so changing who is a resident always takes a
+  Heima commit with impact preview and history, as for `Room` (§2.6). At staging the panel suggests
+  `ha_user_id` from the HA person's linked user. If HA later links the person to a different user,
+  unlinks it or deletes the person, a diagnostic names the drift; the stored values stay in force
+  until an administrator commits a change. The HA administrator flag is never stored here: it is an
+  independent axis read from HA at each authenticated boundary.
+- **The name is presentation (§2.7).** The effective name is the HA person's current name, read at
+  render time.
+- **Fingerprints.** The semantic fingerprint is `(ha_person_id, household_role, ha_user_id)`.
+- **Validation** rejects an empty or duplicate `ha_person_id`, a duplicate non-null `ha_user_id`,
+  an `ha_person_id` absent from HA's person registry at staging, and an `ha_user_id` absent from HA's
+  user registry at staging.
+- **Dependents.** Layer-6 recipients (Layer 6 §5.1) and `HouseholdConsentAuthority` (Layer 5
+  §7.1.1) reference `ha_person_id`. Removing or reclassifying a referenced `Person` is a
+  configuration edit whose impact record lists them; Layer 5's rule for authority removal applies in
+  the same change set.
 
 ## 3. `Sensor`
 
@@ -2159,6 +2198,13 @@ this layer.
   changes nothing in Heima until an administrator edits `floor` and commits. A duplicate
   `ha_area_id`, an unknown area or a room with neither area nor name is rejected at staging
   (§2.6).
+- `Person` (§2.8, CA4-118): a `Person(resident)` linked to an HA user makes that user's actor
+  `household_role="resident"`; an HA person left unclassified, and an HA user no `Person` links to,
+  count for nothing (`household_role="none"`). Relinking the HA person to another user in HA changes
+  no authority and raises a drift diagnostic until an administrator commits. A duplicate
+  `ha_person_id` or `ha_user_id`, or an unknown HA person or user, is rejected at staging.
+  Reclassifying a `resident` who is in `HouseholdConsentAuthority` to `guest` without the authority
+  disposition in the same change set is rejected (Layer 5 §7.1.1).
 - An Actuator with `is_external=True`, in an `exterior` room, or with `is_external=None` on an
   opening facing an exterior side (including a plain window with default `other_side`) is
   `weather_exposed`; one with `is_external=False` in an `interior` room, or on a window toward an

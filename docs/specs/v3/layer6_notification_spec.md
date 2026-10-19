@@ -135,7 +135,8 @@ state, an HA entity id or a person's identity; an `actuator_id` is a Layer-2 log
 
 ### 5.1 Recipient model (C1)
 
-A recipient is one person.
+A recipient is one person. Who that person is in the household comes from the Layer-2 `Person`
+(Layer 2 §2.8), never from the recipient record.
 
 ```python
 @dataclass(frozen=True)
@@ -146,22 +147,30 @@ class NotificationEndpoint:
 @dataclass(frozen=True)
 class NotificationRecipient:
     recipient_id: str                 # stable, administrator-chosen, e.g. "stefano"
-    ha_user_id: str | None            # links the person to HA authentication
+    ha_person_id: str | None          # the classified Person (Layer 2 §2.8); household audiences
+                                      # derive from its household_role
     endpoints: tuple[NotificationEndpoint, ...]
-    audiences: frozenset[Literal["residents", "administrators"]]
+    administrator: bool               # member of the `administrators` audience
 ```
 
-V2 groups and free routes are not carried over. The administrator only assigns each person to
-`residents` and/or `administrators`. Staging rejects duplicate `recipient_id`s, duplicate
-`ha_user_id`s, a duplicate endpoint within one recipient, an unknown `notify.*` service and
-`supports_actions=True` on a service that is not a mobile-app notify service.
+V2 groups and free routes are not carried over. Household membership is never configured on the
+recipient: a recipient belongs to `residents` exactly when its Person is a `resident`. The
+administrator only decides `administrator`. A recipient without a Person is admitted only with
+`administrator=True` (for example an installer in a B2B deployment, who may have no HA person). A
+recipient whose Person is a `guest` belongs to no household audience. Staging rejects duplicate
+`recipient_id`s, two recipients for the same `ha_person_id`, an `ha_person_id` with no active
+`Person`, a recipient without a Person and without `administrator`, a duplicate endpoint within one
+recipient, an unknown `notify.*` service and `supports_actions=True` on a service that is not a
+mobile-app notify service. The HA user of a recipient, used for self-service (§5.4) and the panel
+principal (Layer 8 §4), is its Person's stored `ha_user_id`.
 
 ### 5.2 Audience resolution
 
-- `residents` and `administrators` are the recipients assigned to them.
-- `consent_authorities` is derived, never configured: the recipients whose `ha_user_id` matches an
-  actor of the current `HouseholdConsentAuthority` (Layer 5 §7.1.1). A consent-authorized person
-  without a recipient record counts as unreachable, so the fallback applies (§7.3).
+- `residents` is derived: the recipients whose Person is a `resident`.
+- `administrators` is the recipients with `administrator=True`.
+- `consent_authorities` is derived, never configured: the recipients whose `ha_person_id` is in the
+  current `HouseholdConsentAuthority` (Layer 5 §7.1.1). A consent-authorized person without a
+  recipient record counts as unreachable, so the fallback applies (§7.3).
 - Resolution happens at delivery time against the active Layer-6 generation, so a later change of
   recipients applies to notifications not yet delivered.
 
@@ -200,8 +209,9 @@ class RecipientPreferences:
 - **Endpoints.** Delivery skips the disabled endpoints. A save that would disable every endpoint of
   the recipient is rejected. If an administrator later removes endpoints so that only disabled ones
   remain, the disabled set is ignored until the next save and a diagnostic is raised.
-- **Who saves.** The person through `notifications/set_preferences` for their own `recipient_id`
-  (the recipient linked to their `ha_user_id`), an administrator for any recipient (Layer 8 §13).
+- **Who saves.** A resident through `notifications/set_preferences` for their own `recipient_id`
+  (the recipient whose Person's stored `ha_user_id` is theirs), an administrator for any recipient
+  (Layer 8 §13). A guest does not edit preferences.
   A save carries the `revision` it was based on; a stale one is rejected without change. A `locale`
   without a translation resource, a family outside `PersonalFamily` or an endpoint the recipient
   does not have is rejected.
@@ -655,6 +665,11 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   disabled endpoint is skipped, and disabling the last enabled one is rejected; a resident saving
   another recipient's preferences is rejected; a stale revision is rejected; a recipient with
   `locale="it"` receives Italian text while the household locale is `en`.
+- Recipients and Persons (CA4-118): a recipient whose Person is a `resident` receives `residents`
+  kinds; reclassifying that Person to `guest` removes it from `residents` at the next delivery with
+  no recipient edit; an installer recipient without a Person and with `administrator=True` receives
+  only `administrators` kinds; a recipient without a Person and without `administrator`, or two
+  recipients for one Person, is rejected at staging; a guest saving preferences is rejected.
 - Items held during quiet hours are released by the committed-state delivery of
   `quiet_hours.active=False`, with no polling job; after a restart the initial delivery of the
   current value decides whether ready records are held.
