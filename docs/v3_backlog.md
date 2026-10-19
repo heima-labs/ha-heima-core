@@ -2093,7 +2093,7 @@ inside the config flow itself.
    whether a *reaction* is offered in a room; AT1/AT3 are `HouseStateDomain`/`SecurityDomain` reading
    topology directly inside their own per-cycle `compute()` — a different layer, complementary, not
    overlapping. Both phases stay `DEFERRED` as-is; only the written rationale is sharpened here.
-5. **Guests — model approved 2026-10-19, spec pass in progress (CA4-118..125).** The approved people
+5. ~~**Guests**~~ **Resolved 2026-10-19 — specified in CA4-118..125.** The approved people
    model, its decisions and the systematic sweep are in `docs/v3_people_model_draft.md`; the layer
    changes follow it in eight bounded issues. Original question (raised 2026-10-16 during CA4-113): Schedule: right after
    the Layer 8 completeness review, before any further guest-touching work. Initial V3 has no guest
@@ -6321,6 +6321,14 @@ Rooms are opaque ids and the only exterior is the reserved `outside` node, so an
 V2 has a `weather_safety` reaction that closes openings and retracts exterior awnings on wind or rain. V3 guards only veto an opening or deployment; no Initial-V3 descriptor closes or retracts when the hazard arrives. **Correction:** decide a descriptor (e.g. `safety.weather_protection`) acting on `weather_exposed` Actuators and exterior-facing openings, with its hazard inputs, safe-direction targets, restore behavior and priority over other Reactions. To be decided after CA4-12.
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
+
+#### CA4-125 — Guests, devices and installers saw resident text and data
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model §6, §7, D1, D4, D5 (`docs/v3_people_model_draft.md`).
+
+**Problem.** Viewers without a role got resident wording (names, resident times, security posture); a non-resident administrator saw household personal data and names; the per-user control scope was deferred; "resident" also meant "anyone reading Heima".
+
+**Approved resolution (2026-10-19).** Layer 8 §4.1: administrator, resident and public text registers, the public one without identity, resident presence or times and security posture ("automation active"); a non-resident administrator sees configuration, diagnostics and health but not household presence, resident notification text or names. History names only for resident viewers. §9.8.1 control scope: card `control_rooms`, administrator `UserControlScope`, the active stay's guest rooms for guest and device users, then every room; never a security boundary. Terminology: "resident" only for the household role; "user-facing"/"user-visible" elsewhere; Layer-6 `user_visible`. See the [CA4-125 review](specs/v3/reviews/CA4-125.md); no V3 runtime test ran.
 
 #### CA4-124 — Notifications had one audience and a fallback visible to everyone
 

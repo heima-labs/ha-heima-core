@@ -731,7 +731,7 @@ requires that descriptor's staged admission-reason applicability to include
 publication binding for each resumable channel; a multi-channel descriptor
 must provide distinct staged suppression scopes for its channels. An
 automatically authorized resumable Reaction requires an enabled,
-resident-visible binding for this cause; publication staging rejects a
+user-visible binding for this cause; publication staging rejects a
 missing binding. Layer 5
 opens the Layer-0 §5.1.1.2 projection only after a fresh inactive entry and a
 subsequent physical active edge linked to its own admitted `ApplyStep`.
@@ -854,7 +854,7 @@ review diagnostic, never a runtime availability occurrence.
 #### Member delivery: command or advice
 
 Every bundle member declares `delivery`: `command` (the default) produces the ordinary `ApplyStep`;
-`advice` produces a resident-facing suggestion instead, through Layer 6, and never an
+`advice` produces a user-facing suggestion instead, through Layer 6, and never an
 `ApplyStep`. An advice member is legal only for an intent in the descriptor version's
 `advisory_intents`. It may name an Actuator the administrator prefers to leave to the resident, or,
 for an opening without an Actuator, only an `opening_id` for which `opening_faces_exterior` holds
@@ -866,7 +866,7 @@ and `decrease_shading` (`environment.solar_shading`); every other Initial-V3 des
 none.
 
 **Delivery depends on authority, not only on the member.** In `notification_only` a Reaction
-issues no command and no resident-facing notification: its evaluations feed only the
+issues no command and no user-facing notification: its evaluations feed only the
 administrator's read-only preview. Advice is delivered once the Reaction is administratively
 authorized; household consent gates only command members, because advice moves nothing. Each
 eligible advice member produces one `ReactionAdvisoryOccurrence(opened)` per activation (§6.0), not
@@ -1094,7 +1094,7 @@ code outside the registry:
 
 An execution-audit code is neither an `ApplyCallFailureReason` (a call that was attempted), an
 `AutomationSuppressionReason`, nor a `ReactionFollowUpOutcome`. These records feed Layer-5 audit and
-the read-only shadow view only; resident-visible output remains exclusively
+the read-only shadow view only; user-visible output remains exclusively
 `ReactionFollowUpOccurrence` and `AvailabilitySuppressionOccurrence` through Layer 6. A skipped step
 that releases a hold produces its audit record and, under §6.0, its follow-up occurrence.
 
@@ -2361,7 +2361,7 @@ physical confirmation before a later edge can create a new divergence.
 
 The step boundary and physical outcome are separate. If guards or arbitration in that
 fresh cycle skip the new command, the hold still ends; no physical-success or closed-device claim is made.
-Layer 5 records the skipped planned action and emits a resident-visible warning when the
+Layer 5 records the skipped planned action and emits a user-visible warning when the
 expected follow-up did not occur. An admitted but unconfirmed call uses the normal pending
 apply outcome and warning path (§6.0.1). If the condition later becomes true while the new
 target remains current, a fresh Reaction evaluation may attempt it; it is not a replay of the
@@ -2390,7 +2390,7 @@ revocation instead invalidates the hold. The default exit policy sends no comman
 It requests a resident follow-up only when the latest observation differs from that
 Reaction's last confirmed target or is unavailable (§6.0). A later policy decision
 does not alter an already emitted append-only follow-up event.
-Any later resident-facing outcome requires its own approved event under the ordinary event contract.
+Any later user-facing outcome requires its own approved event under the ordinary event contract.
 
 A versioned core descriptor may instead declare a final target for normal cancellation
 or natural completion. Its registered `program_evaluator` selects that typed
@@ -2609,7 +2609,7 @@ negative answer.
 
 #### Resident follow-up operational event
 
-Layer 5 owns the operational cause, not resident text or event-fact persistence. At a qualifying
+Layer 5 owns the operational cause, not user text or event-fact persistence. At a qualifying
 boundary it gives Layer 6 one typed `ReactionFollowUpOccurrence`; Layer 6 alone validates the
 publication mapping, appends the existing `reaction.follow_up` operational event
 (`OperationalEventValue`, Layer 1 §3.1), then delivers its derived `HeimaEvent`. There is no
@@ -2784,7 +2784,7 @@ the preparation deadline expires (including a write that remains pending while
 storage otherwise appears healthy), Layer 5 reports `follow_up_durability_degraded`
 and lets the scheduled step or normal exit proceed
 through ordinary current authority and guards. It sends the resulting occurrence to Layer 6 for a best-effort ordinary queued event and
-resident delivery while running, but cannot promise crash recovery of that particular
+user-facing delivery while running, but cannot promise crash recovery of that particular
 notice. When storage returns, Layer 6 first reconciles this id with any prepared intent
 before committing an event; it never leaves both a pending prepared intent and a
 separately committed final event under the same id. It does not retain a scheduled hold
@@ -2797,7 +2797,7 @@ checkpoint, or claim about current post-restart state.
 Every `reaction.follow_up` has `warning` severity because it identifies an unresolved handoff,
 skipped/unconfirmed step, or interruption that may need attention. Layer 6 sets
 `notification_key = "reaction.follow_up:" + operation_id`; the per-channel key never merges distinct
-outcomes. Resident text names the Reaction/channel, the known outcome and whether another
+outcomes. User text names the Reaction/channel, the known outcome and whether another
 step remains. It labels an observed value with its observation time; after interruption
 it says that the outcome and current device state are unverified, without asserting that
 an earlier value still holds. Event-fact retry is idempotent by Layer 0 §4.5, while delivery is at least once:
@@ -2876,10 +2876,10 @@ concurrent cause. It constructs that tuple only through Layer 3's frozen pure
 renders, persists or delivers an availability event. The immutable staged
 `AvailabilityPublicationIndex` is queried only by Layer 6's `AvailabilityEpisodeTracker`. Each
 availability binding Layer 5 declares names the `automation_scope_id` (the configured Reaction),
-its `reaction_descriptor_id`, and whether it is enabled and resident-visible; Layer 6 derives the
+its `reaction_descriptor_id`, and whether it is enabled and user-visible; Layer 6 derives the
 notification family from the descriptor (Layer 6 §6.1). Layer 5
-sends every typed occurrence to that tracker and never selects resident-visible bindings itself; Layer
-6 alone owns the resident-visible `automation.availability` event/delivery path.
+sends every typed occurrence to that tracker and never selects user-visible bindings itself; Layer
+6 alone owns the user-visible `automation.availability` event/delivery path.
 Before it executes any command, Layer 5 performs the complete member-by-member admissibility pass
 against the same immutable snapshot. Thus a known hold, capability, physical-state, dwell or safety
 failure on one member prevents the entire bundle: no known-invalid partial execution is permitted.
@@ -4162,7 +4162,7 @@ call.
 
 Optional `notification_only` shadow is a read-only administrative preview, not an evidence gate for
 this deterministic admin-direct configuration. It records would-be episodes, bundles, suppressions and
-jobs but emits neither `ApplyStep` nor a resident-visible notification by default. An administrator may
+jobs but emits neither `ApplyStep` nor a user-visible notification by default. An administrator may
 promote a current valid generation without waiting for an absence or preview occurrence; promotion
 records only administrative authorization and yields `authorized_awaiting_household_consent` until an
 authorized resident grants current consent. Grant requests fresh evaluation without replaying missed
@@ -4200,7 +4200,7 @@ They assert only durable configuration/authority state, exact job creation/cance
    `CanonicalEnvelope` with absent support/calibration; a second cell,
    undeclared axis or invented learner evidence rejects staging.
 2. Optional `notification_only` preview with active planned absence and stabilized `away` derives only
-   the hypothetical episode/bundle and next job, never an `ApplyStep` or resident-visible notification.
+   the hypothetical episode/bundle and next job, never an `ApplyStep` or user-visible notification.
 3. Departure during an open session, planned-absence edit/removal, committed return, transient contradictory
    presence, targeted-channel hold, unconfirmed state, late job and restart produce only the defined
    selection, abstention, cancellation or replacement behavior: never raw-camera cancellation,
@@ -4389,7 +4389,7 @@ profile or learner, and declares `requires_household_consent=True`,
   ends produces one `ReactionAdvisoryOccurrence(closed)` per advice member and no resident notice. Promotion of a consent-requiring Reaction produces one
   `ConsentRequestOccurrence(opened)`; a grant, disablement or successor generation produces one
   `closed` with its reason. None of the three carries actor identity or rendered text.
-- A Reaction in `notification_only` produces no `ApplyStep` and no resident notification, only the
+- A Reaction in `notification_only` produces no `ApplyStep` and no user-facing notification, only the
   administrator preview. Once authorized, an external-exchange advice member on a manual window
   (`opening_id` facing outside, no Actuator) produces exactly one `ReactionAdvisoryOccurrence` per
   activation, even across repeated evaluations, and no `ApplyStep`; household consent is not needed
@@ -5019,7 +5019,7 @@ profile or learner, and declares `requires_household_consent=True`,
   historical training interval crosses the process gap (§3.2; Layer 0 §5.1.1.2).
 - Staging a resumable descriptor without
   `active_channel_unmanaged_after_restart` in its closed applicability map,
-  or authorizing it automatically without an exact enabled resident-visible
+  or authorizing it automatically without an exact enabled user-visible
   availability binding per resumable channel, fails. A multi-channel
   descriptor cannot collapse two distinct channels into one suppression
   scope. The availability occurrence contains neither rendered text nor an

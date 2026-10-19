@@ -2264,7 +2264,7 @@ only for an `admit_daylight` objective; it is not a proxy for glare.
 
 The state of an opening or cover is an observed physical fact, not the last Heima command. An exterior
 opening without an actuator remains eligible evidence: its approved policy can use an advice member
-(Layer 5 §3.2) that produces a resident-facing `reaction.advisory`, never an unavailable command. Layer 3 itself neither chooses a target nor commands
+(Layer 5 §3.2) that produces a user-facing `reaction.advisory`, never an unavailable command. Layer 3 itself neither chooses a target nor commands
 HVAC, openings, shutters, or fans.
 
 No profile may invent a physical coefficient or airflow claim when the data cannot identify it.
@@ -3214,7 +3214,7 @@ stable finding identity, including historic records. Such state can alter only t
 presentation or filtering; it cannot retain, withdraw, revive, rank, select, train from, or otherwise
 change the Layer-3 active projection. The registry emits bounded administrator-audit lifecycle reasons
 (`activated`, `refreshed`, `withdrawn_not_eligible`, `withdrawn_artifact_unavailable`,
-`superseded_definition`, and `suppressed_by_capacity`); these are neither resident notifications nor
+`superseded_definition`, and `suppressed_by_capacity`); these are neither user-facing notifications nor
 learning inputs.
 
 #### 6.1.2 `ShadowProposalPreview`
@@ -3258,7 +3258,7 @@ is frozen in `DiagnosticFindingRegistry`. The preview schema reuses that exact c
 validator for bounded hypothetical intent, scope, parameters, envelope and evidence summary; it adds
 only shadow-specific bounded fields such as evaluation time, predicted outcome/uncertainty,
 coverage/abstention state, and guard-availability summary. It contains no raw HA data, Actuator
-endpoint/command, final Reaction, review status, approval, resident text, or executable predicate.
+endpoint/command, final Reaction, review status, approval, user text, or executable predicate.
 The complete binding is part of the resolved learning definition fingerprint.
 
 The preview finding uses the ordinary per-schema/subject capacity bound, current-snapshot replacement,
@@ -3371,7 +3371,7 @@ identity but cannot extend expiry or feed its assisted output back into the cont
 ### 6.3.1 Observable automation abstention
 
 An absent `InferenceSignal` or an action suppressed by an approved environmental envelope must not
-silently look like a broken resident-visible automation. The component that actually evaluates the
+silently look like a broken user-visible automation. The component that actually evaluates the
 failed gate is the **suppression owner**: Layer 3 for a signal it declines to emit, or the later
 semantic-resolver/Reaction owner for a configured action it declines to run. It emits one transient typed
 `AvailabilitySuppressionOccurrence`; this is not a `HeimaEvent`, `HouseFact`, notification command,
@@ -3436,7 +3436,7 @@ restoration carries the tuple of the episode it ends. This keeps a concurrent ho
 truthful without exposing internal action details to Layer 6.
 
 The occurrence otherwise carries no raw history, HA payload, actuator command, `automation_scope_id`, or
-learner-authored resident text. Metrics and diagnostics count every evaluated suppression by owner,
+learner-authored user text. Metrics and diagnostics count every evaluated suppression by owner,
 scope, subject, artifact, and individual reason. A non-diagnostic registered suppression owner emits it on the
 transition from usable to abstaining, on a material reason-set change during the same episode, and on
 return to usable. Repeated evaluations with the same canonical reason set increment metrics but do not create
@@ -3454,29 +3454,29 @@ An exact key
 `(suppression_owner_id, suppression_scope_id, exact subject)` resolves to a non-empty, canonical tuple
 of explicit `AvailabilityPublicationBinding`s, ordered by `automation_scope_id`. Each binding names
 one `automation_scope_id` and its `reaction_descriptor_id`, and declares whether that configured
-automation is enabled and resident-visible. The same key may intentionally fan out to several distinct automations; staging
+automation is enabled and user-visible. The same key may intentionally fan out to several distinct automations; staging
 rejects a duplicate `automation_scope_id` for one key, because it would create indistinguishable
 duplicate delivery/audit work. There is no wildcard, live policy query, or Layer-3-to-Layer-5 callback.
 
 Every suppression owner sends every occurrence to Layer 6's core-owned, transient
-`AvailabilityEpisodeTracker`, regardless of whether a current binding is resident-visible. This is not
+`AvailabilityEpisodeTracker`, regardless of whether a current binding is user-visible. This is not
 a notification or persistence request: it is the only typed input from an owner to the tracker. Thus
-"metrics-only" means that Layer 6 produces neither resident delivery nor an
+"metrics-only" means that Layer 6 produces neither user-facing delivery nor an
 `automation.availability` event, not that it loses the current suppression state needed by a later
 configuration reconciliation.
 
 The tracker retains only the current episode for each exact suppression key, its canonical reason set,
 and the distinct automation bindings to which it actually delivered an availability notification. It
 uses the staged index itself; Layer 3, Layer 4 and Layer 5 never query that index at runtime. On an
-`abstaining` or `reason_changed` occurrence, each currently enabled resident-visible binding that has
+`abstaining` or `reason_changed` occurrence, each currently enabled user-visible binding that has
 not already received that episode is delivered independently. On `restored`, Layer 6 delivers only to
 bindings recorded as notified and still active for the episode. It groups delivery by
 `(automation_scope_id, subject, reasons)` and, only there, builds the standard
 `automation.availability` event, derives its notification key/severity and persists its
 Layer-1 audit fact with its delivery record in Layer 0's unified notification outbox (§4.5). Delivery behavior (families, quiet hours, channels) is fixed by Layer 6 (Layer 6 §6–§7); it may
-not turn repeated per-cycle diagnostics into resident-facing spam or suppress the first
+not turn repeated per-cycle diagnostics into user-facing spam or suppress the first
 user-visible failed automation without an explicit higher-level policy decision.
-For `active_channel_unmanaged_after_restart`, the resident text states that the
+For `active_channel_unmanaged_after_restart`, the user text states that the
 actuator is observed active, Heima has no usable current proof to manage it,
 and Heima will leave it as observed rather than assume responsibility for a
 later automatic stop. It assigns no actor to the observed state. A `restored`
@@ -3497,13 +3497,13 @@ serializes occurrence handling and an atomic publication-generation swap, so eve
 processed wholly under either the old or new index. Immediately after a swap it compares each current
 episode against the old and new binding tuples:
 
-- an unchanged enabled resident-visible binding keeps its delivery sub-episode and receives no
+- an unchanged enabled user-visible binding keeps its delivery sub-episode and receives no
   duplicate notice;
-- a newly enabled/resident-visible binding receives the current active abstention immediately, even
+- a newly enabled/user-visible binding receives the current active abstention immediately, even
   when the owner emitted its transition before that binding existed;
 - a removed, disabled, or non-visible binding closes only its delivery sub-episode with the bounded
   Layer-6 administrative audit reason `binding_deactivated`; it receives neither a later restoration
-  nor a resident-facing configuration message;
+  nor a user-facing configuration message;
 - a subsequent `restored` reaches only sub-episodes that were actually notified and remain active.
 
 This resolves a changed configuration without requesting a Layer-3/Layer-5 callback or a live policy
@@ -3595,7 +3595,7 @@ bounded `uncertainty` object before this currently non-instantiable candidate
 can be published; `CanonicalEnvelope` already supplies its operating-cell
 contract. A future authenticated administrative-review contract may persist a
 confirmation, rejection, or dismissal with its own actor/time/audit fields; Layer 3 cannot add those
-fields, decide a disposition, or generate resident-facing text. This distinct path prevents a
+fields, decide a disposition, or generate user-facing text. This distinct path prevents a
 non-actionable question from being accidentally admitted through Layer 5's action-policy workflow.
 
 Layer 3 therefore never constructs a `ReactionProposal` or
@@ -3656,7 +3656,7 @@ and bounds, parameter schema/bounds, guard requirements, exact registered
 profile-output compatibility, and Layer-5 translation for each
 `(reaction_descriptor_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
 `open_for_exchange`, `close_to_retain`, `activate_extraction`, `adjust_extraction`,
-`stop_extraction` and `follow_comfort_trajectory`. Resident-facing text belongs to Layer 6's rendering of
+`stop_extraction` and `follow_comfort_trajectory`. User-facing text belongs to Layer 6's rendering of
 the typed Layer-5 occurrences, never to learner-provided text. A bundle is never empty; a member
 without an endpoint is legal only as an advice member under Layer 5 §3.2.
 
@@ -4321,11 +4321,11 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   canonical multi-cause set. Tests permute the same multi-cause input and prove that the one frozen
   pure helper yields the same ASCII-lexicographic tuple, episode identity, delivery grouping and RFC
   8785 JSON; they reject empty, duplicate, unknown or manually out-of-order tuples, a `HeimaEvent`, `HouseFact`,
-  persistence request, resident text or `automation_scope_id` in the occurrence; and prove that the
+  persistence request, user text or `automation_scope_id` in the occurrence; and prove that the
   `AvailabilityEpisodeTracker` is the only Layer-6 input path for an owner occurrence, while its
   immutable exact-subject `AvailabilityPublicationIndex` is the only binding-selection path. A key may
   resolve to a canonical tuple of distinct bindings; staging rejects a duplicate target for the same
-  key. Each matched enabled resident-visible binding lets Layer 6 correlate restoration with its already notified
+  key. Each matched enabled user-visible binding lets Layer 6 correlate restoration with its already notified
   `(automation_scope_id, subject, reasons)` episode and persist one `automation.availability` event;
   an absent/disabled/non-visible binding leaves only metrics. A publication-generation swap retains an
   unchanged notified binding without duplicate delivery, delivers an already active episode to a
@@ -4335,7 +4335,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   restart starts the transient tracker empty rather than replaying delivery history.
 - A Layer-5 `active_channel_unmanaged_after_restart` availability occurrence uses that same
   tracker and `automation.availability` fact; it carries no Actuator id, HA
-  payload or resident text in the occurrence. Every process restart with a
+  payload or user text in the occurrence. Every process restart with a
   fresh active channel and no usable management proof starts a new issue,
   even when the action trigger is false; Layer 6's notification key differs
   between process runs and is stable for retries within one run. Repeated cycles

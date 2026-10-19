@@ -1328,7 +1328,7 @@ applied to `FusionStrategy`'s own five members, add complexity when a real case 
 of one.
 
 `unavailable_grace` is intentionally available only on `Stability`, where the output has boolean
-polarity and a resident-visible continuity benefit has been established. Its default is `None`: no
+polarity and a user-visible continuity benefit has been established. Its default is `None`: no
 grace, immediate unavailable. A rule that needs it opts in with a positive `Window` (room occupancy
 may begin with `30s`); a security-critical rule leaves it unset. A plain symmetric `Window` has no
 availability grace.
@@ -1491,7 +1491,7 @@ input count/order and fact-type contract, output `produces`/`where`, and every `
 unless it exactly self-references that FusionRule and this formula explicitly permits its
 position/count, plus the formula's exact compiled configuration type. Neither may read HA,
 Persistence, or mutable runtime state. A failed compiler or validator rejects the whole candidate
-generation; parsing is never deferred to a diagnostic from `compute` on a resident-facing cycle, and
+generation; parsing is never deferred to a diagnostic from `compute` on a user-facing cycle, and
 `compute` never parses JSON.
 
 **Formula result and confidence contract — resolved 2026-09-08.** `confidence_mode` is declared by

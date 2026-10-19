@@ -329,11 +329,11 @@ the frozen pure `canonicalize_suppression_reasons()` helper. This avoids false c
 different ordering of the same causes.
 
 Layer 6 receives every occurrence through its transient `AvailabilityEpisodeTracker`, even if no
-resident-visible binding currently exists. The staged `AvailabilityPublicationIndex` maps an exact
+user-visible binding currently exists. The staged `AvailabilityPublicationIndex` maps an exact
 owner/scope/subject key to a canonical tuple of configured automations. At a generation swap, the
 tracker reconciles active episodes: newly visible bindings receive the current issue; removed or
 disabled bindings close in administrative audit without a misleading later restoration. This keeps
-resident delivery correct without polling or callback dependencies between Layer 3 and Layer 5.
+user-facing delivery correct without polling or callback dependencies between Layer 3 and Layer 5.
 
 ## 7. Layer 4: Semantic Resolution
 
@@ -467,7 +467,7 @@ action.
 - Manual holds, command ownership, capability, confirmed physical state, dwell/cooldown, and safety
   guards are checked on the immutable decision snapshot.
 - When a configured action cannot proceed, Layer 5 emits a typed availability occurrence with every
-  applicable closed reason. It does not render, persist, or send resident notifications.
+  applicable closed reason. It does not render, persist, or send user-facing notifications.
 
 ## 9. Cross-Layer Communication Rules
 
@@ -565,7 +565,9 @@ level per family, own endpoints) live in a separate Layer-6 store outside the ge
 
 **Layer 8 (defined).** [Layer 8](layer8_administration_spec.md) is the single Heima panel, with
 content by role resolved server-side from the HA user (administrator from HA's flag, resident from
-the user's Layer-2 `Person`, or no access for guests and device accounts; CA4-118). The
+the user's Layer-2 `Person`, or no access for guests and device accounts; CA4-118). Text has three
+registers (administrator, resident, public); a non-resident administrator does not see household
+personal data; map control scope resolves card, user, stay guest rooms, then every room (CA4-125). The
 config flow only creates the integration. Configuration edits accumulate in a session change set
 and apply atomically after a preview of changes, effects and errors; governance actions and answers
 are immediate. One history timeline with restore, a "Why?" chain on every object (built on
@@ -595,7 +597,7 @@ Before implementing a component, answer these questions in order:
    Layer 3 and must run off the hot path; only bounded serving of an adopted live signal runs in the cycle.
 4. Is it a current semantic decision? It belongs to Layer 4, not to a learner or a policy.
 5. Does it create, approve, evaluate, or execute an action? It belongs to Layer 5.
-6. Does it render or deliver a resident-facing message? It belongs to Layer 6.
+6. Does it render or deliver a user-facing message? It belongs to Layer 6.
 7. Does it present, edit or explain configuration, decisions or state to people? It belongs to
    Layer 8, which only sends typed commands to the owning layer.
 8. Would it add a second representation, registry, scheduler, action engine, or callback path? Reuse

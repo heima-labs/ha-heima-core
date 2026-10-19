@@ -293,7 +293,11 @@ allowed severity, a `context_version` registered for its `fact_type`, the `conte
 version, and mandatory `Location`; it must never guess a room from
 unstructured context.
 
-**No stored resident text.** An operational event fact records what was notified, not the words
+**Terminology (CA4-125).** In V3 "resident" names only the household role of a classified person
+(Layer 2 §2.8); text or delivery meant for any person reading Heima is "user-facing" or
+"user-visible". A guest or a device account is a user but never a resident.
+
+**No stored user text.** An operational event fact records what was notified, not the words
 sent. `context` holds only closed fields and stable identifiers (Reaction, Actuator, channel,
 opening; the room through `where`), never a display name, rendered text or free text. Layer 6
 renders title and message at each delivery from the fact's `fact_type`, `context_version`, `where`
@@ -326,7 +330,7 @@ derive a live state from this value; a current claim needs a separate `state` fa
 `actuator.manual_control` and `actuator.correction` are also reserved V3 `event` fact types,
 but are audit/learning evidence, not rendered `HeimaEvent`s. Their sole producers and closed
 values are Layer 0 §5.1.1 and Layer 5 §6.1 respectively, under Layer 0 §4's exclusive
-`FactTypeClaim`s. Neither uses `OperationalEventValue` or creates a resident notification by
+`FactTypeClaim`s. Neither uses `OperationalEventValue` or creates a user-facing notification by
 itself; both still follow the ordinary `HouseFact` envelope and event-history rules.
 `reaction.decision.<digest>` is a non-rendered **state** fact, one per configured Reaction, owned
 only by Layer 5 §5.2: the current evaluation outcome, reasons, failed guards and admission result,
@@ -352,12 +356,12 @@ never a second event fact.
 `automation.availability` is one approved V3 event fact type. Its sole producer is Layer 6's
 core-owned availability-event adapter. Layer 6's transient `AvailabilityEpisodeTracker` receives the
 typed suppression occurrence from its owner, reconciles the current episode against the staged
-publication generation, and invokes this adapter only for a resident-visible delivery. The adapter
+publication generation, and invokes this adapter only for a user-visible delivery. The adapter
 constructs the canonical notification key, severity and bounded context, then appends the event fact together with its `ready` delivery record in the unified
 notification outbox (Layer 0 §4.5); neither Layer 3, Layer 4 nor Layer 5 may pre-render or persist that
 event. Layer 0 reserves its exclusive event claim. Every notification Layer 6 delivers follows this
 same audit-fact-plus-outbox rule.
-`reaction.advisory` is one approved V3 event fact type: the opening or closing of a resident-facing
+`reaction.advisory` is one approved V3 event fact type: the opening or closing of a user-facing
 suggestion that a configured Reaction produced instead of a command (Layer 5 §6.0). Its sole producer is the Layer-6
 advisory adapter, which validates Layer 5's typed `ReactionAdvisoryOccurrence` and maps its fixed
 fields to `context` under the same rule.

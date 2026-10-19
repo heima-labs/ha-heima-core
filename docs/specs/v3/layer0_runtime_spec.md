@@ -658,12 +658,12 @@ persists and reads it without inferring ownership from target history.
 The core reserves `FactTypeClaim(fact_type_pattern="reaction.follow_up",
 owner_id="layer6.reaction_follow_up", emission_kind="event")` for the sole Layer-6
 follow-up event adapter (Layer 5 §6.0). Layer 5 supplies only the typed occurrence and
-prepares its durable intent through §4.5; it never appends this fact or renders resident text.
+prepares its durable intent through §4.5; it never appends this fact or renders user text.
 The core also reserves `FactTypeClaim(fact_type_pattern="automation.availability",
 owner_id="layer6.availability", emission_kind="event")` for the one Layer-6 availability-event
 adapter. Layer 3, Layer 4 and Layer 5 may emit only their typed transient suppression occurrence;
 none may claim or append this event fact directly. This makes the persistent owner, event semantics and
-delivery boundary unambiguous before any resident-visible availability path is enabled.
+delivery boundary unambiguous before any user-visible availability path is enabled.
 The core likewise reserves `FactTypeClaim(fact_type_pattern="reaction.advisory",
 owner_id="layer6.reaction_advisory", emission_kind="event")` for the Layer-6 adapter of Layer 5's
 typed `ReactionAdvisoryOccurrence` (Layer 5 §6.0); Layer 5 never appends it.
@@ -1353,13 +1353,13 @@ best effort and is diagnosed; it never blocks an evaluation cycle, an `ApplyStep
 This kind adds the `prepared` phase and its bounded preparation wait to the common outbox
 mechanics above. Layer 6 must supply the typed `reaction.follow_up` adapter: it validates
 Layer-5 intent and occurrence payloads, builds the event fact, drives the outbox transitions,
-and retries delivery. Layer 0 does not implement resident rendering or notification delivery.
+and retries delivery. Layer 0 does not implement user-facing rendering or notification delivery.
 
 The Layer-6 `reaction.follow_up` adapter uses the unified outbox (§4.5) with
 `notification_kind="reaction.follow_up"`, keyed by the Layer-5 per-boundary,
 per-Actuator/channel `operation_id` (Layer 5 §6.0); it is the only kind that uses `prepared`. Its `ReactionFollowUpIntent` schema is owned by Layer 5 §6.0 and validated by Layer 6
 before persistence. It is a typed `PersistedProjection`, not a `HouseFact`,
-checkpoint, hold journal, or second resident-delivery envelope. Before a qualifying Reaction
+checkpoint, hold journal, or second user-delivery envelope. Before a qualifying Reaction
 boundary advances, Layer 6 durably inserts its `prepared` intent with the immutable Reaction,
 generation, activation, Actuator/channel, path, possible hold id, target and last observed projection.
 Its persisted `subject` is the scalar canonical `LocationKey` JSON text,
@@ -2161,7 +2161,7 @@ The earlier domain/location-wide scope and explicit/implicit distinction are sup
 The administrator may optionally select `changed_facets` scope for a channel only when its core
 actuation adapter declares complete, deterministic affected-facet sets for every allowed command;
 otherwise the staged scope is `channel`, which is also the default. The administrator does not
-configure individual actions, facet lists, or a resident-facing hold control. A versioned core
+configure individual actions, facet lists, or a user-facing hold control. A versioned core
 Reaction descriptor selects `fixed_duration` or `next_reaction_step` release for its confirmed
 target. `next_reaction_step` is available only when that descriptor provides a stable identity for
 future timed or event-selected steps of the same Reaction and a versioned normal-exit contract for

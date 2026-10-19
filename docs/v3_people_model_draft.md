@@ -1,8 +1,9 @@
 # Heima v3 — people model: residents, guests, devices (approved model)
 
-Status: **model approved 2026-10-19; not a spec.** Opened 2026-10-19 from `v3_backlog.md`, open
-question 5 (guests). Layer changes are derived from this model in one coherent pass after the
-systematic sweep (§11); no V3 layer spec changes before that pass is approved.
+Status: **model approved 2026-10-19 and applied to the V3 specs in CA4-118..125; not itself a spec.**
+Opened 2026-10-19 from `v3_backlog.md`, open question 5 (guests). The layer specs are authoritative;
+this file preserves the model, its decisions and the sweep. Incongruence warnings (§8) remain open as
+backlog open question 6.
 
 ## 1. Why this exists
 

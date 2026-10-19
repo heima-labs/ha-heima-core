@@ -681,7 +681,7 @@ The `reaction.follow_up` adapter receives Layer-5 typed intent and occurrence va
 uses Layer 0's unified notification outbox (one durable store for every notification to a person:
 `prepared` only for follow-up, then `ready` committed together with the audit event fact, then
 `delivered`), persists the one event fact,
-and retries delivery. Event facts store no resident text, only closed fields and identifiers;
+and retries delivery. Event facts store no user text, only closed fields and identifiers;
 Layer 6 renders title and message at each delivery in the recipient's language with the current
 names of rooms and devices (Layer 1 §3.1). A failed or timed-out intent
 preparation has the diagnosed, best-effort notice guarantee described above;

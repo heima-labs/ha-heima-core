@@ -117,7 +117,7 @@ never reaches `house`.
 ### 4.3 Adapter contract
 
 Each kind has exactly one core adapter. The availability adapter is invoked by the tracker once per
-resident-visible binding delivery (§9.2), not once per owner occurrence. On an occurrence it:
+user-visible binding delivery (§9.2), not once per owner occurrence. On an occurrence it:
 
 1. validates the occurrence against its closed contract (identities non-empty, phase and reason
    fields consistent, sizes bounded) and rejects it otherwise with a diagnostic;
@@ -494,7 +494,7 @@ class AvailabilityPublicationBinding:
     automation_scope_id: str          # declared by Layer 5 for one configured Reaction
     reaction_descriptor_id: str       # selects the family (§6.1)
     enabled: bool
-    resident_visible: bool
+    user_visible: bool
 
 @dataclass(frozen=True)
 class AvailabilityPublicationGeneration:
@@ -532,11 +532,11 @@ Performance is bounded by construction:
 Layer 6 composes the generation at staging from the exact owner keys declared by Layers 3, 4 and 5
 and the bindings declared by Layer 5. It rejects a binding whose key has no declared owner, a
 duplicate `automation_scope_id` for one key, and an automatically authorized resumable Reaction
-without an enabled resident-visible binding for `active_channel_unmanaged_after_restart` (Layer 5
+without an enabled user-visible binding for `active_channel_unmanaged_after_restart` (Layer 5
 §3.2). The `AvailabilityEpisodeTracker`, its episode/sub-episode rules, the reconciliation at a
 generation swap, `binding_deactivated` and the per-run identity are exactly those of Layer 3 §6.3.1.
 The tracker hands each episode change (start, reason change, restoration) read-only to Layer 8's
-automation-state projection (Layer 8 §10.3), whether or not a binding is resident-visible.
+automation-state projection (Layer 8 §10.3), whether or not a binding is user-visible.
 
 ### 9.3 Advisory, action notice, consent and proposal adapters
 

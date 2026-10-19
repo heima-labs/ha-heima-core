@@ -816,6 +816,18 @@
       "depends_on": ["L2-PERSONS", "L2-ROOM-REGISTRY", "L0-RESPONSE-INGRESS"]
     },
     {
+      "id": "L8-TEXT-REGISTERS",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "4.1 Text registers and resident data (CA4-125)",
+      "depends_on": ["L8-ROLES"]
+    },
+    {
+      "id": "L8-CONTROL-SCOPE",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "9.8.1 Control scope (CA4-125)",
+      "depends_on": ["L8-ROLES", "L2-DECLARED-CONTEXT", "L8-MAP-CARD"]
+    },
+    {
       "id": "L8-ROLES",
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "4. Roles and access",
@@ -2019,6 +2031,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-124.md",
       "contracts": ["L6-NOTIFICATION-KINDS", "L6-AUDIENCES", "L6-DELIVERY", "L6-DIGESTS", "L6-RENDERING", "L6-GENERATION", "L8-MAP-CARD"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-125",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-125.md",
+      "contracts": ["L8-TEXT-REGISTERS", "L8-CONTROL-SCOPE", "L8-ROLES", "L8-EXPLANATIONS", "L8-MAP-CARD"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

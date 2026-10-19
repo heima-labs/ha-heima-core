@@ -317,7 +317,7 @@ single helper and constructs the typed `AvailabilitySuppressionOccurrence`; it e
 owner's episode starts, its canonical reason set changes, or it ends. It never renders, delivers,
 persists, or selects notification bindings.
 
-At staging, Layer 4 contributes only exact `(suppression_owner_id, suppression_scope_id, subject)` declarations. It contributes no `automation_scope_id`, enabled/resident-visible state, or policy reference. Layer 6 alone composes the `AvailabilityPublicationGeneration` from owner declarations and Layer-5 automation bindings.
+At staging, Layer 4 contributes only exact `(suppression_owner_id, suppression_scope_id, subject)` declarations. It contributes no `automation_scope_id`, enabled/user-visible state, or policy reference. Layer 6 alone composes the `AvailabilityPublicationGeneration` from owner declarations and Layer-5 automation bindings.
 
 ## 8. Reload, Recovery, and Performance
 

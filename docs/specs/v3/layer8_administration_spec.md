@@ -82,11 +82,32 @@ resident may not be an administrator. A guest, and a device account with no `Per
 tablet), has no role. Being a Layer-6 recipient grants no role. The house map is open to every authenticated HA user, with or
 without a role (CA4-113): HA already shows every entity state to every user, so the map reveals
 little beyond the automations' short reasons. An HA user with neither role sees the Overview with
-the map only, in resident wording, without links to explanations, items to do or other sections.
+the map only, in public text (§4.1), without links to explanations, items to do or other sections.
 The panel is registered once in the HA sidebar and visible to non-administrator users; content and
 commands depend on the roles. Every command declares the roles it accepts, and
 the backend rejects any other caller before reaching the owning layer. Layer 5 and Layer 0 still
 apply their own checks (for example consent authority, ingress verification).
+
+### 4.1 Text registers and resident data (CA4-125)
+
+The backend chooses one text register per viewer from the roles, never from client data:
+
+| Register | Viewer | Rules |
+|---|---|---|
+| administrator | `administrator` | codes, identifiers and links |
+| resident | `resident` | plain language without codes or identifiers |
+| public | a guest, a device account, any user with no role, the map card | plain language without a person's identity, a resident's presence or times, or security posture (alarm, locks, presence simulation) |
+
+An automation whose reason concerns security shows in public text only as "automation active", with
+no reason. A viewer with both roles gets the administrator register.
+
+**Resident data and non-resident administrators.** An administrator who is not a resident (an
+installer or property manager, B2B) sees configuration, diagnostics and system health, but not the
+household's personal data: household presence (map header and panel), the text of notifications
+addressed to residents (history shows kind, audience and phase only) and residents' names (history
+shows roles). An administrator who is also a resident sees everything. Like every restriction in
+Heima this is presentational: Home Assistant itself gives administrators access to `person.*` and
+history; Heima only does not surface them.
 
 ## 5. Navigation (L8-C3)
 
@@ -170,7 +191,7 @@ degraded. `recovery_settling` and `normal` show none. Administrators are also no
 error state and its end by the Layer-6 `system.health` notification, which links to
 `/heima/system/health` (CA4-109). Resident text is plain language without codes
 or identifiers (§12). Every situation's full detail stays in System (§14). A user with no role
-(§4) and the map card (§9.14) show the resident text.
+(§4) and the map card (§9.14) show the public text (§4.1).
 
 ### 5.3 Phones and accessibility (CA4-111)
 
@@ -342,8 +363,10 @@ System → History is one timeline built only from existing durable records:
 | System commit | Layer 0 bootstrap manifest after a code upgrade |
 
 Each configuration entry shows who, when, the field-level diff against the previous generation and
-the effects that were confirmed. Filters: section, object, person. Administrators see the actor's
-HA display name; residents see names only for their own actions and "an administrator" otherwise. Every object page shows its own
+the effects that were confirmed. Filters: section, object, person. An administrator who is also a
+resident sees the actor's HA display name; a resident sees names only for their own actions and the
+actor's role otherwise ("a resident", "a guest", "an administrator", "a device"); a non-resident
+administrator sees only roles (§4.1). Guests and device accounts have no history. Every object page shows its own
 slice.
 
 **Restore** never applies anything. It loads into the session change set the edits that turn the
@@ -585,6 +608,31 @@ use (Layer 0 §6). If it diverges from a current Reaction target, the hold follo
 the map shows the held automation with its §8 explanation. That explanation states only the origin
 Layer 0 verified and its coarse `manual_actor`; it never claims more about who acted. Device control is unavailable in edit mode.
 
+### 9.8.1 Control scope (CA4-125)
+
+Which rooms a viewer may control from the map is resolved per tap, from the most specific to the most
+general:
+
+1. the card's `control_rooms`, when set (§9.14);
+2. otherwise the user's explicit `UserControlScope`, when an administrator set one;
+3. otherwise, for a user whose Person is a `guest` or a device account with no Person, while
+   `household.guest_stay` is active: the stay's `guest_room_ids` (Layer 2 §2.9);
+4. otherwise every room.
+
+```python
+@dataclass(frozen=True)
+class UserControlScope:
+    ha_user_id: str
+    room_ids: tuple[str, ...]        # canonical order; rooms this user may control from the map
+    revision: int
+```
+
+`UserControlScope` is Layer-8 presentation data, saved at once with a revision check by an
+administrator only (`map/set_user_scope`), outside the composed generation; a removed room is
+dropped. A room outside the scope is shown but a tap or long press does nothing, as with
+`control_rooms`. The scope is never a security boundary (§9.14): Home Assistant lets the same user
+control the entity elsewhere.
+
 ### 9.9 Editing the layout
 
 Administrators edit in an explicit edit mode:
@@ -610,8 +658,8 @@ impact preview. Undo is client-side and ends with the edit session.
 
 Residents see the same map and overlays and may use §9.8 within their HA permissions. Text is in
 plain language, without identifiers or reason codes, and with no edit mode and no map checks. A user
-with no role (§4) sees the resident map; tapping an automation badge shows its short reason but opens
-no explanation.
+with no role (§4) sees the map in public text (§4.1); tapping an automation badge shows its short
+public reason but opens no explanation.
 Administrators additionally see entity ids and reason codes in details, map checks and the editor.
 
 ### 9.11 Rationale and deferred refinements (non-normative)
@@ -647,9 +695,6 @@ Deferred refinements, to reconsider after Initial V3 or when real houses show th
 - rooms spanning several floors (stairwells, double-height spaces);
 - an administrator override of an opening's position along its wall;
 - an uploaded real plan as an optional background;
-- a per-HA-user control scope (rooms a user may control from the map), editable by administrators
-  and residents, which also covers a guest with an HA account; it waits for the guest model
-  (backlog, open question 5), and like §9.14's scope it would not be a security boundary;
 - tuning the proposal weights against a corpus of real topologies;
 - no map topic remains under discussion: the accessible list alternative is §9.12 (CA4-111), pan
   and zoom are §9.13 (CA4-112), the Lovelace card is §9.14 (CA4-113) and the map check in the guided
@@ -721,7 +766,7 @@ device control (§9.8) are identical.
   the card editor flags it.
 - **Size and accessibility.** The card fills its area and follows HA's sections grid; §5.3 applies.
 - **Continuity.** On websocket reconnection the card re-reads `overview` and resubscribes. §5.2
-  states show as one compact line inside the card, in resident wording. A layout saved in the panel
+  states show as one compact line inside the card, in public text (§4.1). A layout saved in the panel
   reaches open cards and panels through `subscribe` as a new `revision`.
 
 ## 10. HA entities published by Heima (L8-C6)
@@ -878,6 +923,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `suggestions/list` | query | admin | §6.5, computed from the active generation and HA registries |
 | `suggestions/dismiss`, `suggestions/restore` | command | admin | Layer-8 view state (§6.5) |
 | `map/save_layout` | command | admin | §9.9, rejected on a stale `revision` |
+| `map/set_user_scope` | command | admin | §9.8.1 `UserControlScope`, rejected on a stale `revision` |
 | `diagnostics` | query | admin | §14; optional `window` (`24h`, `7d`) returns the §14.1 file |
 | `subscribe` | subscription | any HA user (map overlays, layout revisions and open `house` items only without a role) | live updates of §10.3, map layout revisions and the house banner (§9.14), role-filtered |
 - Live updates to an open panel come from committed-state observers and the in-memory projections
@@ -932,8 +978,8 @@ developer or a script.
 2. **House map** (CA4-103, 2026-10-15): automatic schematic only; no uploaded plan in Initial V3.
    Device control from the map uses HA's own services and more-info dialog as the signed-in user,
    outside Heima's backend (§9).
-3. **History actor names:** administrators see the actor's HA display name; residents see names
-   only for their own actions and "an administrator" otherwise (§7).
+3. **History actor names:** see §7 as revised by CA4-125 (names only for resident viewers; roles
+   otherwise).
 4. **Suggested automations at first start** list only descriptors whose staged prerequisites are
    met by what is configured; each opens an ordinary direct-staging form, and nothing is created
    without the administrator's apply (§11).
@@ -951,6 +997,14 @@ developer or a script.
   administrator answering a recovery confirmation from To do within 2 hours of opening is rejected
   with `awaiting_resident_answer` while a resident recipient exists, and accepted afterwards.
   Classifying persons and editing consent authority live in the People section.
+- Visibility and scope (CA4-125): a guest tapping an automation badge sees its public reason without
+  names or resident times; an active presence simulation shows on the tablet only as "automation
+  active"; an installer administrator opening notification history sees kind, audience and phase but
+  no text, sees no household presence in the Overview header, and sees "a resident" instead of names;
+  an administrator who is also a resident sees names. With a stay active in room 2 and no
+  `control_rooms`, the guest-room tablet controls only room 2, and every room after the stay ends; an
+  administrator's `UserControlScope` for the tablet overrides the stay rooms, and a card
+  `control_rooms` overrides both.
 - House banner (CA4-124): with an open on-site advisory, the map card on the guest-room tablet (no
   role) shows the banner without buttons; closing it hides it on that card only; it disappears when
   the advisory closes; a recovery confirmation never appears on the card.
@@ -1022,7 +1076,7 @@ developer or a script.
   moves to devices; returning to the procedure with a device already registered skips the step;
   without devices and with topology applied, the step is shown again.
 - Map card and access (CA4-113): an HA user with no role opens the panel and sees only the Overview
-  map in resident wording, and `objects/list` from that user is rejected; a card added to a
+  map in public text, and `objects/list` from that user is rejected; a card added to a
   dashboard renders without any resource step; with `control_rooms: [guest_room]` a tap on the
   guest-room light toggles it, while a tap or long press on the living-room light does nothing; with
   `controls: false` no tap acts; after `idle_reset` the card returns to its `floor` and fitted view;
