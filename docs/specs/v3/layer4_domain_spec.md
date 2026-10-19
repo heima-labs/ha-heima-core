@@ -336,7 +336,8 @@ in §9.1–§9.7; any later resolver kind requires its own review:
 1. `room_occupancy`: room-scoped `SemanticState`, built from physical room evidence plus an authorized positive indirect hint.
 2. `casa_occupancy`: deterministic casa `occupancy` (is anyone physically in the house), with the closed `present | absent` vocabulary.
 3. `presence`: deterministic household presence at casa (is any resident home), with the closed `home | away` vocabulary.
-4. `activity`: independently scoped `activity.<activity_id>` `SemanticState`s without forcing activities into one classifier or global enum. `cooking`, `sleeping`, `relax`, and `working` are the first fully specified profiles.
+4. `occupied_without_residents`: deterministic casa boolean derived from the two claims above (CA4-122).
+5. `activity`: independently scoped `activity.<activity_id>` `SemanticState`s without forcing activities into one classifier or global enum. `cooking`, `sleeping`, `relax`, and `working` are the first fully specified profiles.
 
 The casa `occupancy` and `presence` resolvers each additionally have one registered transition-episode
 adapter in §9.3. They produce the four initial episode types; they are not further semantic-state
@@ -384,7 +385,14 @@ device account or anyone else inside never makes it `home`.
 
 **Occupied without residents.** `occupancy=present` with `presence=away` is a normal, expected
 combination (a guest alone, a house sitter, a cleaner, an untracked resident). Neither claim
-overrides the other.
+overrides the other. The resolver `occupied_without_residents` (CA4-122) materializes it as the
+casa claim `occupied_without_residents` with a boolean value: `True` exactly when `occupancy@casa` is
+`present` and `presence@casa` is `away`, `False` for any other pair of available values, and
+`available=False` when either input is unavailable. It reads only those two upstream claims of the
+same cycle, adds no dwell or retained state, and asks no question about who is inside. It is the one
+definition that Layer 5 descriptors (`when_occupied_without_residents`) and Layer 3 behavior
+learners (censoring) consume; neither recomputes it. No warning is raised for it: Heima is not a
+security system, and intrusion belongs to the alarm integration.
 
 Layer 4 adds no dwell, grace, or retained state to either claim: the Layer-2 fusions own source
 quorum, explicit evidence admission/correlation, and transition stability. Layer 4 never reclassifies
@@ -642,7 +650,10 @@ room; it cannot suppress urgent safety/security communication or establish an ac
   `present -> absent` emits one `occupancy.departure` and `absent -> present` one `occupancy.return`;
   on `presence@casa`, `home -> away` emits one `presence.departure` and `away -> home` one
   `presence.return`; an unchanged or unavailable value emits none. A guest alone at home after the
-  last resident leaves yields `presence.departure` and no occupancy episode. The first post-restart available value seeds its baseline without inventing a
+  last resident leaves yields `presence.departure` and no occupancy episode.
+- `occupied_without_residents` (CA4-122) is `True` for occupancy `present` with presence `away`,
+  `False` for `present`/`home`, `absent`/`away` and `absent`/`home`, and unavailable when either input
+  is unavailable; it has no transition adapter and raises no notification. The first post-restart available value seeds its baseline without inventing a
   transition. Staging rejects an unregistered initial episode producer or transition table.
 - An activity definition resolves only a frozen core `ActivityProfile`; staging rejects an unknown
   profile, illegal scope, an unresolved/mis-typed role binding, a context-only positive route, an

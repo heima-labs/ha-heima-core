@@ -6316,6 +6316,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-122 — Absence programs could not tell a sitter from a household return
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model §5.1/§5.4, Q6, Q7, Q13 (`docs/v3_people_model_draft.md`).
+
+**Problem.** Nothing expressed "someone inside while no resident is home"; absence programs could not pause for a house sitter or cleaner and resume afterwards, and the comfort trajectory had no minimum absence duration.
+
+**Approved resolution (2026-10-19).** Layer 4 claim `occupied_without_residents@casa` (occupancy `present` and presence `away`; unavailable if either input is; no warning). Layer 5: every descriptor version fixes `when_occupied_without_residents` (`pause` for comfort trajectory and presence simulation, `continue` for the others); `pause` is `not_ended` and resumes on `occupancy.departure`/`presence.return`; only a household return ends an absence program. Comfort trajectory needs a minimum absence derived from the selected `ThermalResponseParameter` (clamp 24 h–7 days, default 48 h); `recovery_beyond_horizon` beyond 7 days of recovery. New evaluation reasons `occupied_without_residents_pause`, `absence_below_minimum`, `recovery_beyond_horizon`. See the [CA4-122 review](specs/v3/reviews/CA4-122.md); no V3 runtime test ran.
+
 #### CA4-121 — Household plans were read per descriptor and guest stays did not exist
 
 **Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model Q1/D3/D4 (`docs/v3_people_model_draft.md`).

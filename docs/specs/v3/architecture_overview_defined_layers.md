@@ -232,6 +232,10 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
 - **Declared household context** — `household.guest_stay` and `household.planned_absence` — is
   produced once from calendar categories and panel declarations by residents or administrators, each
   fact with its own value contract; consumers read the fact, never a calendar (CA4-121).
+- **Occupied without residents** (someone inside, no resident home) is one Layer-4 casa claim;
+  each Reaction descriptor version fixes `continue` or `pause` for it, and behavior learning censors
+  it. Absence programs pause and resume, ending only on a household return; the comfort trajectory
+  also needs a minimum absence derived from the learned thermal response (default 48 h, CA4-122).
 - A **Sensor** has one HA `ReadBinding`, one typed `Interpretation`, one fact type, and one explicit
   `Location`. Raw HA state/attributes/calendar data do not escape this boundary as learning or policy
   inputs.

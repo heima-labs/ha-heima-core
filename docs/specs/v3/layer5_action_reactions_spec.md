@@ -484,12 +484,31 @@ class RegisteredReactionDescriptor:
     low_risk_intents: Mapping[str, str]     # intent -> registered rationale for no required guard (§3.2)
     advisory_intents: frozenset[str]        # intents a member may deliver as resident advice (§3.2)
     resident_action_notice: bool            # notify residents of completed commands (§6.0)
+    when_occupied_without_residents: Literal["continue", "pause"]  # fixed per version (below)
     execution_audit_codes: frozenset[ReactionExecutionAuditCode]  # §4.0; subset this version may emit
     required_guards_for_action_variant: Mapping[tuple[str, str], frozenset[ReactionGuardCapabilityRef]]
     admission_reason_applicability: Mapping[str, str]
     reaction_translation_contract: PureValidator
     canonicalize_for_dedup: PureFunction
 ```
+
+**Occupied without residents (CA4-122).** Every descriptor version fixes
+`when_occupied_without_residents`, chosen by the core developer and never an administrator setting.
+It reads only the Layer-4 casa claim `occupied_without_residents` (Layer 4 §9.2): someone is inside
+while no resident is home, whoever it is. `continue` evaluates normally. `pause` treats a `True`
+claim as `not_ended` for the current activation: future steps are suppressed, nothing is cancelled
+or exited, and no new activation starts; an unavailable claim is likewise `not_ended`. A paused
+activation resumes on the first evaluation after the claim becomes `False`; `occupancy.departure`
+and `presence.return` request that evaluation. The suppression records the evaluation reason
+`occupied_without_residents_pause`. The Initial-V3 values are:
+
+| Descriptor | `when_occupied_without_residents` |
+|---|---|
+| `environment.planned_comfort_trajectory` | `pause` |
+| `security.presence_simulation` | `pause` |
+| `environment.solar_shading`, `environment.external_exchange`, `environment.air_extraction`, `safety.weather_protection`, `routine.actuation_bundle` | `continue` |
+
+Behavior learning is not a descriptor concern: Layer 3 censors its own episodes from the same claim.
 
 For a learned candidate, the exact `RelationProfileRef` selects its sole
 `policy_output_schema_id/version` and validator (§3.1). The validator checks
@@ -914,6 +933,11 @@ override a family rule.
    restored; fresh current inputs may open a new activation and select only still-future steps
    through the one next-step slot (§6.0).
 8. **Authority.** `requires_household_consent=True`.
+9. **Occupied without residents.** Every declaring descriptor declares
+   `when_occupied_without_residents="pause"`: a house sitter, cleaner or guest inside during the
+   absence suspends the program without ending it, and it resumes when the house is empty again.
+   Only a household `presence.return` ends it (rule 4). The family never reads
+   `household.guest_stay`.
 
 The family component returns `AbsenceProgramState`; the descriptor's `normal_exit_contract` uses
 its `exit` value and may only add the descriptor's own terminal-target rule. Initial V3 has two
@@ -953,6 +977,9 @@ ProposalReadinessReasonCode = Literal[
 ReactionEvaluationReasonCode = Literal[
     "trigger_not_matched",
     "semantic_guard_unsatisfied",
+    "occupied_without_residents_pause",
+    "absence_below_minimum",
+    "recovery_beyond_horizon",
 ]
 
 ReactionExecutionAuditCode = Literal[
@@ -3570,6 +3597,28 @@ without the required thermal evidence and ordinary proposal review.
   endpoints are independent. It is not a fixed setback, a universal comfort default, or a direct
   thermostat-control implementation.
 
+  **Minimum absence duration (CA4-122).** A new activation starts only when the selected
+  `household.planned_absence` interval lasts at least a minimum derived, at that evaluation, from the
+  already selected `ThermalResponseParameter` of the current cell:
+
+  ```text
+  minimum = clamp(thermal_delta_min_c / passive_drift_rate_min_c_per_hour hours
+                  + conservative_recovery_duration,
+                  floor = 24 h, ceiling = 7 days)
+  ```
+
+  It is a pure function of the frozen parameter: no new learner, artifact or stored value, and it
+  follows every recalibration of the thermal model, so a house with high thermal inertia needs a
+  longer absence. When no parameter for the current cell is selected, the core default of **48 h**
+  applies (the descriptor then also abstains for its ordinary missing-parameter reason). The duration
+  is `end - start` of the interval; `end_beyond_horizon=true` means at least the 14-day Layer-2
+  horizon, which always exceeds the ceiling. A shorter absence records
+  `absence_below_minimum` and starts nothing. A parameter whose `conservative_recovery_duration`
+  exceeds 7 days could not schedule recovery inside the horizon: the descriptor abstains with
+  `recovery_beyond_horizon`. The rationale is thermal applicability only (the house has time to
+  drift and recover); it is never an energy-saving claim. Floor, ceiling and default belong to the
+  descriptor version; changing them is a new version.
+
   Its staged `HvacTrajectoryBinding` names one registered Actuator/channel endpoint per declared
   mode; a binding may declare heating, cooling, or both, but never duplicates a mode. The same
   Actuator/channel may serve both only where its Layer-2 adapter admits both explicit mode bindings.
@@ -5020,6 +5069,14 @@ profile or learner, and declares `requires_household_consent=True`,
   positive per-member `NumericOutcomeRequirement` only for a registered
   numeric-response member, rejects it for routine and comfort members, and
   validates their whole-bundle or thermal effect from exact typed evidence.
+- Occupied without residents (CA4-122): during a 10-day absence a sitter inside for one hour makes
+  `occupied_without_residents=True`; comfort trajectory and presence simulation record
+  `occupied_without_residents_pause`, send nothing, keep their activation and next-step slot, and
+  resume after `occupancy.departure`; no normal exit occurs. With the claim unavailable they are
+  `not_ended`. A routine with the guest alone acts (`continue`). A 30-hour absence starts the
+  simulation but not the trajectory (`absence_below_minimum`, default or derived minimum above 30 h);
+  a derived minimum of 80 h blocks a 3-day absence; a 3-week absence with `end_beyond_horizon=true`
+  passes; a parameter with an 8-day conservative recovery yields `recovery_beyond_horizon`.
 - Both planned-absence descriptors read only `household.planned_absence` (CA4-121). The same absence
   declared from the panel or from the calendar yields the same `AbsenceProgramState`; an unavailable
   fact (calendar outage) yields an undecidable state, never a normal exit; the union, coalescing and

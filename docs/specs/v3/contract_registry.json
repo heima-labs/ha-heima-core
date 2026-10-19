@@ -1978,6 +1978,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-122",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-122.md",
+      "contracts": ["L4-CASA-CLAIMS", "L5-DESCRIPTOR-PLAN", "L5-DIAGNOSTIC-REGISTRY", "L5-PROGRAM-FAMILY", "L5-COMFORT-TRAJECTORY", "L5-PRESENCE-SIMULATION", "L2-DECLARED-CONTEXT"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

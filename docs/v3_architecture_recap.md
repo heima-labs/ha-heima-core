@@ -628,7 +628,8 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   model-supported HVAC step at a time, bounded by adapter constraints and never replayed in a burst.
   Its channel holds use the next target-changing step of that Reaction for release.
   Both planned-absence descriptors declare the shared `planned_absence_program` family: its
-  declared-absence-plus-stabilized-away start (`household.planned_absence`, CA4-121), departure/bootstrap handling, normal exit, next-step hold
+  declared-absence-plus-stabilized-away start (`household.planned_absence`, CA4-121), pause while
+  the house is occupied without residents (CA4-122), departure/bootstrap handling, normal exit, next-step hold
   release, restart and consent rules are written once (Layer 5 §3.2) and a future absence program
   reuses them.
   `security.presence_simulation` is also a registered Initial-V3 `admin_direct` descriptor, not a
