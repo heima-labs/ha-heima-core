@@ -98,7 +98,7 @@ Sections are organized by the user's question, not by layer.
 | House | admin | How is the house made? | Rooms (`enclosure`), openings (`other_side`), topology, zones and zone roles (Layer 1/2) |
 | Devices | admin | What does Heima see and command? | Sensors with interpretations, Actuators, fusion rules and formulas (Layer 2) |
 | Understanding | admin | How does Heima understand the situation? | Semantic resolver definitions: occupancy, presence, activity (Layer 4) |
-| People | admin | Who lives here? | Persons: HA persons classified `resident` or `guest` and their HA user link (Layer 2 §2.8); consent authority (Layer 5 §7.1.1) |
+| People | admin | Who lives here? | Persons: HA persons classified `resident` or `guest` and their HA user link (Layer 2 §2.8); consent authority (Layer 5 §7.1.1); calendar sources and keywords for guest stays and planned absences, default guest rooms (Layer 2 §2.9) |
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption (Layer 5) |
 | Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
 | Notifications | admin | Who receives what? | Recipients, family options, each recipient's preferences, notification history (Layer 6) |
@@ -108,7 +108,10 @@ Sections are organized by the user's question, not by layer.
 | Notifications | resident | What did Heima tell me? | Notifications addressed to the resident's audiences (Layer 6 records audiences, not per-person deliveries); "My preferences": language, level per family, own endpoints (Layer 6 §5.4) |
 
 The resident Overview shows the house map and what Heima is doing, in plain language and without
-technical identifiers. Every configuration section shows the pending-changes bar (§6).
+technical identifiers. For residents and administrators it also shows the declared household context
+(Layer 2 §2.9) with two actions: "Guests are staying" (optional end and guest rooms, default rooms
+preselected) and "We are away until…" (end required), each ending at its end or with "End now".
+They call `household/declare` and `household/end`; a guest or device account never sees them. Every configuration section shows the pending-changes bar (§6).
 
 ### 5.1 Panel addresses (CA4-106)
 
@@ -245,7 +248,7 @@ the Layer-2 generation, Layer 0 §4.7):
 
 | `owner_layer` | `object_kind` |
 |---|---|
-| `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `person`, `sensor`, `fusion_rule`, `actuator` |
+| `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `person`, `declared_context_source`, `guest_stay_defaults`, `sensor`, `fusion_rule`, `actuator` |
 | `layer3` | `learning_definition` (including its family enabled state) |
 | `layer4` | `semantic_resolver_definition` |
 | `layer5` | `reaction` (admin-direct configuration; `display_name`, removal or unchanged-configuration revalidation for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
@@ -728,6 +731,8 @@ that Heima reads (Sensors) and commands (Actuators). They are read-only: Heima p
 |---|---|---|---|
 | House occupancy | `binary_sensor` / occupancy | Layer 4 `occupancy@casa` (anyone inside) | enabled |
 | Household presence | `binary_sensor` / presence | Layer 4 `presence@casa` (any resident home) | enabled |
+| Guest stay | `binary_sensor`, attribute `guest_room_ids` | Layer 2 `household.guest_stay` | enabled |
+| Planned absence | `binary_sensor`, attributes `end`, `end_beyond_horizon` | Layer 2 `household.planned_absence` | enabled |
 | Room occupancy (one per room with an occupancy resolver) | `binary_sensor` / occupancy | Layer 4 room occupancy | enabled |
 | Activity (one per activity resolver: scope × `activity_id`) | `binary_sensor` | Layer 4 `activity.<activity_id>` | enabled |
 | Automation state (one per Reaction) | `sensor` / enum: `automatic`, `trial`, `awaiting_consent`, `blocked`, `invalid` | Layer 5 mode and current block | diagnostic, disabled |
@@ -855,6 +860,8 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `explain` | query | admin, resident | §8 (resident rendering for residents) |
 | `notifications/history` | query | admin, resident | Layer 6 facts, audience-filtered for residents |
 | `notifications/set_preferences` | command | admin (any recipient), resident (own recipient only) | Layer 6 §5.4, rejected on a stale `revision` |
+| `household/declare` | command | admin, resident | Layer 2 §2.9 `HouseholdDeclaration` (starts now; `end` required for a planned absence), saved at once |
+| `household/end` | command | admin, resident | Layer 2 §2.9, ends one active declaration; rejected on a stale `revision` |
 | `todo` | query | resident | pending-items projection for the resident's audiences |
 | `requests/answer` | command | admin, resident (the owner's admitted actors and own checks apply: a non-resident administrator only where the owner admits `admin`, Layer 0 §5.1.3) | Layer 0 response ingress |
 | `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |
@@ -939,6 +946,11 @@ developer or a script.
   administrator answering a recovery confirmation from To do within 2 hours of opening is rejected
   with `awaiting_resident_answer` while a resident recipient exists, and accepted afterwards.
   Classifying persons and editing consent authority live in the People section.
+- Declared context (CA4-121): a resident declares "Guests are staying" from the Overview and
+  `household.guest_stay` becomes active in the next cycle; a guest account or the guest-room tablet
+  calling `household/declare` is rejected before Layer 2; "We are away until…" without an end is
+  rejected; the published guest-stay and planned-absence entities are read-only, and no HA `switch`
+  exists for either.
 - Replacing a sensor used by an automatic Reaction in one change set (remove, add, rebind) applies
   with no breaking effect and keeps the Reaction automatic; applying the removal alone shows a
   breaking effect that would invalidate the Reaction, losing promotion and consent.

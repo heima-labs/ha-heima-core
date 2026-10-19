@@ -229,6 +229,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
 - A **Person** classifies one HA `person` as `resident` or `guest` and stores its HA user link.
   It decides household membership and authority: a guest is never a resident, and an HA user with
   no `Person` is a device account. The HA administrator flag is a separate actor axis (CA4-118).
+- **Declared household context** — `household.guest_stay` and `household.planned_absence` — is
+  produced once from calendar categories and panel declarations by residents or administrators, each
+  fact with its own value contract; consumers read the fact, never a calendar (CA4-121).
 - A **Sensor** has one HA `ReadBinding`, one typed `Interpretation`, one fact type, and one explicit
   `Location`. Raw HA state/attributes/calendar data do not escape this boundary as learning or policy
   inputs.

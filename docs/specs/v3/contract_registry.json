@@ -561,7 +561,7 @@
       "id": "L5-PROGRAM-FAMILY",
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "Program families",
-      "depends_on": ["L5-PROGRAM-EVALUATOR", "L5-STEP-SLOT", "L5-REACTION-AUTHORITY"]
+      "depends_on": ["L5-PROGRAM-EVALUATOR", "L5-STEP-SLOT", "L5-REACTION-AUTHORITY", "L2-DECLARED-CONTEXT", "L4-CASA-CLAIMS"]
     },
     {
       "id": "L3-SIGNAL-EGRESS",
@@ -796,6 +796,12 @@
       "owner": "docs/specs/v3/layer4_domain_spec.md",
       "heading": "9.3 Casa transition episodes",
       "depends_on": ["L4-CASA-CLAIMS"]
+    },
+    {
+      "id": "L2-DECLARED-CONTEXT",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "2.9 Declared household context (CA4-121)",
+      "depends_on": ["L2-PERSONS", "L2-ROOM-REGISTRY", "L0-RESPONSE-INGRESS"]
     },
     {
       "id": "L8-ROLES",
@@ -1957,6 +1963,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-120.md",
       "contracts": ["L2-HOUSEHOLD-PRESENCE", "L2-PHYSICAL-EVIDENCE-FORMULA", "L4-CASA-CLAIMS", "L4-CASA-EPISODES", "L5-REACTION-GUARDS", "L5-PROGRAM-FAMILY", "L5-PRESENCE-SIMULATION", "L5-COMFORT-TRAJECTORY"],
+      "design_constraints": ["V3-GENERIC-MECHANISMS"],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-121",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-121.md",
+      "contracts": ["L2-DECLARED-CONTEXT", "L5-PROGRAM-FAMILY", "L5-COMFORT-TRAJECTORY", "L5-PRESENCE-SIMULATION", "L8-ROLES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

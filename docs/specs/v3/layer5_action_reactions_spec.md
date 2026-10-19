@@ -870,7 +870,7 @@ class ProgramFamilyRef:
 
 @dataclass(frozen=True)
 class AbsenceProgramState:
-    effective_absence: bool | None    # None: undecidable (calendar failed or presence unavailable)
+    effective_absence: bool | None    # None: undecidable (planned absence or presence unavailable)
     selected_interval_start: EvidenceInstant | None
     selected_interval_end: EvidenceInstant | None
     exit: ReactionNormalExitOutcome   # "not_ended" unless the family proves an exit
@@ -885,23 +885,25 @@ override a family rule.
 
 **`planned_absence_program`, version `"1"`.** For every declaring descriptor:
 
-1. **Calendar binding.** The configuration has exactly one `CalendarPlanBinding` with
-   `expected_category="planned_absence"` (§5.1), selected by the binding's union rule.
+1. **Declared plan.** The descriptor reads `household.planned_absence` (§5.1, Layer 2 §2.9); its
+   configuration carries no calendar binding.
 2. **Effective absence.** True only when a selected planned-absence interval is *active* (never
    merely upcoming) and the current household `presence` claim (Layer 4 §9.2) is a committed `away`
    (already stabilized by the Layer-2 fusion). It reads the household, never casa occupancy: someone
    else inside does not end an absence. Staging also requires the household presence `FusionRule`
    (Layer 2 §2.8.1) to declare a non-null `Stability.to_true`: this is the return-confirmation dwell,
-   so a brief false `home` reading cannot commit a `presence.return` and end the program (rule 4). A failed
-   calendar read or unavailable presence makes the state undecidable, never true.
+   so a brief false `home` reading cannot commit a `presence.return` and end the program (rule 4). An
+   unavailable `household.planned_absence` (for example a failed calendar read) or unavailable
+   presence makes the state undecidable, never true.
 3. **Start.** The family's start criterion is effective absence. During a running process an
    observed `presence.departure` episode requests an immediate fresh evaluation; at bootstrap the
    current plan and stabilized `away` establish effective absence directly, without recovering a
    pre-restart departure.
-4. **Normal exit.** A committed `presence.return`, or a fresh valid calendar result proving
-   removal or replacement of the selected interval, is `normal_cancellation` of the current
+4. **Normal exit.** A committed `presence.return`, or a fresh available `household.planned_absence`
+   proving removal or replacement of the selected interval (a calendar edit or a panel declaration
+   ended early), is `normal_cancellation` of the current
    activation. The valid end of the selected interval with no later step or ongoing target of the
-   descriptor's program is `natural_completion`. Calendar failure, undecidable presence, hold,
+   descriptor's program is `natural_completion`. An unavailable planned absence, undecidable presence, hold,
    guard veto or an unresolved descriptor input is `not_ended`: future steps are suppressed but no
    exit is invented.
 5. **Next activation.** After an exit, a later eligible interval starts a new activation under the
@@ -1389,7 +1391,6 @@ class ReactionEvaluationPlan:
     canonical_envelope: CanonicalJsonObject
     canonical_actuation_bundle: ActuationBundle
     history_requirement_ids: tuple[str, ...]
-    calendar_plan_binding: CalendarPlanBinding | None
     guard_profile_generation_id: str | None
     guard_profile_definition_fingerprint: str | None
     required_guard_capabilities: tuple[ReactionGuardCapabilityRef, ...]
@@ -1907,40 +1908,18 @@ in-memory interval is incomplete (§4.1 of Layer 0): evaluation abstains from a
 history-dependent trigger or guard instead of interpreting it as an empty event slice
 or a stable prior state. A complete empty event slice retains its ordinary no-event meaning.
 
-#### Calendar-plan binding
+#### Declared household plan
 
-A policy that needs a future resident plan declares one finite `CalendarPlanBinding`; this is the same
-Reaction-descriptor mechanism, not a Layer-4 state, a fact, or a second calendar interpreter. It names a
-non-empty bounded canonical set of staged Layer-0 `CalendarViewRequirement`s, each bound to one
-`calendar.*` entity, an explicit staged Layer-2 `KeywordClassifier`, and one descriptor-declared intent
-category. The initial category is `planned_absence`. Evaluation classifies each frozen active/upcoming
-window individually and retains only the selected derived interval and category for that evaluation; it
-never stores or exposes an event summary in a proposal, outcome, audit record, or learner feature.
-
-```python
-@dataclass(frozen=True)
-class CalendarPlanBinding:
-    calendar_requirement_ids: tuple[str, ...]  # non-empty, unique, canonical order; each names one source
-    classifier_id: str
-    expected_category: str            # closed by the selected descriptor version
-```
-
-The binding is opt-in per configured Reaction and has no source-entity or category default. Every named
-requirement must be `ready`; a removed, edited, expired, or failed input produces no usable plan in the
-next frozen snapshot. A matching calendar event says only that an explicit plan exists; it does not
-imply `presence=away`, authorize an action, or supersede a manual hold. A descriptor may require a
-present active plan, an upcoming plan, or both, but must declare that role at staging and every plan
-horizon is bounded by its matching `CalendarViewRequirement`.
-
-Selection is deterministic and conservative. For `planned_absence`, matching intervals from every
-declared source are one union: exact duplicates collapse, and overlapping or directly adjacent intervals
-coalesce to their earliest start and latest end. Source identity has no precedence. An active coalesced
-interval takes precedence over upcoming intervals; otherwise the coalesced interval with the earliest
-start is selected. A window whose own summary matches multiple categories uses the classifier's explicit
-`priority_order`; a differently categorized window from another source neither cancels nor overrides a
-matching `planned_absence` window. The initial descriptor permits only this core-defined union rule.
-Any later category that needs a veto, source precedence, or another merge semantic requires an explicit
-reviewed descriptor contract; neither an administrator nor a learner may install one ad hoc.
+A policy that needs a household plan reads the Layer-2 fact `household.planned_absence` (Layer 2
+§2.9, CA4-121) like any current fact; it declares no calendar binding of its own and never reads a
+calendar or a panel declaration. The fact already applies the one core union rule over every
+calendar source and panel declaration and carries the active interval's `start`, `end` and
+`end_beyond_horizon`; an unavailable fact makes a plan-dependent decision undecidable, never false.
+The fact says only that an explicit plan exists; it does not imply `presence=away`, authorize an
+action, or supersede a manual hold. No proposal, outcome, audit record or learner feature stores a
+calendar summary. A later plan category with a veto, source precedence or another merge rule needs
+its own reviewed Layer-2 declared-context contract; neither an administrator nor a learner may
+install one ad hoc.
 
 ### 5.2 Snapshot semantics and outcomes
 
@@ -2098,7 +2077,7 @@ reaction_activation_id)`. Its `AtJob.job_id` is stable for that activation and t
 `next_step` purpose; it does not include a mutable plan fingerprint, mode, session, episode,
 Actuator, or `planned_step_id`. A descriptor supplies the bounded next boundary's `due` and its
 Layer-0 `AtJob.basis`: a boundary derived from civil or calendar time (a presence-simulation
-session or episode boundary, a comfort-trajectory calendar return boundary) is `wall_clock`; a
+session or episode boundary, a comfort-trajectory planned-absence end (`household.planned_absence.end`)) is `wall_clock`; a
 boundary derived only from an elapsed duration after an in-process anchor (an adapter step-settle
 interval) is `elapsed`. It also supplies the
 canonical nonempty ordered `(actuator_id, controlled_channel, planned_step_id)` tuple and
@@ -3567,13 +3546,13 @@ release are fixed above, not left to inference.
 with a stable identifier and the common descriptor/runtime mechanism. It is not a default automation:
 its `learner_proposal` path remains operationally dormant until all evidence and staged prerequisites
 below are present. Registration alone never makes it eligible, and it never uses a fallback target,
-endpoint, model, calendar plan, or consent value.
+endpoint, model, absence plan, or consent value.
 Its descriptor version declares `program_family=("planned_absence_program", "1")` (§3.2 Program
-families), which supplies its calendar binding, effective-absence start, departure and bootstrap
+families), which supplies its declared-plan input, effective-absence start, departure and bootstrap
 behavior, normal exit, next-step hold release, restart rule and consent requirement. This section
 specifies only what is specific to the trajectory.
 
-Its only authoring mode is `learner_proposal`. An administrator stages its HVAC, calendar and comfort
+Its only authoring mode is `learner_proposal`. An administrator stages its HVAC and comfort
 prerequisites, but cannot use `admin_direct` to create a comfort-trajectory `ConfiguredReaction`
 without the required thermal evidence and ordinary proposal review.
 
@@ -3582,7 +3561,7 @@ without the required thermal evidence and ordinary proposal review.
   with descriptor-declared comfort/safety bounds. While the plan remains
   valid, it may use only an exact-cell, unexpired `hvac_thermal_response`
   `ThermalResponseParameter` as a bounded reachability estimate. Layer 5 combines its conservative
-  recovery duration with an explicitly configured return target and the calendar return boundary to
+  recovery duration with an explicitly configured return target and the planned-absence end (`household.planned_absence.end`) to
   choose the latest start that conservatively permits recovery by that boundary; the parameter never
   supplies a target, command or schedule.
   In heating season the descriptor may permit a controlled decline toward an explicitly configured
@@ -3709,15 +3688,13 @@ class DesiredConditioningMode:
       hvac_binding: HvacTrajectoryBinding
       desired_mode: DesiredConditioningMode
       guard_profile: ComfortTrajectoryGuardProfile
-      calendar_plan_binding: CalendarPlanBinding
       definition_fingerprint: str            # canonical complete aggregate fingerprint
       staged_by: str                         # authenticated administrator
       staged_when: EvidenceInstant
   ```
 
   Staging validates and persists the complete generation, or persists none of it. The binding and
-  profile must name exactly the generation's `conditioning_scope_id`; the calendar binding must have
-  `expected_category="planned_absence"`; every endpoint, current `FactRef`, dynamic bound, hard bound,
+  profile must name exactly the generation's `conditioning_scope_id`; every endpoint, current `FactRef`, dynamic bound, hard bound,
   adapter ramp constraint and required guard capability must validate together. The referenced
   Reaction guard-profile generation must have the same scope and supply every required capability
   through the descriptor's exact guard contract. The generation contains no learned artifact, proposal,
@@ -3729,7 +3706,7 @@ class DesiredConditioningMode:
   The reaction's immutable `configuration_generation`, including the generation in its `AtJob` key,
   binds that exact pair and cannot name a later prerequisite generation.
   The learner may select only a compatible exact-cell thermal artifact against that pair. It cannot
-  select, alter, merge, or inherit a scope, endpoint, calendar binding, comfort/safety rule, guard or
+  select, alter, merge, or inherit a scope, endpoint, comfort/safety rule, guard or
   technical ramp constraint. Layer 3 §6.4.1 defines the canonical candidate payload carrying this
   reference; CT-3 in the backlog records its decision history.
 
@@ -3768,7 +3745,7 @@ class DesiredConditioningMode:
   `ThermalResponseParameter.recovery_setpoint_step_*` bucket. It then waits at least that parameter's
   `conservative_step_settle_duration` and the adapter minimum interval before the next knot. Thus
   Layer 3 supplies measured bounded step response; Layer 5 alone derives the direction, next target,
-  and timing from the current snapshot, remaining return delta, calendar boundary, and constraints.
+  and timing from the current snapshot, remaining return delta, planned-absence end, and constraints.
 
   The recovery ramp has no persisted curve or prebuilt command list. Departure handling is the
   family's start rule (§3.2, Program families, rule 3). A selected plan/dependency change and
@@ -3789,7 +3766,7 @@ class DesiredConditioningMode:
   At each recovery knot Layer 5 rereads the current snapshot, recalculates one next supported target,
   emits at most one `ApplyStep`, and arms at most one following `AtJob`. It never replays missed knots,
   sends a burst of calls, bypasses the adapter's step/interval constraints, or jumps directly to the
-  return target merely to catch up. If the remaining supported ramp cannot meet the calendar boundary,
+  return target merely to catch up. If the remaining supported ramp cannot meet the planned-absence end,
   it continues only with the next safe step and records `late_recovery`. A missing compatible artifact,
   current state, plan, presence, hold or guard cancels the next command job and
   emits no step. A previously identified due boundary for an active
@@ -3807,7 +3784,7 @@ class DesiredConditioningMode:
   reaction to `notification_only`; a manual hold, return/loss of `presence=away`, plan change/removal,
   unresolved bound/model/state, or any required safety guard suppresses the corresponding future work.
   No command already sent to HA is compensated. Layer 5 uses
-  `ThermalResponseParameter.conservative_recovery_duration` and the calendar return boundary to arm the
+  `ThermalResponseParameter.conservative_recovery_duration` and the planned-absence end (`household.planned_absence.end`) to arm the
   first future recovery-knot evaluation. At that `AtJob`, a new snapshot resolves the bounds and all
   gates again before it may generate the one actual next `ApplyStep`; it never sends a command prepared
   earlier. If the calculated recovery start is already past, the current evaluation may issue only the
@@ -3841,7 +3818,7 @@ class DesiredConditioningMode:
      energy-benefit result is admitted without the declared measured energy/power outcome.
   2. Staging validates the complete administrative prerequisite generation atomically:
      `ConditioningScope`, `HvacTrajectoryBinding`, `ComfortTrajectoryGuardProfile`, dynamic fact
-     bindings and hard bounds, calendar binding, required guards, technical adapter constraints, and
+     bindings and hard bounds, required guards, technical adapter constraints, and
      independently valid heating/cooling endpoints. It contains neither artifact evidence nor current
      consent/enablement; a failure persists no partial generation.
   3. The descriptor completes a bounded operational shadow period in `notification_only` mode. For
@@ -3855,7 +3832,7 @@ class DesiredConditioningMode:
      revocation, restart, `late_recovery`, and the rule that no already sent call is compensated.
      A verified return or selected-plan removal ends only the current activation;
      a later eligible absence creates a new id under unchanged authorization,
-     while calendar/model unavailability cannot falsely end the old activation.
+     while planned-absence/model unavailability cannot falsely end the old activation.
 
   Shadow evidence, readiness, or successful tests never auto-promote the descriptor or grant consent.
 
@@ -3871,7 +3848,7 @@ Its one descriptor-specific preparation command is
 `stage_comfort_trajectory_prerequisite_generation`. An authenticated
 administrator submits the complete `ConditioningScope`,
 `HvacTrajectoryBinding`, `DesiredConditioningMode`,
-`ComfortTrajectoryGuardProfile` and `CalendarPlanBinding`, plus
+`ComfortTrajectoryGuardProfile`, plus
 `expected_current_generation_id` (or the explicit empty-current sentinel),
 `operation_id` and `correlation_id`, as one edit of the Layer-8 change set
 (§4.2). Layer 5 validates exactly one `ComfortTrajectoryPrerequisiteGeneration`
@@ -3939,8 +3916,8 @@ The Initial-V3 suite contains at least these scenarios:
    the next adapter- and artifact-supported knot; repeated evaluations and a stale callback
    cannot add another job or duplicate a command. An already identified due boundary for an
    active next-step hold still evaluates release without admitting a blocked HVAC command.
-4. **Restart and application boundary:** after restart the descriptor reads a fresh calendar snapshot
-   and re-arms only a job derivable from current configuration, an active planned-absence interval and
+4. **Restart and application boundary:** after restart the descriptor reads a fresh
+   `household.planned_absence` fact and re-arms only a job derivable from current configuration, an active planned-absence interval and
    current stabilized `presence=away`; it never replays a missed boundary or requires pre-restart
    presence history. Adapter tests admit exactly the descriptor-owned
    `hvac_state.trajectory_setpoint.v1` facets `mode`/`setpoint_c` with a supported explicit
@@ -3982,10 +3959,10 @@ This is descriptor configuration, not a new Layer-0 temporal abstraction or a `C
 semantics; `Window` supplies the validated positive duration. During an eligible planned absence,
 Layer 5 uses this pair only to determine the current/next session occurrence and derive its one next
 `AtJob`; it does not install a standing recurrence or a second scheduler. It is a descriptor
-time-window parameter under Layer 0 §3.1, not a standalone schedule: the calendar's planned
+time-window parameter under Layer 0 §3.1, not a standalone schedule: the declared planned
 absence and stabilized `presence=away` activate the Reaction, and the session only limits when
-it may act. The administrator therefore records only the absence in the calendar and configures
-lights, density and session in this Reaction.
+it may act. The household declares only the absence (calendar or panel, Layer 2 §2.9) and the
+administrator configures lights, density and session in this Reaction.
 
 Session occurrences are deterministic:
 
@@ -4024,7 +4001,7 @@ less obviously vacant during a planned absence; it is never a security guarantee
 physical security. It uses the common `ConfiguredReaction`, scheduler, current-snapshot admission,
 ordered `ApplyStep` and audit path. It neither becomes a learning family nor acquires a security-specific
 runtime. Its descriptor version declares `program_family=("planned_absence_program", "1")` (§3.2
-Program families), which supplies its calendar binding, effective-absence start, departure and
+Program families), which supplies its declared-plan input, effective-absence start, departure and
 bootstrap behavior, normal exit, next-step hold release, restart rule and consent requirement.
 This section specifies only what is specific to presence simulation.
 Its `supported_profile_refs` is empty and its exact descriptor-level
@@ -4042,8 +4019,8 @@ supplied axis, other cell, or non-null support/calibration field. Its activation
 start criterion is the family's effective absence; the session determines the
 next eligible step, not a second activation.
 
-Its casa-scoped immutable configuration generation contains one `CalendarPlanBinding` for
-`planned_absence`, the exact required `occupancy` guard-profile generation, a canonical non-empty set of
+Its casa-scoped immutable configuration generation contains the exact required `occupancy`
+guard-profile generation, a canonical non-empty set of
 selected lighting endpoint/channel identities, typed `light_state` targets, one
 `PresenceSimulationActivitySession`, and one closed activity density (`quiet`, `ordinary`, or `active`). At
 staging, an administrator may select registered endpoints and/or rooms; each room expands once to the
@@ -4066,7 +4043,7 @@ episode count, bundle size, continuity, duration, overlap and handoff; it never 
 commands, accepts arbitrary jitter/frequency, HA scenes/scripts or an external scheduler. An episode
 may contain a finite concurrent light bundle across rooms. Layer 5 schedules only the next future
 `AtJob` in the common activation-stable next-step slot of §6.0. The descriptor keeps the
-normalized calendar-plan fingerprint, local session, episode index and step kind in the
+normalized planned-absence interval fingerprint, local session, episode index and step kind in the
 selected planned-step identity, not in the job replacement key. Each firing reads a fresh snapshot, revalidates every gate, derives at most
 one still-future bundle and then its successor job. Missed or late work is skipped, never caught up,
 replayed, burst or compensated; a skipped late step records `late_step_skipped` (§4.0).
@@ -4092,7 +4069,7 @@ sequence, including its planned switch-offs, while eligible.
 An episode requires the family's effective absence (§3.2), which also defines start, departure,
 bootstrap, normal cancellation, natural completion and the next activation. Layer 5 never consumes
 raw camera results or adds a separate return timeout. A transient contradictory or unavailable
-presence result abstains only the affected episode, allowing later fresh evaluation. A calendar
+presence result abstains only the affected episode, allowing later fresh evaluation. A planned-absence
 update, departure occurrence or due `AtJob` is only an evaluation request under the same plan;
 none becomes a second trigger. Repeated qualifying snapshots reuse the current activation and one
 next-step slot. Specific to this descriptor: the planned switch-off steps are handled before
@@ -4158,12 +4135,12 @@ They assert only durable configuration/authority state, exact job creation/cance
    undeclared axis or invented learner evidence rejects staging.
 2. Optional `notification_only` preview with active planned absence and stabilized `away` derives only
    the hypothetical episode/bundle and next job, never an `ApplyStep` or resident-visible notification.
-3. Departure during an open session, calendar edit/removal, committed return, transient contradictory
+3. Departure during an open session, planned-absence edit/removal, committed return, transient contradictory
    presence, targeted-channel hold, unconfirmed state, late job and restart produce only the defined
    selection, abstention, cancellation or replacement behavior: never raw-camera cancellation,
    catch-up, replay, burst or compensation.
    A return closes only that activation; another qualifying absence under the
-   same configured Reaction starts a distinct activation. A calendar outage
+   same configured Reaction starts a distinct activation. An unavailable planned absence
    or failed guard suppresses work without a false normal exit, and a stale
    job from the prior activation cannot dispatch into the new one.
    Within one activation, a Monday 07:00 session served in `Europe/Rome` is not
@@ -4207,7 +4184,7 @@ They assert only durable configuration/authority state, exact job creation/cance
    its start day; with `duration=24 h` staging rejects it as overlapping. On a spring-forward night a
    `02:30` start begins at `03:00` and still lasts its full duration; an ongoing session keeps its
    end across an HA timezone change while the next start uses the new zone. No session starts
-   without the calendar absence and stabilized `away`.
+   without the declared planned absence and stabilized `away`.
 
 These fixtures validate contract orchestration, not learned behavioral plausibility or an uncommanded
 lighting effect. A future learned/imported temporal profile requires its own evidence and
@@ -4996,7 +4973,7 @@ profile or learner, and declares `requires_household_consent=True`,
   name collides.
 - Both Initial-V3 planned-absence descriptors declare
   `program_family=("planned_absence_program", "1")`, and staging rejects either one if its
-  configuration lacks the `planned_absence` calendar binding, its household presence fusion has a null
+  configuration carries its own calendar binding, its household presence fusion has a null
   `Stability.to_true`, or its descriptor version contradicts a family rule (hold release, restart,
   consent). Given the same calendar and presence trace — departure, bootstrap during an active
   absence, early return, calendar removal, calendar outage, interval end — the family component
@@ -5043,9 +5020,7 @@ profile or learner, and declares `requires_household_consent=True`,
   positive per-member `NumericOutcomeRequirement` only for a registered
   numeric-response member, rejects it for routine and comfort members, and
   validates their whole-bundle or thermal effect from exact typed evidence.
-- A `planned_absence` calendar binding rejects an empty, duplicate, undeclared, non-ready, or
-  source/horizon-incompatible requirement set. Tests prove that matching intervals from multiple
-  declared calendars deduplicate and coalesce across overlap or adjacency, that the active union wins
-  over an upcoming union, and that source order cannot alter the selected interval. A second category
-  cannot cancel a matching absence interval; only a summary with multiple category matches uses the
-  registered classifier `priority_order`.
+- Both planned-absence descriptors read only `household.planned_absence` (CA4-121). The same absence
+  declared from the panel or from the calendar yields the same `AbsenceProgramState`; an unavailable
+  fact (calendar outage) yields an undecidable state, never a normal exit; the union, coalescing and
+  category rules are tested once in Layer 2 §2.9.

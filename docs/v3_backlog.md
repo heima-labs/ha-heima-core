@@ -6316,6 +6316,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-121 — Household plans were read per descriptor and guest stays did not exist
+
+**Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model Q1/D3/D4 (`docs/v3_people_model_draft.md`).
+
+**Problem.** Each planned-absence descriptor read the calendar itself through `CalendarPlanBinding`, a planned absence could not be declared from the panel, and no guest-stay context existed.
+
+**Approved resolution (2026-10-19).** Layer 2 §2.9: core-produced facts `household.guest_stay` (`active`, `guest_room_ids`) and `household.planned_absence` (`active`, `start`, `end`, `end_beyond_horizon`), sharing only production — calendar category with one classifier per fact, panel declarations by residents and administrators (start now; end optional for a stay, required for an absence; durable), union of sources, no HA `switch`. Calendar-declared stays use default guest rooms; a calendar failure keeps a panel-declared stay active but makes an absence unavailable; absences read a 14-day horizon to coalesce windows. Layer 5: `CalendarPlanBinding` removed, descriptors read `household.planned_absence`. Layer 8: Overview declarations, People configuration, `household/declare`/`household/end`, two read-only entities. See the [CA4-121 review](specs/v3/reviews/CA4-121.md); no V3 runtime test ran.
+
 #### CA4-120 — One casa presence claim meant two different things
 
 **Status:** DONE (2026-10-19; specification readiness). **Severity:** P1. **Origin:** guest model D2 (`docs/v3_people_model_draft.md`).

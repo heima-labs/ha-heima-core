@@ -1645,9 +1645,10 @@ evaluation, and false-prompt contract. `possible_guest`, for example, additional
 direct multi-occupant-count evidence; Heima must not derive it from ordinary PIR/motion, binary
 presence, room-occupancy overlap, device activity, or an unusual routine. `probable_departure` and
 `extended_absence` are not learner hypotheses: any future deterministic use must remain a Layer-5
-policy predicate over observed `departure`/`return` episodes and, where explicitly configured, a
-frozen calendar-plan binding. It must not become a Layer-4 semantic claim merely because a calendar
-contains an event.
+policy predicate over observed `departure`/`return` episodes and, where explicitly configured, the
+declared `household.planned_absence` fact (Layer 2 §2.9). It must not become a Layer-4 semantic claim
+merely because a calendar contains an event. A guest stay is likewise declared
+(`household.guest_stay`), never a hypothesis: no learner output can set it.
 The future candidate shape carries one casa subject, artifact/finding identity, evidence span,
 confidence and uncertainty, operating envelope, and expiry. It contains no raw HA payload, resident
 identity, command, policy, or state-transition instruction.
@@ -4017,7 +4018,7 @@ otherwise and every cited cross-layer dependency is complete.
    requires no learned profile: Layer 5 owns its core-generated bounded plan over explicitly selected
    interior-light Actuators. A later personalized artifact and generated plans remain
    security-sensitive local administrator data, require the existing
-   `CalendarPlanBinding(category="planned_absence")`, observed current absence, consent gates and
+   declared `household.planned_absence`, observed current absence, consent gates and
    endpoint contract, and never claim measured burglary prevention. A future non-security consumer,
    such as a reviewed lighting temporal-plan descriptor,
    must satisfy the same common temporal model contract but declares its own scope, guards and privacy
@@ -4049,8 +4050,8 @@ otherwise and every cited cross-layer dependency is complete.
    shadow validation; the already-defined Layer-5 prerequisite, comfort/safety, shadow/promotion and
    automatic-action consent gates then govern its operational use. Historical
    `occupancy.departure`/`occupancy.return` episodes may delimit an absence cohort (nobody inside,
-   whoever lives there; household `presence` episodes never do, CA4-120) but the live descriptor alone may use a frozen Layer-0 calendar-plan
-   binding to schedule against an expected return; that plan never labels calibration data as absence.
+   whoever lives there; household `presence` episodes never do, CA4-120) but the live descriptor alone may use the declared `household.planned_absence` end (Layer 2 §2.9)
+   to schedule against an expected return; that plan never labels calibration data as absence.
    No fixed default target is permitted. A candidate without an explicit energy measurement binding
    must omit energy-savings claims and energy-benefit promotion metrics.
 

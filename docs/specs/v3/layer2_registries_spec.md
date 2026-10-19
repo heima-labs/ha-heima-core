@@ -221,7 +221,7 @@ result, additionally obeys Layer 1's numeric domain (Layer 1 §3), so an integer
 
 **Resolved 2026-09-09.** A registry reload is one immutable `RegistryGeneration`, never a sequence of
 live unregister/register calls. Staging happens outside evaluation and constructs candidate Room
-(including its `floor` and `enclosure` attributes), Zone, `ZoneRoleBinding`, Topology, `Person`, Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
+(including its `floor` and `enclosure` attributes), Zone, `ZoneRoleBinding`, Topology, `Person`, declared-context calendar sources and guest-stay defaults (§2.9), Sensor, FusionRule, Actuator, formula, producer-claim, and `previous_cycle` declarations.
 Before it can replace the active generation, one complete validation pass resolves every spatial
 reference and checks §2.3 producer uniqueness, fact ownership, numeric/cardinality constraints,
 formula availability and binding validation (§5.3), Fusion DAG order, and §5.7 source/destination
@@ -406,6 +406,93 @@ author them, and they change only with a `Person` commit.
 - **Untracked residents.** Household presence is computed over tracked residents only. An untracked
   resident alone at home reads as household `away` while casa occupancy is `present`: the house is
   "occupied without residents" for every consumer, which is harmless by design.
+
+### 2.9 Declared household context (CA4-121)
+
+Some household context is never observed or inferred, only declared by the household:
+`household.guest_stay` (guests are staying) and `household.planned_absence` (the household plans to
+be away). Each is one Layer-2 fact at casa, produced once by the core and read directly by every
+consumer, like `quiet_hours.active`; no consumer reads a calendar or a panel declaration itself.
+
+**What the two facts share is only how they are produced:**
+
+- **Sources.** An event of the fact's calendar category, or a declaration from the Heima panel.
+- **Who declares.** Residents and administrators, through Layer 8 commands checked in the backend
+  (Layer 8 §13). A guest or a device account never declares; Heima publishes no HA `switch` for it,
+  because any HA user could flip one.
+- **Durability.** A panel declaration survives a restart.
+- **Several sources.** Sources are combined by union; one active source is enough.
+- **Failure.** An unreadable calendar never makes a fact `False` by default (each fact's rule below).
+
+**Each fact has its own value contract and behavior** (below); one shared production path never
+turns them into one generic value.
+
+```python
+@dataclass(frozen=True)
+class DeclaredContextCalendarSource:
+    fact_type: Literal["household.guest_stay", "household.planned_absence"]
+    calendar_entity_ids: tuple[str, ...]   # staged calendar.* entities, unique, canonical order
+    keywords: tuple[str, ...]              # this fact's own single-category KeywordClassifier
+
+@dataclass(frozen=True)
+class GuestStayDefaults:
+    guest_room_ids: tuple[str, ...]        # rooms assumed for a calendar-declared stay
+
+@dataclass(frozen=True)
+class HouseholdDeclaration:
+    declaration_id: str
+    fact_type: Literal["household.guest_stay", "household.planned_absence"]
+    start: EvidenceInstant                 # the save instant: a declaration starts now
+    end: EvidenceInstant | None            # required for planned_absence, optional for guest_stay
+    guest_room_ids: tuple[str, ...]        # guest_stay only, defaults to GuestStayDefaults; else empty
+    declared_by: str                       # actor reference, for the declaration audit only
+    revision: int
+```
+
+- **Configuration.** At most one `DeclaredContextCalendarSource` per fact and one
+  `GuestStayDefaults` are staged with the registry generation (§2.5) by an administrator. The calendar
+  category names `guest_stay` and `planned_absence` are core-reserved; the keywords are
+  administrator-defined, with suggested defaults per shipped locale (for example Italian "ospiti" and
+  "vacanza, ferie, viaggio"). Each fact has its **own** classifier with exactly its one category,
+  so one event such as "on holiday, grandparents at home" can activate both facts; a shared
+  classifier with `priority_order` would drop one. The core stages one Layer-0
+  `CalendarViewRequirement` per configured calendar entity (Layer 0 §4.1). Staging rejects an unknown
+  `calendar.*` entity, an empty keyword list, an unknown `guest_room_ids` room, and a duplicate
+  source per fact.
+- **Panel declarations** are Layer-2 data outside the composed generation, saved at once with a
+  revision check like recipient preferences (Layer 6 §5.4): they have no dependents and need no
+  change set. A declaration always starts at its save instant; a future plan belongs in the
+  calendar. It ends at its `end` or when a resident or administrator ends it; an ended or expired
+  declaration is retained only in the declaration audit. A `guest_room_ids` room removed by a later
+  generation is dropped from the declaration.
+
+**`household.guest_stay`** has the value `{"active": bool, "guest_room_ids": [room_id, ...]}`
+(canonical order; empty when inactive).
+
+- It reads only calendar windows active now; its requirement declares the core minimum horizon of
+  one hour, required by Layer 0 to be positive, and reads no upcoming window.
+- It is `active` when at least one source is active: a matching active calendar window (with
+  `GuestStayDefaults.guest_room_ids`) or an active panel declaration (with its own rooms).
+  `guest_room_ids` is the union over the active sources.
+- If a configured calendar read fails and an active panel declaration exists, the fact is still
+  `active` (the stay is known); with no active declaration it is `available=False`.
+
+**`household.planned_absence`** has the value `{"active": bool, "start": EvidenceInstant | None,
+"end": EvidenceInstant | None, "end_beyond_horizon": bool}`.
+
+- It reads active and upcoming calendar windows over a core-fixed horizon of **14 days**, which must
+  exceed the ceiling of the comfort-trajectory minimum absence duration plus the largest recovery
+  duration (Layer 5 `planned_absence_program`); it never needs to see a whole long absence.
+- Matching intervals from every calendar source and every active panel declaration form one
+  union: exact duplicates collapse, and overlapping or directly adjacent intervals coalesce to their
+  earliest start and latest end. Source identity has no precedence. The fact is `active` only while
+  a coalesced interval contains the cycle instant (never merely upcoming), and then carries that
+  interval's `start` and `end`; when the coalesced end lies beyond the horizon, `end` is the horizon
+  end and `end_beyond_horizon=true`, which only means "ends later". An inactive fact carries `None`
+  bounds and `false`.
+- A differently categorized window never cancels or overrides a matching absence window.
+- If any configured calendar read fails, the fact is `available=False`: a missing source could move
+  the end, so neither `active` nor the end is certain.
 
 ## 3. `Sensor`
 
@@ -2251,6 +2338,14 @@ this layer.
   after `unavailable_grace`. A resident whose HA person has no tracker is excluded with a diagnostic,
   and alone at home yields `presence.household=False` while casa occupancy is `True`. A guest's
   person never feeds `presence.household`.
+- Declared household context (§2.9, CA4-121): a calendar event matching only the guest-stay keywords
+  activates `household.guest_stay` with the default guest rooms; a resident's panel declaration
+  "guests, room 2" with no end keeps it active until ended; a guest or device-account declaration is
+  rejected in the backend. Absence windows 1–7 and 7–10 from two calendars give one active interval
+  1–10. A panel absence with a failed calendar read makes `household.planned_absence` unavailable; a
+  three-week absence reads `active` with `end_beyond_horizon=true` until its end enters the 14-day
+  horizon. One event "on holiday, grandparents at home" activates both facts. An active declaration
+  survives a restart. A source with an unknown calendar or an empty keyword list is rejected.
 - An Actuator with `is_external=True`, in an `exterior` room, or with `is_external=None` on an
   opening facing an exterior side (including a plain window with default `other_side`) is
   `weather_exposed`; one with `is_external=False` in an `interior` room, or on a window toward an

@@ -342,7 +342,9 @@ The casa `occupancy` and `presence` resolvers each additionally have one registe
 adapter in §9.3. They produce the four initial episode types; they are not further semantic-state
 resolvers or a generic transition mirror.
 
-`house_state` is deliberately not an initial claim: its V2 vocabulary mixed presence, activity, quiet/sleep context, planned absence, and guest context. A future quiet/sleep context, planned absence, guest context, identity inference, multi-occupant counting, learned absence, HVAC control, environmental policy evaluation, and security policy each need a separate claim and authority/safety contract.
+`house_state` is deliberately not an initial claim: its V2 vocabulary mixed presence, activity, quiet/sleep context, planned absence, and guest context. Planned absence and guest stay are not Layer-4 claims either: they are declared household context,
+the Layer-2 facts `household.planned_absence` and `household.guest_stay` (Layer 2 §2.9, CA4-121),
+never inferred. A future quiet/sleep context, identity inference, multi-occupant counting, learned absence, HVAC control, environmental policy evaluation, and security policy each need a separate claim and authority/safety contract.
 
 ### 9.1 `room_occupancy`
 

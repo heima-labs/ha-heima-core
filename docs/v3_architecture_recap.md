@@ -456,9 +456,10 @@ fresh Layer-2 facts and only its declared same-cycle upstream claims already res
 topological order; separately declared `previous_cycle` values come from Layer 0's bounded snapshot.
 The resulting evaluation is acyclic and deterministic in one pass.
 
-The initial semantic claims are `room_occupancy`, `presence`, and independently scoped
-`activity.<activity_id>`. They intentionally do not form one global enum: presence, activity,
-quiet/sleep context, planned absence and guest context can coexist and require their own vocabulary,
+The initial semantic claims are room and casa `occupancy`, household `presence`, and independently
+scoped `activity.<activity_id>`; planned absence and guest stay are declared Layer-2 facts
+(`household.*`, CA4-121). They intentionally do not form one global enum: occupancy, presence,
+activity, quiet/sleep context, planned absence and guest stay can coexist and require their own vocabulary,
 evidence, availability and safety contracts. The monolithic V2 `house_state` is retired rather than
 being recreated as a V3 claim. See the authoritative Layer-4 specification for exact contracts.
 
@@ -627,7 +628,7 @@ semantic resolution, so a Reaction can read the current fine-grained detail such
   model-supported HVAC step at a time, bounded by adapter constraints and never replayed in a burst.
   Its channel holds use the next target-changing step of that Reaction for release.
   Both planned-absence descriptors declare the shared `planned_absence_program` family: its
-  calendar-plus-stabilized-away start, departure/bootstrap handling, normal exit, next-step hold
+  declared-absence-plus-stabilized-away start (`household.planned_absence`, CA4-121), departure/bootstrap handling, normal exit, next-step hold
   release, restart and consent rules are written once (Layer 5 §3.2) and a future absence program
   reuses them.
   `security.presence_simulation` is also a registered Initial-V3 `admin_direct` descriptor, not a

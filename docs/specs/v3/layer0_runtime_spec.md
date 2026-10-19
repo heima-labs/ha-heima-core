@@ -875,8 +875,8 @@ Home Assistant, or observes an append accepted after the barrier. Retention is p
 duration of that cycle's policy evaluation, then released.
 
 **`FrozenCalendarView` is the corresponding bounded future-calendar view, not a semantic plan or a
-second calendar cache.** A Layer-5 plan that needs calendar context declares a finite
-`CalendarViewRequirement` during staging: one permitted `calendar.*` entity and one positive bounded
+second calendar cache.** A Layer-5 plan or a core Layer-2 declared-context producer (Layer 2 §2.9)
+that needs calendar context declares a finite `CalendarViewRequirement` during staging: one permitted `calendar.*` entity and one positive bounded
 upcoming horizon. Layer 0 contributes the largest declared horizon to the existing per-entity cache
 prefetch (§3.4.1). At the same `CycleInputBarrier`, it freezes that requirement's `active_now` and
 `upcoming_starts_within` results using `barrier.when`. A policy may subsequently read only its staged
