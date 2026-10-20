@@ -487,6 +487,12 @@
       "depends_on": ["L0-FACT-SOURCE", "L0-CHANNEL-STATE"]
     },
     {
+      "id": "L0-HOLD-AUDIT",
+      "owner": "docs/specs/v3/layer0_runtime_spec.md",
+      "heading": "6.4 Audit ordering and failures",
+      "depends_on": ["L0-STATE-HISTORY", "L0-OBSERVATION-COVERAGE", "L0-RETRY-QUEUE"]
+    },
+    {
       "id": "L0-MANAGED-EPISODE",
       "owner": "docs/specs/v3/layer0_runtime_spec.md",
       "heading": "5.1.1.2 Durable managed-episode projection",
@@ -1380,7 +1386,7 @@
       "status": "specification_reviewed",
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-38.md",
-      "contracts": ["L0-RETRY-QUEUE", "L0-OBSERVATION-COVERAGE", "L3-CORRECTION-COUNT"],
+      "contracts": ["L0-RETRY-QUEUE", "L0-OBSERVATION-COVERAGE", "L0-HOLD-AUDIT", "L3-CORRECTION-COUNT"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",

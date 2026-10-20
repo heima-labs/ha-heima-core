@@ -11,7 +11,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L0-03 | L0 | R | P2 | `system.health` notification event fact has no reserved claim or owner | pending |
 | F-L0-04 | L0 | C | P2 | Layer 0 is said to read nothing above it, yet derives `household_role` from the Layer-2 Person registry | pending |
 | F-L0-05 | L0 | D | P3 | §13 checkpoint criterion says "last-write-wins per entity", while §7.4 merges per facet per channel | pending |
-| F-L0-06 | L0 | D | P3 | Hold-audit restatements require durable acknowledgement before the watermark advances, while §4.4/§4.6 also accept a declared overflow loss | pending |
+| F-L0-06 | L0 | D | P3 | Hold-audit restatements require durable acknowledgement before the watermark advances, while §4.4/§4.6 also accept a declared overflow loss | confirmed |
 | F-L0-07 | L0 | R | P3 | `route_fingerprint` cites Layer 2 §5.2, but the route is defined in Layer 2 §7 | pending |
 | F-L1-01 | L1 | D | P3 | `UnanimityStrategy.min_available` cited with a default of 1 that Layer 2 forbids | pending |
 | F-L1-02 | L1 | R | P3 | `importance` (`OBSERVE`/`SUGGEST`/`ASSERT`) on `InferenceSignal` is defined nowhere | pending |

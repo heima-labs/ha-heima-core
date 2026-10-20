@@ -6004,6 +6004,7 @@ Failed durable batches retain their ordered facts for retry while new in-process
 
 **Approved resolution (2026-10-10).** The queue budget is `max(32 MiB, 5% × effective memory limit)`, exactly 32 MiB when no enforceable limit is known, recomputed only with a new health snapshot and revisable from evidence. On ordinary overflow Layer 0 first collapses superseded queued state transitions (keeping the latest per key), then drops the oldest queued events; it never blocks admission and preserves continuity boundaries. CA4-70 defines the exceptional case in which these protected items alone exceed the budget and the subsequent progressive recovery. Each loss extends one bounded per-stream interval committed as a `queue_overflow` gap when storage returns; the watermark advances only past declared losses. Owner: Layer 0 §4.6 with §4.4/§8/§9/§10; dependent Layer 3 §4.4.2. See the [CA4-38 review](specs/v3/reviews/CA4-38.md); no V3 runtime test ran.
 
+**F-L0-06 coherence correction (2026-10-20).** The already approved declared-loss rule now appears explicitly in the Layer 0 §6.4 hold-audit restatement and §13 acceptance: a discarded audit item waits for its durable `queue_overflow` boundary, never for a fact receipt that cannot exist. The audit interval remains incomplete and live hold admission is unchanged. [Scenario review](specs/v3/reviews/resolutions/F-L0-06.md). This is specification review; no executable test ran for the correction.
 
 ### Later P1/P2 findings — priority stated on each entry
 

@@ -2488,9 +2488,15 @@ A durable write failure leaves the live hold effective and exposes
 permission to act. A crash can lose queued but unwritten audit, so history
 consumers use the known process/observation break rather than infer
 uninterrupted hold state from the last event. The §4.4 continuity
-watermark advances only after this ordinary audit fact is durably
-acknowledged. No hold checkpoint update or hold-specific `fsync` is
-required because no live hold or identity is restored.
+watermark waits for this audit fact's durable acknowledgement; if §4.6
+discards it, the watermark may pass its instant only after the
+`queue_overflow` boundary declaring its loss is durably acknowledged.
+That acknowledgement resolves the lost queue item for watermark
+accounting, never certifies the audit fact as written or the affected
+history interval as complete. A fact that failed construction above
+remains a continuity blocker and has no queued-item overflow branch.
+No hold checkpoint update or hold-specific `fsync` is required because
+no live hold or identity is restored.
 
 ## 7. Recovery / Checkpoint
 
@@ -3341,10 +3347,14 @@ concrete checklist rather than re-deriving one:
   that visibility or admission. An exact operation-id retry retains one
   inline fact; a changed payload fails in memory or against the durable key.
   A crash before durable acknowledgement may lose the audit tail under §4.4,
-  never a live hold. The continuity watermark waits for the ordinary fact
-  acknowledgement. A separate frozen-view fixture checks every
-  `HoldAdmissionEntry` and `HoldAdmissionView` field and fingerprint before
-  Layer 5 consumes the view.
+  never a live hold. The continuity watermark waits for the ordinary fact's
+  acknowledgement or, if §4.6 discards it, for durable acknowledgement of the
+  `queue_overflow` boundary declaring its loss. Before that boundary is
+  durable, the watermark cannot pass the loss; afterwards, the affected audit
+  interval remains incomplete and the discarded fact is never treated as
+  written. A fact rejected before queue admission remains a continuity blocker.
+  A separate frozen-view fixture checks every `HoldAdmissionEntry` and
+  `HoldAdmissionView` field and fingerprint before Layer 5 consumes the view.
 - A declared durable history read returns `HistoricalReadResult` with independent
   retention and typed observation coverage. A clean stop, hard crash after an
   unacknowledged audit event, failed continuity metadata write, repeated failed

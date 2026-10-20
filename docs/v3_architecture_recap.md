@@ -134,8 +134,9 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   family such as hold lifecycle events. A "snapshot" (everything true at
   one instant, or in one place, over one window) is never its own stored shape; it's a query
   reconstructed at read time. A separate durable process-continuity watermark, advanced
-  every 60 seconds only after earlier fact and audit writes are acknowledged, bounds the
-  uncertain tail after a crash. A normal stop and the first durable `CycleInputBarrier`
+  every 60 seconds after earlier fact and audit writes are acknowledged or their overflow loss
+  is durably declared, bounds the uncertain tail after a crash. Declared loss remains incomplete
+  coverage. A normal stop and the first durable `CycleInputBarrier`
   built from a newly completed HA intake with explicit binding availability delimit
   a known interruption. Windows crossing it are incomplete even when retention is
   complete; one unreadable Actuator makes only its dependent windows incomplete.

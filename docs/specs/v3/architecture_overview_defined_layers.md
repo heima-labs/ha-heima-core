@@ -99,7 +99,9 @@ Layer 0 standardizes the machinery every higher layer needs:
 - **Honest history:** retention coverage is stream-scoped. A noisy stream in one room can make its
   own historical interval truncated without falsely degrading the same fact type in another room.
   Separate durable process-continuity metadata marks restart/outage intervals; a 60-second
-  all-queue-acknowledged watermark bounds uncertainty after a crash. A typed
+  watermark advances after queued facts are durably acknowledged or their overflow loss is
+  durably declared, bounding uncertainty after a crash. Declared loss remains incomplete
+  coverage. A typed
   `ObservationCoverage` accompanies declared durable history reads independently of
   retention. The process gap closes at the first durable `CycleInputBarrier` built
   from a fresh complete HA intake with explicit binding availability; an unreadable
