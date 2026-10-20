@@ -1221,8 +1221,8 @@ class ProposalSupportingArtifact:
 
 @dataclass(frozen=True)
 class ProposalEvidenceSource:
-    source_kind: Literal["learning_instance"]
-    source_id: str                     # the learning_instance_id that produced this evidence
+    source_kind: Literal["learning_instance", "extension_analyzer"]
+    source_id: str                     # learning_instance_id, or extension instance_id (Layer 7 §6)
     serving_generation_fingerprint: str  # that instance's serving generation (Layer 3 §4.1.2)
 
 @dataclass(frozen=True)

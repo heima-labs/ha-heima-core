@@ -3,7 +3,7 @@
 This protocol is for the **planned V3 design**, not the implemented V2 runtime. Its compact
 machine-readable navigation map is [`contract_registry.json`](contract_registry.json).
 The registry records ownership and evidence; it does not restate normative behavior. The
-Layer 0–6 and Layer 8 specs remain authoritative. The overview and recap explain them. The backlog
+Layer 0–8 specs remain authoritative. The overview and recap explain them. The backlog
 preserves chronological decisions and findings. Historical drafts cannot override a layer spec.
 
 ## Work one bounded issue at a time

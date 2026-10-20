@@ -16,13 +16,13 @@ For current specification work, the [contract registry](specs/v3/contract_regist
 [workflow](specs/v3/spec_workflow.md) provide bounded navigation and review evidence.
 
 Out of scope, explicitly: `chi` (per-person learning — Heima learns at the household level, not per
-resident), push-model plugins (third-party extensions are pulled by the core, never push data in on
-their own). V3 uses a deliberate clean-start cutover: it does not migrate V2 configuration, history,
+resident), push-model extensions (extensions are invoked by the core, never push data in on their
+own), and loading third-party code in Initial V3 (Layer 7 §11). V3 uses a deliberate clean-start cutover: it does not migrate V2 configuration, history,
 runtime state, or learning; a V2 export can exist only outside V3 as rollback/reference material.
 
 ```
 Layer 8  Admin / config surface        one role-based panel, atomic change sets, history, why
-Layer 7  Extensibility                 third-party extensions, pull-only, core-mediated contracts
+Layer 7  Extensions                    first-party boundary, off-cycle, facts and candidates only
 Layer 6  Notification / communication  one pipeline, family quiet hours, digests
 Layer 5  Action / reaction generation  Reaction descriptors, review and safe application
 Layer 4  Semantic Resolution (the DAG) independent semantic claims and episodes
@@ -436,8 +436,8 @@ history to mean anything and would make no sense recomputed every cycle.
   separate, inconsistently-gated mechanisms.
 - **Reads**: Layer 1's `HouseFact`s directly, queried by `fact_type`/`Location`/time window — never
   through a bundled intermediate snapshot shape.
-- **Layer 7 (Extensibility) connection**: an extension may register a separately staged
-  analyzer over immutable findings, but it emits only a `LearningProposalCandidate` for Layer-5
+- **Layer 7 (Extensions) connection**: an extension may add an analyzer instance, staged in the
+  Layer-3 generation, over its bound core learners' active findings and published results, but it emits only a `LearningProposalCandidate` for Layer-5
   validation — never a learner/model type or a `ReactionProposal` directly. It never gets a seat at
   the live-`InferenceSignal` tier, which stays a short, individually-audited list that only the core
   team extends.
@@ -702,38 +702,26 @@ the adapter never replays an Actuator command.
 
 ---
 
-## Layer 7 — Extensibility (third-party plugins)
+## Layer 7 — Extensions
 
-- **Pull only**: the core always controls when a third-party plugin runs and what it can see —
-  plugins never push data or trigger evaluation on their own, matching the same trust envelope
-  built-in semantic resolvers already operate under.
-- **Registration seam**: a generic `register_plugin(...)` call, validated only for
-  duplicate identity and registration timing. The only structural gap is *discovery* — something to
-  call it for externally-sourced plugins without hand-editing a hardcoded built-in list; two
-  candidate mechanisms (Python entry points vs. a Home Assistant `hass.data` handshake), not yet
-  chosen.
-- **Needed for untrusted code specifically**: fault isolation (every plugin's `compute()` call runs
-  inside a boundary — a failure is skipped for that cycle and surfaced as a diagnostic event, never
-  taking the whole engine down) and a version-compatibility check at registration, so an
-  incompatible plugin is rejected loudly, never loaded silently broken.
-- **Core-mediated operational boundary**: a plugin has no `apply` capability. It cannot return an
-  `ApplyStep`, invoke an Actuator, register a candidate kind or Reaction descriptor, or install a
-  private action protocol. It may produce registered facts and diagnostics. It may also submit a
-  `LearningProposalCandidate` only for an exact existing core candidate kind and Reaction descriptor;
-  the candidate then follows the ordinary Layer-5 validation, review, staging, admissibility, and
-  audit path.
-- **Open tension, not resolved**: this project's "no backward compatibility, sole user of the
-  project" stance is incompatible with a public plugin API by definition — shipping this needs a
-  conscious, explicit amendment to that rule (e.g. scoped to internal-only contracts), not a silent
-  exception.
-- **Connection to Layer 2**: a third-party plugin can have its own `Sensor`/`Actuator` entries (a
-  soil-moisture sensor for a hypothetical watering plugin, say) — through the same admin-panel
-  registry CRUD every built-in `Sensor`/`Actuator` goes through, not a private, invisible read of
-  raw entity state. Registration itself stays admin-gated: a plugin may declare what it needs, but
-  the registry record is created through the panel, never silently self-registered against
-  arbitrary entities — the same reasoning as pull-only, one layer up. Such an Actuator remains an
-  inventory entry: only a core Layer-5 descriptor and the common `ApplyStep` pipeline may command it.
-  → `v3_backlog.md` §Third-party plugin API, §"Full architecture re-review" (AR-8).
+Specified (2026-10-20) in the [Layer 7 spec](specs/v3/layer7_extensions_spec.md), boundary only:
+extensions are first-party, in-repository code; no external code is discovered or loaded.
+
+- **Registry and instances**: a closed, bootstrap-frozen registry of extension blueprints; an
+  administrator creates instances, staged by role in the Layer-2 generation (producer) and the
+  Layer-3 generation (analyzer), with impact preview like any configuration.
+- **Pull only, off the cycle**: the core decides when an instance runs (fixed-delay cadence or input
+  change, never more than once per 60 s) and passes an immutable snapshot of its declared inputs;
+  results apply at the next input barrier. No extension code runs in the evaluation cycle.
+- **Inputs and outputs**: declared exact facts (never person-related facts or raw HA state);
+  claims only in `ext.<extension_id>.*`, with a runtime-assigned `kind="extension"` source;
+  diagnostics; and, for an analyzer, candidates under an exact core kind and descriptor.
+- **No action authority**: no `ApplyStep`, Actuator call, descriptor or candidate kind (CA-1).
+- **Failure**: a failed run is discarded; a fact not refreshed within `max_result_age` becomes
+  unavailable; an instance backs off but is never disabled automatically.
+- **Third parties**: a future option behind explicit conditions (discovery, trust model, public
+  versioned API with an amendment of the "no backward compatibility" rule, security review).
+  → `v3_backlog.md` CA4-127, CA4-129; historical `Third-party plugin API` notes.
 
 ---
 
@@ -767,17 +755,15 @@ explainability system built on top.
 
 ## What's still genuinely open across all layers
 
-1. Third-party plugin discovery mechanism (entry points vs. an `hass.data` handshake) — not chosen.
+1. Third-party extension loading — deferred behind Layer 7 §11 (discovery, trust, public API).
 2. The digest notification capability — specified (Layer 6 §6.3), not built.
 3. Routing proposal notifications through the Layer-6 pipeline instead of a separate direct-call
    path — specified (Layer 6), not built.
 4. The Layer-8 rendering of Reaction commands, results and the impact preview — specified
    (Layer 8 §6, §13), not built.
 5. Reactions configuration moves fully into the admin panel — decided (Layer 8 §6).
-6. The "no backward compatibility" project rule vs. a public plugin API (Layer 7) — needs a
-   conscious amendment, not a silent exception.
-7. A namespacing convention for third-party-registered identifiers
-   (`"plugin.<plugin_id>.<name>"`) — still to be reviewed for Layer 7; the current
-   cross-layer claims and candidate-kind/Reaction-descriptor references must remain collision-free.
-8. Layer 0–6 and Layer 8 have no open CA4 correction after the CA6 full reread; any new finding is tracked as
-   a CA4 backlog item. The retired domain drafts are historical context, not pending decisions.
+6. The "no backward compatibility" rule vs. a public extension API — an explicit amendment is one
+   of the Layer 7 §11 reopening conditions.
+7. Extension identifiers — resolved: `ext.<extension_id>.<name>` (Layer 0 §4, Layer 7 §6).
+8. Layers 0–8: every open correction and new finding is tracked as a CA4 backlog item
+   (`scripts/check_v3_specs.py --open`). The retired domain drafts are historical context, not pending decisions.

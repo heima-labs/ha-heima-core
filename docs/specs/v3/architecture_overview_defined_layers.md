@@ -4,13 +4,12 @@
 specifications and introduces no new implementation requirement.
 
 **Maintenance:** Manually synchronized when a confirmed decision is promoted to an authoritative
-specification. **Reviewed through:** 2026-10-14 for every CA4 correction closed in
-`docs/v3_backlog.md`, including the CA4-64 (CA5) and CA4-86–96 (CA6 and follow-ups) corrections; no
-CA4 item is open. Where it differs from an authoritative specification, that specification wins.
+specification. **Reviewed through:** 2026-10-20 for every CA4 correction closed in
+`docs/v3_backlog.md`, including the CA4-64 (CA5), CA4-86–96 (CA6 and follow-ups) and CA4-127–129
+(Layer 7) corrections; open items are listed by `scripts/check_v3_specs.py --open`. Where it differs from an authoritative specification, that specification wins.
 
-**Scope:** Layers 0 to 6 and Layer 8 are defined in detail today; Layer 6 (notification) and
-Layer 8 (administration) were approved on 2026-10-13. Layer 7 is outside this document except for
-its interface obligations.
+**Scope:** Layers 0 to 8 are defined; Layer 6 (notification) and Layer 8 (administration) were
+approved on 2026-10-13, and Layer 7 (extensions) on 2026-10-20 (CA4-129).
 
 For bounded change work, start with the [contract registry](contract_registry.json) and
 [specification workflow](spec_workflow.md). They record ownership and review evidence without
@@ -24,7 +23,7 @@ questions:
 1. Which layer owns each kind of data, decision, and side effect?
 2. Which paths are synchronous engine work, and which are slow/background work?
 3. Which cross-layer communications are allowed, and which are deliberately forbidden?
-4. Which decisions are already fixed before Layer 7 is specified?
+4. Which boundaries constrain a Layer-7 extension?
 
 The authoritative sources remain:
 
@@ -35,6 +34,7 @@ The authoritative sources remain:
 - [Layer 4 - Semantic Resolution](layer4_domain_spec.md)
 - [Layer 5 - Action and Reaction Generation](layer5_action_reactions_spec.md)
 - [Layer 6 - Notification and Communication](layer6_notification_spec.md)
+- [Layer 7 - Extensions](layer7_extensions_spec.md)
 - [Layer 8 - Administration and Resident Surface](layer8_administration_spec.md)
 
 Where this overview and an authoritative specification differ, the authoritative specification wins.
@@ -52,7 +52,7 @@ legend:
    generations, learning outputs, review, and availability delivery.
 
 In both diagrams, green components are layers defined so far; the legend keeps orange for a future
-layer with already-fixed interfaces, and Layer 7 is not drawn yet. A solid arrow is an owned operational hand-off; a blue dashed arrow is
+layer with already-fixed interfaces; Layer 7 is not drawn (it has no runtime hand-off of its own). A solid arrow is an owned operational hand-off; a blue dashed arrow is
 an immutable contract or staging dependency, never runtime message delivery.
 
 ## 3. Responsibility Map
@@ -580,14 +580,13 @@ read-only published HA entities fed by committed-state observers and owner proje
 first start, and fully translated text (English source, `en` and `it` shipped). The panel is a Lit
 custom panel talking to typed websocket messages; nothing runs in an evaluation cycle.
 
-The following ownership remains deliberately deferred beyond Layers 0--6 and 8:
-
-- **Layer 7:** Extension lifecycle. Existing specs permit separately staged ordinary fact producers,
-  diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
-  extensions to extend core hot-path semantic registries or create `ApplyStep`s/invoke Actuators.
-  An extension's staged producer claims and consumer bindings must enter the composed-generation
-  dependency index like core ones; adding, upgrading or removing an extension is a configuration
-  mutation with the same impact preview, confirmation and invalidation rules (Layer 0 §4.7).
+**Layer 7 (defined).** [Layer 7](layer7_extensions_spec.md) specifies only the boundary for
+first-party, in-repository extensions; no external code is loaded (CA4-129). A closed registry holds
+extension blueprints; administrators create instances, staged by role as a Layer-2 producer kind
+and a Layer-3 analyzer instance. Extensions run off the evaluation cycle (minimum 60 s between runs),
+read only declared non-person facts and bound learners' published results, claim only `ext.*`, and
+produce facts, diagnostics and reviewable candidates; never actions. A dead extension's facts
+expire to unavailable. Third-party extensions require the reopening conditions of Layer 7 §11.
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.
 

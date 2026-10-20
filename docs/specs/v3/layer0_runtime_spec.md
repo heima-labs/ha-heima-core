@@ -618,6 +618,11 @@ their segment counts differ; `lighting.*.*` as `state` would conflict with the l
 The glob compilation and overlap check are staging-only; no pattern match or conflict lookup occurs in
 the evaluation path.
 
+**Extension namespace (Layer 7 §6).** The `ext.*` namespace is reserved for Layer-7 extensions. A
+non-extension producer cannot claim a pattern that overlaps it, and an extension may claim only
+`ext.<extension_id>.*` under `owner_id="layer7.extension.<extension_id>"`; a claim overlapping a core
+namespace or another extension's namespace rejects the candidate generation.
+
 Every statically-addressable state producer also contributes a global `(fact_type, Location, owner_id)`
 claim during the same composition pass. The engine rejects duplicate `(fact_type, Location)` claims,
 regardless of layer; a namespace-owning dynamic producer is protected by its
@@ -1759,8 +1764,8 @@ FactSourceKind = Literal[
                             # structural match (Layer 5's Reaction-descriptor matcher). The unifying property is
                             # "derived from something other than a single direct entity read", not
                             # "statistical" specifically — FusionRule belongs here, not under "sensor"
-    "extension",  # produced by a Layer 7 extension's own compute(), reading its own registered
-                            # entities or combining them
+    "extension",          # produced by a Layer-7 extension instance from its declared input
+                            # slots (Layer 7 §5); fields assigned by the runtime (Layer 7 §6)
     "semantic_resolver",   # produced by a Layer-4 SemanticResolver's own resolution logic, not
                             # sourced from a Layer-2 Sensor/FusionRule directly
     # shared with ApplyStepSource — both a fact and an action can carry these:
@@ -1866,8 +1871,8 @@ is derived by the code at the boundary that assigns it, never read off the data 
 Source data arriving from persisted config, proposal payloads, imported data, or any
 externally-controlled input is **non-authoritative** until a runtime boundary validates or
 reassigns it — an untrusted or malformed source is sanitized into a clearly non-authoritative value,
-never silently trusted. This is what protects against, among other things, a Layer 7 extension lying
-about its own declared capability tier. Both `FactSource` and `ApplyStepSource` are redacted before
+never silently trusted. This is what protects against, among other things, a Layer-7 extension
+returning a source or a fact outside its declaration (Layer 7 §6). Both `FactSource` and `ApplyStepSource` are redacted before
 they reach diagnostics or storage (no secrets, tokens, or raw payloads retained).
 
 ### 5.1.1 Trusted manual-control edge
@@ -2816,9 +2821,9 @@ Silent failure is not acceptable anywhere in this section.
 - **`AtJob`/`CronEntry` callback exceptions**: every job's callback runs inside a fault-isolation
   boundary — an exception is caught, logged, surfaced as a diagnostic event (§10), and the job is
   treated as having fired (for a `CronEntry`, the recurrence still re-arms for its next occurrence).
-  A single failing job must never take down the engine or silently stop a recurring safety net. This
-  mirrors the fault-isolation boundary already required around extension `compute()` calls
-  (Layer 7) — one mechanism, reused, not reinvented here. For a divergence-hold expiry (§6), the Manager also checks the monotonic deadline when
+  A single failing job must never take down the engine or silently stop a recurring safety net. A
+  Layer-7 extension run uses the same boundary, extended with atomic discard and result expiry
+  (Layer 7 §8) — one mechanism, reused, not reinvented. For a divergence-hold expiry (§6), the Manager also checks the monotonic deadline when
   publishing each admission view. A failed `AtJob` callback therefore cannot leave an expired hold
   blocking action indefinitely; the next input barrier releases it and reports the callback fault.
 - **Duplicate `job_id` registration**: replace, never error (§3.1) — an owner re-arming the same
@@ -2999,8 +3004,9 @@ Layer 4 owns an acyclic same-cycle semantic DAG: a resolver may read only its de
 semantic claims already resolved earlier in the deterministic topological order. A `previous_cycle`
 value is instead an explicitly declared Layer-0 snapshot input, never an implicit substitute for an
 upstream semantic edge. Layer 0 is outside that DAG by construction: wall-clock time and Recovery's
-classification are **engine-computed context**, read-only input available to every semantic resolver and
-plugin within the current cycle, not another resolver's output. A semantic resolver reads Layer-0
+classification are **engine-computed context**, read-only input available to every semantic resolver within the
+current cycle, not another resolver's output. Layer-7 extensions run outside the cycle and never
+read it (Layer 7 §7). A semantic resolver reads Layer-0
 context fresh every cycle, as it reads Layer-2 facts fresh every cycle; neither is produced by an
 earlier semantic resolver in the same pass.
 

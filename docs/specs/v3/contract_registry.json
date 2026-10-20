@@ -9,6 +9,7 @@
     "docs/specs/v3/layer4_domain_spec.md",
     "docs/specs/v3/layer5_action_reactions_spec.md",
     "docs/specs/v3/layer6_notification_spec.md",
+    "docs/specs/v3/layer7_extensions_spec.md",
     "docs/specs/v3/layer8_administration_spec.md"
   ],
   "orientation_only": [
@@ -958,6 +959,60 @@
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "4.1 `ReactionProposal` review lifecycle",
       "depends_on": ["L5-PROPOSAL-SUPPORTING-EVIDENCE", "L5-DIAGNOSTIC-REGISTRY", "L3-ANALYSIS-SERVING-IDENTITY", "L0-FACT-SOURCE"]
+    },
+    {
+      "id": "L7-SCOPE",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "2. Scope and boundaries",
+      "depends_on": ["L5-SCOPE-BOUNDARIES", "L2-EXTENSION-BOUNDARY", "L3-EXTENSION-BOUNDARY"]
+    },
+    {
+      "id": "L7-REGISTRY",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "3. Extension registry and blueprint",
+      "depends_on": ["L7-SCOPE", "L0-FACT-SOURCE"]
+    },
+    {
+      "id": "L7-INSTANCES",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "4. Instances and generation placement",
+      "depends_on": ["L7-REGISTRY", "L3-ANALYSIS-SERVING-IDENTITY"]
+    },
+    {
+      "id": "L7-INPUTS",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "5. Inputs",
+      "depends_on": ["L7-INSTANCES", "L2-PERSONS", "L2-HOUSEHOLD-PRESENCE", "L2-DECLARED-CONTEXT"]
+    },
+    {
+      "id": "L7-OUTPUTS",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "6. Outputs",
+      "depends_on": ["L7-INSTANCES", "L0-FACT-SOURCE", "L5-PROPOSAL-EVIDENCE-SOURCE"]
+    },
+    {
+      "id": "L7-INVOCATION",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "7. Invocation and execution",
+      "depends_on": ["L7-INSTANCES"]
+    },
+    {
+      "id": "L7-FAILURE",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "8. Failure policy",
+      "depends_on": ["L7-INVOCATION", "L0-OBSERVATION-COVERAGE"]
+    },
+    {
+      "id": "L7-LIFECYCLE",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "9. Lifecycle",
+      "depends_on": ["L7-INSTANCES", "L5-REACTION-AUTHORITY", "L5-PROPOSAL-EVIDENCE-SOURCE"]
+    },
+    {
+      "id": "L7-REOPENING",
+      "owner": "docs/specs/v3/layer7_extensions_spec.md",
+      "heading": "11. Reopening conditions for third-party extensions",
+      "depends_on": ["L7-SCOPE"]
     }
   ],
   "reviewed_slices": [
@@ -2113,6 +2168,17 @@
       "contracts": ["L5-PROPOSAL-EVIDENCE-SOURCE", "L5-DIAGNOSTIC-REGISTRY", "L5-REACTION-AUTHORITY", "L3-ANALYSIS-SERVING-IDENTITY", "L3-PROPOSAL-EFFECT"],
       "design_constraints": [],
       "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-129",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-129.md",
+      "contracts": ["L7-SCOPE", "L7-REGISTRY", "L7-INSTANCES", "L7-INPUTS", "L7-OUTPUTS", "L7-INVOCATION", "L7-FAILURE", "L7-LIFECYCLE", "L7-REOPENING", "L0-FACT-SOURCE", "L2-EXTENSION-BOUNDARY", "L3-EXTENSION-BOUNDARY", "L5-PROPOSAL-EVIDENCE-SOURCE"],
+      "design_constraints": ["V3-ONE-ACTION-PATH"],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
     }

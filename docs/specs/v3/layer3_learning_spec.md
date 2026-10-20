@@ -123,8 +123,9 @@ therefore stages a new generation under the composed-generation impact rule (Lay
 adds a room to an active learner implicitly.
 
 The admin cannot register a type, provide code, substitute a binding/model implementation, or create
-an egress path. Layer 7 may contribute a separately staged learning analyzer under its extension
-lifecycle, but it receives only immutable findings and the proposal path defined in §6.2. An extension
+an egress path. A Layer-7 extension may contribute an analyzer instance, staged in the Layer-3
+generation (Layer 7 §4); it receives only the active findings and published results of the core
+learner instances it is bound to (§6.1.1) and the proposal path defined in §6.2. An extension
 cannot register a learner/model type, modify the core registry, or acquire a live-signal path by
 registration.
 
@@ -1772,10 +1773,10 @@ silently serve a stale or incompatible prediction. A live prediction, where one 
 allowed, runs only from a preloaded immutable artifact and already-available facts, with bounded pure
 computation and no I/O.
 
-Core models are reviewed implementations. An extension model follows the same Layer-7 boundary as a
-extension analyzer: it may emit diagnostics or a proposal candidate under an exact already-registered
-core candidate kind and `ReactionDescriptor`, but cannot create a new live-signal path, `ApplyStep`,
-or actuator invocation. The detailed model-definition, artifact, validation, and resource contracts
+Core models are reviewed implementations. Extensions have no models (Layer 7 §5): an extension
+analyzer interprets published results of core learner instances and may emit diagnostics or a
+proposal candidate under an exact already-registered core candidate kind and `ReactionDescriptor`,
+but cannot create a new live-signal path, `ApplyStep`, or actuator invocation. The detailed model-definition, artifact, validation, and resource contracts
 remain a component decision in §8.
 
 An observational model may predict an outcome under observed conditions, but must not claim that an
@@ -3146,7 +3147,11 @@ lighting learning, including environmental-exchange and solar-shading models, do
 #### 6.1.1 `DiagnosticFinding`
 
 `DiagnosticFinding` is the single core-owned, administrator-only egress for a bounded non-operational
-learning diagnostic. It is neither a `ResultPayload` nor a Layer-1 fact, `InferenceSignal`,
+learning diagnostic. Its one non-administrative reader is a declared Layer-7 analyzer instance: it
+receives, read-only and as one immutable snapshot per invocation, the active finding set and the
+published `ResultPayload`s of the core learner instances it is bound to (Layer 7 §5), as core family
+analyzers consume findings (§6.2); findings still never reach residents, notifications or live
+signals. It is neither a `ResultPayload` nor a Layer-1 fact, `InferenceSignal`,
 `LearningProposalCandidate`, notification command, or action-policy path.
 
 ```python
@@ -4691,7 +4696,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   policy authority, or Layer-5 live evaluation.
 - A thermal-topology model never claims airflow or air-quality prediction without the corresponding
   measured inputs, and reports unidentifiable parameters rather than fabricating coefficients.
-- An extension learner has no live-signal, `ApplyStep`, or actuator-invocation output path; it can
+- An extension analyzer has no live-signal, `ApplyStep`, or actuator-invocation output path; it can
   reach operations only by submitting a candidate for an exact registered core kind and descriptor,
   then through its reviewed proposal.
 - A learning result can affect an operational semantic claim only through an explicitly listed bounded live

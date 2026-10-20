@@ -82,11 +82,13 @@ Layer 2 is **not** responsible for:
   acceptance coverage. This preserves the hot-path guarantees for value shape, availability,
   confidence, DAG ordering, and failure handling rather than exposing an immature compatibility
   contract to arbitrary callables.
-- A Layer-7 extension may instead be a separately staged fact producer: it declares its `FactTypeClaim`
-  and produces ordinary `HouseFact`s under the Layer 0/1 contracts. Its facts may feed the existing
-  closed strategies, but it cannot alter their union, register a formula, or dynamically import code
-  into a Sensor/Fusion execution path. The future Layer-7 lifecycle defines how such a producer is
-  invoked; this Layer-2 boundary defines only what it cannot extend.
+- A Layer-7 extension may instead be a fact producer, staged as a third producer kind in the Layer-2
+  generation beside `Sensor` and `FusionRule` (Layer 7 §4): it declares `ext.*` claims and produces
+  ordinary `HouseFact`s under the Layer 0/1 contracts, outside the evaluation cycle. Its facts may feed
+  the existing closed strategies through ordinary bindings; its input-to-output edge is a
+  previous-cycle edge (§5.6). It cannot alter their union, register a formula, or dynamically import
+  code into a Sensor/Fusion execution path. Layer 7 defines how such a producer is invoked; this
+  Layer-2 boundary defines only what it cannot extend.
 - Redesigning Home Assistant's device inventory — `device_id` references it and Layer 2 does not
   own it. The `Room` registry is Layer 2's own (§2.6); HA areas are only linked to it.
 
@@ -2404,8 +2406,8 @@ this layer.
   `available=False`. Registration rejects a non-boolean output contract or a
   competing producer for that same `(fact_type, Location)`; no Layer-2 guard
   evaluator or recurrence is created (Layer 5 §3.2).
-- An extension producer may pass ordinary producer-claim/fact-contract staging when Layer 7 invokes
-  it, but an attempt to register an `Interpretation`, `FusionStrategy`, or `RegisteredFormula` outside
+- An extension producer passes ordinary producer-claim/fact-contract staging as a Layer-2 producer
+  kind (Layer 7 §4), but an attempt to register an `Interpretation`, `FusionStrategy`, or `RegisteredFormula` outside
   the core-owned frozen registries is rejected before an active generation exists. No dynamic import,
   callable lookup, or extension lock occurs during a Sensor/Fusion evaluation (§2.1/§5.3).
 - All 9 entity-list mechanisms named in §1 are removed from the codebase, replaced by `Sensor`
