@@ -72,7 +72,7 @@ Assistant only configuration: the system language and the registered `notify.*` 
 
 ### 4.1 `NotificationKindRegistry`
 
-The registry is closed, core-owned and frozen at bootstrap. Administrators, learners and plugins
+The registry is closed, core-owned and frozen at bootstrap. Administrators, learners and extensions
 cannot add a kind. Each entry fixes everything that is not configuration:
 
 ```python

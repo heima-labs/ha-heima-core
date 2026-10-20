@@ -81,7 +81,7 @@ presence, activities, operational intent, plans, or social context into a synthe
 
 ### 4.1 Frozen Core Resolver Kinds
 
-The core-owned `SemanticResolverRegistry` is built at bootstrap and frozen before any generation runs. It is not administrator-configurable or plugin-extensible. The persisted generation stores no callable; the active in-memory generation resolves the pure evaluator by `(resolver_kind_id, implementation_version)`.
+The core-owned `SemanticResolverRegistry` is built at bootstrap and frozen before any generation runs. It is not administrator-configurable or open to extensions. The persisted generation stores no callable; the active in-memory generation resolves the pure evaluator by `(resolver_kind_id, implementation_version)`.
 
 ```python
 ClaimParameterSchema = Mapping[str, frozenset[str]]

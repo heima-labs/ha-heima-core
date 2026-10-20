@@ -582,11 +582,11 @@ custom panel talking to typed websocket messages; nothing runs in an evaluation 
 
 The following ownership remains deliberately deferred beyond Layers 0--6 and 8:
 
-- **Layer 7:** Plugin lifecycle. Existing specs permit separately staged ordinary fact producers,
+- **Layer 7:** Extension lifecycle. Existing specs permit separately staged ordinary fact producers,
   diagnostics, and candidates under exact existing core contracts, but deliberately do not permit
-  plugins to extend core hot-path semantic registries or create `ApplyStep`s/invoke Actuators.
-  A plugin's staged producer claims and consumer bindings must enter the composed-generation
-  dependency index like core ones; adding, upgrading or removing a plugin is a configuration
+  extensions to extend core hot-path semantic registries or create `ApplyStep`s/invoke Actuators.
+  An extension's staged producer claims and consumer bindings must enter the composed-generation
+  dependency index like core ones; adding, upgrading or removing an extension is a configuration
   mutation with the same impact preview, confirmation and invalidation rules (Layer 0 §4.7).
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.

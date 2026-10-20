@@ -36,12 +36,12 @@ Layer 5 does not own:
 - historical learning, model promotion or candidate construction (Layer 3);
 - resident-notification rendering/delivery (Layer 6).
 
-Layer-7 code has no action authority: a plugin cannot create an `ApplyStep`, invoke an Actuator,
+Layer-7 code has no action authority: an extension cannot create an `ApplyStep`, invoke an Actuator,
 register a candidate kind or `ReactionDescriptor`, or stage a custom action path. It may provide
 ordinary registered fact producers and diagnostics. It may submit a `LearningProposalCandidate` only
 under the exact already-registered core candidate kind and `ReactionDescriptor`; that candidate is
 only an input to the normal Layer-5 validation, review and staging workflow. `ApplyStepSource` may
-record plugin-related configuration or evidence provenance, but never grants a plugin authority to
+record extension-related configuration or evidence provenance, but never grants an extension authority to
 apply a command.
 
 `InferenceSignal` remains the separately specified, strictly bounded Layer-3 -> Layer-4 input. It is
@@ -52,7 +52,7 @@ not a policy mechanism. The ordinary learned-policy path is unidirectional:
 ## 3. One Reaction-descriptor mechanism
 
 `ReactionDescriptorRegistry` is core-owned, bootstrap-frozen, versioned and O(1). It is not
-administrator-configurable or plugin-extensible. There is one evaluator, one configured-Reaction
+administrator-configurable or open to extensions. There is one evaluator, one configured-Reaction
 persistence path, one action-admissibility phase and one `ApplyStep` protocol. Namespaces such as
 `environment.*`, `lighting.*`, `security.*` and `safety.*` identify descriptors of this mechanism, never a
 separate rule engine or action protocol.
@@ -73,7 +73,7 @@ meaning, safety or hot-path performance. Otherwise it extends the existing typed
 
 Before a Reaction-descriptor-specific payload is considered, the frozen core `ProposalCandidateKindRegistry`
 validates the outer candidate contract. It is the sole owner of a candidate kind and its semantic
-schema version; it is bootstrap-frozen, not administrator-configurable or plugin-extensible, and is
+schema version; it is bootstrap-frozen, not administrator-configurable or open to extensions, and is
 exposed to Layer 3 only through the existing read-only proposal facet. The Initial-V3 registry contains
 `("reaction.descriptor", 1)` and `("reaction.artifact_adoption", 1)`.
 A later core kind/version requires reviewed code and registry
@@ -95,7 +95,7 @@ the Reaction-descriptor `version` remains the independent descriptor version
 for relation profiles, intents, parameters, guards, registered-output
 compatibility, envelope and translation. Both identities are required and neither
 may substitute for the other. Registry lookup and validation remain O(1), pure and free of I/O,
-dynamic import, HA access or plugin calls.
+dynamic import, HA access or extension calls.
 
 On the canonical JSON wire, `candidate_kind_version` is a positive integer JSON number with no
 fraction or exponent; a string, boolean or numeric coercion is invalid. The initial value is the
@@ -224,11 +224,11 @@ one `primary` transition class, the routine confounders of Layer 3 §4.4.3 and
 `shadow_requirement="optional_before_proposal"`; its policy facet permits only
 `routine.actuation_bundle` and the single objective `reproduce_resident_routine`.
 The output-schema version field is `"1"` for these initial
-registrations. No administrator, learner instance or plugin may register an
+registrations. No administrator, learner instance or extension may register an
 alternate schema or validator.
 
 Profiles contain no Actuator identity, adapter mapping, HA service, raw HA payload, resident setting,
-or free expression. They are not administrator-configurable or plugin-extensible. A profile version is
+or free expression. They are not administrator-configurable or open to extensions. A profile version is
 immutable: every candidate, `ReactionProposal`, and learner-origin `ConfiguredReaction` retains the
 exact `RelationProfileRef`. A changed evidence facet creates a new learner-definition fingerprint and
 cannot reuse the prior artifact or shadow result. A changed policy facet creates a new candidate/review
@@ -247,7 +247,7 @@ capabilities through the same staged contract.
 `ReactionGuardCapabilityRegistry` is core-owned, assembled at bootstrap from core capability
 implementations, versioned and frozen before a Layer-5 generation is active. This is a closed active
 registry, not a hard-coded global enum: a reviewed core capability registers its id/version, typed
-binding schema, pure snapshot evaluator and redaction contract once. An administrator, learner or plugin
+binding schema, pure snapshot evaluator and redaction contract once. An administrator, learner or extension
 cannot register a capability, supply an evaluator, or attach an expression under a new id.
 
 ```python
@@ -811,7 +811,7 @@ Compiled callables exist only in the frozen in-memory generation. A persisted pe
 `ReactionProposal` additionally retains the exact candidate kind/version that admitted its transient
 input, solely for review/audit compatibility; a `ConfiguredReaction` does not retain or consult that
 input-contract identity on its hot path. Registry lookup, validation, compilation and evaluation
-perform no I/O, dynamic import, HA access, or plugin call.
+perform no I/O, dynamic import, HA access, or extension call.
 
 `admission_reason_applicability` is a closed declaration, validated at bootstrap and staging, rather
 than an extension point for Layer-5 reason strings. Its complete core mapping is:
@@ -899,7 +899,7 @@ class AbsenceProgramState:
     evaluation_requested_by_departure: bool
 ```
 
-`ProgramFamilyRegistry` is bootstrap-frozen and closed to administrators, learners and plugins.
+`ProgramFamilyRegistry` is bootstrap-frozen and closed to administrators, learners and extensions.
 A descriptor version names at most one exact `ProgramFamilyRef`; changing family behavior creates
 a new family version, which each declaring descriptor adopts only through its own new version.
 Staging rejects a declared family whose requirements below are not met, and a descriptor cannot
@@ -954,7 +954,7 @@ targets, endpoints, guards and prerequisites.
 ### 4.0 Layer-5 diagnostic registry
 
 Layer 5 owns one core-owned, bootstrap-frozen, versioned `Layer5DiagnosticRegistry`. It is not
-administrator-configurable or plugin-extensible. Its code sets are closed; an unknown code, a code in
+administrator-configurable or open to extensions. Its code sets are closed; an unknown code, a code in
 the wrong namespace, or a noncanonical tuple is rejected at the persistence or audit boundary. Bounded
 redacted detail may explain a code but cannot introduce new diagnostic semantics.
 
@@ -1118,7 +1118,7 @@ ordinary bounded evidence and validity fields. Layer 5 resolves the current
 Reaction and role before creating a `ReactionArtifactAdoptionProposal`; this
 candidate cannot specify a new descriptor, action, guard, endpoint,
 configuration or authority. The initial kind registry remains closed to
-plugins and administrator-added payloads.
+extensions and administrator-added payloads.
 
 The candidate root is the only owner of Reaction-descriptor and relation-profile identity.
 `CanonicalEnvelope` contains only its canonical axes, partitions, and supported cells; it cannot carry
@@ -2826,7 +2826,7 @@ Arbitration is a bounded, whole-cycle pass, independent of registration or evalu
    by iteration order. The Initial-V3 core precedence-exception table is empty: opposing actions
    are prevented by guards before arbitration (§7.4), not by precedence. A future exception
    requires a separately reviewed, versioned core descriptor rule with explicit applicability and
-   safety proof; no administrator, learner, or plugin may add one implicitly.
+   safety proof; no administrator, learner, or extension may add one implicitly.
 3. Reserve all keys of every unblocked bundle atomically in canonical key order before dispatch.
    Failure to reserve any key releases that bundle's tentative reservations and blocks the entire
    bundle. Same-bundle idempotent retry uses its existing reservation and cannot acquire a second
@@ -4804,7 +4804,7 @@ class PostureCheckConfiguration:
   non-approvable `proposal_incompatible` disposition. Tests prove that no replacement or payload
   rewrite is created and that an already configured Reaction remains evaluable when its independent
   Reaction-descriptor id/version, topology, Actuator and guard contracts remain valid; no lookup performs I/O,
-  dynamic import, HA access or plugin dispatch.
+  dynamic import, HA access or extension dispatch.
 - A fact appended after a `DecisionSnapshot` cannot change the trigger, guard or envelope result;
   every accepted Layer-2 intake fact sharing its trigger `when` is visible before evaluation, while
   Layer-4 output is visible only through the resolved semantic-claim map.

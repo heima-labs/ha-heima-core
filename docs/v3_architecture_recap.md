@@ -105,7 +105,7 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   a holiday, a work day) instead of a relative or recurring one. Layer 0 exposes both active windows
   for current facts and complete future windows within a consumer-declared horizon for predictive work
   such as notifying today about tomorrow's event; calendar awareness is Timing infrastructure,
-  evaluated before the core DAG runs each cycle, not a semantic resolver or a plugin.
+  evaluated before the core DAG runs each cycle, not a semantic resolver or an extension.
   Duration and civil-time values are validated at configuration staging or dynamic job registration,
   never repaired or rechecked per cycle. Every cycle gets a strictly increasing cycle instant
   (`max(clock, previous + 1 µs)`), so history never moves backward; each job declares an
@@ -154,13 +154,13 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   inferred resident edge or correction.
   → `v3_backlog.md` §`HouseFact` persistence model, CA4-05, CA4-09 and CA4-33.
 - **`FactSource` / `ApplyStepSource`**: one structured-provenance vocabulary spanning both facts and
-  actions — every `HouseFact` and every `ApplyStep` carries a `kind` (sensor, analyzer, third-party
-  plugin, reaction, admin command, resident response, timeout, recovery, system...), a `source_id`,
+  actions — every `HouseFact` and every `ApplyStep` carries a `kind` (sensor, analyzer, extension,
+  reaction, admin command, resident response, timeout, recovery, system...), a `source_id`,
   an `actor_type`, and a `correlation_id`. Non-forgeable (an untrusted or malformed source gets
   sanitized into a clearly non-authoritative value, never silently trusted) and redacted before it
   reaches diagnostics or storage. This is what makes "why is the house in this state" answerable:
   follow one `correlation_id` from a resolved state back through the facts that fed it to whatever
-  produced them. A plugin-related `ApplyStepSource` is provenance only; it never grants a plugin a
+  produced them. An extension-related `ApplyStepSource` is provenance only; it never grants an extension a
   direct command capability.
   → `v3_backlog.md` §Observability, re-grounded.
 - **Divergence Hold Manager**: residents use ordinary HA device controls. Layer 0 §6 tracks
@@ -436,7 +436,7 @@ history to mean anything and would make no sense recomputed every cycle.
   separate, inconsistently-gated mechanisms.
 - **Reads**: Layer 1's `HouseFact`s directly, queried by `fact_type`/`Location`/time window — never
   through a bundled intermediate snapshot shape.
-- **Layer 7 (Extensibility) connection**: a third-party plugin may register a separately staged
+- **Layer 7 (Extensibility) connection**: an extension may register a separately staged
   analyzer over immutable findings, but it emits only a `LearningProposalCandidate` for Layer-5
   validation — never a learner/model type or a `ReactionProposal` directly. It never gets a seat at
   the live-`InferenceSignal` tier, which stays a short, individually-audited list that only the core

@@ -96,7 +96,7 @@ no analysis, no model refresh, and no output.
 
 Each executable learner/model declaration within a `LearningDefinition` names a core-owned `kind_id`
 and `version`. At bootstrap, the core builds and freezes an internal learning-type registry before
-any generation is staged. Its lookup is O(1) and it performs no I/O, dynamic import, or plugin
+any generation is staged. Its lookup is O(1) and it performs no I/O, dynamic import, or extension
 resolution during analysis or inference. A learning type registers its configuration schema and pure
 validator, permitted binding/target shapes, sample and artifact builders, analysis/inference
 implementation, serialization contract, validation metrics, staleness/invalidation policy, and
@@ -123,8 +123,8 @@ therefore stages a new generation under the composed-generation impact rule (Lay
 adds a room to an active learner implicitly.
 
 The admin cannot register a type, provide code, substitute a binding/model implementation, or create
-an egress path. Layer 7 may contribute a separately staged learning analyzer under its plugin
-lifecycle, but it receives only immutable findings and the proposal path defined in §6.2. A plugin
+an egress path. Layer 7 may contribute a separately staged learning analyzer under its extension
+lifecycle, but it receives only immutable findings and the proposal path defined in §6.2. An extension
 cannot register a learner/model type, modify the core registry, or acquire a live-signal path by
 registration.
 
@@ -535,7 +535,7 @@ cannot hide a different scope inside an untyped key.
 
 Layer 3 owns one internal, core-owned `ContextTransformRegistry`, constructed and frozen at bootstrap
 with the learning-type registry. It is not an admin configuration surface, a Layer-2 formula registry,
-or a plugin extension point: a Layer-2 formula creates a new fact, while a context transform only
+or a Layer-7 extension point: a Layer-2 formula creates a new fact, while a context transform only
 canonicalizes/buckets an already declared Layer-3 feature for a tier key.
 
 ```python
@@ -577,7 +577,7 @@ feature value shape, compiles the immutable transform once, and records the reso
 learner definition fingerprint.
 The frozen registry retains the compiled pure canonicalizer outside this serializable record. At
 analysis and live inference the common feature resolver calls that same canonicalizer: no dynamic
-import, I/O, lock, callable deserialization, or admin/plugin code is allowed on the path.
+import, I/O, lock, callable deserialization, or admin/extension code is allowed on the path.
 
 The registry also owns the only valid coarsening relation. For a pair of resolved references it either
 rejects the pair or supplies a pure total map from each fine bucket to exactly one coarse bucket. A
@@ -674,7 +674,7 @@ This restriction applies only to the shared `PatternLearner` tier mechanism. A f
 type may implement a mixture, interpolation, or learned expert selector only when that combination
 is an explicit versioned part of its model definition, feature contract, artifact, chronological
 validation, uncertainty/calibration assessment, and result schema. It is never a generic Layer-3
-fallback behavior and cannot be introduced by admin configuration or a plugin. This keeps the
+fallback behavior and cannot be introduced by admin configuration or an extension. This keeps the
 statistical baseline explainable while permitting a separately evidenced model architecture where it
 is genuinely justified.
 
@@ -1771,8 +1771,8 @@ silently serve a stale or incompatible prediction. A live prediction, where one 
 allowed, runs only from a preloaded immutable artifact and already-available facts, with bounded pure
 computation and no I/O.
 
-Core models are reviewed implementations. A third-party model follows the same Layer-7 boundary as a
-third-party analyzer: it may emit diagnostics or a proposal candidate under an exact already-registered
+Core models are reviewed implementations. An extension model follows the same Layer-7 boundary as a
+extension analyzer: it may emit diagnostics or a proposal candidate under an exact already-registered
 core candidate kind and `ReactionDescriptor`, but cannot create a new live-signal path, `ApplyStep`,
 or actuator invocation. The detailed model-definition, artifact, validation, and resource contracts
 remain a component decision in §8.
@@ -1811,7 +1811,7 @@ an energy or comfort improvement caused by an action.
 Passing offline validation makes an artifact eligible only for the next state permitted by its frozen
 core `shadow_requirement`; it is not operational by default. The requirement belongs to the reviewed
 learning-type/version (or its reviewed relation profile), never to a per-home definition, artifact,
-plugin, or learner choice. An administrator may select a stricter path where the type permits it, but
+extension, or learner choice. An administrator may select a stricter path where the type permits it, but
 cannot weaken a requirement. The closed values are:
 
 | `shadow_requirement` | Meaning |
@@ -2222,7 +2222,7 @@ already warm" can be a precise and valuable candidate; requiring broad coverage 
 it arbitrarily or reward unsupported extrapolation. Conversely, one broad aggregate score cannot
 conceal a weak required slice because each envelope cell is independently validated. The relation
 profile may define a stricter core-owned predicate in a future version only when its physical semantics
-require it; neither an administrator nor a learner/plugin supplies one. This follows the use of
+require it; neither an administrator nor a learner/extension supplies one. This follows the use of
 explicit per-slice value/change thresholds in [TFX Model Analysis](https://www.tensorflow.org/tfx/model_analysis/model_validations)
 and scenario-specific rather than universal building-control evaluation in
 [BOPTEST](https://ibpsa.github.io/project1-boptest/testcases/).
@@ -2736,7 +2736,7 @@ Layer 5 owns a revision-specific reviewable adoption proposal for an
 action-bearing Reaction. `bounded_adaptive` is an explicit, pre-authorized
 compatibility envelope: the core validator may adopt a later validated
 artifact only if the type-specific predicate proves that it remains within
-the pre-approved authority. A learner, model, or plugin cannot select the
+the pre-approved authority. A learner, model, or extension cannot select the
 mode or weaken its predicate.
 
 ```python
@@ -2929,7 +2929,7 @@ inspection after that run finishes; the old run cannot publish (§5.2). These ru
 
 The runtime also maintains a bounded global analysis queue. Per-learner single-flight is mandatory;
 global slots, fair scheduling, and core-owned priority prevent one family from consuming all slow-path
-capacity. No user or plugin can raise these limits at runtime. Queue delay, budget rejection,
+capacity. No user or extension can raise these limits at runtime. Queue delay, budget rejection,
 coalesced requests, skipped inspections, and timeout/failure reasons are diagnostics.
 
 ### 5.2 Run lifecycle
@@ -3017,7 +3017,7 @@ admission. If either is absent, stale, non-finite, or not enforceable, local in-
 `capacity_unknown` and no job is admitted; external execution remains separately governed below. CPU or
 pressure metrics that are absent likewise never permit a scale-up beyond the conservative lower plan.
 The core owns coefficients, tolerances, percentile choices, minimum evidence, and stabilization policy;
-they are neither administrator, learner, nor plugin settings. This keeps every production allocation
+they are neither administrator, learner, nor extension settings. This keeps every production allocation
 dynamic while retaining a reproducible, testable safety policy.
 
 Plan calibration never runs a stress benchmark during startup. It has four bounded phases:
@@ -3522,7 +3522,7 @@ queryable occurrence conventions in [OpenTelemetry](https://opentelemetry.io/doc
 Only the core registry can define an `InferenceSignal` type and authorize its consumer. The closed
 initial set contains only `indirect.semantic_assist.v1`, routed through one frozen assistance contract:
 `occupancy.room_present.indirect.v1`, `activity.sleeping.indirect.v1`, or
-`activity.relax.indirect.v1`, or `activity.working.indirect.v1`. A learner/model or plugin cannot
+`activity.relax.indirect.v1`, or `activity.working.indirect.v1`. A learner/model or extension cannot
 self-authorize another signal type, contract, consumer semantic resolver, assertion, or longer validity
 period.
 
@@ -4533,7 +4533,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   the declared closed policy or, for `curated_extensible`, by reviewed approval and staging of a new
   generation; discovery never self-promotes a label.
 - The core learning-type registry is frozen before staging and admits only reviewed versioned core
-  types. Definitions and artifacts persist type identity/version rather than callables; plugins can
+  types. Definitions and artifacts persist type identity/version rather than callables; extensions can
   consume findings only through their staged analyzer/proposal boundary.
 - Refresh cadence performs evidence eligibility, not unconditional training. Every published artifact
   identifies its complete sampled data span and training watermark; one learner has at most one run,
@@ -4562,7 +4562,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   either feature lookback or target horizon. It records target-specific quality, calibration,
   operating-condition coverage, and comparison with its declared baseline.
 - Every reviewed learning type/version or relation profile declares exactly one closed
-  `shadow_requirement`; staging rejects a missing/unknown value and an administrator/definition/plugin
+  `shadow_requirement`; staging rejects a missing/unknown value and an administrator/definition/extension
   attempt to weaken it. Tests prove `not_applicable` has no shadow or promotion state;
   `optional_before_proposal` may be promoted only through an explicit administrative transition;
   `required_before_proposal` and `required_before_live_signal` cannot reach their respective eligible
@@ -4688,7 +4688,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   policy authority, or Layer-5 live evaluation.
 - A thermal-topology model never claims airflow or air-quality prediction without the corresponding
   measured inputs, and reports unidentifiable parameters rather than fabricating coefficients.
-- A third-party learner has no live-signal, `ApplyStep`, or actuator-invocation output path; it can
+- An extension learner has no live-signal, `ApplyStep`, or actuator-invocation output path; it can
   reach operations only by submitting a candidate for an exact registered core kind and descriptor,
   then through its reviewed proposal.
 - A learning result can affect an operational semantic claim only through an explicitly listed bounded live

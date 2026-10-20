@@ -468,9 +468,9 @@ the next boundaries, and does not replay past start/end callbacks. An event alre
 that first successful snapshot; a failed initial refresh makes calendar reads `failed` until a later
 refresh succeeds. Nothing from a checkpoint is treated as live calendar truth.
 
-Calendar sits in Layer 0, same rank as "at"/"cron" — **not** a semantic resolver (Layer 4), not a third-party
-plugin (Layer 7). The ready timeline snapshot is read before the core DAG each cycle, same as
-Recovery/Checkpoint (§7), and never through a plugin registration mechanism; provider refresh remains
+Calendar sits in Layer 0, same rank as "at"/"cron" — **not** a semantic resolver (Layer 4), not an
+extension (Layer 7). The ready timeline snapshot is read before the core DAG each cycle, same as
+Recovery/Checkpoint (§7), and never through an extension registration mechanism; provider refresh remains
 asynchronous as §3.4.1 requires. This pre-DAG placement is exactly why classification cannot happen
 here: a `Sensor`/`Interpretation` lookup (Layer 2) runs on the ordinary hot-cycle path (Layer 2 §2.2),
 not before it.
@@ -576,7 +576,7 @@ used as observed elapsed time.
 granularity the engine computes at internally (per-room, per-signal), never a bundled record. A
 "snapshot" (everything true at one instant, or in one place, over one window) is never its own stored
 shape — it is a **query reconstructed at read time**: "every `HouseFact` true in `Location` X between
-t1 and t2." A generic consumer (including a Layer 7 third-party plugin) never needs to learn a bespoke
+t1 and t2." A generic consumer (including a Layer 7 extension) never needs to learn a bespoke
 bundle type to read Heima's history — it queries `HouseFact` by `fact_type`/`Location`/time window,
 the same API every consumer uses.
 
@@ -630,7 +630,7 @@ owner_id="layer0.divergence_hold", emission_kind="event")` for hold lifecycle au
 It also reserves `FactTypeClaim(fact_type_pattern="actuator.manual_control",
 owner_id="layer0.manual_control_ingress", emission_kind="event")` for the verified manual-control
 edge in §5.1.1. That owner alone constructs its closed three-field canonical value; no Layer-2
-Actuator registration or plugin may claim the same event type.
+Actuator registration or extension may claim the same event type.
 The core reserves `FactTypeClaim(fact_type_pattern="actuator.channel_state.*",
 owner_id="layer0.channel_observation", emission_kind="state")` for the
 per-channel normalized physical-state projection of §5.1.1.1. Each staged
@@ -784,7 +784,7 @@ however old that record is; (3) include every record for that key with a timesta
 — the changes that happened during the window. Together, these fully reconstruct the value at every
 instant in `[t1, t2]`, regardless of how sparse
 write-on-change has made the record history. This is one algorithm, stated once here, precisely so
-every consumer (a Layer 3 learner, a Layer 7 plugin, an admin diagnostic) gets it right by using the
+every consumer (a Layer 3 learner, a Layer 7 extension, an admin diagnostic) gets it right by using the
 same query instead of each re-deriving — or mis-deriving — it independently. When records have the
 same `when`, the at-or-before record and the changes are ordered by `AppendOrder` above; the final one
 at that instant is the reconstructed current value.
@@ -1684,7 +1684,7 @@ class CommittedStateChange:
 ```
 
 - **Closed and core-declared.** Only core components register subscriptions; administrators,
-  learners and plugins cannot. A subscription names one exact state `FactIdentityKey`, never a
+  learners and extensions cannot. A subscription names one exact state `FactIdentityKey`, never a
   pattern. A component declares its set at bootstrap, or derives it from the active composed
   generation (§4.7), for example one key per configured room. A derived set is re-declared
   atomically at the same cycle boundary as each generation swap: added keys receive their current
@@ -1740,7 +1740,7 @@ class FactSource:
 @dataclass(frozen=True)
 class ApplyStepSource:
     kind: ApplyStepSourceKind               # a distinct closed action vocabulary; an action is never
-                                              # kind="sensor"/"analyzer"/"third_party_plugin"/
+                                              # kind="sensor"/"analyzer"/"extension"/
                                               # "semantic_resolver"
     source_id: str
     source_type: str | None = None
@@ -1759,7 +1759,7 @@ FactSourceKind = Literal[
                             # structural match (Layer 5's Reaction-descriptor matcher). The unifying property is
                             # "derived from something other than a single direct entity read", not
                             # "statistical" specifically — FusionRule belongs here, not under "sensor"
-    "third_party_plugin",  # produced by a Layer 7 plugin's own compute(), reading its own registered
+    "extension",  # produced by a Layer 7 extension's own compute(), reading its own registered
                             # entities or combining them
     "semantic_resolver",   # produced by a Layer-4 SemanticResolver's own resolution logic, not
                             # sourced from a Layer-2 Sensor/FusionRule directly
@@ -1858,7 +1858,7 @@ is derived by the code at the boundary that assigns it, never read off the data 
   `kind="user_response"` (one of the two `user_response` boundaries), with `actor_type="user"` and
   the verified `UserActor`; an administrator answering a request is still a response, with
   `ha_admin=True`;
-- a third-party plugin (Layer 7) can produce `kind="third_party_plugin"`, but nothing it returns can
+- an extension (Layer 7) can produce `kind="extension"`, but nothing it returns can
   make the core treat it as `kind="sensor"` or `kind="recovery"`.
 - `configuration_fingerprint`, when present, is assigned only by the active composed generation; a
   producer cannot choose or retain one across a generation swap.
@@ -1866,7 +1866,7 @@ is derived by the code at the boundary that assigns it, never read off the data 
 Source data arriving from persisted config, proposal payloads, imported data, or any
 externally-controlled input is **non-authoritative** until a runtime boundary validates or
 reassigns it — an untrusted or malformed source is sanitized into a clearly non-authoritative value,
-never silently trusted. This is what protects against, among other things, a Layer 7 plugin lying
+never silently trusted. This is what protects against, among other things, a Layer 7 extension lying
 about its own declared capability tier. Both `FactSource` and `ApplyStepSource` are redacted before
 they reach diagnostics or storage (no secrets, tokens, or raw payloads retained).
 
@@ -2066,7 +2066,7 @@ class VerifiedResponse:
     correlation_id: str
 ```
 
-The frozen `ResponseOwnerRegistry` is closed to administrators, learners and plugins. Initial V3
+The frozen `ResponseOwnerRegistry` is closed to administrators, learners and extensions. Initial V3
 registers three owners: `layer0.recovery_confirmation` (§7.4.1), `layer5.household_consent` and
 `layer5.advisory_feedback` (Layer 5 §6.0). A later owner, such as proposal review or disabling an
 automation from a notification, needs its own reviewed registration. An owner declares each request when it
@@ -2817,7 +2817,7 @@ Silent failure is not acceptable anywhere in this section.
   boundary — an exception is caught, logged, surfaced as a diagnostic event (§10), and the job is
   treated as having fired (for a `CronEntry`, the recurrence still re-arms for its next occurrence).
   A single failing job must never take down the engine or silently stop a recurring safety net. This
-  mirrors the fault-isolation boundary already required around third-party plugin `compute()` calls
+  mirrors the fault-isolation boundary already required around extension `compute()` calls
   (Layer 7) — one mechanism, reused, not reinvented here. For a divergence-hold expiry (§6), the Manager also checks the monotonic deadline when
   publishing each admission view. A failed `AtJob` callback therefore cannot leave an expired hold
   blocking action indefinitely; the next input barrier releases it and reports the callback fault.
@@ -3196,7 +3196,7 @@ concrete checklist rather than re-deriving one:
   is verified per boundary (corrected 2026-09-08 — this criterion previously only checked that fields
   were present, never that a forgery attempt is actually rejected), for every listed case in §5.1:
   a fabricated `kind="admin_command"` from a non-admin connection is rejected/reassigned
-  non-authoritative; a fabricated `kind="third_party_plugin"` result is never upgraded to
+  non-authoritative; a fabricated `kind="extension"` result is never upgraded to
   `kind="sensor"`/`kind="recovery"`; a client-supplied `UserActor` is ignored and re-derived at
   the boundary; and `kind="user_response"` is verified against
   its two distinct boundaries: an active confirmation request, or a matched direct Actuator
@@ -3208,7 +3208,7 @@ concrete checklist rather than re-deriving one:
   authorizing a command or exposing the actor in the operational projection (§5).
 - Bootstrap composes exclusive `event` claims for `actuator.manual_control` (Layer 0)
   and `actuator.correction` (Layer 5). A competing exact or overlapping claim from another
-  owner, including a plugin, is rejected before producers run. Each accepted fact has its
+  owner, including an extension, is rejected before producers run. Each accepted fact has its
   owner's closed value and is read as an event, never current state (§4; Layer 5 §6.1).
 - A verified manual, automation, or integration edge receives only its proven origin
   (§6.1). An unproven but valid post-confirmation divergence activates a channel hold with

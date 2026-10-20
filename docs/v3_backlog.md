@@ -6322,6 +6322,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-127 — Layer-7 vocabulary named a third-party plugin that Initial V3 does not have
+
+**Status:** DONE (2026-10-20; specification readiness). **Severity:** P3. **Origin:** Layer 7 scoping discussion (2026-10-20).
+
+**Problem.** Layers 0–6, the overview and the recap called Layer-7 code a "plugin" or "third-party plugin" and its facts `kind="third_party_plugin"`. The term collides with V2's built-in domain plugins (`register_plugin`, now Layer-4 resolvers), `LearningPluginRegistry` and fusion plugins, and declares a third-party origin that Initial V3 does not have.
+
+**Approved resolution (2026-10-20).** Layer 7 scope decided: Initial V3 specifies only the extension boundary (contracts, isolation, lifecycle) for first-party, in-repository extensions; loading third-party code remains a future option behind explicit reopening conditions. Layer-7 code is an **extension**: `FactSourceKind` `"third_party_plugin"` becomes `"extension"`, and the reserved identifier namespace will be `ext.<extension_id>.<name>`. A future third-party extension stays `kind="extension"` with a loader-assigned origin, never a declared one. This slice is a purely lexical rename with no rule change; ten occurrences whose wording conflicts with the Layer-7 decisions (invocation off the hot path, declared inputs, analyzer without own models, the removed capability tier, the dangling fault-isolation reference, "separately staged", the recap's Layer-7 summary and open questions) are renamed as written and left to the Layer-7 specification issue. See the [CA4-127 review](specs/v3/reviews/CA4-127.md); no V3 runtime test ran.
+
 #### CA4-126 — No warning when security posture contradicted occupancy
 
 **Status:** DONE (2026-10-19; specification readiness). **Severity:** P2. **Origin:** backlog open question 6 (people model §8).

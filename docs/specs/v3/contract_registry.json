@@ -934,6 +934,24 @@
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "13. Backend contract",
       "depends_on": ["L8-ROLES", "L0-RESPONSE-INGRESS"]
+    },
+    {
+      "id": "L2-EXTENSION-BOUNDARY",
+      "owner": "docs/specs/v3/layer2_registries_spec.md",
+      "heading": "2.1 Extension boundary and non-goals",
+      "depends_on": ["L0-FACT-SOURCE"]
+    },
+    {
+      "id": "L3-EXTENSION-BOUNDARY",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "4.1.1 Core learning-type registry and extension boundary",
+      "depends_on": ["L0-FACT-SOURCE"]
+    },
+    {
+      "id": "L5-SCOPE-BOUNDARIES",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "2. Scope and boundaries",
+      "depends_on": ["L0-FACT-SOURCE"]
     }
   ],
   "reviewed_slices": [
@@ -2067,6 +2085,17 @@
       "contracts": ["L2-SECURITY-STATE", "L5-POSTURE-CHECK", "L5-REACTION-AUTHORITY", "L6-FAMILIES"],
       "design_constraints": ["V3-GENERIC-MECHANISMS"],
       "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-127",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-127.md",
+      "contracts": ["L0-FACT-SOURCE", "L0-MANUAL-CONTROL", "L2-EXTENSION-BOUNDARY", "L3-EXTENSION-BOUNDARY", "L5-SCOPE-BOUNDARIES"],
+      "design_constraints": [],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
     }

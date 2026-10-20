@@ -76,13 +76,13 @@ Layer 2 is **not** responsible for:
 
 ### 2.1 Extension boundary and non-goals
 
-- Third-party registration of `Interpretation`, `FusionStrategy`, or `RegisteredFormula`. These are
-  closed, core-owned semantic registries in V3, not a deferred plugin API: a future general mechanism
+- Extension or other non-core registration of `Interpretation`, `FusionStrategy`, or `RegisteredFormula`. These are
+  closed, core-owned semantic registries in V3, not a deferred extension API: a future general mechanism
   enters the core only with a new specification version, validator, reload-impact semantics, and
   acceptance coverage. This preserves the hot-path guarantees for value shape, availability,
   confidence, DAG ordering, and failure handling rather than exposing an immature compatibility
   contract to arbitrary callables.
-- A Layer-7 plugin may instead be a separately staged fact producer: it declares its `FactTypeClaim`
+- A Layer-7 extension may instead be a separately staged fact producer: it declares its `FactTypeClaim`
   and produces ordinary `HouseFact`s under the Layer 0/1 contracts. Its facts may feed the existing
   closed strategies, but it cannot alter their union, register a formula, or dynamically import code
   into a Sensor/Fusion execution path. The future Layer-7 lifecycle defines how such a producer is
@@ -953,7 +953,7 @@ as current geometry ([core Sun entity implementation](https://github.com/home-as
 
 The two core-generated Sensors contribute the exact exclusive state
 `FactTypeClaim`s through Layer 0's normal claim collision check. No administrator Sensor,
-plugin or formula may publish either claim concurrently, and another Sensor
+extension or formula may publish either claim concurrently, and another Sensor
 cannot register either reserved `sun.sun` attribute path under a second fact
 type because one HA readable signal path has one registered owner. Both facts carry
 ordinary Layer-2 `FactSource` identity and the canonical radian unit; neither
@@ -1482,8 +1482,8 @@ The **Formula Registry** is a core-owned immutable catalog, constructed once dur
 bootstrap before any `RegistryGeneration` is staged. Core modules call `register(RegisteredFormula)`
 only while this catalog is being built; duplicate `formula_id`, an empty version, or a registration
 after `freeze()` aborts startup. `freeze()` exposes an immutable `formula_id -> RegisteredFormula`
-map; `resolve(formula_id)` is O(1), has no I/O, lock acquisition, dynamic import, or plugin callback,
-and is the only lookup the evaluator performs. There is no admin, service, or third-party registration
+map; `resolve(formula_id)` is O(1), has no I/O, lock acquisition, dynamic import, or extension callback,
+and is the only lookup the evaluator performs. There is no admin, service, or extension registration
 surface.
 
 `implementation_version` is an explicit semantic version maintained with the core formula. Any change
@@ -2404,10 +2404,10 @@ this layer.
   `available=False`. Registration rejects a non-boolean output contract or a
   competing producer for that same `(fact_type, Location)`; no Layer-2 guard
   evaluator or recurrence is created (Layer 5 §3.2).
-- A third-party producer may pass ordinary producer-claim/fact-contract staging when Layer 7 invokes
+- An extension producer may pass ordinary producer-claim/fact-contract staging when Layer 7 invokes
   it, but an attempt to register an `Interpretation`, `FusionStrategy`, or `RegisteredFormula` outside
   the core-owned frozen registries is rejected before an active generation exists. No dynamic import,
-  callable lookup, or plugin lock occurs during a Sensor/Fusion evaluation (§2.1/§5.3).
+  callable lookup, or extension lock occurs during a Sensor/Fusion evaluation (§2.1/§5.3).
 - All 9 entity-list mechanisms named in §1 are removed from the codebase, replaced by `Sensor`
   registrations with no residual parallel list left standing.
 - Starting V3 in the presence of populated V2 options, history, checkpoints, or learned state reads
