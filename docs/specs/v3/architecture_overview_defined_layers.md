@@ -586,7 +586,8 @@ extension blueprints; administrators create instances, staged by role as a Layer
 and a Layer-3 analyzer instance. Extensions run off the evaluation cycle (minimum 60 s between runs),
 read only declared non-person facts and bound learners' published results, claim only `ext.*`, and
 produce facts, diagnostics and reviewable candidates; never actions. A dead extension's facts
-expire to unavailable. Third-party extensions require the reopening conditions of Layer 7 §11.
+expire to unavailable. Third-party extensions require the reopening conditions of Layer 7 §11. Layer 8 presents each
+extension as one entity in an administrator-only Extensions section (Layer 8 §5.4).
 These layers must consume the frozen boundaries above rather than creating parallel state stores,
 specialized action engines, or direct HA access from learning/policy code.
 

@@ -717,6 +717,8 @@ extensions are first-party, in-repository code; no external code is discovered o
   claims only in `ext.<extension_id>.*`, with a runtime-assigned `kind="extension"` source;
   diagnostics; and, for an analyzer, candidates under an exact core kind and descriptor.
 - **No action authority**: no `ApplyStep`, Actuator call, descriptor or candidate kind (CA-1).
+- **Administration**: one administrator-only Extensions section shows each instance as one entity,
+  its health and its missing inputs as Sensor suggestions (Layer 8 §5.4).
 - **Failure**: a failed run is discarded; a fact not refreshed within `max_result_age` becomes
   unavailable; an instance backs off but is never disabled automatically.
 - **Third parties**: a future option behind explicit conditions (discovery, trust model, public

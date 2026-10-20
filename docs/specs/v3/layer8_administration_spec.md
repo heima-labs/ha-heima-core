@@ -3,11 +3,12 @@
 **Status:** Defined V3 administration contract, approved 2026-10-13. Not implemented.
 **Open corrections:** none.
 
-**Layer:** 8 of 8. Presents and edits what Layers 0–6 define: Layer 0's composed configuration
+**Layer:** 8 of 8. Presents and edits what Layers 0–7 define: Layer 0's composed configuration
 generation, configuration history, response ingress, committed-state observers and diagnostics;
 Layer 1's places and topology; Layer 2's registries; Layer 3's learning definitions and findings;
 Layer 4's semantic resolver definitions; Layer 5's Reactions, proposals, governance commands and
-decision records; Layer 6's recipients, notification history and request answers. It implements the
+decision records; Layer 6's recipients, notification history and request answers; Layer 7's
+extension catalog, instances and runtime state (CA4-131). It implements the
 Layer-8 decisions L8-C1 to L8-C9 first recorded in `docs/v3_backlog.md` ("Layer 8 specification
 decisions"); this spec now owns them. Upstream contracts introduced for it: CA4-78 (configuration
 history), CA4-79 (decision record), CA4-80 (derived observer subscriptions), CA4-82 (owner changes
@@ -122,6 +123,7 @@ Sections are organized by the user's question, not by layer.
 | People | admin | Who lives here? | Persons: HA persons classified `resident` or `guest` and their HA user link (Layer 2 §2.8); consent authority (Layer 5 §7.1.1); calendar sources and keywords for guest stays and planned absences, default guest rooms (Layer 2 §2.9) |
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption (Layer 5) |
 | Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
+| Extensions | admin | What does each extension add, and is it working? | Registered extensions; their instances (parameters, input slots, claims, analyzer bindings); runtime state, cost, produced facts and their consumers; missing requirements (Layer 7, §5.4) |
 | Notifications | admin | Who receives what? | Recipients, family options, each recipient's preferences, notification history (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
 | To do | resident | What do I need to answer? | Consent requests, recovery confirmations, advisories with feedback, including requests delivered without buttons |
@@ -154,6 +156,7 @@ without calling Layer 8:
 | `devices` | `sensor` → `sensor_id`; `actuator` → `actuator_id`; `fusion_rule` → `fusion_id` |
 | `understanding` | `resolver` → `resolver_id` |
 | `learning` | `definition` → learning definition id |
+| `extensions` | `extension` → `extension_id`; `instance` → extension `instance_id` |
 | `notifications` | `item` → Layer 6 item tag |
 | `system` | `history` → `composed_generation_id`; `health` (no id) |
 
@@ -219,6 +222,24 @@ reuses HA's frontend components, themes and layout breakpoints wherever they exi
 - **Map.** The house map has an equivalent list view (§9.12) and touch, keyboard and button
   navigation (§9.13).
 
+### 5.4 Extensions section (CA4-131)
+
+An extension is presented as one entity although its roles are staged in the Layer-2 and Layer-3
+generations (Layer 7 §4). The section lists the registered extension types (`extensions/catalog`)
+and, per instance: its parameters, input-slot bindings, claims and analyzer bindings; its runtime
+state (`healthy | backing_off | faulted`, Layer 7 §8) with the last failure reason; its recent run
+cost and the extension class's share (Layer 3 §5.3.1); each produced fact with its availability and
+its consumers from the dependency index; and each unbound or unproduced input key as a requirement
+suggestion (§6.5). Editing happens only here; Devices shows `ext.*` facts beside the Fusion rules and
+other consumers that use them, Learning shows the analyzer bindings and their pending proposals, and
+System shows extension health, all read-only and linked to this section.
+
+A `faulted` instance offers no restart and is never disabled automatically: it returns to `healthy`
+after its first successful run (Layer 7 §8), and an administrator may disable or remove it with an
+ordinary edit. Removing an instance previews its full impact (breaking consumers, proposals that
+become not approvable, Layer 7 §9); there is no separate removal path. Residents, guests and device
+accounts never see extensions as objects.
+
 ## 6. Editing configuration (L8-C4)
 
 ### 6.1 Two kinds of action
@@ -270,10 +291,15 @@ the Layer-2 generation, Layer 0 §4.7):
 | `owner_layer` | `object_kind` |
 |---|---|
 | `layer2` | `room`, `opening`, `zone`, `zone_role_binding`, `person`, `declared_context_source`, `guest_stay_defaults`, `sensor`, `fusion_rule`, `actuator` |
-| `layer3` | `learning_definition` (including its family enabled state) |
+| `layer2` (extensions) | `extension_producer` (the producer role of an extension instance, Layer 7 §4) |
+| `layer3` | `learning_definition` (including its family enabled state), `extension_analyzer` (the analyzer role of an extension instance) |
 | `layer4` | `semantic_resolver_definition` |
 | `layer5` | `reaction` (admin-direct configuration; `display_name`, removal or unchanged-configuration revalidation for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
 | `layer6` | `recipient`, `family_options` |
+
+An extension instance with both roles is one entity with two edits sharing its `instance_id`: the
+Extensions form always adds, replaces and removes them together, and change-set validation rejects
+an unpaired edit of a dual-role instance. A single-role instance has one edit.
 
 `expected_fingerprint` is the SHA-256 of the RFC-8785 canonical definition of that object in the
 base generation, computed by Layer 8 itself, so every kind has one without an owner-specific
@@ -323,14 +349,17 @@ an accepted one into an ordinary edit. The sources form a closed list:
 | A `Zone` from an HA label on areas, or from the rooms of one floor | Layer 1 §6, §7.1 | House |
 | A `Sensor` from an `EnvironmentalDiscoveryCandidate` (`auto_compatible` or `review_required`) | Layer 2 §3.4 | Devices, under the room of its suggested location |
 | Another role of a registered device: an unregistered entity with the same HA `device_id` | Layer 2 §3 (`device_id`) | Devices, on that device |
+| A `Sensor` for an extension input key that no registered producer provides | Layer 7 §4 | Extensions, on that instance |
 
 ```python
-SuggestionSource = Literal["ha_area", "ha_label", "floor", "discovery_entity", "device_sibling"]
+SuggestionSource = Literal["ha_area", "ha_label", "floor", "discovery_entity", "device_sibling",
+                           "extension_requirement"]
 
 @dataclass(frozen=True)
 class SuggestionKey:
     source: SuggestionSource
-    source_id: str      # area id, label id, floor number, entity id plus read path, or device id plus entity id
+    source_id: str      # area id, label id, floor number, entity id plus read path, device id plus
+                        # entity id, or extension instance id plus slot id
 ```
 
 - **Computed on demand.** `suggestions/list` is a slow-path query over the active generation and
@@ -341,6 +370,10 @@ class SuggestionKey:
   the area does not give, a Sensor's indoor or outdoor meaning, its opening relation), is marked and
   mandatory. The result is an `add` edit in the change set, validated, previewed and applied like
   any other (§6.2–§6.4); nothing is created without apply.
+- **Extension requirements.** Accepting an `extension_requirement` suggestion opens the `Sensor`
+  add form prefilled with the slot's `fact_type`, value contract and bound `Location`; the
+  administrator chooses the entity and every semantic decision. The extension declares the need, the
+  administrator creates the record (AR-8).
 - **Multiple selection** is offered only for rooms from areas, whose only decisions are floor and
   enclosure; each Sensor needs its own semantic decisions.
 - **Dismissing** records the `SuggestionKey` as Layer-8 view state, like finding acknowledgement:
@@ -406,7 +439,9 @@ The chain is built on demand, by a slow-path query, from:
 - the history timeline for authority (disabled, in trial, awaiting consent).
 
 When the needed facts are beyond retention, the chain ends with a `data_unavailable` node; it
-never guesses. Administrators see the full chain with codes and links; residents see the same chain
+never guesses. An unavailable `ext.*` input is also a `data_unavailable` node, naming the extension
+instance and why (`faulted`, result expired, not admitted) for administrators; residents see only
+that a data source is unavailable. Administrators see the full chain with codes and links; residents see the same chain
 rendered in plain language, without identifiers.
 
 A hold node says how the channel changed ("changed manually", "changed by another automation",
@@ -874,6 +909,9 @@ displays or interprets a V2 export.
   for `notification_only`, "block" for a suppression, …), shared by panel, templates, entities and
   user documentation. Internal concepts (generation, binding, envelope) never appear in resident
   views and appear in administrator views only with their glossary explanation.
+- Extension names, descriptions, parameter labels and input-slot labels are translation keys in the
+  Layer-8 resources, keyed by `extension_id`, slot id and parameter name; a blueprint carries no
+  user-facing text (Layer 7 §3).
 - A test fails if a user-facing literal string exists outside the translation resources.
 
 ## 13. Backend contract
@@ -902,6 +940,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `session` | query | any HA user | §4 principal and roles |
 | `overview` | query | any HA user (map part only without a role) | map layout and derived proposal, automation state, pending items (role-filtered) |
 | `objects/list`, `objects/get` | query | admin | active generation, per `object_kind` |
+| `extensions/catalog` | query | admin | Layer 7 §3 registered blueprints: roles, input slots, claims, parameter schema |
 | `change_set/validate_edit` | query | admin | owning layer's staging validator |
 | `change_set/preview` | query | admin | Layer 0 §4.7 staging |
 | `change_set/apply` | command | admin | Layer 0 §4.7 commit |
@@ -934,6 +973,8 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 The System section renders, read-only, the diagnostics every layer already exposes (Layer 0 §10
 and each layer's own): timing, observation continuity, recovery, holds (no manual release exists),
 retry queue, committed-state observers, generation and impact history, learning and artifact state,
+extension instances (runtime state, failures, cost, class share, deferrals; Layer 7 §8, Layer 3
+§5.3.1) with the health-baseline age and forced calibration windows (Layer 3 §5.3.2),
 notification delivery. It also shows Layer 8's own counters: rejected commands by reason, preview
 and apply outcomes, rebases and conflicts, published entities and their availability.
 
@@ -1105,3 +1146,10 @@ developer or a script.
   opening an administrator-only object address sees that same notice, byte-identical to the one for
   a missing object (§5.1).
 - No panel query or command delays an evaluation cycle.
+- Extensions (CA4-131): a dual-role instance is created, edited and removed as one entity; an
+  unpaired producer or analyzer edit is rejected at change-set validation. An instance whose slot key
+  has no producer shows an `extension_requirement` suggestion that opens a prefilled Sensor form and
+  disappears once the key is produced. Removing an instance previews its breaking consumers and the
+  proposals that become not approvable. A `faulted` instance has no restart action. A resident
+  explanation with an unavailable `ext.*` input names no extension; residents cannot reach the
+  Extensions section or `extensions/catalog`.

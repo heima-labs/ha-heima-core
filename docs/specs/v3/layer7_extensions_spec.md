@@ -1,7 +1,7 @@
 # Heima v3 - Layer 7: Extensions
 
 **Status:** Defined V3 extension boundary, approved 2026-10-20 (CA4-129). Not implemented.
-**Open corrections:** CA4-131 (Layer-8 surface).
+**Open corrections:** none.
 
 **Layer:** 7 of 8. Builds on Layer 0's claims (§4), composed configuration generation (§4.7),
 committed-state observers (§4.8), `FactSource` and non-forgeability (§5, §5.1), Runtime Scheduler
@@ -53,7 +53,7 @@ Layer 7 does not own, and an extension cannot extend:
   resolver or Reaction evaluation (Layer 2 §2.2);
 - person classification, actor identity, consent, audiences, and presence or household-context
   claims, other than as an ordinary producer of its own namespace (§5, §6);
-- Heima's administration surface, which presents extensions through Layer 8 (CA4-131).
+- Heima's administration surface, which presents extensions through Layer 8 §5.4.
 
 ## 3. Extension registry and blueprint
 

@@ -6332,13 +6332,19 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 #### CA4-131 — Layer 8 has no surface for extensions
 
-**Status:** TODO. **Severity:** P3. **Origin:** Layer 7 scoping discussion (2026-10-20). **Depends on:** CA4-129. **References:** [Layer 8 §5, §6.5, §14](specs/v3/layer8_administration_spec.md).
+**Status:** DONE (2026-10-20; specification readiness). **Severity:** P3. **Origin:** Layer 7 scoping discussion (2026-10-20). **Depends on:** CA4-129. **References:** [Layer 8 §5, §6.5, §14](specs/v3/layer8_administration_spec.md).
 
 **Problem.** An extension instance is staged in two layer generations (producer in Layer 2, analyzer in Layer 3; CA4-129), but Layer 8 organizes sections by the user's question and has no place where an administrator sees what an extension adds, whether it works, or what it still needs.
 
 **Decisions (developer-approved 2026-10-20).** A new administrator section "Extensions" answers "What does each extension add, and is it working?". It shows the registered extension types; their instances, with forms derived from the blueprint parameter schema and edited through the ordinary change set, preview and apply (§6.2–§6.4); each instance's runtime state (`healthy | backing_off | faulted`), cost, and produced facts with their consumers from the dependency index. Missing requirements appear as suggestions: a new closed `SuggestionSource` `extension_requirement` (§6.5) opens a prefilled `Sensor` form, so the extension declares and the administrator creates (AR-8). Devices (extension facts beside the fusions that consume them), Learning (analyzers) and System (health) link to it read-only; editing happens only in "Extensions". Requirements are derived from the extension's input-slot bindings (Layer 7 §4): an unbound or unproduced key becomes the suggestion. (Corrected 2026-10-20: `SensorRequirement` belongs to the retired template-matching model and is defined nowhere; see CA4-132.)
 
 **Rationale.** Splitting an extension across Devices, Learning and System would contradict presenting it as one entity; one section makes removal (CA4-129) understandable in one place. Extending the closed suggestion list avoids a parallel mechanism.
+
+**Decisions during specification (developer-approved 2026-10-20).**
+1. **Change-set model.** Two object kinds, `layer2: extension_producer` and `layer3: extension_analyzer`, sharing the `instance_id`; the Extensions form adds, replaces and removes both together, and change-set validation rejects an unpaired edit of a dual-role instance. Rejected: one `layer7: extension_instance` edit (owner layer would no longer match the generation layers; Layer 7 has no generation, CA4-129 decision 7).
+2. **Defaults.** Administrator-only section, catalog query and addresses; resident explanations render an unavailable `ext.*` input as an unavailable data source without identifiers; removal only through the ordinary previewed edit; a `faulted` instance has no restart action and is never disabled automatically; extension display text lives in Layer-8 translation resources keyed by `extension_id`, slot and parameter.
+
+**Approved resolution (2026-10-20).** Layer 8 header (Layers 0–7), §5 navigation row and §5.1 addresses, new §5.4 Extensions section, §6.2 object kinds and pairing rule, §6.5 `extension_requirement` suggestion, §8 `data_unavailable` for extension inputs, §12 translation keys, §13 `extensions/catalog`, §14 diagnostics, §16 acceptance; Layer 7 header and §2; overview and recap one line each. See the [CA4-131 review](specs/v3/reviews/CA4-131.md); no V3 runtime test ran.
 
 #### CA4-130 — Slow-path scheduling has no work class for extensions
 

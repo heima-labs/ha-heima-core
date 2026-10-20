@@ -1025,6 +1025,12 @@
       "owner": "docs/specs/v3/layer3_learning_spec.md",
       "heading": "5.3.2 Baseline quiet interval and calibration window (CA4-130)",
       "depends_on": ["L3-SLOW-PATH-CLASSES"]
+    },
+    {
+      "id": "L8-EXTENSIONS",
+      "owner": "docs/specs/v3/layer8_administration_spec.md",
+      "heading": "5.4 Extensions section (CA4-131)",
+      "depends_on": ["L7-INSTANCES", "L7-FAILURE", "L7-LIFECYCLE", "L3-SLOW-PATH-CLASSES"]
     }
   ],
   "reviewed_slices": [
@@ -2202,6 +2208,17 @@
       "contracts": ["L3-SLOW-PATH-CLASSES", "L3-HEALTH-BASELINE", "L7-REGISTRY", "L7-INVOCATION", "L7-FAILURE", "L7-LIFECYCLE", "L7-REOPENING"],
       "design_constraints": [],
       "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-131",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-131.md",
+      "contracts": ["L8-EXTENSIONS", "L7-INSTANCES", "L7-FAILURE", "L7-LIFECYCLE"],
+      "design_constraints": [],
+      "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
     }
