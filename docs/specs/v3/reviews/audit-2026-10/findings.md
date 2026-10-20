@@ -84,3 +84,65 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L8-05 | L8 | C | P3 | §7 defines what residents see in history, but history is administrator-only | pending |
 | F-L8-06 | L8 | D | P3 | Up-direction change clears placements on every floor (§9.1, §9.4) or on one floor (§16) | pending |
 | F-L8-07 | L8 | C | P2 | Redaction keeps Heima ids, but a Heima `recipient_id` is administrator-chosen and may be a person's name | pending |
+| F-X1-01 | X1 | C | P2 | Recovery-target snapshots and outbox records are declared `PersistedProjection`s but cannot satisfy its depth and no-dataclass rule | pending |
+| F-X1-02 | X1 | C | P2 | A calendar Sensor reads Layer 0's `active_now` directly, which Layer 0 neither registers nor permits | pending |
+| F-X1-03 | X1 | O | P2 | Layer 2 hands Layer 0 an "entity delta" that deletes recovery snapshots; Layer 0 §7.4 has no such input or rule | pending |
+| F-X1-04 | X1 | R | P3 | Producer diagnostics are routed to "Layer 0 §10", which defines no producer diagnostic event | pending |
+| F-X1-05 | X1 | D | P3 | Layer 1 restates when `actuator.channel_state.*` changes more narrowly than Layer 0 | pending |
+| F-X1-06 | X1 | D | P3 | `FactSource.source_id` example "an entity id" conflicts with Layer 2's Sensor `source_id` | pending |
+| F-X2-01 | X2 | C | P2 | Recovery classification is promised to every semantic resolver, but no Layer-4 input carries it | pending |
+| F-X2-02 | X2 | O | P2 | Live Layer-3 feature evaluation needs a frozen buffer read that Layer 0 offers only to Layer 5 | pending |
+| F-X2-03 | X2 | O | P2 | `InferenceSignal` must carry the cycle `correlation_id`, but its closed payload has no such field | pending |
+| F-X2-04 | X2 | O | P2 | Layer 3's CPU-credit planner needs process CPU measurements that `RuntimeHealthSnapshot` does not contain | pending |
+| F-X2-05 | X2 | C | P3 | `FactSourceKind="analyzer"` names the Layer-3 `PatternLearner` as a fact producer, which Layer 3 excludes | pending |
+| F-X2-06 | X2 | R | P3 | `LearnedPattern` is cited as a Layer-3 output but Layer 3 defines no such type | pending |
+| F-X2-07 | X2 | R | P3 | Retention rationale cites a learner `history_window` that Layer 3 does not define | pending |
+| F-X2-08 | X2 | D | P3 | §13 criterion expects a departure from a `present` → `away` presence, which no Layer-4 adapter emits | pending |
+| F-X2-09 | X2 | D | P3 | A missing predecessor is `available=False` in Layer 0 but `previous=None` in Layer 4 | pending |
+| F-X2-10 | X2 | D | P3 | `LearnedWindow` calibration is assigned to a `SemanticResolver`, which cannot read history | pending |
+| F-X2-11 | X2 | C | P3 | Changing the learning installation profile is a configuration mutation outside the composed generation | pending |
+| F-X3-01 | X3 | O | P2 | Layer 5 classifies a timing-model binding as breaking, but Layer 0's dependency index has no Layer-3 learning-definition producer or Layer-5 timing-model consumer | pending |
+| F-X3-02 | X3 | O | P2 | Layer 0 says Layer 5 supplies the recovery-confirmation proposal, subject and proposed facets; Layer 5's body defines no such hand-off | pending |
+| F-X3-03 | X3 | O | P3 | `ResponseRequestDeclaration.expires_at` is mandatory, but Layer 5's consent and feedback requests have no expiry instant | pending |
+| F-X3-04 | X3 | O | P3 | Layer 0 says a Layer-5 calendar consumer declares a `KeywordClassifier`; Layer 5 has no such binding and routes calendar meaning through Layer 2 | pending |
+| F-X3-05 | X3 | D | P3 | Layer 0 §4.7 lists the Layer-6 generation without house endpoints, which Layer 6 adds with no dependents | pending |
+| F-X3-06 | X3 | R | P3 | Layer 6 builds on a "Layer-0 Runtime Scheduler" that Layer 0 does not define | pending |
+| F-X4-01 | X4 | D | P3 | Layer 1 limits the registry-id-suffixed evidence shape to room occupancy; Layer 2 also uses it at casa and for presence, with an HA person id suffix | pending |
+| F-X4-02 | X4 | C | P3 | Layer 1 says unavailability is recorded at once and an all-unavailable fusion is unavailable; Layer 2's `unavailable_grace` keeps the last available output | pending |
+| F-X4-03 | X4 | D | P3 | Layer 1 puts `opening_id` on an Actuator channel; Layer 2 defines it on the Actuator only | pending |
+| F-X5-01 | X5 | C | P2 | `opening.open` is reserved to Layer-5 readers, so a window contact cannot also feed Layer-3 opening evidence | pending |
+| F-X5-02 | X5 | C | P2 | `occupancy.physical` is "the sole" ground truth a learner may bind, but the survival model binds resolved Layer-4 occupancy | pending |
+| F-X5-03 | X5 | C | P2 | Layer 3 resolves learner bindings against the active Layer-2 generation, not the candidate | pending |
+| F-X5-04 | X5 | O | P3 | Layer 2 says Layer 3 binds a `FutureStateFractionOutcome` for solar shading; Layer 3 registers none | pending |
+| F-X5-05 | X5 | R | P3 | Layer 2 §5.3 quotes a Layer-3 sentence and `PatternLearnerConfig` that Layer 3 does not contain | pending |
+| F-X5-06 | X5 | D | P3 | An impacted producer's predecessor is `available=False` in Layer 2 but `previous=None` in Layer 4 | pending |
+| F-X6-01 | X6 | C | P2 | Learned-timing binding must match a `FutureStateFractionOutcome`, but the routine's only timing path is a survival model that Layer 5 forbids coercing to one | pending |
+| F-X7-01 | X7 | C | P2 | The "automatic authorization requires an enabled user-visible binding" check is placed at publication staging, where no binding can be enabled | pending |
+| F-X7-02 | X7 | D | P3 | U4 says `HouseholdConsentAuthority` references are HA user ids; Layer 5 and Layer 6 §5.2 make them `ha_person_id`s | pending |
+| F-X7-03 | X7 | C | P3 | Layer 6 acceptance tests an action notice of an `environment.*` Reaction, which Layer 5 forbids | pending |
+| F-X8-01 | X8 | C | P2 | Layer 0 says Layer-2 registrations contribute only `state` claims, but the Layer-2 extension producer may declare event claims | pending |
+| F-X8-02 | X8 | D | P2 | Extension `configuration_fingerprint` is "of the active generation", while Layer 0 and Layer 2 make it a per-producer execution-semantic fingerprint no layer defines for extensions | pending |
+| F-X8-03 | X8 | O | P2 | Extension history slots declare a read window, but Layer 0 extends durable retention only for registered learners | pending |
+| F-X8-04 | X8 | C | P2 | "A due extension always fits" is contradicted by a slow-path memory budget smaller than the largest extension envelope | pending |
+| F-X8-05 | X8 | O | P3 | The extension expiry `AtJob` declares no `basis`, which Layer 0 requires of every owner | pending |
+| F-X8-06 | X8 | O | P3 | Layer 0's closed list of `correlation_id` origin points has no extension run | pending |
+| F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | pending |
+| F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | pending |
+| F-X9-01 | X9 | O | P1 | Layer-6 `HouseEndpoint`s are administrator-configured generation records, but Layer 8 has no editable kind for them | pending |
+| F-X9-02 | X9 | O | P2 | Layer-3 artifact lifecycle transitions (shadow, `proposal_eligible`, rollback, disablement) have no Layer-8 command | pending |
+| F-X9-03 | X9 | O | P2 | The map-card house banner has no owner hand-off: Layer 6 does not give Layer 8 the open `house` items | pending |
+| F-X9-04 | X9 | C | P2 | Layer 8 gives a guest no role, but a guest who is an HA administrator is an administrator for Layer 0 and for Layer 8's own role rule | pending |
+| F-X9-05 | X9 | C | P2 | Layer 5 says Layer 8 sends "only these" seven commands, but Layer 8 also submits rename, removal and restore of Reactions, including learner-origin ones | pending |
+| F-X9-06 | X9 | O | P3 | Layer 6 places an "every recipient off" warning in Layer 8's Notifications section, which Layer 8 does not list | pending |
+| F-X9-07 | X9 | O | P3 | Layer 2 has the panel suggest a Person's `ha_user_id`, a source missing from Layer 8's closed suggestion list | pending |
+| F-O1-01 | O1 | D | P3 | Overview says Layer 6 produces seven event fact types; Layer 6 registers eight | pending |
+| F-O1-02 | O1 | D | P3 | Overview lists one Initial-V3 candidate kind; Layer 5 registers two | pending |
+| F-O1-03 | O1 | D | P3 | Overview gives guests and device accounts no panel access; Layer 8 gives them the map | pending |
+| F-O1-04 | O1 | D | P3 | "Ending only on a household return" omits the family's other normal exits | pending |
+| F-O1-05 | O1 | D | P3 | Presence simulation is said to use "calendar/presence guards"; its guard contract has only occupancy | pending |
+| F-O1-06 | O1 | D | P3 | "Layer 3 reads only Layer-0 fact history and staged contracts" omits its other declared inputs | pending |
+| F-O1-07 | O1 | D | P3 | "Global storage ceilings are hard", but the 512 MiB limit is a non-blocking watermark | pending |
+| F-O2-01 | O2 | D | P3 | Recap lists seven Layer-6 kinds; Layer 6 §4.2 registers eight | pending |
+| F-O2-02 | O2 | D | P3 | Recap authority statement omits Layer 7 | pending |
+| F-O2-03 | O2 | D | P3 | Recap's initial semantic-claim list omits `occupied_without_residents` | pending |
+| F-O2-04 | O2 | D | P3 | Recap provenance summary names a "resident response" kind and an extension-related `ApplyStepSource` | pending |

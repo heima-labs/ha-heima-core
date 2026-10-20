@@ -28,22 +28,22 @@ Status: `todo`, `in progress (<date>)`, `done (<date>)`. One pass takes one unit
 
 | Unit | Scope | Status | Findings | Note |
 |---|---|---|---|---|
-| X1 | Layer 0 ↔ Layers 1, 2 | todo | | |
-| X2 | Layer 0 ↔ Layers 3, 4 | todo | | |
-| X3 | Layer 0 ↔ Layers 5, 6 | todo | | |
-| X4 | Layer 1 ↔ Layer 2 | todo | | |
-| X5 | Layer 2 ↔ Layers 3, 4 | todo | | |
-| X6 | Layer 3 ↔ Layers 4, 5 | todo | | |
-| X7 | Layer 5 ↔ Layer 6 | todo | | |
-| X8 | Layer 7 ↔ Layers 0, 2, 3, 5 | todo | | |
-| X9 | Layer 8 ↔ Layers 0–7 (what Layer 8 presents and edits exists in its owner) | todo | | |
+| X1 | Layer 0 ↔ Layers 1, 2 | done (2026-10-20) | 6 (P2 3, P3 3) | L0 obligations on L1/L2 and back; overlaps cited, not repeated. |
+| X2 | Layer 0 ↔ Layers 3, 4 | done (2026-10-20) | 11 (P2 4, P3 7) | L0 obligations on L3/L4 and back; overlaps cited, not repeated. |
+| X3 | Layer 0 ↔ Layers 5, 6 | done (2026-10-20) | 6 (P2 2, P3 4) | L0 obligations on L5/L6 and back; overlaps cited, not repeated. |
+| X4 | Layer 1 ↔ Layer 2 | done (2026-10-20) | 3 (P3 3) | L1↔L2 obligations; overlaps cited, not repeated. |
+| X5 | Layer 2 ↔ Layers 3, 4 | done (2026-10-20) | 6 (P2 3, P3 3) | L2↔L3/L4 obligations; overlaps cited, not repeated. |
+| X6 | Layer 3 ↔ Layers 4, 5 | done (2026-10-20) | 1 (P2 1) | L3↔L4/L5 obligations; overlaps cited, not repeated. |
+| X7 | Layer 5 ↔ Layer 6 | done (2026-10-20) | 3 (P2 1, P3 2) | L5↔L6 obligations; overlaps cited, not repeated. |
+| X8 | Layer 7 ↔ Layers 0, 2, 3, 5 | done (2026-10-20) | 8 (P2 5, P3 3) | L7↔L0/L2/L3/L5 obligations; overlaps cited, not repeated. |
+| X9 | Layer 8 ↔ Layers 0–7 (what Layer 8 presents and edits exists in its owner) | done (2026-10-20) | 7 (P1 1, P2 4, P3 2) | L8 commands, kinds, addresses, projections vs owners; overlaps cited, not repeated. |
 
 ## Orientation documents against the authoritative layers
 
 | Unit | Scope | Status | Findings | Note |
 |---|---|---|---|---|
-| O1 | `architecture_overview_defined_layers.md` | todo | | |
-| O2 | `docs/v3_architecture_recap.md` | todo | | |
+| O1 | `architecture_overview_defined_layers.md` | done (2026-10-20) | 7 (P3 7) | every overview summary vs owning section; overlaps cited, not repeated. |
+| O2 | `docs/v3_architecture_recap.md` | done (2026-10-20) | 4 (P3 4) | every recap summary vs owning section; overlaps cited, not repeated. |
 
 ## After the passes
 
