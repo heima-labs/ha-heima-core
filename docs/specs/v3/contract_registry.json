@@ -1013,6 +1013,18 @@
       "owner": "docs/specs/v3/layer7_extensions_spec.md",
       "heading": "11. Reopening conditions for third-party extensions",
       "depends_on": ["L7-SCOPE"]
+    },
+    {
+      "id": "L3-SLOW-PATH-CLASSES",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "5.3.1 Slow-path work classes (CA4-130)",
+      "depends_on": ["L7-INVOCATION", "L7-FAILURE"]
+    },
+    {
+      "id": "L3-HEALTH-BASELINE",
+      "owner": "docs/specs/v3/layer3_learning_spec.md",
+      "heading": "5.3.2 Baseline quiet interval and calibration window (CA4-130)",
+      "depends_on": ["L3-SLOW-PATH-CLASSES"]
     }
   ],
   "reviewed_slices": [
@@ -2179,6 +2191,17 @@
       "contracts": ["L7-SCOPE", "L7-REGISTRY", "L7-INSTANCES", "L7-INPUTS", "L7-OUTPUTS", "L7-INVOCATION", "L7-FAILURE", "L7-LIFECYCLE", "L7-REOPENING", "L0-FACT-SOURCE", "L2-EXTENSION-BOUNDARY", "L3-EXTENSION-BOUNDARY", "L5-PROPOSAL-EVIDENCE-SOURCE"],
       "design_constraints": ["V3-ONE-ACTION-PATH"],
       "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-130",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-130.md",
+      "contracts": ["L3-SLOW-PATH-CLASSES", "L3-HEALTH-BASELINE", "L7-REGISTRY", "L7-INVOCATION", "L7-FAILURE", "L7-LIFECYCLE", "L7-REOPENING"],
+      "design_constraints": [],
+      "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
     }

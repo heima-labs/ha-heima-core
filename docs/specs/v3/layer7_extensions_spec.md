@@ -1,7 +1,7 @@
 # Heima v3 - Layer 7: Extensions
 
 **Status:** Defined V3 extension boundary, approved 2026-10-20 (CA4-129). Not implemented.
-**Open corrections:** CA4-130 (slow-path admission class), CA4-131 (Layer-8 surface).
+**Open corrections:** CA4-131 (Layer-8 surface).
 
 **Layer:** 7 of 8. Builds on Layer 0's claims (§4), composed configuration generation (§4.7),
 committed-state observers (§4.8), `FactSource` and non-forgeability (§5, §5.1), Runtime Scheduler
@@ -77,7 +77,9 @@ class ExtensionClaim:
     emission_kind: FactEmissionKind
     value_contract: CanonicalJsonObject
     max_result_age: Window | None     # required for a state claim, None for an event claim;
-                                      # >= cadence; expiry makes the state unavailable (§8)
+                                      # >= cadence + CALIBRATION_WINDOW; expiry makes the state
+                                      # unavailable (§8)
+    max_emissions_per_run: int | None  # required for an event claim, None for a state claim
 
 @dataclass(frozen=True)
 class ExtensionProducerRole:
@@ -106,7 +108,9 @@ class ExtensionBlueprint:
 ```
 
 Registration rejects a blueprint whose claims leave `ext.<extension_id>.`, whose state claim lacks a
-`max_result_age` or has one shorter than its cadence, whose event claim declares one, whose cadence is shorter than §7.2's minimum, whose input slot names a
+`max_result_age` or has one shorter than its cadence plus `CALIBRATION_WINDOW` (Layer 3 §5.3.2, so a
+forced calibration window never expires a healthy fact), whose event claim declares one or lacks a
+positive `max_emissions_per_run`, whose cadence is shorter than §7.2's minimum, whose input slot names a
 person-related fact (§5), or whose parameter schema exposes executable code, a raw HA entity or
 service selector, an open field, or user-facing text. An analyzer role names an existing core
 candidate kind and descriptor exactly; it cannot introduce either.
@@ -210,7 +214,11 @@ An extension never runs in the evaluation cycle. The core decides when it runs: 
 observed through a core-declared committed-state subscription derived from the active generation
 (Layer 0 §4.8). The run executes on the slow path governed by Layer 3 §5.1 and §5.3: it is admitted
 against a `ResourceEnvelope` and runs as cooperative `step(WorkSliceBudget)` work within its
-deadline (the extension admission class is CA4-130). Results enter staging and are validated at
+deadline, in the `extension` work class (Layer 3 §5.3.1): due extension slices run before learning
+slices, extension runs are serial across the installation, a memory reservation keeps the largest
+enabled envelope admissible, and the class is capped at half of the slow-path CPU credit. In
+`capacity_unknown` no extension run is admitted and its facts expire (§8). Extensions start only
+after the first health baseline at startup (Layer 3 §5.3.2). Results enter staging and are validated at
 the next `CycleInputBarrier` like any ingress; an extension fact therefore lags its inputs by at
 least one cycle.
 
@@ -220,6 +228,11 @@ the Layer 2 §2.2 guarantees independently of non-core code, and lets the core d
 extension runs and what it sees. It does not bound CPU or memory (§10). A fact needed in the same
 cycle must be produced by the core (Layer 2 §2.1); extensions are unsuitable for fast reactions such
 as leak detection.
+
+**Pure computation.** An extension's code receives its input snapshot and returns its result. It
+performs no file, network or Home Assistant access, starts no thread or process, and keeps no state
+between runs other than what it publishes as facts. Because Initial-V3 extensions are first-party,
+this is enforced by code review, not by a sandbox (§10).
 
 ### 7.2 Cadence
 
@@ -245,8 +258,9 @@ specification version; neither an administrator nor a blueprint can lower it.
 
 ## 8. Failure policy
 
-A run fails on an exception, a missed deadline, a budget rejection, or an output that violates its
-claims or value contracts. A failed run is discarded atomically: no partial fact is written. A result
+A run fails on an exception, a missed deadline, a budget rejection, an envelope breach detected at a
+cooperative boundary (Layer 3 §5.3.1), an event claim emitted more than `max_emissions_per_run` times,
+or an output that violates its claims or value contracts. A failed run is discarded atomically: no partial fact is written. A result
 whose invocation or generation has been superseded is discarded on arrival.
 
 Each state claim has a mandatory `max_result_age`; an event claim has none, because an event has no
@@ -273,8 +287,11 @@ for any code upgrade.
 On removal or invalidation, existing rules apply: consumers of its `ext.*` facts are breaking; a
 Reaction consuming them becomes `configuration_invalid` (Layer 5 §4.2); history stays attributed by
 generation fingerprint; an in-flight run cannot publish; and pending proposals from its analyzer
-become not approvable (Layer 5 §4.1). Restart re-derives runtime state from the active generation and
-starts with one jittered run per enabled instance; missed runs are not replayed.
+become not approvable (Layer 5 §4.1). Restart re-derives runtime state from the active generation and,
+after the first health baseline, starts with one jittered run per enabled instance; missed runs are
+not replayed. Each state claim's expiry job is re-armed from the instant of its last persisted result,
+as Layer 2 §3.2 checks report age at its first fresh intake: a claim already older than
+`max_result_age` becomes `available=False` at the first cycle, and the others expire on schedule.
 
 ## 10. Trust
 
@@ -282,10 +299,22 @@ What Layer 7 guarantees: an extension's output is validated and attributed by th
 claim outside its namespace, forge its source, read undeclared or person-related facts, act on the
 house, or block the evaluation cycle; a failure is discarded and made visible.
 
-What it does not guarantee: isolation of CPU, memory or process state. Python offers no portable
-hard kill (Layer 3 §5.3), and in-process code can technically reach engine internals. Initial V3
-accepts this because every extension is first-party, reviewed code. The boundary is a contract
-enforced on the data path, not a sandbox.
+Initial V3 runs extensions in process, with the same protection level as core learners, plus three
+measures that bound the damage of a defective extension:
+
+- **Pure computation** (§7.1): no file, network or Home Assistant access and no threads, enforced by
+  code review.
+- **Disk bounded by construction**: an extension never writes storage itself. Its facts go through
+  Layer-0 persistence (write-on-change, retention, retry-queue budget, Layer 0 §4.2–§4.6), state
+  claims are fixed keys, and each event claim is bounded by `max_emissions_per_run`.
+- **Memory and time checked between slices** (Layer 3 §5.3.1): a run exceeding its envelope stops at
+  the next cooperative boundary, so the damage is bounded to one slice.
+
+What it does not guarantee: hard isolation. Python cannot interrupt a slice in progress or offer a
+portable hard memory/CPU kill (Layer 3 §5.3), and in-process code can technically reach engine
+internals. Initial V3 accepts this because every extension is first-party, reviewed code, exactly as
+for core learners. The boundary is a contract enforced on the data path, not a sandbox; hard
+isolation is a condition for third-party code (§11).
 
 ## 11. Reopening conditions for third-party extensions
 
@@ -296,8 +325,10 @@ condition below:
 2. A real external consumer exists.
 3. A discovery mechanism is chosen (Python entry points or a `hass.data` handshake).
 4. An explicit trust model: the loader assigns the origin (`first_party | third_party`), never the
-   extension; an administrator grants trust per package with impact preview; no isolation is
-   claimed for CPU, memory or engine internals.
+   extension; an administrator grants trust per package with impact preview; and every third-party
+   run executes out of process, in a worker with operating-system memory, CPU and time limits that
+   can be killed without affecting Heima, through Layer 3 §5.3's execution boundary (bounded
+   immutable request in, untrusted result out).
 5. A public versioned API: which contracts are public, semantic versioning, a deprecation policy, and
    an explicit amendment of the "no backward compatibility" rule scoped to that surface.
 6. A security review of the in-process surface.
@@ -322,7 +353,7 @@ specification change, not an extension capability.
 ## 13. Acceptance criteria (for the eventual implementation phase)
 
 - The registry is frozen before staging; registration rejects a claim outside `ext.<extension_id>.`,
-  `max_result_age` below the cadence, a cadence below 60 seconds, a person-related input slot, an
+  `max_result_age` below the cadence plus 5 minutes, an event claim without `max_emissions_per_run`, a cadence below 60 seconds, a person-related input slot, an
   unknown candidate contract, and a parameter exposing code, raw entities, open fields or text.
 - An instance whose slot key has no compatible producer fails validation and yields one missing-key
   requirement; creating the Sensor makes it validate.
@@ -333,6 +364,11 @@ specification change, not an extension capability.
 - No extension code runs during a cycle; a result is applied at the next `CycleInputBarrier`.
 - With a bound input changing every 5 seconds, runs start at most once per 60 seconds, one at a
   time, with intermediate changes coalesced; missed ticks are not replayed after restart.
+- An event claim emitted beyond `max_emissions_per_run`, or a run exceeding its envelope at a slice
+  boundary, fails the run and writes no fact.
+- In `capacity_unknown` no run is admitted and state claims expire; after a restart, a claim older
+  than `max_result_age` is unavailable at the first cycle and extensions run only after the first
+  baseline.
 - An exception, timeout or budget rejection writes no fact; repeated failures reach `faulted`
   without disabling the instance; one success restores `healthy`.
 - Without a successful run, each state claim becomes `available=False` at `max_result_age`, not

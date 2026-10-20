@@ -2931,7 +2931,8 @@ inspection after that run finishes; the old run cannot publish (§5.2). These ru
 
 The runtime also maintains a bounded global analysis queue. Per-learner single-flight is mandatory;
 global slots, fair scheduling, and core-owned priority prevent one family from consuming all slow-path
-capacity. No user or extension can raise these limits at runtime. Queue delay, budget rejection,
+capacity. The queue serves two closed slow-path work classes, `learning` and `extension` (Layer 7
+§7); §5.3.1 defines how they share capacity. No user or extension can raise these limits at runtime. Queue delay, budget rejection,
 coalesced requests, skipped inspections, and timeout/failure reasons are diagnostics.
 
 ### 5.2 Run lifecycle
@@ -2986,10 +2987,11 @@ not provide.
 
 Layer 3 consumes Layer 0's immutable read-only `RuntimeHealthSnapshot` (§9), never a host-wide guess
 or a live HA object. It retains an `EngineHealthBaseline` only from an engine-ready interval with no
-local learning admitted and all available health signals green. The baseline contains the high-water
-Heima RSS and the healthy cycle-latency distribution; it is recalibrated only during a later comparable
-no-learning healthy interval, so a learner-induced degradation cannot slowly become the new normal.
-`DetectedLearningCapacity` is the resulting diagnostic view of the snapshot, baseline, and their
+slow-path work of either class running and all available health signals green. The baseline contains
+the high-water Heima RSS and the healthy cycle-latency distribution; it is recalibrated only during a
+later comparable quiet healthy interval, so a degradation induced by learning or by extensions cannot
+slowly become the new normal. §5.3.2 defines the quiet interval and the forced calibration window.
+`DetectedSlowPathCapacity` is the resulting diagnostic view of the snapshot, baseline, and their
 capabilities. It is an upper bound, never permission to consume the whole machine.
 
 The admin selects one explicit installation profile: `conservative`, `balanced`, or `performance`.
@@ -2997,17 +2999,17 @@ The profile selects core-owned responsiveness coefficients, not fixed slots, CPU
 or a bypass around safety gates. For an effective memory limit `M`, effective CPU capacity `C`, healthy
 engine RSS baseline `B`, profile reserve coefficient `r`, and measured baseline variation `v`, the
 planner derives protected memory headroom `H = r * M + v`, then
-`M_learnable = max(0, M - B - H)`. For the same profile's permitted learning CPU share `s`, it derives
-`C_learnable = max(0, s * C - C_engine_baseline)`. It also derives the current allowable cycle latency
+`M_slow = max(0, M - B - H)`. For the same profile's permitted slow-path CPU share `s`, it derives
+`C_slow = max(0, s * C - C_engine_baseline)`. It also derives the current allowable cycle latency
 from the healthy latency percentile and the profile latency multiplier; current latency slack is the
 difference between that allowance and the current Layer-0 percentile. These are formulas over current
 installation measurements, not constants assigned to a Raspberry, NUC, container, or profile.
 
-For the active profile the core derives a machine-specific `LearningCapacityPlan` with aggregate
+For the active profile the core derives a machine-specific `SlowPathCapacityPlan` with aggregate
 memory, CPU-credit, slice-deadline, queue, and admission limits at `lower`, `target`, and `upper`.
 `upper` is a hard physical ceiling using declared envelope maxima; `lower` is zero or one only when its
 declared envelope fits the protected budget; `target` is the normal fair set whose conservative observed
-cost forecasts fit both `M_learnable` and `C_learnable`. Before enough healthy run data exists, a
+cost forecasts fit both `M_slow` and `C_slow`. Before enough healthy run data exists, a
 forecast is the declared envelope; later observations may refine it downward only within that declared
 maximum. CPU credit accrues from elapsed monotonic time and actual process CPU time, never raw host CPU
 percentages. Each invocation receives `WorkSliceBudget = min(remaining_run_deadline, slice_fraction *
@@ -3016,7 +3018,8 @@ type's `ResourceEnvelope`.
 
 A reliable effective memory limit and usable engine-latency measurement are preconditions for local
 admission. If either is absent, stale, non-finite, or not enforceable, local in-process learning is
-`capacity_unknown` and no job is admitted; external execution remains separately governed below. CPU or
+`capacity_unknown` and no job of either class is admitted, so extension facts expire to unavailable
+(Layer 7 §8); external execution remains separately governed below. CPU or
 pressure metrics that are absent likewise never permit a scale-up beyond the conservative lower plan.
 The core owns coefficients, tolerances, percentile choices, minimum evidence, and stabilization policy;
 they are neither administrator, learner, nor extension settings. This keeps every production allocation
@@ -3096,7 +3099,7 @@ returns only a candidate artifact and diagnostics. It never receives HA credenti
 fact-store access, permission to inspect live state, or publication authority.
 
 An external job does not consume local worker slots or its remote CPU/RAM envelope, but it is not free
-to the house runtime. `LearningCapacityPlan` separately bounds coordinator concurrency, request/result
+to the house runtime. `SlowPathCapacityPlan` separately bounds coordinator concurrency, request/result
 bytes, serialization work, local data-read budget, deadline and retry/backoff. External dispatch is an
 explicit backend choice staged for that learner type; local pressure does not silently fail over a job
 to another server, and backend availability never raises local admission capacity. This preserves a
@@ -3126,6 +3129,59 @@ or incompatible response would become absence of signal. It could feed only diag
 candidate until a separately reviewed architecture decision authorizes any additional bounded use.
 The remote service would never gain HA/fact-store access, a command path, or permission to extend the
 live-signal exception list.
+
+#### 5.3.1 Slow-path work classes (CA4-130)
+
+Learning and Layer-7 extensions share one `SlowPathCapacityPlan`, one profile, one health baseline,
+one queue and the same `ResourceEnvelope` and cooperative `step(WorkSliceBudget)` contract. They are
+two classes because their failure costs differ: a deferred learning refresh only ages an artifact,
+while a deferred extension run lets an operational fact expire to unavailable (Layer 7 §8). The
+classes differ only as follows:
+
+- **Slice-level priority.** All slow-path work advances in cooperative slices. Between two slices
+  the coordinator runs a due extension slice before a learning slice, so an extension never waits
+  more than one learning slice behind a running training, even when the plan admits a single job.
+  An admitted learning run is never killed; it is only paused at its cooperative boundary.
+- **Serial extensions and memory reservation.** At most one extension run executes at a time across
+  the installation. Before admitting learning work, the planner subtracts from `M_slow` the declared
+  envelope of the largest enabled extension, so a due extension always fits.
+- **Learning cannot starve.** The `extension` class may use at most `EXTENSION_CPU_SHARE` = 50% of
+  the slow-path CPU credit over a rolling window; beyond it, extension and learning slices alternate.
+  Extension runs are short and at least 60 seconds apart (Layer 7 §7.2), so the cap only binds with
+  many active instances.
+- **Envelope check between slices.** At each cooperative boundary the runtime compares the run's
+  retained memory and elapsed time with its declared envelope and stops a run that exceeds them; the
+  run is discarded as failed (Layer 7 §8). This bounds the damage of a misbehaving run to one slice;
+  it is not a hard guarantee, because Python cannot interrupt a slice in progress.
+- **Diagnostics.** `deferred_resource_pressure` is recorded per class, with the class's CPU-credit
+  share and the reserved envelope.
+
+Both classes run first-party reviewed code in process. Hard isolation (an out-of-process worker
+with operating-system limits, through the execution boundary above) is not required for them; it is
+a mandatory condition for third-party extensions (Layer 7 §11).
+
+#### 5.3.2 Baseline quiet interval and calibration window (CA4-130)
+
+A baseline sample needs an interval of at least `BASELINE_QUIET_INTERVAL` = 5 minutes with no
+slow-path work of either class running. Five minutes gives a cycle-latency percentile tens to
+hundreds of cycles in an ordinary home, and lets retained memory settle after a run (garbage
+collection) before it is measured; a one-minute gap would yield an unstable percentile. Gaps between
+extension runs count when they are long enough.
+
+If no valid interval has occurred for `BASELINE_MAX_AGE` = 24 hours, the scheduler opens one
+`CALIBRATION_WINDOW` = 5 minutes, using the same length so forced and natural samples are comparable.
+During the window no new slow-path run of either class is admitted; it starts at the first
+cooperative boundary of any running learning work, which is never killed. A health incident during
+the window discards the sample and the window is retried later; at most one forced window opens per
+24 hours. Twenty-four hours follows the daily cycle of household load: the baseline tracks real
+changes (for example a new Home Assistant integration raising RSS) without frequent forced pauses,
+and a quiet installation never needs one. Layer 7 requires `max_result_age >= cadence +
+CALIBRATION_WINDOW`, so a forced window never expires a healthy extension's fact.
+
+At startup the bootstrap phase above establishes the first baseline before any slow-path work;
+extensions start only after it, with their jittered initial run. Diagnostics report the baseline age
+and every forced window. All four values in §5.3.1–§5.3.2 are core constants, changed only by a new
+specification version.
 
 ## 6. Consumption paths and governance
 
@@ -4550,7 +4606,15 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   scheduling may defer slow-path work but never borrows hot-path capacity. A future external backend
   receives only a bounded redacted execution request and can return only an untrusted candidate for
   local validation/promotion.
-- The selected installation profile derives a machine-specific `LearningCapacityPlan` with
+- Slow-path classes (CA4-130): with a single-slot plan, a due extension runs within one learning slice
+  of a long training, which completes unkilled; with many instances the extension class stays within
+  50% of slow-path CPU credit and learning keeps advancing; learning is not admitted when it would
+  consume the largest enabled extension envelope; a run exceeding its envelope stops at the next
+  boundary as failed; `capacity_unknown` admits neither class. With no 5-minute quiet interval for
+  24 hours, one 5-minute calibration window pauses new admissions without expiring a healthy
+  extension fact; an incident during it discards the sample; extensions start only after the first
+  baseline.
+- The selected installation profile derives a machine-specific `SlowPathCapacityPlan` with
   `lower`/`target`/`upper` aggregate limits rather than fixed host-independent values. Bootstrap is
   passive and admits at most the lower plan; a test proves that capacity increases only after a healthy
   observation window, while memory pressure, cycle-latency degradation, timeout/checkpoint failure or
