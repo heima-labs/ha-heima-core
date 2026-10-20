@@ -991,18 +991,19 @@ facts and actions already have a home entirely independent of `Topology` — `Lo
 (§5) — so nothing here was actually missing.
 
 **`Topology` is not a fact producer and not a `FusionRule` input by itself.** It is queried, not
-consumed as a stream — by `FusionRule`s, by Reactions, and by Reaction-descriptor requirements, when deciding
+consumed as a stream — by `FusionRule`s, by Reactions, and by Reaction-descriptor bindings, when deciding
 whether and how to act (e.g. "does this room have an opening for which `opening_faces_exterior` holds", "what's
 adjacent to it"). This is why it has no `where`/`when`/`how` of its own: it is not a `HouseFact`, it
 is standing structural context `HouseFact`-producing and `HouseFact`-consuming logic can read.
 
-**The shape of a topological precondition (`TopologyRequirement`) is not defined here.** It belongs
-to Layer 5's Reaction-descriptor-matching concern, alongside its siblings `SensorRequirement`/
-`ActuatorRequirement` — all three are Layer 5 predicates that reference lower-layer types (`Sensor`,
-`Actuator`, `Topology`), not lower-layer concepts themselves. An earlier version of this spec defined
-`TopologyRequirement` here, inconsistently with how it correctly left `SensorRequirement`/
-`ActuatorRequirement` to Layer 5 — corrected 2026-09-02, `v3_backlog.md`. `Topology`'s job ends at
-being queryable; what a Reaction descriptor requires of it is Layer 5's to define.
+**Topological preconditions are not defined here.** A Reaction's requirement on Topology, Sensors
+or Actuators is part of its `ReactionDescriptor`: the descriptor declares typed bindings (for example
+an opening for which `opening_faces_exterior` holds, or a `weather_exposed` Actuator), which Layer 5
+validates exactly at staging (Layer 5 §3) and which enter the dependency index as consumers of the
+derived property (Layer 0 §4.7). No layer defines a generic requirement or matching type;
+`TopologyRequirement`, `SensorRequirement` and `ActuatorRequirement` belonged to the retired
+template-matching model (`v3_template_matching_draft.md`, historical only; CA4-132). `Topology`'s
+job ends at being queryable.
 
 ### 7.1 `Zone` suggestions derive from `Topology`
 
@@ -1201,8 +1202,8 @@ by this layer; CA4-28 (deep immutability, depth counting and invalid evidence) w
 - Permuting a valid Topology's openings/connections produces the same canonical fingerprint; duplicate
   opening ids, duplicate connection opening ids, an unknown room, a connection whose `room_a` is not
   its opening's owner, or a serialized derived view that disagrees with recomputation is rejected.
-- `Topology` has no `TopologyRequirement`-shaped type or Reaction-descriptor-matching logic defined anywhere in
-  Layer 1's own implementation — that stays entirely Layer 5's, consuming `Topology` only by query.
+- `Topology` has no requirement or descriptor-matching type in Layer 1; descriptor bindings stay
+  Layer 5's, consuming `Topology` only by query (CA4-132).
 - A `Topology` instance, including its `openings`/`connections` (`Opening`/`ResolvedConnection`), is
   fully constructible from this document alone — a test builds one directly from the dataclasses in
   §7 with no reference to `custom_components/heima/room_topology.py`'s own internal `Connection` type.

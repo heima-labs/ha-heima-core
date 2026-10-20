@@ -6324,11 +6324,13 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 #### CA4-132 — Layer 1 refers to requirement types that no layer defines
 
-**Status:** TODO. **Severity:** P3. **Origin:** CA4-129 overlap check (2026-10-20). **References:** [Layer 1 §7](specs/v3/layer1_substrate_spec.md), [Layer 5 §3](specs/v3/layer5_action_reactions_spec.md).
+**Status:** DONE (2026-10-20; specification readiness). **Severity:** P3. **Origin:** CA4-129 overlap check (2026-10-20). **References:** [Layer 1 §7](specs/v3/layer1_substrate_spec.md), [Layer 5 §3](specs/v3/layer5_action_reactions_spec.md).
 
 **Problem.** Layer 1 §7 says `TopologyRequirement` belongs to "Layer 5's Reaction-descriptor-matching concern, alongside its siblings `SensorRequirement`/`ActuatorRequirement`". None of the three is defined: they come from the retired template-matching model (`v3_template_matching_draft.md`, historical only), which Layer 5 replaced with `ReactionDescriptor` bindings validated exactly at staging. The 2026-10-04 recap correction removed `TemplateRequirement` from the recap but not this Layer-1 sentence.
 
 **Proposed correction.** Restate Layer 1 §7: a Reaction's topological, sensor and actuator preconditions are descriptor bindings validated at staging (Layer 5 §3); Topology only has to be queryable. No new construct.
+
+**Approved resolution (2026-10-20).** Layer 1 §7 now says Reaction preconditions on Topology, Sensors and Actuators are typed `ReactionDescriptor` bindings validated at staging (Layer 5 §3) and indexed as consumers of derived properties (Layer 0 §4.7), and that the three requirement types belonged to the retired template-matching model; the §7 consumer sentence and the Layer-1 acceptance criterion follow. See the [CA4-132 review](specs/v3/reviews/CA4-132.md); no V3 runtime test ran.
 
 #### CA4-131 — Layer 8 has no surface for extensions
 
