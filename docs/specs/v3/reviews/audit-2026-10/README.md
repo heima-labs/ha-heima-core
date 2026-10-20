@@ -104,6 +104,24 @@ developer's request.
 > run git. When done, reply with the unit, the number of findings by severity, and one line on what
 > was checked.
 
+## Verification protocol
+
+A verifier covers one area and writes only `verification/<area>.md`; it edits no other file and
+runs no git. For every finding of its units, in index order, it re-reads each quoted location at
+the baseline and the relevant backlog decisions, then records one row:
+
+| Id | Verdict | Duplicate of | Severity | Note |
+|---|---|---|---|---|
+
+- **Verdict:** `confirmed`, `false positive (<reason>)` or `approved decision (<backlog reference>)`.
+- **Duplicate of:** the lowest id describing the same defect, in any area, or empty. A duplicate keeps
+  its own verdict.
+- **Severity:** the README severity the verifier assigns; it may differ from the pass's.
+- **Note:** one line; for `confirmed`, the owning layer and a one-sentence correction direction.
+
+A verifier does not search for new defects; if it meets one, it lists it under "New candidates" with
+quotes, unverified.
+
 ## Steps after the passes
 
 1. **Verification:** a separate pass reads only `findings.md` and the quoted lines, checks each
