@@ -76,6 +76,8 @@ and commits.
 ## Pass protocol
 
 1. Read this README and the row of your unit in `coverage.md`.
+   Read the index `findings.md` too: do not repeat a finding already recorded there. If you meet
+   it again, cite its id in your Coverage paragraph instead of creating a new finding.
 2. Read only the unit's files and sections, plus the sections they explicitly cite; use
    `python3 scripts/check_v3_specs.py --issue <CA4-n>` or the registry `depends_on` to find
    dependencies instead of reading whole layers.
