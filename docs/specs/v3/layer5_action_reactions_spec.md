@@ -968,6 +968,7 @@ ProposalTransitionReasonCode = Literal[
 
 ProposalReadinessReasonCode = Literal[
     "evidence_expired",
+    "evidence_source_unavailable",
     "descriptor_incompatible",
     "relation_profile_incompatible",
     "topology_incompatible",
@@ -1219,11 +1220,18 @@ class ProposalSupportingArtifact:
     artifact_ref: str                  # exact immutable Layer-3 ArtifactRef identity
 
 @dataclass(frozen=True)
+class ProposalEvidenceSource:
+    source_kind: Literal["learning_instance"]
+    source_id: str                     # the learning_instance_id that produced this evidence
+    serving_generation_fingerprint: str  # that instance's serving generation (Layer 3 §4.1.2)
+
+@dataclass(frozen=True)
 class ProposalEvidenceRevision:
     evidence_revision_id: str
     proposal_id: str
     revision_index: int
     admitted_payload_fingerprint: str
+    source: ProposalEvidenceSource     # assigned from the admitted run context, never the payload
     finding_id: str
     artifact_ref: str
     supporting_artifacts: tuple[ProposalSupportingArtifact, ...]
@@ -1329,6 +1337,24 @@ not a fifth disposition and not a terminal expiry: it prevents approval from sta
 discarding an item that Layer 3 can still substantiate. Layer 5 records this, and every other
 non-transitioning revalidation result, as a `ProposalReadinessAssessment`; it never overloads a review
 transition to record a failed attempt.
+
+**Evidence source (CA4-128).** Each evidence revision records the `ProposalEvidenceSource` that
+produced it. The core runtime assigns all three fields from the admitted run context (the
+learning instance and serving generation under which the run was admitted, Layer 3 §5.1); a
+learner never declares them, and a candidate whose payload carries a conflicting source identity
+is rejected at admission, as `configuration_fingerprint` is assigned only by the active
+generation (Layer 0 §5.1). A pending proposal is not approvable with
+`evidence_source_unavailable` while, for its current revision, (a) the source instance is absent
+from or invalidated in the active composed generation, (b) the recorded
+`serving_generation_fingerprint` is no longer that instance's active one (Layer 3 §4.1.2 withdraws
+such candidates), or (c) the primary `artifact_ref` or a required supporting artifact is
+unavailable in its Layer-3 lifecycle; (c) is the code of the unavailable-support rule above.
+Layer 5 reads the source state from the Layer-3 generation it already validates against
+(Layer 0 §4.7). Like `evidence_expired`, this is readiness, not a disposition: a compatible refresh
+from a valid source, including a successor definition of the same instance, appends a revision
+with its own `source` and makes the proposal approvable again. Recording the source per revision
+rather than on the root keeps such a proposal recoverable; deduplication would otherwise prevent a
+new proposal for the same payload. Both codes may apply together, in canonical order.
 
 An authenticated acceptance is an immediate governance command that commits one composed
 configuration generation (Layer 0 §4.7). Layer 5 revalidates the immutable admitted payload against
@@ -1699,7 +1725,10 @@ jobs, and projects mode `configuration_invalid`. That mode is derived, not store
 neither evaluates, shadows nor schedules work until an administrator commits a successor
 configuration generation that validates; that successor starts `notification_only` under the
 ordinary rules and needs fresh promotion and consent. Pending proposals bound to the invalid
-dependency become not approvable with the existing readiness codes. A **semantic_only** upstream
+dependency become not approvable with the existing readiness codes. The commit that removes or
+invalidates a learning instance, changes its `serving_semantics`, or makes an evidence artifact
+unavailable likewise records `evidence_source_unavailable` for every pending proposal whose current
+evidence it affects (§4.1), and acceptance revalidates the same condition. A **semantic_only** upstream
 change keeps the Reaction's generation and authority unchanged; it appears in the impact record so
 the administrator can decide whether to edit or disable it. The dispatch fence (§6.0) rejects any
 unsent call of an invalidated generation. The invalidating commit also emits one
@@ -4643,6 +4672,16 @@ class PostureCheckConfiguration:
   undeclared, stale or binding-incompatible support is not approvable.
   Neither a redacted snapshot nor a root parameter can replace the typed
   supporting reference (§4.1–4.2).
+- Evidence source (CA4-128): removing or invalidating the source learning instance, changing its
+  `serving_semantics`, or making its primary or a required supporting artifact unavailable makes a
+  pending proposal not approvable with `evidence_source_unavailable` in the same commit, closing
+  its review notice; acceptance revalidates and rejects with `validation_failed` carrying the code.
+  A successor definition's compatible refresh appends a revision with its own source and yields
+  `approvable_again` without a duplicate proposal; a changed `serving_semantics` value instead
+  produces a new proposal. Expired evidence from a removed source carries both codes in canonical
+  order. A candidate whose payload names a source other than its admitted run context is rejected
+  before a proposal root is persisted; readiness after restart is derived from the active
+  generation (§4.1–4.2).
 - For an irradiance-triggered solar-shading occurrence, an entry crossing starts
   one dwell anchor. A transient exit before the effective deadline cancels the
   pending command; re-entry starts a new occurrence. A staged fixed dwell

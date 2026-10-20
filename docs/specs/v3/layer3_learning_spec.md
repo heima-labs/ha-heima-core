@@ -164,15 +164,16 @@ fields. Any unresolved/ambiguous binding, missing required input, unapproved sco
 or invalid value rejects the new definition without affecting the active generation. A change marked
 `analysis_semantics` restarts the normal warm-up/artifact lifecycle; `serving_semantics` immediately
 withdraws candidates and live signals bound to the old learner serving
-generation, without rewriting a separately approved configured Reaction;
+generation, without rewriting a separately approved configured Reaction (a pending proposal from
+such a candidate becomes not approvable, Layer 5 §4.1);
 `scheduling_only` takes effect at the next scheduler boundary; and
 `presentation_only` changes neither evidence nor scheduling.
 
 A learning definition is also a consumer in the composed configuration generation of Layer 0
 §4.7. When a confirmed upstream change makes one of its bindings fail validation (**breaking**),
 the commit invalidates that definition: no analysis, refresh, finding, signal or candidate is
-produced under it, its artifacts are unavailable for every egress, and its live-signal adoption
-chain closes. It stays invalid until an administrator stages a successor definition that
+produced under it, its artifacts are unavailable for every egress, its pending proposals become
+not approvable (Layer 5 §4.1), and its live-signal adoption chain closes. It stays invalid until an administrator stages a successor definition that
 validates. A **semantic_only** upstream change keeps the definition; its source-generation
 fingerprint changes, so existing artifacts become unavailable and the ordinary warm-up and
 rebuild apply (§4.5).
@@ -3612,7 +3613,8 @@ audited contract; neither path bypasses Layer-5 action review.
 `(candidate_kind="reaction.descriptor", candidate_kind_version=1)` contract supplied by Layer 5's
 read-only proposal facet. The generic `LearningProposalCandidate` carries that outer identity together
 with its artifact/evidence/data-span identity, confidence, validity interval, and deduplication
-fingerprint. The outer version is the JSON integer `1`; `relation_profile.version` in this payload
+fingerprint. Its source (learning instance and serving generation) is assigned by the runtime from
+the admitted run, never declared by the learner (Layer 5 §4.1). The outer version is the JSON integer `1`; `relation_profile.version` in this payload
 is the exact registered JSON string `"1"` for an Initial-V3 profile. Layer 5 §3/§3.1 owns both
 wire encodings and rejects numeric/string coercion across them. This payload carries only:
 
@@ -4184,7 +4186,8 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   artifact and adoption chain unavailable until a successor definition validates. A run captured
   against the old generation cannot publish. A semantic-only upstream change keeps the definition
   but makes existing artifacts unavailable through the source-generation fingerprint (§4.1.2;
-  Layer 0 §4.7).
+  Layer 0 §4.7). In both cases, and after a `serving_semantics` change, pending proposals from
+  the affected candidates become not approvable (Layer 5 §4.1, CA4-128).
 - An administrative learner instance names a registered core kind/version, legal explicit scope,
   blueprint-declared binding selections, all exposed canonical parameter values, and enabled state.
   Tests reject wildcard/live-query scopes, unordered or changed scope membership without restaging,

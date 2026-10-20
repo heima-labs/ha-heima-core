@@ -952,6 +952,12 @@
       "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
       "heading": "2. Scope and boundaries",
       "depends_on": ["L0-FACT-SOURCE"]
+    },
+    {
+      "id": "L5-PROPOSAL-EVIDENCE-SOURCE",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "4.1 `ReactionProposal` review lifecycle",
+      "depends_on": ["L5-PROPOSAL-SUPPORTING-EVIDENCE", "L5-DIAGNOSTIC-REGISTRY", "L3-ANALYSIS-SERVING-IDENTITY", "L0-FACT-SOURCE"]
     }
   ],
   "reviewed_slices": [
@@ -2096,6 +2102,17 @@
       "contracts": ["L0-FACT-SOURCE", "L0-MANUAL-CONTROL", "L2-EXTENSION-BOUNDARY", "L3-EXTENSION-BOUNDARY", "L5-SCOPE-BOUNDARIES"],
       "design_constraints": [],
       "orientation": ["docs/specs/v3/architecture_overview_defined_layers.md", "docs/v3_architecture_recap.md"],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-128",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-128.md",
+      "contracts": ["L5-PROPOSAL-EVIDENCE-SOURCE", "L5-DIAGNOSTIC-REGISTRY", "L5-REACTION-AUTHORITY", "L3-ANALYSIS-SERVING-IDENTITY", "L3-PROPOSAL-EFFECT"],
+      "design_constraints": [],
+      "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
     }
