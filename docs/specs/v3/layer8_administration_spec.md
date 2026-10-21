@@ -264,7 +264,9 @@ accounts never see extensions as objects.
   answers to requests, finding acknowledgement, house-map layout saves (§9.9: presentation only,
   so no consequence dialog).
   They take effect at once after a confirmation dialog that states their consequence, and never
-  enter the change set. Accepting a learned proposal is the one immediate action that creates
+  enter the change set. For a proposal acceptance or a promotion, the dialog also shows Layer 5's
+  overlap notice (Layer 5 §4.1): same-descriptor automatic learner-origin Reactions on a shared
+  channel, with a link to disable them; it never blocks. Accepting a learned proposal is the one immediate action that creates
   configuration: it may name the new Reaction and commits it as one composed generation with an
   empty impact record (Layer 5 §4.1); an open change set is then rebased (§6.4).
 

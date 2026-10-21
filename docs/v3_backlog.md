@@ -6323,6 +6323,20 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-142 — Layer-5 descriptor rules were incomplete
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G6 (F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02). **References:** [Layer 5 §3.2, §4.1, §4.2, §5.2, §7.1, §7.3–§7.5, §8](specs/v3/layer5_action_reactions_spec.md), [Layer 8 §6.1](specs/v3/layer8_administration_spec.md).
+
+**Problem.** `safety.posture_check` and the comfort trajectory had no guard contract although §3.2 requires one; the comfort required set was administrator-supplied; a "successor-generation path" for learner-origin Reactions was cited but undefined; the three CA4-122 evaluation reasons fitted no outcome; and the weather-protection example used an edge trigger that cannot fire after a restart.
+
+**Approved resolution (2026-10-21).**
+1. Outcomes (F-L5b-01): `occupied_without_residents_pause` and `absence_below_minimum` are `guards_unsatisfied` (activation kept, no availability occurrence); `recovery_beyond_horizon` is `abstained` with `outside_operating_envelope`, keeping CA4-122's "abstains" visible to residents. Rejected: all three as `guards_unsatisfied`.
+2. Comfort trajectory guards (F-L5a-02): `environment.planned_comfort_trajectory.guards.v1` requires `thermal_bounds` and permits `opening_security`, `privacy`, `quiet_hours.v1`; the prerequisite's `required_guard_capabilities` field is removed. Rejected: `follow_comfort_trajectory` as low-risk.
+3. Learner-origin change (F-L5a-04): a semantic change goes through a new proposal whose acceptance creates a new Reaction; the old stays until disabled. Acceptance and promotion show an advisory overlap notice for same-descriptor automatic learner-origin Reactions on a shared channel, never a rejection; cross-descriptor sharing stays legitimate and §6.0 arbitration blocks concurrent claims. Rejected: a targeted proposal appending a successor generation (needs a new Layer-3 matching contract).
+4. Mechanical: `safety.posture_check.guards.v1`, empty, with its advice intents as low-risk (F-L5a-01); the weather-protection example uses the current-`True` start criterion (F-L5b-02).
+
+No hot-path cost: the notice is computed at governance time from the staged channel index. See the [CA4-142 review](specs/v3/reviews/CA4-142.md); no V3 runtime test ran.
+
 #### CA4-141 — Learning and Reaction contracts disagreed on facts and shapes
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G5 (F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01). **References:** [Layer 2 §2.10, §3](specs/v3/layer2_registries_spec.md), [Layer 3 §4.8.2, §6.4](specs/v3/layer3_learning_spec.md), [Layer 4 §9.4](specs/v3/layer4_domain_spec.md).

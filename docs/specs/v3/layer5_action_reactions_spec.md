@@ -384,6 +384,20 @@ hazard; requiring occupancy would wrongly block extraction after the resident le
 `(secure_for_weather, default)` requires none: `secure_for_weather` is in the descriptor's
 `safe_direction_intents`, and a protective action must not depend on an optional binding.
 
+`safety.posture_check` uses `ReactionGuardContractRef(guard_contract_id=
+"safety.posture_check.guards.v1", version="1")`. It permits no capability, and its variants
+`(check_alarm, default)`, `(lock_entry, default)` and `(close_opening, default)` require none: the
+three intents are the descriptor's `low_risk_intents` (rationale: an advice-only member is never a
+command and moves nothing; its own checks already decide when it applies, §7.5).
+
+`environment.planned_comfort_trajectory` uses `ReactionGuardContractRef(guard_contract_id=
+"environment.planned_comfort_trajectory.guards.v1", version="1")` for its `hvac_thermal_response`
+relation profile. It permits `thermal_bounds`, `opening_security`, `privacy` and `quiet_hours.v1`;
+its sole variant `(follow_comfort_trajectory, default)` requires `thermal_bounds`, a veto on the
+measured indoor temperature like the shading and exchange contracts. The other three are optional
+site-specific bindings. The prerequisite's `ThermalBoundRule` hard bounds clamp the commanded
+setpoint and are not a guard (§7.1).
+
 `routine.actuation_bundle` uses `ReactionGuardContractRef(guard_contract_id=
 "routine.actuation_bundle.guards.v1", version="1")` for its direct path and its learned profile. It
 permits `occupancy`, `privacy`, `quiet_hours.v1`, `opening_security`, `precipitation` and `wind`. Every
@@ -500,8 +514,9 @@ while no resident is home, whoever it is. `continue` evaluates normally. `pause`
 claim as `not_ended` for the current activation: future steps are suppressed, nothing is cancelled
 or exited, and no new activation starts; an unavailable claim is likewise `not_ended`. A paused
 activation resumes on the first evaluation after the claim becomes `False`; `occupancy.departure`
-and `presence.return` request that evaluation. The suppression records the evaluation reason
-`occupied_without_residents_pause`. The Initial-V3 values are:
+and `presence.return` request that evaluation. The suppression is a `guards_unsatisfied` result
+with the evaluation reason `occupied_without_residents_pause` (§5.2), which keeps the activation and
+emits no availability occurrence. The Initial-V3 values are:
 
 | Descriptor | `when_occupied_without_residents` |
 |---|---|
@@ -1308,8 +1323,9 @@ Its closed `canonical_admitted_payload` is exactly the four identity fields
 above; it adds no proposed Reaction configuration. Both proposal kinds use
 the same atomic root-plus-index-0-evidence invariant below.
 It cannot contain a new action, descriptor parameter, guard, scope or consent
-request. If a change to any of those is needed, the ordinary configuration
-proposal and successor-generation path applies.
+request. If a change to any of those is needed, a new configuration proposal
+applies: its acceptance creates a new Reaction in `notification_only` (below),
+and the existing one stays as it is until an administrator disables or removes it.
 
 Proposal creation is one atomic, idempotent aggregate transaction: it persists the immutable root and
 exactly one initial `ProposalEvidenceRevision` together, or persists neither. That first revision has
@@ -1371,7 +1387,14 @@ generations and the one `accepted` `ProposalReviewTransition`, which records the
 time, decision reason, evidence revision, and resulting reaction identity; a crash reveals all or
 none of them. A catalog name collision (§4.2) rejects the command with `validation_failed` and
 changes nothing; the proposal stays `pending` and the administrator may retry with an explicit
-`display_name`. An administrator's open change set based on the previous generation is rebased
+`display_name`.
+
+**Overlap notice.** For the confirmation dialog of a learner-proposal acceptance and of command 4,
+Layer 5 lists every current `automatic` learner-origin Reaction with the same
+`reaction_descriptor_id` that addresses at least one of the same Actuator channels, with the
+suggestion to disable it (command 6). The list is advisory and never rejects the command: channel
+sharing across descriptors is legitimate, and §6.0 arbitration still blocks both bundles whenever
+they claim one channel in a cycle. It is computed off the hot path from the staged channel index. An administrator's open change set based on the previous generation is rebased
 under Layer 8 §6.4. A recoverable current staging failure leaves the proposal `pending` with a
 typed non-approvability `ProposalReadinessAssessment`. A candidate-kind/version incompatibility instead
 moves the still-pending proposal to the terminal
@@ -1709,7 +1732,8 @@ semantic fingerprint and changes through an ordinary composed commit. A metadata
 a new Layer-5 layer generation whose entry points to the **same** configuration generation: no
 successor configuration generation, no return to `notification_only`, no job cancellation, and an
 empty impact record. It applies to learner-origin Reactions too, whose configuration remains
-editable only through a new proposal. With `display_name=None`, presentation composes a name from
+editable only through a new proposal, whose acceptance creates a new Reaction rather than a
+successor generation of the existing one (§4.1). With `display_name=None`, presentation composes a name from
 the descriptor's translated label and the subject (for example "Shading · Living room").
 Effective names follow the common rule of Layer 2 §2.7: they are unique across Reactions after
 trimming, Unicode NFC and case-folding, composed names compared in every shipped locale; a catalog
@@ -1860,7 +1884,7 @@ and the closed codes of §4.0, never a descriptor-invented string.
    capability checks, then appends only administrative authorization.
    If consent is required but absent, the projected mode is
    `authorized_awaiting_household_consent`. Promotion never sends an
-   `ApplyStep`.
+   `ApplyStep`. Its confirmation shows the §4.1 overlap notice.
 5. `set_reaction_household_consent` names the same exact reaction/generation
    and expected authority transition, plus one boolean. Only an explicitly
    authorized resident may grant or revoke consent for a descriptor whose
@@ -2035,9 +2059,12 @@ An `eligible` or `normal_exit` result has the current nonempty activation id; an
 cannot compile an automatic bundle. A non-eligible result retains the id of
 an already active sequence, if one exists, without minting a replacement on
 abstention or guard failure. Outcome validation is closed: `not_triggered` has exactly `("trigger_not_matched",)` as its evaluation
-reasons; `guards_unsatisfied` has exactly `("semantic_guard_unsatisfied",)`; `abstained` has no
-evaluation reason and a non-empty canonical Layer-3 `AutomationSuppressionReason` tuple; `eligible`
-and `normal_exit` have both tuples empty. No `ReactionEvaluationResult` may carry an arbitrary string.
+reasons; `guards_unsatisfied` has exactly one of `("semantic_guard_unsatisfied",)`,
+`("occupied_without_residents_pause",)` or `("absence_below_minimum",)`; `abstained` has a non-empty
+canonical Layer-3 `AutomationSuppressionReason` tuple and no evaluation reason, except that
+`("recovery_beyond_horizon",)` accompanies exactly the suppression tuple
+`("outside_operating_envelope",)`; `eligible` and `normal_exit` have both tuples empty. Each of the
+three descriptor-fixed codes is legal only for a descriptor version that declares it (§3.2, §7.1). No `ReactionEvaluationResult` may carry an arbitrary string.
 
 #### Decision record
 
@@ -3704,10 +3731,11 @@ without the required thermal evidence and ordinary proposal review.
   longer absence. When no parameter for the current cell is selected, the core default of **48 h**
   applies (the descriptor then also abstains for its ordinary missing-parameter reason). The duration
   is `end - start` of the interval; `end_beyond_horizon=true` means at least the 14-day Layer-2
-  horizon, which always exceeds the ceiling. A shorter absence records
+  horizon, which always exceeds the ceiling. A shorter absence is `guards_unsatisfied` with
   `absence_below_minimum` and starts nothing. A parameter whose `conservative_recovery_duration`
   exceeds 7 days could not schedule recovery inside the horizon: the descriptor abstains with
-  `recovery_beyond_horizon`. The rationale is thermal applicability only (the house has time to
+  `recovery_beyond_horizon` and the suppression reason `outside_operating_envelope` (§5.2), so the
+  availability occurrence tells residents that the trajectory does not apply to this house. The rationale is thermal applicability only (the house has time to
   drift and recover); it is never an energy-saving claim. Floor, ceiling and default belong to the
   descriptor version; changing them is a new version.
 
@@ -3791,8 +3819,8 @@ class DesiredConditioningMode:
 
   `ComfortTrajectoryGuardProfile` is a separately staged, administrator-authored Layer-5 contract. It
   supplies the absence bound and return target for each bound mode, plus one exact environmental
-  guard-profile generation and required site-specific guard capabilities; it is never learned from a
-  setpoint history or chosen by a thermal artifact.
+  guard-profile generation validated against the descriptor's guard contract (§3.2); it is never
+  learned from a setpoint history or chosen by a thermal artifact.
 
   ```python
   @dataclass(frozen=True)
@@ -3813,7 +3841,6 @@ class DesiredConditioningMode:
       cooling_return_target: ThermalBoundRule | None
       reaction_guard_profile_generation_id: str
       reaction_guard_profile_definition_fingerprint: str
-      required_guard_capabilities: frozenset[ReactionGuardCapabilityRef]
   ```
 
   The three administrator-authored contracts above are not independently mutable runtime inputs. One
@@ -3836,9 +3863,9 @@ class DesiredConditioningMode:
 
   Staging validates and persists the complete generation, or persists none of it. The binding and
   profile must name exactly the generation's `conditioning_scope_id`; every endpoint, current `FactRef`, dynamic bound, hard bound,
-  adapter ramp constraint and required guard capability must validate together. The referenced
-  Reaction guard-profile generation must have the same scope and supply every required capability
-  through the descriptor's exact guard contract. The generation contains no learned artifact, proposal,
+  adapter ramp constraint and guard binding must validate together. The referenced
+  Reaction guard-profile generation must have the same scope, bind `thermal_bounds` and bind only
+  capabilities permitted by `environment.planned_comfort_trajectory.guards.v1` (§3.2). The generation contains no learned artifact, proposal,
   resident consent or administrative action enablement. It defines what may be considered; it does not
   authorize an action.
 
@@ -4352,10 +4379,10 @@ version `"1"`, and every listed profile is `RelationProfileRef(profile_id=..., v
 | `environment.external_exchange` | direct, learned | `thermal_exchange`, `air_quality_exchange`, `hygrometric_exchange` (one per purpose) -> `environmental_response.v1` | thermal: `cool_with_outdoor_air`, `warm_with_outdoor_air -> open_for_exchange`, `limit_thermal_exchange -> close_to_retain`; `reduce_co2`, `reduce_moisture -> open_for_exchange`; `close_after_ventilation -> close_to_retain` (direct only) | `environment.external_exchange.guards.v1` | trigger-driven; safe: `close_to_retain` |
 | `environment.air_extraction` | direct, learned | `humidity_extraction` -> `environmental_response.v1` | `reduce_moisture -> activate_extraction`, `adjust_extraction`; `end_extraction -> stop_extraction` (direct only) | `environment.air_extraction.guards.v1` | step-programmed; low-risk: activate, adjust; safe: stop |
 | `routine.actuation_bundle` | direct, learned | `routine_actuation_bundle` -> `routine.bundle_frequency.v1` | `reproduce_resident_routine ->` every admitted member intent | `routine.actuation_bundle.guards.v1` | trigger-driven |
-| `environment.planned_comfort_trajectory` | learned only | `hvac_thermal_response` -> `hvac_thermal_response.policy_output.v1` | `planned_comfort_reachability -> follow_comfort_trajectory` | from its prerequisite generation (§7.1) | step-programmed, `planned_absence_program` v"1" |
+| `environment.planned_comfort_trajectory` | learned only | `hvac_thermal_response` -> `hvac_thermal_response.policy_output.v1` | `planned_comfort_reachability -> follow_comfort_trajectory` | `environment.planned_comfort_trajectory.guards.v1` (bindings from its prerequisite generation, §7.1) | step-programmed, `planned_absence_program` v"1" |
 | `security.presence_simulation` | direct only | none | none (direct `light_state`) | `security.presence_simulation.interior_lighting.v1` | step-programmed, `planned_absence_program` v"1" |
 | `safety.weather_protection` | direct only | none | none (direct `secure_for_weather`) | `safety.weather_protection.guards.v1` | step-programmed per hazard episode; safe: `secure_for_weather` |
-| `safety.posture_check` | direct only | none | none (advice only: `check_alarm`, `lock_entry`, `close_opening`) | none | trigger-driven, one activation per check instance |
+| `safety.posture_check` | direct only | none | none (advice only: `check_alarm`, `lock_entry`, `close_opening`) | `safety.posture_check.guards.v1` | trigger-driven, one activation per check instance; low-risk: all three advice intents |
 
 Only environmental-response members carry a `NumericOutcomeRequirement`, in the registered outcome's
 canonical unit; comfort-trajectory and routine members carry `None`, and presence simulation has no
@@ -4434,9 +4461,9 @@ profile or learner, and declares `requires_household_consent=True`,
   are reported as ordinary execution audit and follow-up outcomes, and the descriptor's
   `resident_action_notice=True` produces one `ReactionActionNoticeOccurrence` per activation that
   Layer 6 appends as `reaction.action_notice` (§6.0).
-- **Valid direct example.** Casa subject, `relation_profile=None`, trigger
-  `state_transition(environment.wind_hazard@casa, False -> True)` from a hysteresis over the casa
-  wind-speed fact, selected endpoints the living-room awning (`is_external=True`) and the living-room
+- **Valid direct example.** Casa subject, `relation_profile=None`, start criterion the current
+  `True` state of `environment.wind_hazard@casa` from a hysteresis over the casa wind-speed fact (a
+  restart during the hazard therefore opens a new activation from fresh state), selected endpoints the living-room awning (`is_external=True`) and the living-room
   window actuator on `living_south_window`, the zero-axis empty-key envelope and an empty guard
   binding set. With the awning extended and the window open, both are secured; with the window held
   open by the resident, only the awning is retracted and a `manual_hold_active` occurrence is
@@ -4453,7 +4480,8 @@ It is `admin_direct` only, casa-scoped, with no relation profile or learner, and
 `requires_household_consent=False`, `on_site_actionable=False` (security posture never reaches the
 `house` audience, Layer 8 §4.1), `when_occupied_without_residents="continue"`,
 `resident_action_notice=False`, `hold_release_mode="fixed_duration"` (unused: it holds nothing) and
-`advisory_intents={"check_alarm", "lock_entry", "close_opening"}`. Its namespace places its
+`advisory_intents={"check_alarm", "lock_entry", "close_opening"}`, with the same three intents as
+`low_risk_intents` under its guard contract (§3.2). Its namespace places its
 advisories in the `safety` notification family (Layer 6 §6.1): they are delivered immediately,
 quiet hours included, to residents only.
 
@@ -5248,6 +5276,19 @@ class PostureCheckConfiguration:
   simulation but not the trajectory (`absence_below_minimum`, default or derived minimum above 30 h);
   a derived minimum of 80 h blocks a 3-day absence; a 3-week absence with `end_beyond_horizon=true`
   passes; a parameter with an 8-day conservative recovery yields `recovery_beyond_horizon`.
+  The pause and the short absence are `guards_unsatisfied` results with exactly that one reason and
+  no availability occurrence; `recovery_beyond_horizon` is `abstained` with exactly
+  `outside_operating_envelope`; any other pairing fails result validation (§5.2).
+- Guard contracts (CA4-142): `safety.posture_check.guards.v1` registers with no permitted
+  capability and its three advice variants as `low_risk_intents`; a comfort-trajectory prerequisite
+  whose guard-profile generation lacks `thermal_bounds`, or binds `wind`, is rejected; one binding
+  `thermal_bounds` and `opening_security` validates. A weather-protection Reaction staged while the
+  hazard is already `True` opens an activation at the next evaluation, also after a restart.
+- Learner-origin change (CA4-142): accepting a new configuration proposal for a routine already
+  served by an automatic learner-origin `routine.actuation_bundle` on the same light creates a second
+  Reaction in `notification_only`; acceptance and its later promotion show the overlap notice naming
+  the existing Reaction and are never rejected for it; a shading Reaction and a weather-protection
+  Reaction on one cover produce no notice.
 - On-site delivery (CA4-124): an `environment.external_exchange` advisory occurrence carries
   `house_delivery=True` and a `safety.weather_protection` action notice carries it too; a
   comfort-trajectory or routine occurrence carries `False`; staging rejects a descriptor version

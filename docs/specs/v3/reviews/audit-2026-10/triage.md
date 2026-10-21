@@ -35,9 +35,10 @@ Operational handoff for the triage step (unit T). A new session resumes from thi
 | CA4-138 (G2) | F-L0-01, F-L0-02, F-X1-01, F-X1-03, F-X2-01–04, F-X3-02 | `f0f39f5` |
 | CA4-139 (G3) | F-X3-01, F-X5-03, F-L3a-03, F-X7-01 | `068126e` |
 | CA4-140 (G4) | F-L2-01, F-L2-02, F-L3a-02, F-X9-04, F-L8-07 | `e9f0760` |
-| CA4-141 (G5) | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | commit "docs: align learning and Reaction contracts (CA4-141)" |
+| CA4-141 (G5) | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | `d03766c` |
+| CA4-142 (G6) | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | commit "docs: complete Layer-5 descriptor rules (CA4-142)" |
 
-All four P1 are resolved. Next CA4 id: **CA4-142**.
+All four P1 are resolved. Next CA4 id: **CA4-143**.
 
 ## P2 groups
 
@@ -48,7 +49,7 @@ All four P1 are resolved. Next CA4 id: **CA4-142**.
 | G3 | Generations and dependency index | F-X3-01, F-X5-03, F-L3a-03, F-X7-01 | done (CA4-139) |
 | G4 | People and presence | F-L2-01, F-L2-02, F-L3a-02, F-X9-04, F-L8-07 | done (CA4-140) |
 | G5 | Learning ↔ Reaction contracts | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | done (CA4-141) |
-| G6 | Layer-5 descriptor rules | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | todo |
+| G6 | Layer-5 descriptor rules | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | done (CA4-142) |
 | G7 | Notifications | F-L0-03, F-L6-02, F-L6-03, F-L6-04, F-L6-06 | todo |
 | G8 | Layer-8 governance surface | F-X9-02, F-X9-03, F-X9-05 | todo |
 
@@ -58,6 +59,6 @@ candidates" (A, C) to consider at the end.
 
 ## Next step
 
-G5 is done (CA4-141). Resume with G6 (Layer-5 descriptor rules): read its findings in
+G6 is done (CA4-142). Resume with G7 (notifications): read its findings in
 `findings/<unit>.md` and `verification/<area>.md`, write the impact record, list the mechanical
 corrections for approval and ask the product questions one at a time.

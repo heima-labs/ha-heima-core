@@ -2343,6 +2343,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-142",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-142.md",
+      "contracts": ["L5-REACTION-GUARDS", "L5-COMFORT-TRAJECTORY", "L5-POSTURE-CHECK", "L5-WEATHER-PROTECTION", "L5-CATALOG-MATRIX", "L5-DIAGNOSTIC-REGISTRY", "L5-PROPOSAL-SUPPORTING-EVIDENCE", "L5-REACTION-AUTHORITY", "L8-CHANGE-SET"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }
