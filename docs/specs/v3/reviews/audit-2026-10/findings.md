@@ -27,7 +27,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L2-06 | L2 | R | P3 | `related_opening_id` staging rule cites §2.4, which contains no Sensor rule | confirmed |
 | F-L2-07 | L2 | D | P3 | §7 describes `Stability` as "composed of two `Window`s"; §5.2 defines three Window fields | confirmed |
 | F-L2-08 | L2 | D | P3 | The 14-day horizon "must exceed ceiling plus largest recovery", but Layer 5 allows the sum to equal 14 days | confirmed |
-| F-L3a-01 | L3a | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` despite an action-serving egress | confirmed |
+| F-L3a-01 | L3a | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` despite an action-serving egress | confirmed; resolved in CA4-133 |
 | F-L3a-02 | L3a | O | P2 | Person-related fact list omits Layer 2's `presence.evidence.person.<id>` | confirmed |
 | F-L3a-03 | L3a | C | P2 | Promotion/disablement called "generation transitions" contrary to Layer 0 §4.7 | confirmed |
 | F-L3a-04 | L3a | R | P3 | `environmental_response.v1` cells cited to §4.8.2, which defines input bindings | confirmed |
@@ -37,8 +37,8 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L3a-08 | L3a | C | P2 | Radiation slots resolve at `casa`, but `incident_solar_exposure` is produced at the opening's room | confirmed |
 | F-L3b-01 | L3b | R | P3 | `ContextHypothesisCandidate` cited at §6.4, defined in §6.3 | confirmed |
 | F-L3b-02 | L3b | D | P2 | Initial member-intent list omits the routine descriptor's `light_state` | confirmed |
-| F-L3b-03 | L3b | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` | confirmed; duplicate of F-L3a-01 |
-| F-L3b-04 | L3b | C | P2 | Adoption-producing type has no `ShadowPreviewBinding`, yet every proposal producer must have one | confirmed |
+| F-L3b-03 | L3b | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` | confirmed; duplicate of F-L3a-01; resolved in CA4-133 |
+| F-L3b-04 | L3b | C | P2 | Adoption-producing type has no `ShadowPreviewBinding`, yet every proposal producer must have one | confirmed; resolved in CA4-133 |
 | F-L4-01 | L4 | C | P2 | Activity profiles told to bind event/episode slots that `ActivityEvidenceSlot` rejects | confirmed |
 | F-L4-02 | L4 | C | P3 | `occupied_without_residents` acceptance gives it a baseline it cannot have | confirmed |
 | F-L4-03 | L4 | C | — | Evaluator lookup key omits the per-profile activity evaluator and version | false positive (§4.1 l.135–136 states the `activity` kind selects its frozen `ActivityProfile` through `claim_parameters.activity_id` as profile data within the kind, so the `(resolver_kind_id, implementation_version)` key and the profile dispatch coexist; whether a profile-version bump alone impacts a generation is an ambiguity, not a contradiction) |

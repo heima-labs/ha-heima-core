@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-133 — The room-return survival model had no shadow requirement
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P1. **Origin:** V3 coherence audit 2026-10 (F-L3a-01, duplicate F-L3b-03; related F-L3b-04). **References:** [Layer 3 §4.4.1, §4.7, §9](specs/v3/layer3_learning_spec.md).
+
+**Problem.** Layer 3 §4.7 makes a type's frozen `shadow_requirement` the only gate from offline validation to an operational state, and §9 staging rejects a type without one. `RoomOccupancySurvivalModel` declared none, although its `return_delay` profile publishes an action-serving timing artifact adopted through `reaction.artifact_adoption` proposals. The §9 rule also required a `ShadowPreviewBinding` for every proposal-producing type, while the only bindings cover `reaction.descriptor` producers.
+
+**Approved resolution (2026-10-21).** `stay_duration` is `not_applicable`; `return_delay` is `required_before_proposal` (rejected: `optional_before_proposal`, which lets an administrator skip live validation of a model that times an action; `shadow_only`, which contradicts CA4-13/CA4-14). In shadow the artifact predicts return incidence on real vacancy anchors and is scored with the offline censoring-aware measures once anchors mature; no action results. A wrong delay switches lights off on a returning resident; the Reaction keeps its staged seed delay meanwhile. §4.7 states that `proposal_eligible` covers adoption candidates; §9 limits `ShadowPreviewBinding` to `reaction.descriptor` producers. See the [CA4-133 review](specs/v3/reviews/CA4-133.md); no V3 runtime test ran.
+
 #### CA4-132 — Layer 1 refers to requirement types that no layer defines
 
 **Status:** DONE (2026-10-20; specification readiness). **Severity:** P3. **Origin:** CA4-129 overlap check (2026-10-20). **References:** [Layer 1 §7](specs/v3/layer1_substrate_spec.md), [Layer 5 §3](specs/v3/layer5_action_reactions_spec.md).

@@ -1058,6 +1058,18 @@ and later checks current state, authority, holds and guards through its common
 Reaction path. No room-return model may turn an Actuator on/off by itself,
 alter a hold, create an `InferenceSignal`, or authorize a lighting-only path.
 
+**Shadow requirement (CA4-133).** The frozen `shadow_requirement` is per profile (§4.7):
+`stay_duration` is `not_applicable`, and `return_delay` is `required_before_proposal`. In shadow,
+a `return_delay` artifact predicts target-event cumulative incidence for real vacancy anchors as
+they occur and is scored, once each anchor's horizon has matured or been censored, against the
+observed returns with the same censoring-aware measures as offline validation (calibration by
+horizon, IPCW concordance, comparison with the empirical baseline) on the serving horizons and
+operational slices. No action results from shadow. Only after its shadow gate passes can the
+artifact become `proposal_eligible` and yield a `reaction.artifact_adoption` candidate (§4.9). A
+wrong delay turns lights off on a returning resident, and the live gate catches drift and
+deployment mismatch that chronological offline validation cannot; meanwhile the Reaction keeps
+serving its staged seed delay (Layer 5 §4.2), so the requirement delays adoption, not the feature.
+
 An optional `CountModel` predicts a non-negative discrete count in one declared future event window;
 it is not a continuous `PatternLearner` result. It publishes a declared discrete distribution or
 bounded categories, such as `0`, `1`, and `2+`, together with probability of one-or-more events,
@@ -1825,7 +1837,10 @@ cannot weaken a requirement. The closed values are:
 | `shadow_only` | The type may be observed in shadow but has no promotion path in the active core version. |
 
 The artifact lifecycle is therefore `unavailable`, `diagnostic_only`, `eligible_for_shadow`, `shadow`,
-and, only where the type authorizes it, `proposal_eligible` or `live_signal_eligible`. These are
+and, only where the type authorizes it, `proposal_eligible` or `live_signal_eligible`. A proposal
+here means any reviewable `LearningProposalCandidate`: a `reaction.descriptor` candidate or a
+`reaction.artifact_adoption` candidate for an existing Reaction (§4.9) both require
+`proposal_eligible` (CA4-133). These are
 generation-scoped administrative authorizations, not quality labels and not an additional model output.
 The core type fixes the required shadow observations, coverage slices, outcome-latency allowance,
 quality/calibration/drift gates, and maximum shadow age for its promotion gate; a definition may make
@@ -4357,7 +4372,10 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   future descriptor may stage only its version-declared typed axes, pure
   partitions and bounded joint cells. An unavailable axis input abstains,
   while a changed partition requires a new descriptor version (§6.5).
-- Every proposal-producing core type/version has one frozen `ShadowPreviewBinding`. Staging rejects an
+- Every core type/version that produces `reaction.descriptor` candidates has one frozen
+  `ShadowPreviewBinding`. A type that produces only `reaction.artifact_adoption` candidates has none:
+  its Reaction already exists, so a hypothetical proposal preview has no meaning, and its shadow is
+  judged by its own gate measures (§4.4.1, CA4-133). Staging rejects an
   unknown/dynamic preview schema name, a binding whose producer or candidate kind/version does not
   match the active core registry and read-only Layer-5 proposal facet, a preview schema absent from
   `DiagnosticFindingRegistry`, or a mismatch between preview and candidate semantic validators. The
@@ -4639,6 +4657,10 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   `optional_before_proposal` may be promoted only through an explicit administrative transition;
   `required_before_proposal` and `required_before_live_signal` cannot reach their respective eligible
   state before their type-owned shadow gates; and `shadow_only` has no promotion path.
+- `RoomOccupancySurvivalModel` (CA4-133): `stay_duration` is `not_applicable`; a validated
+  `return_delay` artifact yields no `reaction.artifact_adoption` candidate until its shadow gate has
+  passed on matured or censored live anchors, while the Reaction serves its staged seed delay; a
+  failed shadow gate leaves it unadoptable and produces no action.
 - A shadow artifact may publish ordinary diagnostics and a registered `DiagnosticFinding` preview
   schema only. Tests reject an attempted `LearningProposalCandidate`, Layer-5 proposal-facet call,
   `ReactionProposal`, `InferenceSignal`, notification or HouseFact/action from `shadow`; verify that a
