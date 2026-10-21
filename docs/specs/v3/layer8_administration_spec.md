@@ -125,7 +125,7 @@ Sections are organized by the user's question, not by layer.
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption (Layer 5) |
 | Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, lifecycle stages (shadow, proposal eligibility, rollback, disable), live-signal promotion and adoption (Layer 3) |
 | Extensions | admin | What does each extension add, and is it working? | Registered extensions; their instances (parameters, input slots, claims, analyzer bindings); runtime state, cost, produced facts and their consumers; missing requirements (Layer 7, §5.4) |
-| Notifications | admin | Who receives what? | Recipients, house endpoints (device accounts such as the guest-room tablet), family options, each recipient's preferences, notification history (Layer 6) |
+| Notifications | admin | Who receives what? | Recipients, house endpoints (device accounts such as the guest-room tablet), family options, each recipient's preferences, notification history, the warning when every recipient of an audience and family is `off` (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
 | To do | resident | What do I need to answer? | Consent requests, recovery confirmations, advisories with feedback, including requests delivered without buttons |
 | Automations | resident | What do automations do for me? | Read-only state and decisions with reasons; own consents with revoke |
@@ -358,16 +358,17 @@ an accepted one into an ordinary edit. The sources form a closed list:
 | A `Sensor` from an `EnvironmentalDiscoveryCandidate` (`auto_compatible` or `review_required`) | Layer 2 §3.4 | Devices, under the room of its suggested location |
 | Another role of a registered device: an unregistered entity with the same HA `device_id` | Layer 2 §3 (`device_id`) | Devices, on that device |
 | A `Sensor` for an extension input key that no registered producer provides | Layer 7 §4 | Extensions, on that instance |
+| A `Person`'s `ha_user_id` from the HA person's linked user | Layer 2 §2.8 | People, on that person |
 
 ```python
 SuggestionSource = Literal["ha_area", "ha_label", "floor", "discovery_entity", "device_sibling",
-                           "extension_requirement"]
+                           "extension_requirement", "person_user"]
 
 @dataclass(frozen=True)
 class SuggestionKey:
     source: SuggestionSource
     source_id: str      # area id, label id, floor number, entity id plus read path, device id plus
-                        # entity id, or extension instance id plus slot id
+                        # entity id, extension instance id plus slot id, or HA person storage id
 ```
 
 - **Computed on demand.** `suggestions/list` is a slow-path query over the active generation and
@@ -386,8 +387,9 @@ class SuggestionKey:
   administrator creates the record (AR-8).
 - **Multiple selection** is offered only for rooms from areas, whose only decisions are floor and
   enclosure; each Sensor needs its own semantic decisions.
-- **Dismissing** records the `SuggestionKey` as Layer-8 view state, like finding acknowledgement:
-  installation-wide, stored with HA's storage helper, never part of the composed generation.
+- **Dismissing** records the `SuggestionKey` as Layer-8 view state: installation-wide, stored with
+  HA's storage helper, never part of the composed generation. (Finding acknowledgement is different:
+  it changes only the acknowledging administrator's view, Layer 3 §6.1.1.)
   "Show dismissed" lists them and restores any. A key whose source no longer exists is dropped.
   A suggestion that the configuration now satisfies (the area is linked, the entity is registered)
   disappears without being dismissed.
@@ -406,10 +408,10 @@ System → History is one timeline built only from existing durable records:
 | System commit | Layer 0 bootstrap manifest after a code upgrade |
 
 Each configuration entry shows who, when, the field-level diff against the previous generation and
-the effects that were confirmed. Filters: section, object, person. An administrator who is also a
-resident sees the actor's HA display name; a resident sees names only for their own actions and the
-actor's role otherwise ("a resident", "a guest", "an administrator", "a device"); a non-resident
-administrator sees only roles (§4.1). Guests and device accounts have no history. Every object page shows its own
+the effects that were confirmed. Filters: section, object, person. History is an administrator
+surface (System, `history/list`): an administrator who is also a resident sees the actor's HA display
+name; a non-resident administrator sees only the actor's role ("a resident", "a guest", "an
+administrator", "a device", §4.1). Guests and device accounts have no history. Every object page shows its own
 slice.
 
 **Restore** never applies anything. It loads into the session change set the edits that turn the
@@ -571,8 +573,8 @@ oriented openings on a full side (a non-diagonal map orientation). Ties go to `n
 A house whose facades face NE/SE/SW/NW is therefore drawn with `northeast` at the top without any
 input. With `up=None` the map follows the suggestion, which updates when openings change. An
 administrator can choose another direction in 45° steps or return to the suggestion. Changing the up
-direction clears the floor placements, after a warning in the editor, because every opening changes
-side. The compass and the sun direction rotate with it.
+direction clears the placements of every floor, after a warning in the editor, because the
+direction is installation-wide and every opening changes side. The compass and the sun direction rotate with it.
 
 ### 9.5 Opening placement
 
@@ -955,7 +957,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `change_set/validate_edit` | query | admin | owning layer's staging validator |
 | `change_set/preview` | query | admin | Layer 0 §4.7 staging |
 | `change_set/apply` | command | admin | Layer 0 §4.7 commit |
-| `history/list`, `history/diff` | query | admin | Layer 0 manifests and generations, Layer 5 transitions |
+| `history/list`, `history/diff` | query | admin | Layer 0 manifests and generations, Layer 5 transitions, Layer 3 signal-artifact adoption and learning lifecycle transitions |
 | `history/restore` | query | admin | builds a change set (§7), applies nothing |
 | `explain` | query | admin, resident | §8 (resident rendering for residents) |
 | `notifications/history` | query | admin, resident | Layer 6 facts, audience-filtered for residents |
@@ -1096,8 +1098,8 @@ developer or a script.
   produces "Faces another room"; a door between non-touching boxes produces "Not adjacent". Neither
   changes `Topology`.
 - Moving or resizing a box onto another is refused; undo restores the previous layout; a save on a
-  stale revision is rejected without change. Changing the up direction clears that floor's
-  placements only after the editor's warning.
+  stale revision is rejected without change. Changing the up direction clears the placements of
+  every floor, in a two-floor house both, only after the editor's warning.
 - A tap on a light calls the HA toggle service as the signed-in user and sends no `heima/v3/`
   message; a tap on a lock or a garage-door cover opens HA's more-info dialog and calls no service.
   When the light is a current Reaction target, the resulting divergence follows Layer 0 §6 and the

@@ -1895,8 +1895,9 @@ is derived by the code at the boundary that assigns it, never read off the data 
 Source data arriving from persisted config, proposal payloads, imported data, or any
 externally-controlled input is **non-authoritative** until a runtime boundary validates or
 reassigns it — an untrusted or malformed source is sanitized into a clearly non-authoritative value,
-never silently trusted. This is what protects against, among other things, a Layer-7 extension
-returning a source or a fact outside its declaration (Layer 7 §6). Both `FactSource` and `ApplyStepSource` are redacted before
+never silently trusted. A Layer-7 extension is the stricter case: a returned source field or a fact
+outside its declaration is a contract violation that fails the whole run, so nothing is sanitized
+or written (Layer 7 §6, §8). Both `FactSource` and `ApplyStepSource` are redacted before
 they reach diagnostics or storage (no secrets, tokens, or raw payloads retained).
 
 ### 5.1.1 Trusted manual-control edge

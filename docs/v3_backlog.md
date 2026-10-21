@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-148 — Layer 6, 7 and 8 wording (P3 bulk)
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, P3 findings owned by Layers 6–8 (F-L6-07, F-L6-08, F-X3-06, F-X7-02, F-X7-03, F-L7-07, F-X8-05, F-L8-03, F-L8-04, F-L8-05, F-L8-06, F-X9-06, F-X9-07). **References:** [Layer 6 §2, §6, §9.2, §13, §14](specs/v3/layer6_notification_spec.md), [Layer 7 §8](specs/v3/layer7_extensions_spec.md), [Layer 0 §5.1](specs/v3/layer0_runtime_spec.md), [Layer 8 §5, §6.5, §7, §9.4, §13, §16](specs/v3/layer8_administration_spec.md).
+
+**Approved resolution (2026-10-21, cumulative).** Layer 6 reads also HA's unit system and receives names resolved by Layer 2; "Runtime Scheduler" becomes Layer 0 Timing (`AtJob`); U4 uses resident `ha_person_id`s; the held-during-quiet-hours case excludes action notices for `environment.*`; §9.2 names `AvailabilityPublicationIndex`, adds `revision` and `BindingEnablementChange.configuration_generation_id`. Layer 7: a returned source field fails the whole run (§8), and Layer 0 §5.1 says extensions are never sanitized; the expiry job is `basis="elapsed"`. Layer 8: `history/list` covers Layer 3 adoption and lifecycle transitions; the Notifications section shows Layer 6's all-off warning; Person `ha_user_id` prefill is a suggestion source (`person_user`); finding acknowledgement stays per administrator; history is administrator-only; an up-direction change clears every floor's placements.
+
+No hot-path cost. See the [CA4-148 review](specs/v3/reviews/CA4-148.md); no V3 runtime test ran.
+
 #### CA4-147 — Layer 4 and Layer 5 wording (P3 bulk)
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, P3 findings owned by Layer 4 and Layer 5 (F-L4-02, F-L5a-05, F-L5a-06, F-L5a-08, F-L5a-10, F-L5b-05, F-L5b-06, F-L5b-08, F-X8-07). **References:** [Layer 4 §10](specs/v3/layer4_domain_spec.md), [Layer 5 §3.2, §4.0–§4.2, §6.0, §7.3, §8](specs/v3/layer5_action_reactions_spec.md).

@@ -300,11 +300,14 @@ specification version; neither an administrator nor a blueprint can lower it.
 
 A run fails on an exception, a missed deadline, a budget rejection, an envelope breach detected at a
 cooperative boundary (Layer 3 §5.3.1), an event claim emitted more than `max_emissions_per_run` times,
-or an output that violates its claims or value contracts. A failed run is discarded atomically: no partial fact is written. A result
+or an output that violates its claims or value contracts, including a returned source field (§6,
+§13). A failed run is discarded atomically: no partial fact is written. A result
 whose invocation or generation has been superseded is discarded on arrival.
 
 Each state claim has a mandatory `max_result_age`; an event claim has none, because an event has no
-current value to expire. Each successful run that publishes a state claim re-arms one ordinary Layer-0 `AtJob` for it (Layer 0 §3.1). If the job comes due without a newer
+current value to expire. Each successful run that publishes a state claim re-arms one ordinary Layer-0 `AtJob` for it with `basis="elapsed"` (Layer 0 §3.1): its anchor is
+the in-process run instant, and a restart re-arms it from the restart instant (§9), never from a
+persisted wall-clock instant. If the job comes due without a newer
 successful result, the core writes the fact `available=False` at the detecting instant, never
 backdated, and passes the gap to Layer 0 §4.4, following Layer 2 §3.2's report-age expiry. A dead
 extension is therefore unobservable, never a negative value (as in Layer 0 §5.1.2). Without this

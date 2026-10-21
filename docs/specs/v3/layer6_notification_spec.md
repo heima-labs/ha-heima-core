@@ -5,7 +5,7 @@
 
 **Layer:** 6 of 8. Builds on Layer 0's unified notification delivery outbox (§4.5), committed-state
 observers (§4.8), authenticated
-response ingress (§5.1.3), Runtime Scheduler, composed configuration generation (§4.7) and
+response ingress (§5.1.3), Timing (`AtJob`, §3.1), composed configuration generation (§4.7) and
 recovery confirmation (§7.4.1); Layer 1's operational event mapping (§3.1); Layer 3's
 availability-suppression contract (§6.3.1); Layer 4's availability-owner declarations (§7); and
 Layer 5's typed occurrences (§6.0). It owns the Layer-6 decisions C1–C6 first recorded in
@@ -44,7 +44,8 @@ Layer 6 does not own:
 
 Layer 6 never issues an `ApplyStep`, changes a Reaction, interprets a response, reads Home
 Assistant entity state for a decision, or writes a fact type it does not own. It reads from Home
-Assistant only configuration: the system language and the registered `notify.*` services.
+Assistant only configuration: the system language, the unit system and the registered `notify.*`
+services; live entity names reach it already resolved by Layer 2 §2.7.
 
 ## 3. Core principles
 
@@ -339,8 +340,8 @@ its activation closes.
 
 The delivery scheduler is an in-memory coordinator rebuilt from the outbox at process start. For
 each `ready` record it decides exactly one of: deliver now, hold (quiet hours or digest window),
-group into a digest, or retire undelivered (§7.5). It uses the Layer-0 Runtime Scheduler for every
-timer; it has no own timer.
+group into a digest, or retire undelivered (§7.5). It uses Layer 0's Timing (`AtJob`, Layer 0 §3.1)
+for every timer; it has no own timer.
 
 ### 7.2 Primary channel
 
@@ -516,11 +517,14 @@ class AvailabilityPublicationBinding:
     enabled: bool
     user_visible: bool
 
+AvailabilityPublicationIndex = Mapping[SuppressionKey, tuple[AvailabilityPublicationBinding, ...]]
+
 @dataclass(frozen=True)
 class AvailabilityPublicationGeneration:
     generation_id: str
+    revision: int                     # 0 at composition; +1 per applied BindingEnablementChange
     definition_fingerprint: str
-    index: Mapping[SuppressionKey, tuple[AvailabilityPublicationBinding, ...]]
+    index: AvailabilityPublicationIndex
 ```
 
 ```python
@@ -529,16 +533,17 @@ class BindingEnablementChange:
     automation_scope_id: str
     enabled: bool                     # True exactly while the Reaction's mode is `automatic`
     authority_transition_id: str      # the committed Layer-5 transition that caused it
+    configuration_generation_id: str  # the Reaction's configuration generation it applies to
 ```
 
 **Enablement revisions.** `enabled` changes through Layer-5 authority transitions, which are not
 configuration mutations (Layer 0 §4.7), so they do not create a new generation. Layer 5 pushes one
 `BindingEnablementChange` after the transition commits (Layer 5 §4.2). Layer 6 applies it as a
-revision of the current publication index: same `generation_id`, a new revision number, the same
+revision of the current publication index: same `generation_id`, `revision` incremented, the same
 swap reconciliation as Layer 3 §6.3.1 (a newly enabled binding receives an already active
 abstention; a disabled notified binding closes with `binding_deactivated`). A change whose
-`authority_transition_id` is already applied, or that names a Reaction of another generation, is
-ignored.
+`authority_transition_id` is already applied, or whose `configuration_generation_id` is not the
+generation of the binding's Reaction in the current publication generation, is ignored.
 
 Performance is bounded by construction:
 - the change is processed in the tracker's own serialized slow path, never in an evaluation cycle,
@@ -662,7 +667,8 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   `reaction_descriptor_id` (Layer 5 §6.0, Layer 3 §6.3.1).
 - **U3** — Layer 0 §4.7 includes recipients and family options in the Layer-6 generation, with no
   dependents.
-- **U4** — every `HouseholdConsentAuthority` reference is an HA user id (Layer 5 §7.1.1).
+- **U4** — every `HouseholdConsentAuthority` reference is the `ha_person_id` of a resident Person
+  with a stored `ha_user_id` (Layer 5 §7.1.1).
 - **CA4-74** — follow-up and action-notice occurrences carry `reaction_descriptor_id` (§6.1).
 - **CA4-75** — Layer 0 committed-state observers (Layer 0 §4.8), used by §6.2.
 - **CA4-76** — authority transitions push `BindingEnablementChange` to Layer 6 (Layer 5 §4.2, §9.2).
@@ -717,8 +723,9 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - A recovery confirmation `closed` clears the opening notification; an opening still undelivered
   at `expires_at` retires undelivered.
 - An availability episode, an unconfirmed follow-up and an action notice of a weather-protection
-  Reaction are delivered as `safety` during quiet hours, while the same kinds for an
-  `environment.*` Reaction are held; the tracker scenarios of Layer 3 §6.3.1 pass unchanged.
+  Reaction are delivered as `safety` during quiet hours, while an availability episode and an
+  unconfirmed follow-up of an `environment.*` Reaction are held (no `environment.*` descriptor emits
+  action notices); the tracker scenarios of Layer 3 §6.3.1 pass unchanged.
 - After a restart every `ready` record is delivered again with the same tag, a pre-restart
   advisory without closure retires undelivered, and no delivery blocks an evaluation cycle.
 - Every delivery fires one `heima_notification` event with closed fields only.

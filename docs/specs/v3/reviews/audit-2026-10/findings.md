@@ -67,22 +67,22 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L6-04 | L6 | R | P2 | §4.3 maps `subject` and `occurred_at`, which `RuntimeHealthOccurrence` does not have | confirmed; resolved in CA4-143 |
 | F-L6-05 | L6 | O | P2 | `system.health` has no Layer-0 `FactTypeClaim` although the descriptor requires one | confirmed; duplicate of F-L0-03; resolved in CA4-143 |
 | F-L6-06 | L6 | R | P2 | Availability `episode_sequence` is attributed to Layer 3 §6.3.1, which defines no episode counter and limits tracker state | confirmed; resolved in CA4-143 |
-| F-L6-07 | L6 | C | P3 | §2's "reads from HA only configuration: language and `notify.*`" omits the unit system and live names used by rendering | confirmed |
-| F-L6-08 | L6 | R | P3 | Publication-index revision number and `AvailabilityPublicationIndex` are cited but not defined by the owning layer | confirmed |
+| F-L6-07 | L6 | C | P3 | §2's "reads from HA only configuration: language and `notify.*`" omits the unit system and live names used by rendering | confirmed; resolved in CA4-148 |
+| F-L6-08 | L6 | R | P3 | Publication-index revision number and `AvailabilityPublicationIndex` are cited but not defined by the owning layer | confirmed; resolved in CA4-148 |
 | F-L7-01 | L7 | R | P2 | Calendar input is promised to producers but has no blueprint field and no Layer-0 requirement path | confirmed; resolved in CA4-137 |
 | F-L7-02 | L7 | C | P2 | Calendar input would expose raw event text that Layer 0 restricts to the Layer-2 classifier | confirmed; resolved in CA4-137 |
 | F-L7-03 | L7 | C | P2 | `max_result_age >= cadence + CALIBRATION_WINDOW` does not guarantee that a forced window never expires a healthy fact | confirmed; resolved in CA4-137 |
 | F-L7-04 | L7 | C | P2 | Restart re-arms expiry from the last persisted result, but write-on-change persists only changes | confirmed; resolved in CA4-137 |
 | F-L7-05 | L7 | C | P2 | Input contract gives every bound key a "current committed value", but a slot may bind an event fact | confirmed; resolved in CA4-137 |
 | F-L7-06 | L7 | O | P2 | Extension analyzer evidence source needs a serving-generation fingerprint that only learners define | confirmed; resolved in CA4-137 |
-| F-L7-07 | L7 | D | P3 | Returned source field: whole-run rejection (§13) is absent from the §8 failure list and differs from Layer 0's sanitize rule | confirmed |
+| F-L7-07 | L7 | D | P3 | Returned source field: whole-run rejection (§13) is absent from the §8 failure list and differs from Layer 0's sanitize rule | confirmed; resolved in CA4-148 |
 | F-L7-08 | L7 | O | P3 | Layer 0 §4.7 enumerations omit extension consumer references and extension code upgrades that Layer 7 relies on | confirmed; resolved in CA4-145 |
 | F-L8-01 | L8 | C | P2 | Consent-authority change is an immediate action, but Person removal requires it in the same change set | confirmed; duplicate of F-L5a-03; resolved in CA4-136 |
 | F-L8-02 | L8 | C | P2 | `extension_requirement` suggestions are computed from the active generation, where an instance with a missing producer cannot exist | confirmed; resolved in CA4-137 |
-| F-L8-03 | L8 | D | P3 | Finding acknowledgement is called installation-wide; Layer 3 limits it to the acknowledging administrator | confirmed |
-| F-L8-04 | L8 | D | P3 | History timeline includes Layer 3 adoption transitions; the `history/list` owner path omits them | confirmed |
-| F-L8-05 | L8 | C | P3 | §7 defines what residents see in history, but history is administrator-only | confirmed |
-| F-L8-06 | L8 | D | P3 | Up-direction change clears placements on every floor (§9.1, §9.4) or on one floor (§16) | confirmed |
+| F-L8-03 | L8 | D | P3 | Finding acknowledgement is called installation-wide; Layer 3 limits it to the acknowledging administrator | confirmed; resolved in CA4-148 |
+| F-L8-04 | L8 | D | P3 | History timeline includes Layer 3 adoption transitions; the `history/list` owner path omits them | confirmed; resolved in CA4-148 |
+| F-L8-05 | L8 | C | P3 | §7 defines what residents see in history, but history is administrator-only | confirmed; resolved in CA4-148 |
+| F-L8-06 | L8 | D | P3 | Up-direction change clears placements on every floor (§9.1, §9.4) or on one floor (§16) | confirmed; resolved in CA4-148 |
 | F-L8-07 | L8 | C | P2 | Redaction keeps Heima ids, but a Heima `recipient_id` is administrator-chosen and may be a person's name | confirmed; resolved in CA4-140 |
 | F-X1-01 | X1 | C | P2 | Recovery-target snapshots and outbox records are declared `PersistedProjection`s but cannot satisfy its depth and no-dataclass rule | confirmed; resolved in CA4-138 |
 | F-X1-02 | X1 | C | — | A calendar Sensor reads Layer 0's `active_now` directly, which Layer 0 neither registers nor permits | false positive (Layer 0 §3.4, l. 414–416, names the calendar Sensor sharing the classifier, and §3.4.1, l. 436–449, defines `active_now` as a cycle read of the cache; the §4.1 requirement list and the §13 rejection at l. 3481–3486 apply to staged `CalendarViewRequirement` consumers, not to the Sensor's active-now read) |
@@ -106,7 +106,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X3-03 | X3 | O | P3 | `ResponseRequestDeclaration.expires_at` is mandatory, but Layer 5's consent and feedback requests have no expiry instant | confirmed; resolved in CA4-145 |
 | F-X3-04 | X3 | O | P3 | Layer 0 says a Layer-5 calendar consumer declares a `KeywordClassifier`; Layer 5 has no such binding and routes calendar meaning through Layer 2 | confirmed; resolved in CA4-145 |
 | F-X3-05 | X3 | D | P3 | Layer 0 §4.7 lists the Layer-6 generation without house endpoints, which Layer 6 adds with no dependents | confirmed; resolved in CA4-135 |
-| F-X3-06 | X3 | R | P3 | Layer 6 builds on a "Layer-0 Runtime Scheduler" that Layer 0 does not define | confirmed |
+| F-X3-06 | X3 | R | P3 | Layer 6 builds on a "Layer-0 Runtime Scheduler" that Layer 0 does not define | confirmed; resolved in CA4-148 |
 | F-X4-01 | X4 | D | P3 | Layer 1 limits the registry-id-suffixed evidence shape to room occupancy; Layer 2 also uses it at casa and for presence, with an HA person id suffix | confirmed; resolved in CA4-145 |
 | F-X4-02 | X4 | C | P3 | Layer 1 says unavailability is recorded at once and an all-unavailable fusion is unavailable; Layer 2's `unavailable_grace` keeps the last available output | confirmed; resolved in CA4-145 |
 | F-X4-03 | X4 | D | — | Layer 1 puts `opening_id` on an Actuator channel; Layer 2 defines it on the Actuator only | false positive (Layer 1 §7, l. 911–913, "an `Actuator` channel with `opening_id` (Layer 2 §3, §6)" reads as a channel of an Actuator carrying `opening_id`, which is what Layer 2 §6, l. 2081–2083, defines; no difference in meaning) |
@@ -118,13 +118,13 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X5-06 | X5 | D | P3 | An impacted producer's predecessor is `available=False` in Layer 2 but `previous=None` in Layer 4 | confirmed; duplicate of F-X2-09 |
 | F-X6-01 | X6 | C | P2 | Learned-timing binding must match a `FutureStateFractionOutcome`, but the routine's only timing path is a survival model that Layer 5 forbids coercing to one | confirmed; resolved in CA4-141 |
 | F-X7-01 | X7 | C | P2 | The "automatic authorization requires an enabled user-visible binding" check is placed at publication staging, where no binding can be enabled | confirmed; resolved in CA4-139 |
-| F-X7-02 | X7 | D | P3 | U4 says `HouseholdConsentAuthority` references are HA user ids; Layer 5 and Layer 6 §5.2 make them `ha_person_id`s | confirmed |
-| F-X7-03 | X7 | C | P3 | Layer 6 acceptance tests an action notice of an `environment.*` Reaction, which Layer 5 forbids | confirmed |
+| F-X7-02 | X7 | D | P3 | U4 says `HouseholdConsentAuthority` references are HA user ids; Layer 5 and Layer 6 §5.2 make them `ha_person_id`s | confirmed; resolved in CA4-148 |
+| F-X7-03 | X7 | C | P3 | Layer 6 acceptance tests an action notice of an `environment.*` Reaction, which Layer 5 forbids | confirmed; resolved in CA4-148 |
 | F-X8-01 | X8 | C | P2 | Layer 0 says Layer-2 registrations contribute only `state` claims, but the Layer-2 extension producer may declare event claims | confirmed; resolved in CA4-137 |
 | F-X8-02 | X8 | D | P2 | Extension `configuration_fingerprint` is "of the active generation", while Layer 0 and Layer 2 make it a per-producer execution-semantic fingerprint no layer defines for extensions | confirmed; resolved in CA4-137 |
 | F-X8-03 | X8 | O | P2 | Extension history slots declare a read window, but Layer 0 extends durable retention only for registered learners | confirmed; resolved in CA4-137 |
 | F-X8-04 | X8 | C | P2 | "A due extension always fits" is contradicted by a slow-path memory budget smaller than the largest extension envelope | confirmed; resolved in CA4-137 |
-| F-X8-05 | X8 | O | P3 | The extension expiry `AtJob` declares no `basis`, which Layer 0 requires of every owner | confirmed |
+| F-X8-05 | X8 | O | P3 | The extension expiry `AtJob` declares no `basis`, which Layer 0 requires of every owner | confirmed; resolved in CA4-148 |
 | F-X8-06 | X8 | O | P3 | Layer 0's closed list of `correlation_id` origin points has no extension run | confirmed; resolved in CA4-145 |
 | F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | confirmed; resolved in CA4-147 |
 | F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | confirmed; resolved in CA4-137 |
@@ -133,8 +133,8 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X9-03 | X9 | O | P2 | The map-card house banner has no owner hand-off: Layer 6 does not give Layer 8 the open `house` items | confirmed; resolved in CA4-144 |
 | F-X9-04 | X9 | C | P2 | Layer 8 gives a guest no role, but a guest who is an HA administrator is an administrator for Layer 0 and for Layer 8's own role rule | confirmed; resolved in CA4-140 |
 | F-X9-05 | X9 | C | P2 | Layer 5 says Layer 8 sends "only these" seven commands, but Layer 8 also submits rename, removal and restore of Reactions, including learner-origin ones | confirmed; resolved in CA4-144 |
-| F-X9-06 | X9 | O | P3 | Layer 6 places an "every recipient off" warning in Layer 8's Notifications section, which Layer 8 does not list | confirmed |
-| F-X9-07 | X9 | O | P3 | Layer 2 has the panel suggest a Person's `ha_user_id`, a source missing from Layer 8's closed suggestion list | confirmed |
+| F-X9-06 | X9 | O | P3 | Layer 6 places an "every recipient off" warning in Layer 8's Notifications section, which Layer 8 does not list | confirmed; resolved in CA4-148 |
+| F-X9-07 | X9 | O | P3 | Layer 2 has the panel suggest a Person's `ha_user_id`, a source missing from Layer 8's closed suggestion list | confirmed; resolved in CA4-148 |
 | F-O1-01 | O1 | D | P3 | Overview says Layer 6 produces seven event fact types; Layer 6 registers eight | confirmed |
 | F-O1-02 | O1 | D | P3 | Overview lists one Initial-V3 candidate kind; Layer 5 registers two | confirmed |
 | F-O1-03 | O1 | D | P3 | Overview gives guests and device accounts no panel access; Layer 8 gives them the map | confirmed |
