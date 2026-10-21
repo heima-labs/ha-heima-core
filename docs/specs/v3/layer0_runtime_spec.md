@@ -1587,7 +1587,7 @@ Every configuration mutation in any layer — a Layer-2 registry change (includi
 inventory attributes, Zones, `ZoneRoleBinding`s and Topology staged with it), a Layer-3 learning
 definition, a Layer-4 semantic resolver definition, a Layer-5 Reaction configuration generation,
 Reaction-catalog entry, guard-profile or prerequisite generation, and the Layer-6 generation (the availability publication
-bindings that follow from them, plus notification recipients and family options) — activates only as part of one **composed configuration generation**. Runtime
+bindings that follow from them, plus notification recipients, house endpoints and family options) — activates only as part of one **composed configuration generation**. Runtime
 authority transitions (promotion, consent, disablement) and artifact-adoption transitions are not
 configuration mutations and do not use this path. Accepting a learned Reaction proposal is the one
 governance command that creates configuration: it commits its new Reaction through this path as
@@ -1619,7 +1619,7 @@ reference on the other — Fusion inputs, Layer-3 `FactSlot`/`SampleBinding` sou
 bindings and upstream claims, Layer-5 trigger, guard, envelope-axis, history, calendar and
 Actuator-channel bindings, every consumer of a derived Topology or Actuator property
 (`opening_faces_exterior`, `weather_exposed`, thermal-envelope membership; Layer 1 §6.1/§7,
-Layer 2 §6), and Layer-6 publication keys. Layer-6 recipients and family options have no
+Layer 2 §6), and Layer-6 publication keys. Layer-6 recipients, house endpoints and family options have no
 dependents: a change to them alone yields an empty impact record and needs no confirmation. A changed room enclosure, opening `other_side`,
 `is_external` or zone-role binding therefore classifies every consumer of the derived property. It then classifies every consumer outside
 the directly edited objects:

@@ -124,7 +124,7 @@ Sections are organized by the user's question, not by layer.
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption (Layer 5) |
 | Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
 | Extensions | admin | What does each extension add, and is it working? | Registered extensions; their instances (parameters, input slots, claims, analyzer bindings); runtime state, cost, produced facts and their consumers; missing requirements (Layer 7, §5.4) |
-| Notifications | admin | Who receives what? | Recipients, family options, each recipient's preferences, notification history (Layer 6) |
+| Notifications | admin | Who receives what? | Recipients, house endpoints (device accounts such as the guest-room tablet), family options, each recipient's preferences, notification history (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
 | To do | resident | What do I need to answer? | Consent requests, recovery confirmations, advisories with feedback, including requests delivered without buttons |
 | Automations | resident | What do automations do for me? | Read-only state and decisions with reasons; own consents with revoke |
@@ -295,7 +295,7 @@ the Layer-2 generation, Layer 0 §4.7):
 | `layer3` | `learning_definition` (including its family enabled state), `extension_analyzer` (the analyzer role of an extension instance) |
 | `layer4` | `semantic_resolver_definition` |
 | `layer5` | `reaction` (admin-direct configuration; `display_name`, removal or unchanged-configuration revalidation for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
-| `layer6` | `recipient`, `family_options` |
+| `layer6` | `recipient`, `house_endpoint` (CA4-135), `family_options` |
 
 An extension instance with both roles is one entity with two edits sharing its `instance_id`: the
 Extensions form always adds, replaces and removes them together, and change-set validation rejects
@@ -1146,6 +1146,10 @@ developer or a script.
   opening an administrator-only object address sees that same notice, byte-identical to the one for
   a missing object (§5.1).
 - No panel query or command delays an evaluation cycle.
+- House endpoints (CA4-135): an administrator adds the guest-room tablet as a `house_endpoint` edit
+  with an empty impact record; a duplicate id or service, or an unknown `notify.*` service, is
+  rejected at validation (Layer 6 §10); removing it stops `house` delivery to it from the next
+  generation.
 - Extensions (CA4-131): a dual-role instance is created, edited and removed as one entity; an
   unpaired producer or analyzer edit is rejected at change-set validation. An instance whose slot key
   has no producer shows an `extension_requirement` suggestion that opens a prefilled Sensor form and
