@@ -3969,9 +3969,13 @@ ingress verifies (Layer 0 §5.1.3) and Layer 6 resolves through the recipient's 
 rejects a reference to an unknown Person, a `guest`, or a Person without an HA user. Only an actor
 carrying this explicit resident authorization may issue `set_reaction_household_consent`; the HA
 administrator flag alone is insufficient, and a non-resident administrator (B2B) can never hold
-consent authority. Removing or reclassifying a referenced Person is an authority removal: the same
-change set must carry the authority change with one disposition per current consent that person
-granted (§4.2 command 7), or it is rejected. A configuration-generation successor starts with consent
+consent authority. Removing or reclassifying a referenced Person requires its authority removal
+first (CA4-136): staging rejects a change set that removes a Person, changes its `household_role`
+or clears its `ha_user_id` while that Person is still in `HouseholdConsentAuthority`. The
+administrator first removes the Person from the authority with §4.2 command 7, an immediate
+governance action that already requires one disposition per current consent that person granted,
+and then edits the Person. Authority stays a governance record, never configuration (Layer 0
+§4.7); between the two steps the Person keeps its role without consent authority. A configuration-generation successor starts with consent
 disabled and never inherits it from its predecessor. Retention at authority removal is an explicit
 administrative decision about a pre-existing household consent, not an administrative consent grant.
 
@@ -5180,6 +5184,9 @@ class PostureCheckConfiguration:
   positive per-member `NumericOutcomeRequirement` only for a registered
   numeric-response member, rejects it for routine and comfort members, and
   validates their whole-bundle or thermal effect from exact typed evidence.
+- Consent authority (CA4-136): a change set that removes or reclassifies a Person still in
+  `HouseholdConsentAuthority` is rejected at staging; command 7 removes the authority immediately with
+  one disposition per current consent, after which the Person edit commits.
 - Posture check (CA4-126): arming `armed_away` with a 60 s exit delay yields no advisory (5 min
   default); a house sitter inside with `armed_away` for 6 min yields one `check_alarm` advisory to
   residents only, never to `house`; a front door `unlocked` with the house empty for 10 min at 03:00

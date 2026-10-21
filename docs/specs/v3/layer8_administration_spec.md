@@ -326,7 +326,9 @@ class ChangePreview:
 
 The page shows three blocks: what changes, effects on the rest of the house (breaking and
 semantic-only entries in plain language, each linked; for example "this automation returns to
-trial and needs promotion and consent again"), and blocking errors. Preview is a slow-path
+trial and needs promotion and consent again"), and blocking errors. A Person edit blocked by
+consent authority names the missing step ("Remove <person> from consent authority first", Layer 5
+§7.1.1) and links to that action. Preview is a slow-path
 staging run; it never mutates anything.
 
 ### 6.4 Apply
@@ -1146,6 +1148,9 @@ developer or a script.
   opening an administrator-only object address sees that same notice, byte-identical to the one for
   a missing object (§5.1).
 - No panel query or command delays an evaluation cycle.
+- Consent authority (CA4-136): reclassifying a resident who holds consent authority shows a blocking
+  error naming the authority step; after the administrator removes the authority with a disposition
+  for each consent that person granted, the same Person edit applies.
 - House endpoints (CA4-135): an administrator adds the guest-room tablet as a `house_endpoint` edit
   with an empty impact record; a duplicate id or service, or an unknown `notify.*` service, is
   rejected at validation (Layer 6 §10); removing it stops `house` delivery to it from the next

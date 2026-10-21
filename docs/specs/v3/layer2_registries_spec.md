@@ -376,8 +376,9 @@ class Person:
   user registry at staging.
 - **Dependents.** Layer-6 recipients (Layer 6 §5.1), `HouseholdConsentAuthority` (Layer 5
   §7.1.1) and the person-derived producers of §2.8.1 reference `ha_person_id`. Removing or reclassifying a referenced `Person` is a
-  configuration edit whose impact record lists them; Layer 5's rule for authority removal applies in
-  the same change set.
+  configuration edit whose impact record lists them; a Person still in `HouseholdConsentAuthority`
+  must first be removed from it through Layer 5's immediate authority command (Layer 5 §7.1.1,
+  CA4-136), otherwise staging rejects the edit.
 
 #### 2.8.1 Person-derived evidence and household presence (CA4-120)
 
@@ -2349,8 +2350,9 @@ this layer.
   count for nothing (`household_role="none"`). Relinking the HA person to another user in HA changes
   no authority and raises a drift diagnostic until an administrator commits. A duplicate
   `ha_person_id` or `ha_user_id`, or an unknown HA person or user, is rejected at staging.
-  Reclassifying a `resident` who is in `HouseholdConsentAuthority` to `guest` without the authority
-  disposition in the same change set is rejected (Layer 5 §7.1.1).
+  Reclassifying or removing a `resident` who is still in `HouseholdConsentAuthority` is rejected at
+  staging; after the authority removal with its dispositions (Layer 5 §7.1.1, CA4-136) the same
+  edit validates.
 - Casa occupancy and household presence (§2.8.1, CA4-120): a casa `occupancy.evidence` Sensor
   bound to a `device_tracker.*` or `person.*` entity is rejected; the core-derived
   `occupancy.evidence.person.<id>` is `corroborating` and alone never makes casa occupancy `True`

@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-136 — Removing a resident with consent authority had no valid path
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P1. **Origin:** V3 coherence audit 2026-10 (F-L5a-03, duplicate F-L8-01). **References:** [Layer 5 §4.2, §7.1.1](specs/v3/layer5_action_reactions_spec.md), [Layer 2 §2.8](specs/v3/layer2_registries_spec.md), [Layer 8 §6.3](specs/v3/layer8_administration_spec.md).
+
+**Problem.** Layer 5 §7.1.1 and Layer 2 §2.8 required the consent-authority change in the same change set as the removal or reclassification of a referenced Person, but `stage_household_consent_authority` is an immediate governance action outside any change set (Layer 5 §4.2, Layer 8 §6.1), so the rule rejected every such edit.
+
+**Approved resolution (2026-10-21).** Two explicit steps; authority stays governance, not configuration (Layer 0 §4.7). Staging rejects removing a Person, changing its role or clearing its HA user while it is in `HouseholdConsentAuthority`; the administrator first removes it with command 7 (one disposition per current consent), then edits the Person. The Layer-8 preview names the missing step. Rejected: making consent authority a change-set configuration edit (moves a governance record into configuration and impact preview). See the [CA4-136 review](specs/v3/reviews/CA4-136.md); no V3 runtime test ran.
+
 #### CA4-135 — House endpoints could not be configured from the panel
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P1. **Origin:** V3 coherence audit 2026-10 (F-X9-01; also F-X3-05). **References:** [Layer 6 §10](specs/v3/layer6_notification_spec.md), [Layer 8 §5, §6.2](specs/v3/layer8_administration_spec.md), [Layer 0 §4.7](specs/v3/layer0_runtime_spec.md).

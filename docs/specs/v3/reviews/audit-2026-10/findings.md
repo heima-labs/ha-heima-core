@@ -44,7 +44,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L4-03 | L4 | C | — | Evaluator lookup key omits the per-profile activity evaluator and version | false positive (§4.1 l.135–136 states the `activity` kind selects its frozen `ActivityProfile` through `claim_parameters.activity_id` as profile data within the kind, so the `(resolver_kind_id, implementation_version)` key and the profile dispatch coexist; whether a profile-version bump alone impacts a generation is an ambiguity, not a contradiction) |
 | F-L5a-01 | L5a | C | P2 | `safety.posture_check` has no guard contract although §3.2 requires one for every profile-free direct descriptor | confirmed |
 | F-L5a-02 | L5a | R | P2 | The guard contract of `hvac_thermal_response` / `environment.planned_comfort_trajectory` is never named, and its required set is administrator-supplied | confirmed |
-| F-L5a-03 | L5a | C | P1 | `stage_household_consent_authority` is classified as an immediate command but §7.1.1 requires it in a change set | confirmed |
+| F-L5a-03 | L5a | C | P1 | `stage_household_consent_authority` is classified as an immediate command but §7.1.1 requires it in a change set | confirmed; resolved in CA4-136 |
 | F-L5a-04 | L5a | R | P2 | A "successor-generation path" for learner-origin configuration changes via proposal is cited but not defined | confirmed |
 | F-L5a-05 | L5a | R | P3 | Dangling internal reference to Layer 5 §6.2 | confirmed |
 | F-L5a-06 | L5a | R | P3 | `ArtifactAdoptionCandidate` cited in Layer 3 §6.2 but defined in §6.3.1 | confirmed |
@@ -77,7 +77,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L7-06 | L7 | O | P2 | Extension analyzer evidence source needs a serving-generation fingerprint that only learners define | confirmed |
 | F-L7-07 | L7 | D | P3 | Returned source field: whole-run rejection (§13) is absent from the §8 failure list and differs from Layer 0's sanitize rule | confirmed |
 | F-L7-08 | L7 | O | P3 | Layer 0 §4.7 enumerations omit extension consumer references and extension code upgrades that Layer 7 relies on | confirmed |
-| F-L8-01 | L8 | C | P2 | Consent-authority change is an immediate action, but Person removal requires it in the same change set | confirmed; duplicate of F-L5a-03 |
+| F-L8-01 | L8 | C | P2 | Consent-authority change is an immediate action, but Person removal requires it in the same change set | confirmed; duplicate of F-L5a-03; resolved in CA4-136 |
 | F-L8-02 | L8 | C | P2 | `extension_requirement` suggestions are computed from the active generation, where an instance with a missing producer cannot exist | confirmed |
 | F-L8-03 | L8 | D | P3 | Finding acknowledgement is called installation-wide; Layer 3 limits it to the acknowledging administrator | confirmed |
 | F-L8-04 | L8 | D | P3 | History timeline includes Layer 3 adoption transitions; the `history/list` owner path omits them | confirmed |
