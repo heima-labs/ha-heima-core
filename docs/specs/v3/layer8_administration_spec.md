@@ -234,7 +234,9 @@ suggestion (§6.5). Editing happens only here; Devices shows `ext.*` facts besid
 other consumers that use them, Learning shows the analyzer bindings and their pending proposals, and
 System shows extension health, all read-only and linked to this section.
 
-A `faulted` instance offers no restart and is never disabled automatically: it returns to `healthy`
+Enabling an instance whose declared envelope exceeds the current slow-path memory budget shows a
+warning (`extension_envelope_exceeds_capacity`, Layer 3 §5.3.1): it is accepted, but its runs are
+rejected and its facts expire until capacity allows it. A `faulted` instance offers no restart and is never disabled automatically: it returns to `healthy`
 after its first successful run (Layer 7 §8), and an administrator may disable or remove it with an
 ordinary edit. Removing an instance previews its full impact (breaking consumers, proposals that
 become not approvable, Layer 7 §9); there is no separate removal path. Residents, guests and device
@@ -365,7 +367,9 @@ class SuggestionKey:
 ```
 
 - **Computed on demand.** `suggestions/list` is a slow-path query over the active generation and
-  HA's area, floor, label, device and entity registries and current state objects. Suggestions are
+  HA's area, floor, label, device and entity registries and current state objects; an
+  `extension_requirement` suggestion is also derived from the open change set's staging errors,
+  because an instance with an unproduced input key never reaches the active generation (CA4-137). Suggestions are
   never stored, never evaluated in a cycle and never reach a lower layer as data.
 - **Accepting** opens the ordinary add form, prefilled. Every `required_admin_decisions` item of a
   discovery candidate, and every field the source cannot determine (a room's `enclosure`, a floor

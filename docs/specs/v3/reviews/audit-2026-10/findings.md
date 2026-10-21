@@ -69,16 +69,16 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L6-06 | L6 | R | P2 | Availability `episode_sequence` is attributed to Layer 3 §6.3.1, which defines no episode counter and limits tracker state | confirmed |
 | F-L6-07 | L6 | C | P3 | §2's "reads from HA only configuration: language and `notify.*`" omits the unit system and live names used by rendering | confirmed |
 | F-L6-08 | L6 | R | P3 | Publication-index revision number and `AvailabilityPublicationIndex` are cited but not defined by the owning layer | confirmed |
-| F-L7-01 | L7 | R | P2 | Calendar input is promised to producers but has no blueprint field and no Layer-0 requirement path | confirmed |
-| F-L7-02 | L7 | C | P2 | Calendar input would expose raw event text that Layer 0 restricts to the Layer-2 classifier | confirmed |
-| F-L7-03 | L7 | C | P2 | `max_result_age >= cadence + CALIBRATION_WINDOW` does not guarantee that a forced window never expires a healthy fact | confirmed |
-| F-L7-04 | L7 | C | P2 | Restart re-arms expiry from the last persisted result, but write-on-change persists only changes | confirmed |
-| F-L7-05 | L7 | C | P2 | Input contract gives every bound key a "current committed value", but a slot may bind an event fact | confirmed |
-| F-L7-06 | L7 | O | P2 | Extension analyzer evidence source needs a serving-generation fingerprint that only learners define | confirmed |
+| F-L7-01 | L7 | R | P2 | Calendar input is promised to producers but has no blueprint field and no Layer-0 requirement path | confirmed; resolved in CA4-137 |
+| F-L7-02 | L7 | C | P2 | Calendar input would expose raw event text that Layer 0 restricts to the Layer-2 classifier | confirmed; resolved in CA4-137 |
+| F-L7-03 | L7 | C | P2 | `max_result_age >= cadence + CALIBRATION_WINDOW` does not guarantee that a forced window never expires a healthy fact | confirmed; resolved in CA4-137 |
+| F-L7-04 | L7 | C | P2 | Restart re-arms expiry from the last persisted result, but write-on-change persists only changes | confirmed; resolved in CA4-137 |
+| F-L7-05 | L7 | C | P2 | Input contract gives every bound key a "current committed value", but a slot may bind an event fact | confirmed; resolved in CA4-137 |
+| F-L7-06 | L7 | O | P2 | Extension analyzer evidence source needs a serving-generation fingerprint that only learners define | confirmed; resolved in CA4-137 |
 | F-L7-07 | L7 | D | P3 | Returned source field: whole-run rejection (§13) is absent from the §8 failure list and differs from Layer 0's sanitize rule | confirmed |
 | F-L7-08 | L7 | O | P3 | Layer 0 §4.7 enumerations omit extension consumer references and extension code upgrades that Layer 7 relies on | confirmed |
 | F-L8-01 | L8 | C | P2 | Consent-authority change is an immediate action, but Person removal requires it in the same change set | confirmed; duplicate of F-L5a-03; resolved in CA4-136 |
-| F-L8-02 | L8 | C | P2 | `extension_requirement` suggestions are computed from the active generation, where an instance with a missing producer cannot exist | confirmed |
+| F-L8-02 | L8 | C | P2 | `extension_requirement` suggestions are computed from the active generation, where an instance with a missing producer cannot exist | confirmed; resolved in CA4-137 |
 | F-L8-03 | L8 | D | P3 | Finding acknowledgement is called installation-wide; Layer 3 limits it to the acknowledging administrator | confirmed |
 | F-L8-04 | L8 | D | P3 | History timeline includes Layer 3 adoption transitions; the `history/list` owner path omits them | confirmed |
 | F-L8-05 | L8 | C | P3 | §7 defines what residents see in history, but history is administrator-only | confirmed |
@@ -120,14 +120,14 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X7-01 | X7 | C | P2 | The "automatic authorization requires an enabled user-visible binding" check is placed at publication staging, where no binding can be enabled | confirmed |
 | F-X7-02 | X7 | D | P3 | U4 says `HouseholdConsentAuthority` references are HA user ids; Layer 5 and Layer 6 §5.2 make them `ha_person_id`s | confirmed |
 | F-X7-03 | X7 | C | P3 | Layer 6 acceptance tests an action notice of an `environment.*` Reaction, which Layer 5 forbids | confirmed |
-| F-X8-01 | X8 | C | P2 | Layer 0 says Layer-2 registrations contribute only `state` claims, but the Layer-2 extension producer may declare event claims | confirmed |
-| F-X8-02 | X8 | D | P2 | Extension `configuration_fingerprint` is "of the active generation", while Layer 0 and Layer 2 make it a per-producer execution-semantic fingerprint no layer defines for extensions | confirmed |
-| F-X8-03 | X8 | O | P2 | Extension history slots declare a read window, but Layer 0 extends durable retention only for registered learners | confirmed |
-| F-X8-04 | X8 | C | P2 | "A due extension always fits" is contradicted by a slow-path memory budget smaller than the largest extension envelope | confirmed |
+| F-X8-01 | X8 | C | P2 | Layer 0 says Layer-2 registrations contribute only `state` claims, but the Layer-2 extension producer may declare event claims | confirmed; resolved in CA4-137 |
+| F-X8-02 | X8 | D | P2 | Extension `configuration_fingerprint` is "of the active generation", while Layer 0 and Layer 2 make it a per-producer execution-semantic fingerprint no layer defines for extensions | confirmed; resolved in CA4-137 |
+| F-X8-03 | X8 | O | P2 | Extension history slots declare a read window, but Layer 0 extends durable retention only for registered learners | confirmed; resolved in CA4-137 |
+| F-X8-04 | X8 | C | P2 | "A due extension always fits" is contradicted by a slow-path memory budget smaller than the largest extension envelope | confirmed; resolved in CA4-137 |
 | F-X8-05 | X8 | O | P3 | The extension expiry `AtJob` declares no `basis`, which Layer 0 requires of every owner | confirmed |
 | F-X8-06 | X8 | O | P3 | Layer 0's closed list of `correlation_id` origin points has no extension run | confirmed |
 | F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | confirmed |
-| F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | confirmed |
+| F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | confirmed; resolved in CA4-137 |
 | F-X9-01 | X9 | O | P1 | Layer-6 `HouseEndpoint`s are administrator-configured generation records, but Layer 8 has no editable kind for them | confirmed; resolved in CA4-135 |
 | F-X9-02 | X9 | O | P2 | Layer-3 artifact lifecycle transitions (shadow, `proposal_eligible`, rollback, disablement) have no Layer-8 command | confirmed |
 | F-X9-03 | X9 | O | P2 | The map-card house banner has no owner hand-off: Layer 6 does not give Layer 8 the open `house` items | confirmed |

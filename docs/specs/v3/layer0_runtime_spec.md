@@ -626,7 +626,7 @@ namespace or another extension's namespace rejects the candidate generation.
 Every statically-addressable state producer also contributes a global `(fact_type, Location, owner_id)`
 claim during the same composition pass. The engine rejects duplicate `(fact_type, Location)` claims,
 regardless of layer; a namespace-owning dynamic producer is protected by its
-exclusive `FactTypeClaim` instead. Layer 2 registrations contribute only `state` claims. Future layers
+exclusive `FactTypeClaim` instead. Layer 2 `Sensor` and `FusionRule` registrations contribute only `state` claims; a Layer-7 extension producer staged in the Layer-2 generation may contribute state and event claims (Layer 7 §6). Future layers
 must make the same declaration before their producers are admitted. This is a startup/configuration
 validation table, not a second facts registry or a hot-path abstraction.
 
@@ -1086,8 +1086,8 @@ purposes and are applied by background/batch maintenance, never by an evaluation
   breaking exactly the learning use cases this model exists to serve. Persistence keeps a small
   `fact_type -> retention_floor` table, but — consistent with Layer 0 depending on nothing above it,
   Persistence never populates that table by reaching upward to query Layer 3's
-  registrations. Instead, whichever subsystem registers a learner
-  **declares** its retention need against Persistence at registration time (e.g. "retain at least 30
+  registrations. Instead, whichever subsystem registers a learner, or a Layer-7 extension input slot
+  with a history window (Layer 7 §5), **declares** its retention need against Persistence at registration time (e.g. "retain at least 30
   days of `heating.temperature_rate`") — a one-directional push, not a live query. A `fact_type`'s
   target retention window is the larger of the **14-day** system-wide default and every declared requirement,
   so ordinary time-based pruning honors a learner's requested duration without every `fact_type`

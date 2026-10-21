@@ -2282,6 +2282,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-137",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-137.md",
+      "contracts": ["L7-REGISTRY", "L7-INSTANCES", "L7-INPUTS", "L7-OUTPUTS", "L7-INVOCATION", "L7-FAILURE", "L7-LIFECYCLE", "L7-REOPENING", "L3-SLOW-PATH-CLASSES", "L3-HEALTH-BASELINE", "L8-EXTENSIONS", "L5-PROPOSAL-EVIDENCE-SOURCE"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

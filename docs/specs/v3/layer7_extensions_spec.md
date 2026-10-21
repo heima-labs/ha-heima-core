@@ -67,9 +67,11 @@ its lookup performs no I/O, dynamic import or extension call. Each entry is an i
 class ExtensionInputSlot:
     slot_id: str
     fact_type: str                    # exact core or ext.* fact type; never a pattern
+    emission_kind: FactEmissionKind   # state or event, as claimed by the bound producer
     value_contract: CanonicalJsonObject  # value type, canonical unit or closed vocabulary
     location_kinds: frozenset[str]    # legal Location scope kinds for the instance binding
-    history: Window | None            # bounded history read; None reads the current value only
+    history: Window | None            # bounded history read; None reads the current value only;
+                                      # required for an event slot (§5)
 
 @dataclass(frozen=True)
 class ExtensionClaim:
@@ -77,8 +79,8 @@ class ExtensionClaim:
     emission_kind: FactEmissionKind
     value_contract: CanonicalJsonObject
     max_result_age: Window | None     # required for a state claim, None for an event claim;
-                                      # >= cadence + CALIBRATION_WINDOW; expiry makes the state
-                                      # unavailable (§8)
+                                      # >= cadence + CALIBRATION_WINDOW + run deadline;
+                                      # expiry makes the state unavailable (§8)
     max_emissions_per_run: int | None  # required for an event claim, None for a state claim
 
 @dataclass(frozen=True)
@@ -86,8 +88,8 @@ class ExtensionProducerRole:
     inputs: tuple[ExtensionInputSlot, ...]
     claims: tuple[ExtensionClaim, ...]
     cadence: Window                   # fixed-delay interval; >= EXTENSION_MIN_INTERVAL (§7.2)
-    invoke_on_input_change: bool
-    resource_envelope: ResourceEnvelope  # Layer 3 §5.3
+    invoke_on_input_change: bool      # triggers on state slots only (§7.1)
+    resource_envelope: ResourceEnvelope  # Layer 3 §5.3; its deadline is the run deadline
 
 @dataclass(frozen=True)
 class ExtensionAnalyzerRole:
@@ -108,12 +110,29 @@ class ExtensionBlueprint:
 ```
 
 Registration rejects a blueprint whose claims leave `ext.<extension_id>.`, whose state claim lacks a
-`max_result_age` or has one shorter than its cadence plus `CALIBRATION_WINDOW` (Layer 3 §5.3.2, so a
-forced calibration window never expires a healthy fact), whose event claim declares one or lacks a
-positive `max_emissions_per_run`, whose cadence is shorter than §7.2's minimum, whose input slot names a
+`max_result_age` or has one shorter than its cadence plus `CALIBRATION_WINDOW` (Layer 3 §5.3.2) plus
+its run deadline, whose event claim declares one or lacks a positive `max_emissions_per_run`, whose
+cadence is shorter than §7.2's minimum, whose event slot has no `history`, whose input slot names a
 person-related fact (§5), or whose parameter schema exposes executable code, a raw HA entity or
 service selector, an open field, or user-facing text. An analyzer role names an existing core
 candidate kind and descriptor exactly; it cannot introduce either.
+
+`max_result_age` is the blueprint's declared freshness promise, as `max_source_age` is a Sensor
+registration's (Layer 2 §3.2). The floor covers every known delay: one cadence, one forced
+calibration window and one run deadline, so a forced window alone never expires a healthy fact.
+Further scheduling delay under resource pressure may still expire one; it is then reported honestly
+as unavailable with `deferred_resource_pressure`, and no hot-path capacity is borrowed to prevent
+it (Layer 3 §5.3).
+
+**Fingerprints.** Like every Layer-2 producer, the producer role has its own execution semantic
+fingerprint (Layer 2 §2.5). It covers `extension_id`, `implementation_version`, the parameters whose
+impact class is `analysis_semantics` or `serving_semantics`, the input-slot bindings and history
+windows, the claims with their Locations, contracts and `max_result_age`, and the cadence; it excludes
+display metadata. It is the `configuration_fingerprint` of the instance's facts (§6) and the input of
+the `semantic_only` classification of its consumers (Layer 0 §4.7). The analyzer role has its own
+`serving_generation_fingerprint`, covering `extension_id`, `implementation_version`, its
+serving-relevant parameters, its bound learner instances and its candidate contract; Layer 5 §4.1
+records it in `ProposalEvidenceSource`.
 
 ## 4. Instances and generation placement
 
@@ -130,8 +149,9 @@ its instance for the balcony binds it to `soil.moisture@balcony` and claims
 `ext.soil_dryness.index@balcony`.
 
 **Requirements are derived, not declared.** An input slot binding is a consumer reference. If no
-registered producer provides that exact key with a compatible value contract, the instance fails
-validation; Layer 8 turns the missing key into a suggestion to create a `Sensor` (CA4-131). The
+registered producer provides that exact key with a compatible value contract and emission kind, the
+instance fails validation; Layer 8 turns the missing key, from the change set's staging errors, into
+a suggestion to create a `Sensor` (CA4-131). The
 extension declares what it needs; the administrator creates the registry record (AR-8).
 
 **Placement.** Layer 7 owns the blueprint registry, lifecycle and execution contract, but an instance
@@ -148,22 +168,37 @@ configuration generation:
 
 An own Layer-7 generation would have to validate either before Layer 2 (losing its Layer-2 inputs)
 or after it (so a Layer-2 Fusion could not consume extension facts, Layer 2 §2.1). Removing an
-instance with both roles is one composed generation touching Layers 2 and 3. Parameters carry the
+instance with both roles is one composed generation touching Layers 2 and 3. Because a Layer-2
+candidate that leaves a consumer without its producer fails validation (Layer 2 §2.5), removing an
+instance whose fact feeds a `FusionRule` or another extension's slot requires editing those Layer-2
+consumers in the same change set; Layer-3 and Layer-5 consumers are invalidated under their own
+rules. Parameters carry the
 Layer-3 impact classes; a parameter change follows the same reload rules.
 
 ## 5. Inputs
 
 A producer invocation receives one immutable `ExtensionInputSnapshot`:
 
-- the current committed value of each bound input key, with its `available` flag and provenance;
+- for a state slot, the current committed value of the bound key, with its `available` flag and
+  provenance;
 - for a slot with `history`, the bounded history of that key through the standard Layer-0 query API
-  (Layer 0 §4), never a bundled snapshot type;
-- the ready calendar timeline snapshot (Layer 0 §3.4.1) when the blueprint declares it;
+  (Layer 0 §4), never a bundled snapshot type, together with its `HistoricalReadResult` retention and
+  observation coverage (Layer 0 §4.4); an event slot receives only the occurrences in its window,
+  because an event has no current value;
 - the invocation instant and the instance's parameters.
 
+The extension's code must handle incomplete coverage, for example by publishing `available=False`;
+it never treats a gap as a negative observation. Staging registers each history window as a
+retention requirement of its bound stream with Layer 0 (Layer 0 §4.3), as a learner does, so the window is
+truncated only while retention is still warming up.
+
+Initial V3 gives extensions no calendar input: the raw timeline carries event text that only the
+Layer-2 classifier may read (Layer 0 §3.4.1) and that is the source of excluded `household.*` facts.
+An extension reads calendar-derived facts only where §5's person rule allows them.
+
 Inputs are exact keys. A bound key may be a core fact or another instance's `ext.*` fact; chains
-of extensions are allowed, each link adding at least one cycle of latency, and a removed upstream
-instance makes its consumers breaking in the impact preview. An extension never reads raw Home
+of extensions are allowed, each link adding at least one cycle of latency; removing an upstream
+instance requires editing its downstream extension consumers in the same change set (§4). An extension never reads raw Home
 Assistant state, another layer's in-cycle output, engine context of the current cycle, or a fact it
 did not declare.
 
@@ -183,9 +218,11 @@ statistics, model or artifact of its own; the statistical work stays in reviewed
 may claim only `ext.<own extension_id>.*`, never a core namespace or another extension's. Each
 blueprint contributes `FactTypeClaim`s with `owner_id="layer7.extension.<extension_id>"`, and each
 instance its exact `(fact_type, Location, owner_id)` state claims, so two instances cannot produce
-the same key (Layer 2 §2.3). The runtime assigns the `FactSource`: `kind="extension"`,
-`source_id=instance_id`, `source_type=extension_id`, and the `configuration_fingerprint` of the
-active generation, which covers `implementation_version`; `route_fingerprint` is `None`. Nothing an
+the same key (Layer 2 §2.3). An extension producer may declare state and event claims; it is the
+Layer-2 producer kind whose claims are not limited to state (Layer 0 §4). The runtime assigns the
+`FactSource`: `kind="extension"`, `source_id=instance_id`, `source_type=extension_id`, and the
+producer's execution semantic fingerprint (§3) as `configuration_fingerprint`; `route_fingerprint`
+is `None`. Nothing an
 extension returns sets or changes these fields, and a returned value outside its claims is rejected
 (Layer 0 §5.1).
 
@@ -210,13 +247,16 @@ instance makes its pending proposals not approvable.
 ### 7.1 Off the hot path
 
 An extension never runs in the evaluation cycle. The core decides when it runs: at its fixed-delay
-`cadence`, and, when `invoke_on_input_change` is set, after a committed change of a bound input,
-observed through a core-declared committed-state subscription derived from the active generation
-(Layer 0 §4.8). The run executes on the slow path governed by Layer 3 §5.1 and §5.3: it is admitted
+`cadence`, and, when `invoke_on_input_change` is set, after a committed change of a bound state
+input, observed through a core-declared committed-state subscription derived from the active generation
+(Layer 0 §4.8). Event slots never trigger a run: Layer 0 offers no subscription to event types, and
+an extension sees new occurrences at its next run, within its history window. The run executes on the slow path governed by Layer 3 §5.1 and §5.3: it is admitted
 against a `ResourceEnvelope` and runs as cooperative `step(WorkSliceBudget)` work within its
 deadline, in the `extension` work class (Layer 3 §5.3.1): due extension slices run before learning
 slices, extension runs are serial across the installation, a memory reservation keeps the largest
-enabled envelope admissible, and the class is capped at half of the slow-path CPU credit. In
+enabled envelope admissible whenever `M_slow` covers it (otherwise the run is rejected for budget and
+diagnosed as `extension_envelope_exceeds_capacity`), and the class is capped at half of the
+slow-path CPU credit. In
 `capacity_unknown` no extension run is admitted and its facts expire (§8). Extensions start only
 after the first health baseline at startup (Layer 3 §5.3.2). Results enter staging and are validated at
 the next `CycleInputBarrier` like any ingress; an extension fact therefore lags its inputs by at
@@ -284,14 +324,17 @@ impact preview and confirmation (Layer 0 §4.7). Changing extension code is a He
 `implementation_version` changes the instance fingerprints, and bootstrap classifies dependents as
 for any code upgrade.
 
-On removal or invalidation, existing rules apply: consumers of its `ext.*` facts are breaking; a
-Reaction consuming them becomes `configuration_invalid` (Layer 5 §4.2); history stays attributed by
+On removal or invalidation, existing rules apply: Layer-2 consumers of its `ext.*` facts must be
+edited in the same change set (§4); a learning definition consuming them is invalidated (Layer 3
+§4.1.2) and a Reaction becomes `configuration_invalid` (Layer 5 §4.2); history stays attributed by
 generation fingerprint; an in-flight run cannot publish; and pending proposals from its analyzer
 become not approvable (Layer 5 §4.1). Restart re-derives runtime state from the active generation and,
 after the first health baseline, starts with one jittered run per enabled instance; missed runs are
-not replayed. Each state claim's expiry job is re-armed from the instant of its last persisted result,
-as Layer 2 §3.2 checks report age at its first fresh intake: a claim already older than
-`max_result_age` becomes `available=False` at the first cycle, and the others expire on schedule.
+not replayed. An interrupted expiry countdown is never recovered (Layer 0 §3.1): each available
+state claim re-arms its expiry job for `max_result_age` from the restart instant, and the downtime is
+already a declared `process_interruption` gap (Layer 0 §4.4), as Layer 2 §3.2 does not replay a
+missed report-age expiry. A claim not refreshed by a successful run within that interval becomes
+unavailable as usual.
 
 ## 10. Trust
 
@@ -337,6 +380,11 @@ condition below:
 
 A third-party extension would still be `kind="extension"`; only its loader-assigned origin differs.
 
+**Possible evolution, together with third-party extensions.** Calendar input could return as
+classified or redacted windows (category and interval, never event text), declared by a typed
+blueprint field and admitted by Layer 0 as a calendar-requirement owner; it is not part of Initial
+V3 (§5).
+
 ## 12. Guide cases (non-normative)
 
 **Soil dryness.** The `soil_dryness` producer reads soil moisture and the outdoor temperature and
@@ -353,7 +401,9 @@ specification change, not an extension capability.
 ## 13. Acceptance criteria (for the eventual implementation phase)
 
 - The registry is frozen before staging; registration rejects a claim outside `ext.<extension_id>.`,
-  `max_result_age` below the cadence plus 5 minutes, an event claim without `max_emissions_per_run`, a cadence below 60 seconds, a person-related input slot, an
+  `max_result_age` below the cadence plus 5 minutes plus the run deadline, an event claim without
+  `max_emissions_per_run`, an event slot without `history`, a cadence below 60 seconds, a
+  person-related input slot, an
   unknown candidate contract, and a parameter exposing code, raw entities, open fields or text.
 - An instance whose slot key has no compatible producer fails validation and yields one missing-key
   requirement; creating the Sensor makes it validate.
@@ -366,9 +416,13 @@ specification change, not an extension capability.
   time, with intermediate changes coalesced; missed ticks are not replayed after restart.
 - An event claim emitted beyond `max_emissions_per_run`, or a run exceeding its envelope at a slice
   boundary, fails the run and writes no fact.
-- In `capacity_unknown` no run is admitted and state claims expire; after a restart, a claim older
-  than `max_result_age` is unavailable at the first cycle and extensions run only after the first
-  baseline.
+- In `capacity_unknown` no run is admitted and state claims expire; after a restart each available
+  claim expires `max_result_age` after the restart unless refreshed, and extensions run only after
+  the first baseline.
+- An event slot receives its window's occurrences and never triggers a run; a history slot receives
+  its coverage result, and its window is registered as a retention requirement.
+- An enabled instance whose envelope exceeds `M_slow` is rejected for budget with
+  `extension_envelope_exceeds_capacity`; its claims expire.
 - An exception, timeout or budget rejection writes no fact; repeated failures reach `faulted`
   without disabling the instance; one success restores `healthy`.
 - Without a successful run, each state claim becomes `available=False` at `max_result_age`, not
@@ -376,8 +430,10 @@ specification change, not an extension capability.
 - A late result from a superseded invocation or generation is discarded.
 - Two chained extensions add one cycle of lag each; a read cycle between an extension and a Fusion is
   accepted as a previous-cycle edge.
-- Removing an instance whose fact feeds a Fusion and whose analyzer has a pending proposal shows both
-  as dependents, makes the Fusion consumer breaking and the proposal not approvable, in one commit.
+- Removing an instance whose fact feeds a Fusion is rejected unless the Fusion is edited in the same
+  change set; its analyzer's pending proposal becomes not approvable in that commit.
+- A Room rename leaves every extension fact's `configuration_fingerprint` unchanged; a parameter of
+  class `analysis_semantics` changes it.
 - An analyzer receives only its bound learners' active findings and published results; it cannot
   submit a candidate outside its contract or emit a `DiagnosticFinding`.
 - A watering extension has no way to create an `ApplyStep` or call an Actuator.

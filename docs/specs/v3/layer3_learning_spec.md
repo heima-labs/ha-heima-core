@@ -3159,7 +3159,10 @@ classes differ only as follows:
   An admitted learning run is never killed; it is only paused at its cooperative boundary.
 - **Serial extensions and memory reservation.** At most one extension run executes at a time across
   the installation. Before admitting learning work, the planner subtracts from `M_slow` the declared
-  envelope of the largest enabled extension, so a due extension always fits.
+  envelope of the largest enabled extension, so a due extension fits whenever `M_slow` covers that
+  envelope. When it does not, the extension run is rejected for budget and diagnosed as
+  `extension_envelope_exceeds_capacity`, and its facts expire (Layer 7 §8); learning is never given
+  that capacity instead.
 - **Learning cannot starve.** The `extension` class may use at most `EXTENSION_CPU_SHARE` = 50% of
   the slow-path CPU credit over a rolling window; beyond it, extension and learning slices alternate.
   Extension runs are short and at least 60 seconds apart (Layer 7 §7.2), so the cap only binds with
@@ -3191,7 +3194,8 @@ the window discards the sample and the window is retried later; at most one forc
 24 hours. Twenty-four hours follows the daily cycle of household load: the baseline tracks real
 changes (for example a new Home Assistant integration raising RSS) without frequent forced pauses,
 and a quiet installation never needs one. Layer 7 requires `max_result_age >= cadence +
-CALIBRATION_WINDOW`, so a forced window never expires a healthy extension's fact.
+CALIBRATION_WINDOW + run deadline`, so a forced window alone never expires a healthy extension's
+fact; further delay under resource pressure may, and is reported (Layer 7 §3).
 
 At startup the bootstrap phase above establishes the first baseline before any slow-path work;
 extensions start only after it, with their jittered initial run. Diagnostics report the baseline age

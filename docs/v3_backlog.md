@@ -6323,6 +6323,21 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-137 — Layer 7 was not fully connected to Layers 0, 2, 3, 5 and 8
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G1 (F-L7-01–06, F-L8-02, F-X8-01–04, F-X8-08). **References:** [Layer 7 §3–§13](specs/v3/layer7_extensions_spec.md), [Layer 0 §4, §4.3](specs/v3/layer0_runtime_spec.md), [Layer 3 §5.3.1–§5.3.2](specs/v3/layer3_learning_spec.md), [Layer 5 §4.1](specs/v3/layer5_action_reactions_spec.md), [Layer 8 §5.4, §6.5](specs/v3/layer8_administration_spec.md).
+
+**Problem.** The audit found twelve defects where the CA4-129–131 Layer-7 text did not hold against the other layers: calendar input without a declaration path and exposing raw event text; event slots promised a current value and a change trigger; restart expiry based on a persisted record that write-on-change does not refresh; a calibration guarantee that ignored run duration and scheduling; no fingerprint definitions for producer and analyzer; Layer 0's state-only rule for Layer-2 claims; no retention for history slots; an unconditional "always fits" memory promise; removal assumed to make Layer-2 consumers breaking; requirement suggestions computed only from the active generation.
+
+**Approved resolution (2026-10-21).**
+1. No calendar input for extensions in Initial V3; classified or redacted windows recorded as a possible evolution with third-party extensions (Layer 7 §11). Core calendar use (Layer 0 §3.4, Layer 2 §2.9 planned absence and guest stay, Layer 5 bindings) is unchanged.
+2. Event slots require `history`, receive the occurrences in their window and never trigger a run; only state slots trigger (Layer 0 has no event subscription). Rejected: state-only slots (excludes counting occurrences); an event trigger (new Layer-0 mechanism).
+3. Restart re-arms each available state claim's expiry from the restart instant: Layer 0 §3.1 never recovers an interrupted countdown, Layer 2 §3.2 does not replay missed expiry, and the downtime is a declared `process_interruption` gap. Rejected after verification against those layers: a new persisted last-run record.
+4. `max_result_age >= cadence + CALIBRATION_WINDOW + run deadline`, as a declared freshness promise like `max_source_age`; a forced window alone never expires a healthy fact, further delay under pressure may and is reported, and no hot-path capacity is borrowed (Layer 3 §5.3).
+5. Mechanical: producer execution semantic fingerprint and analyzer serving fingerprint defined (Layer 7 §3); Layer 0 §4 admits extension event claims; history slots register retention (Layer 0 §4.3) and receive coverage; memory reservation holds only when `M_slow` covers the largest envelope (`extension_envelope_exceeds_capacity`); removing an instance requires editing its Layer-2 consumers in the same change set; requirement suggestions also come from change-set staging errors.
+
+No change touches the hot path. See the [CA4-137 review](specs/v3/reviews/CA4-137.md); no V3 runtime test ran.
+
 #### CA4-136 — Removing a resident with consent authority had no valid path
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P1. **Origin:** V3 coherence audit 2026-10 (F-L5a-03, duplicate F-L8-01). **References:** [Layer 5 §4.2, §7.1.1](specs/v3/layer5_action_reactions_spec.md), [Layer 2 §2.8](specs/v3/layer2_registries_spec.md), [Layer 8 §6.3](specs/v3/layer8_administration_spec.md).
