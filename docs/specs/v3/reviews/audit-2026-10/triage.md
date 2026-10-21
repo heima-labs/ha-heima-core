@@ -38,9 +38,10 @@ Operational handoff for the triage step (unit T). A new session resumes from thi
 | CA4-141 (G5) | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | `d03766c` |
 | CA4-142 (G6) | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | `96e2b17` |
 | CA4-143 (G7) | F-L0-03 (+F-L6-05), F-L6-02, F-L6-03, F-L6-04, F-L6-06 | `6418e5f` |
-| CA4-144 (G8) | F-X9-02, F-X9-03, F-X9-05 | commit "docs: complete Layer-8 governance surface (CA4-144)" |
+| CA4-144 (G8) | F-X9-02, F-X9-03, F-X9-05 | `0468f4a` |
+| CA4-145 (P3, L0/L1) | 25 P3 findings owned by Layer 0 or Layer 1 | commit "docs: fix Layer 0 and Layer 1 P3 findings (CA4-145)" |
 
-All four P1 are resolved. Next CA4 id: **CA4-145**.
+All four P1 are resolved. Next CA4 id: **CA4-146**.
 
 ## P2 groups
 
@@ -61,6 +62,6 @@ candidates" (A, C) to consider at the end.
 
 ## Next step
 
-All P2 groups are done (CA4-137–144). Next: the P3 findings in bulk per layer (`findings.md`,
+All P2 groups are done (CA4-137–144); Layer 0/1 P3 done (CA4-145). Next: the remaining P3 findings in bulk per owner layer (Layer 2 onward, then overview/recap) (`findings.md`,
 severity P3, verification `confirmed`, not a duplicate, not resolved), wording only, presented per
 layer for cumulative approval; then the unverified "New candidates" of the verification files.

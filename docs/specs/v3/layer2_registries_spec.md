@@ -817,7 +817,7 @@ assertion is first decided, by a concrete rule, not by each producer's discretio
 input (§3.1/§4) — the bound entity's live `unit_of_measurement`, `device_class`, and `state_class`
 are already available there for state/attribute bindings, so this costs nothing beyond binding
 extraction and §2.2's no-blocking-I/O contract holds unchanged. If a live, applicable metadata value
-differs from its registered expectation, a diagnostic event is raised (Layer 0 §10, the same
+differs from its registered expectation, a diagnostic event is raised (Layer 0 §10, producer diagnostics, the same
 mechanism Layer 1 §4.3 uses for an `evidence` shape violation). Device/state-class drift and
 unit metadata that does not describe the bound read path remain diagnostic-only;
 there is no automated correction. Quantitative unit drift is different because
@@ -1299,7 +1299,7 @@ Both strategies always produce a boolean value when they produce a value at all.
 
 An `available=True` input whose value is not an exact `bool` is a configuration/type mismatch at
 evaluation time. The fusion produces `available=False`/`confidence=None` for that cycle and raises a
-Layer 0 §10 diagnostic identifying the fusion and offending `FactRef`. It is deliberately not
+Layer 0 §10 producer diagnostic identifying the fusion and offending `FactRef`. It is deliberately not
 coerced to `False` and not silently excluded: either would convert an invalid producer contract into
 a plausible but wrong vote. This check is necessarily at evaluation time because `FactRef` addresses
 the generic `HouseFact` contract, whose value shape can depend on the source's current interpretation
@@ -1551,7 +1551,7 @@ return type:
 `scale` and `floor` are required for `continuous` and prohibited for the other two modes. A result
 whose variant does not match `confidence_mode`, an out-of-range categorical population, a non-finite
 continuous value/dispersion, or an invalid inherited-input index is a formula-contract violation: the
-fusion returns `available=False`/`confidence=None` for that cycle and emits a Layer 0 §10
+fusion returns `available=False`/`confidence=None` for that cycle and emits a Layer 0 §10 producer
 diagnostic. Every result value remains subject to Layer 1's ordinary `EvidenceValue` validation; a
 formula never gets an `Any` escape hatch. These are constant-time in-memory validations, so they do
 not change §2.2's hot-path I/O contract.

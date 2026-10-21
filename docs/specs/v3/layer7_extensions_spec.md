@@ -221,8 +221,8 @@ instance its exact `(fact_type, Location, owner_id)` state claims, so two instan
 the same key (Layer 2 §2.3). An extension producer may declare state and event claims; it is the
 Layer-2 producer kind whose claims are not limited to state (Layer 0 §4). The runtime assigns the
 `FactSource`: `kind="extension"`, `source_id=instance_id`, `source_type=extension_id`, and the
-producer's execution semantic fingerprint (§3) as `configuration_fingerprint`; `route_fingerprint`
-is `None`. Nothing an
+producer's execution semantic fingerprint (§3) as `configuration_fingerprint`, the run's own
+`correlation_id` (Layer 0 §5.2); `route_fingerprint` is `None`. Nothing an
 extension returns sets or changes these fields, and a returned value outside its claims is rejected
 (Layer 0 §5.1).
 

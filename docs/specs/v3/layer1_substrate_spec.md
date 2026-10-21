@@ -238,8 +238,8 @@ existing event catalog already establishes for its `type` field (`people.arrive`
 `presence.planned_absence`, `lighting.<detail>` — a stable, hierarchical, human-readable taxonomy),
 rather than inventing a second one.
 The convention is enforced by usage, not by the type itself — `fact_type` is a plain `str`, not a
-closed enum, because new fact types are added routinely (a new `Sensor` registration, a new learned
-pattern) and a closed vocabulary here would fight that.
+closed enum, because new fact types are added routinely (a new `Sensor` registration, a new
+`FusionRule` or extension producer) and a closed vocabulary here would fight that.
 
 Each concrete identifier has one or more non-empty segments separated by `.`, and may not contain `*`:
 the asterisk is reserved exclusively for Layer 0's `FactTypeClaim` glob patterns, never persisted as
@@ -247,9 +247,11 @@ part of a fact type. Segment characters otherwise retain their exact Unicode cod
 there is no trim, case-folding, or normalization at this boundary.
 
 A source-level observation may include a stable Heima registry id as its final namespace segment when
-several observations of the same semantic kind must coexist at one `Location`; Layer 2 reserves this
-shape for room-occupancy evidence as `occupancy.evidence.<kind>.<sensor_id>`. That suffix identifies
-the configured logical reading, never a mutable Home Assistant `entity_id`; Layer 2's fused physical
+several observations of the same semantic kind must coexist at one `Location`; Layer 2 uses this
+shape for occupancy evidence, at a room or at casa, as `occupancy.evidence.<kind>.<id>`, where the
+suffix is the producer's stable id: a `sensor_id`, or the HA person storage id of a core-derived
+`occupancy.evidence.person.<ha_person_id>` (Layer 2 §3, §2.8.1). That suffix identifies the
+configured logical reading, never a mutable Home Assistant `entity_id`; Layer 2's fused physical
 meaning is `occupancy.physical`, while Layer 4 alone resolves the unsuffixed semantic `occupancy`.
 
 **A `HouseFact` is an atomic persistent assertion, not a generic message, command, or state
@@ -316,7 +318,7 @@ adapter, type map, or runtime fallback, and every V3 producer must emit an appro
 Persistence appends every distinct event occurrence, including otherwise equal payloads. Narrow
 producer-owned operation-id protocols are exceptions: `manual_hold.lifecycle` retries are
 idempotent under Layer 0 §6.4, every Layer-6 notification kind (including `reaction.follow_up`
-and `automation.availability`) is appended once per `(notification_kind, operation_id)` under §4.5,
+and `automation.availability`) is appended once per `(notification_kind, operation_id)` under Layer 0 §4.5,
 and `actuator.target_lifecycle`, `actuator.correction`,
 `actuator.manual_control` and `reaction.advisory_feedback` deduplicate by
 their own stable keys under Layer 0 §4.2. None uses
@@ -338,9 +340,10 @@ written only when they change and kept for explanation.
 `actuator.target_lifecycle` is another non-rendered event fact, owned only
 by Layer 5 §6.1 for admitted decision/complete-observation/close history.
 `actuator.channel_state.<digest>` is the distinct Layer-0-owned **state**
-fact for one registered channel (Layer 0 §5.1.1.1); its bounded facet
-projection changes only on physical state/availability changes and the
-first valid post-restart observation. Neither record is an operational
+fact for one registered channel; when its bounded facet projection records a
+change is owned by Layer 0 §5.1.1.1 and §4.6 (physical state, availability,
+observation-source fingerprint, the first valid post-restart observation, and
+the durable-only re-seed after a global overflow). Neither record is an operational
 notification or a new live command authority.
 
 `reaction.follow_up` is an approved V3 event fact type. Its sole persistent producer is the
@@ -556,7 +559,7 @@ def combined_confidence(confidences: Sequence[float], combinator: Literal["min",
     actually behaves.
 
     Typically combines 2+ sources, but a length-1 call is a legitimate degenerate case, not an error —
-    e.g. a Layer 2 `UnanimityStrategy` with `min_available=1` (its own default) can validly have exactly
+    e.g. a Layer 2 `UnanimityStrategy` explicitly configured with `min_available=1` can validly have exactly
     one available/confirming/dissenting source this cycle; `min`/`max` of a singleton is that source's
     own confidence, unchanged, which is the mathematically correct answer, not a special case this
     function needs to guard against (clarified 2026-09-07 — an earlier draft of this docstring
@@ -588,13 +591,16 @@ centralizing these formulas exists to handle consistently, so it needs to be sta
 left implicit: a `PatternLearner` already guarantees `total_observations > 0` by construction
 (`min_support` is checked, and gates on a positive count, before confidence is ever computed). A
 `FusionRule` producer must apply the same discipline itself — if every input to a fusion is itself
-`available=False` this cycle, the derived `HouseFact` is `available=False` too, and none of these
-functions is called at all. There is no meaningful confidence for a value that was never actually
+`available=False` this cycle, the fusion's raw candidate is `available=False` too, and none of these
+functions is called at all. The committed output follows that candidate except for the one bounded
+exception of Layer 2 §5.2's `unavailable_grace`, which may retain the last available output for its
+declared window. There is no meaningful confidence for a value that was never actually
 produced.
 
 **Layer 1 owns these three functions as pure, shared, callable implementations — it does not decide
 when any of them applies.** That decision requires knowing what's actually being combined or
-predicted, which only the producer has: a `PatternLearnerConfig`'s declared `target_shape` (Layer 3),
+predicted, which only the producer has: a learner's declared categorical or continuous target and
+confidence mode (Layer 3 §4.3),
 or which `FusionRule` strategy produced a value and which of its inputs' confidences feed the
 combination (Layer 2) — Layer 1 has no visibility into either and should not need any to provide
 three correctly-implemented functions. This split matters concretely, not just as a layering nicety:
@@ -658,8 +664,8 @@ fact construction; it adds no I/O or retained raw HA object to the evaluation pa
 
 **Violation policy: fail soft, not hard — this is a fixed, deliberate choice, not an unspecified
 detail left to whoever implements it.** `evidence` is explicitly supporting detail, not essential to
-what a `HouseFact` means (§4 intro) — a shape or size violation drops `evidence` back to `{}` for
-that specific fact and raises a diagnostic event (Layer 0 §10). A number outside the numeric domain
+what a `HouseFact` means (§4.3, above) — a shape or size violation drops `evidence` back to `{}` for
+that specific fact and raises a diagnostic event (Layer 0 §10, producer diagnostics). A number outside the numeric domain
 of §3 anywhere in `evidence` (a non-finite float, an integer outside the safe range, or a `Decimal`,
 `Fraction` or `complex` object) is such a violation: it discards only `evidence`, never the fact. The `HouseFact` itself is
 still created with its `fact_type`/`value`/`where`/`when`/`confidence`/`source`/`available` intact.
@@ -680,12 +686,8 @@ wholesale.
 
 ### 4.4 Deliberately not part of `Provenance`
 
-Two things that could plausibly be mistaken for epistemic trust, and are not:
+One thing that could plausibly be mistaken for epistemic trust, and is not:
 
-- **`importance`** (`OBSERVE`/`SUGGEST`/`ASSERT`) decorates how a specific consumer *uses* a fact
-  (e.g. Layer 3's `InferenceSignal` wrapper), not the fact's own inherent trustworthiness — two
-  signals can share the same `confidence` and differ in `importance`. It lives on the consuming
-  wrapper, never on `Provenance` itself.
 - **Review status** (`pending`/`accepted`/`rejected`, on a `ReactionProposal`, Layer 5) is human
   governance state, not epistemic trust — a proposal's `confidence` doesn't change because an admin
   hasn't reviewed it yet.
@@ -1031,7 +1033,8 @@ Layer 1 is thin on purpose — most of the actual machinery it depends on is Lay
   unmodified — Layer 1 does not add a second source concept or relax non-forgeability for facts.
 - **Correlation**: a `HouseFact`'s `correlation_id` (inside its `FactSource`) follows Layer 0's
   minting/propagation rules (§5.2 of the Layer 0 spec) exactly — one per evaluation cycle for
-  same-cycle facts, one per Layer 3 analysis run for learned facts, and so on. Layer 1 does not
+  same-cycle facts, one per Layer-3 analysis run for its learning outputs (which are not facts),
+  and so on. Layer 1 does not
   define a separate correlation mechanism.
 
 Layers 0 and 1 form one **foundation slice** with distinct ownership, not a one-directional stack.

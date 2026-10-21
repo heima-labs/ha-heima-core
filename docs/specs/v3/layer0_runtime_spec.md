@@ -369,9 +369,10 @@ lies inclusively within that range. Equality is intentionally valid: it configur
 window while retaining one uniform representation. Invalid ranges and values fail construction/staging;
 calibration clamps only a valid computed candidate within an already valid range.
 
-No calibration formula (e.g. percentile-of-past-durations) is specified here — that is an
-implementation detail for whichever `SemanticResolver`/`FusionRule` uses a given `LearnedWindow`, not a
-Layer 0 policy choice.
+No calibration formula (e.g. percentile-of-past-durations) is specified here, and Layer 0 makes no
+policy choice. A semantic resolver never calibrates one, because it reads no history (Layer 4 §3);
+learned timing is calibrated on the Layer-3 slow path and selected by Layer 5's bounded learned-delay
+path (Layer 3 §4.4, Layer 5 §6.0, CA4-13).
 
 ### 3.3 `WarmupGate`
 
@@ -410,9 +411,11 @@ mechanical extraction only. **Corrected 2026-09-08**: an earlier version of this
 layer produced an already-classified label ("vacation", "day_off"...). It doesn't, and can't: the
 keyword-matching logic that turns raw event text into a named category lives in Layer 2's
 `KeywordClassifier`, composed by `CalendarInterpretation` (its own spec, §4), and Layer 0 cannot
-depend on Layer 2. `summary` is the event's raw text, never classified here. A Layer-5 consumer that
-needs to ask "is this `CalendarWindow` a vacation" declares the explicit `KeywordClassifier`
-configuration it uses; it must not infer one merely from `source_entity`. That same pure classifier may
+depend on Layer 2. `summary` is the event's raw text, never classified here. The Layer-2
+declared-context producer (Layer 2 §2.9, CA4-121) that needs to ask "is this `CalendarWindow` a
+vacation" declares the explicit `KeywordClassifier` configuration it uses; it must not infer one
+merely from `source_entity`. A Layer-5 plan reads only `FrozenCalendarView` results or the declared
+`household.*` facts and never classifies calendar text (§4.1). That same pure classifier may
 be shared with a calendar Sensor, but is never a second, separately maintained matching implementation.
 
 ### 3.4.1 Extraction, normalization, and timeline reads
@@ -765,7 +768,7 @@ durably visible to audit, recovery, and later learning. It includes the stable p
 `FactSource` so a fallback/source handoff with the same value (for example a calendar-derived workday
 fact falling back to the raw helper entity) is not silently erased from history.
 For a Layer-2 fusion, `route_fingerprint` is the stable, canonical digest of
-the contributing input route defined in Layer 2 §5.2. It excludes volatile
+the contributing input route defined in Layer 2 §7. It excludes volatile
 correlation ids and free-form evidence, so an unchanged route does not cause
 a write on every cycle. A direct producer leaves it `None` unless its own
 registered contract declares a stable route identity.
@@ -961,7 +964,8 @@ exposing any hydrated value, so a subsequent crash cannot reuse the prior run's 
 that removal fails, bootstrap treats the run as unclean and hydrates nothing. This is one startup
 write, not a per-cycle `fsync`. An unclean restart, a missing/mismatched marker, or a known
 durable-batch failure not followed by a successful batch pre-hydrates no values: every
-`previous_cycle` reference is `available=False` for that first cycle. This refuses to pass an older
+`previous_cycle` reference has no value for that first cycle (absent, never a fabricated
+`available=False` fact), which a consumer maps to `previous=None` (Layer 4 §5.1). This refuses to pass an older
 durable record off as the immediately preceding cycle. Once one new cycle completes, the ordinary
 in-memory snapshot resumes.
 
@@ -1092,7 +1096,7 @@ purposes and are applied by background/batch maintenance, never by an evaluation
 
 - **Why time-based, not count-based, as the primary policy**: atomic per-fact storage produces far
   more records for the same information than a bundled snapshot would, and Layer 3 learners reason
-  about history in days (a `history_window` of 7 days, a `WarmupGate.min_elapsed` of weeks), not in
+  about history in days (a `training_window` of 7 days, a `WarmupGate.min_elapsed` of weeks), not in
   record counts. A pure count cap would be exhausted in hours by the finer granularity, silently
   breaking exactly the learning use cases this model exists to serve. Persistence keeps a small
   `fact_type -> retention_floor` table, but — consistent with Layer 0 depending on nothing above it,
@@ -1600,8 +1604,9 @@ inventory attributes, Zones, `ZoneRoleBinding`s and Topology staged with it), a 
 definition, a Layer-4 semantic resolver definition, a Layer-5 Reaction configuration generation,
 Reaction-catalog entry, guard-profile or prerequisite generation, and the Layer-6 generation (the availability publication
 bindings that follow from them, plus notification recipients, house endpoints and family options) — activates only as part of one **composed configuration generation**. Runtime
-authority transitions (promotion, consent, disablement) and artifact-adoption transitions are not
-configuration mutations and do not use this path. Accepting a learned Reaction proposal is the one
+authority transitions (promotion, consent, disablement), artifact-adoption and learning lifecycle
+transitions, and the Layer-3 learning installation profile (applied at the next scheduling
+boundary, Layer 3 §5.3) are not configuration mutations and do not use this path. Accepting a learned Reaction proposal is the one
 governance command that creates configuration: it commits its new Reaction through this path as
 one composed generation with an empty impact record (Layer 5 §4.1).
 
@@ -1629,7 +1634,8 @@ Layer 0 builds a staging-only dependency index from those declarations: producer
 (`FactTypeClaim` and `(fact_type, Location)`), Actuator channels and Layer-3 learning definitions
 (identified by id and analysis-definition fingerprint, Layer 3 §4.1.2) on one side; every consumer
 reference on the other — Fusion inputs, Layer-3 `FactSlot`/`SampleBinding` sources, Layer-4 input
-bindings and upstream claims, Layer-5 trigger, guard, envelope-axis, history, calendar,
+bindings and upstream claims, Layer-7 extension input-slot bindings and analyzer learner bindings
+(Layer 7 §3–§5), Layer-5 trigger, guard, envelope-axis, history, calendar,
 timing-model and Actuator-channel bindings, every consumer of a derived Topology or Actuator property
 (`opening_faces_exterior`, `weather_exposed`, thermal-envelope membership; Layer 1 §6.1/§7,
 Layer 2 §6), and Layer-6 publication keys. Layer-6 recipients, house endpoints and family options have no
@@ -1677,8 +1683,8 @@ latest manifest is active.
 
 **Restart and code upgrade.** Bootstrap loads the latest committed manifest and rebuilds every
 layer through staging; an uncommitted candidate leaves no trace. If a code upgrade (a changed
-formula, learning type, resolver kind or descriptor version) makes part of the committed
-composition invalid, bootstrap applies the same impact classification and invalidations
+formula, learning type, resolver kind, descriptor version or Layer-7 extension
+`implementation_version`) makes part of the committed composition invalid, bootstrap applies the same impact classification and invalidations
 automatically under the closed system actor, records a new manifest, and reports every
 invalidated dependent as a diagnostic; there is no administrator to confirm at bootstrap.
 If that manifest cannot be written, the invalid consumers are still excluded from evaluation in
@@ -1742,8 +1748,8 @@ around it; Layer 1 and Layer 5 own the envelopes it's embedded in. Every `HouseF
 @dataclass(frozen=True)
 class FactSource:
     kind: FactSourceKind
-    source_id: str                          # stable id within that kind, e.g. an entity id,
-                                              # an analyzer id, a reaction id
+    source_id: str                          # stable id within that kind, e.g. a Sensor or Fusion
+                                              # registry id, an analyzer id, a reaction id
     source_type: str | None = None          # optional family, e.g. reaction type
     configuration_fingerprint: str | None = None  # resolved per-producer execution-semantic
                                               # fingerprint, assigned only by its active composed
@@ -1774,9 +1780,8 @@ FactSourceKind = Literal[
     "sensor",             # a direct read of one raw HA entity, interpreted (Layer 2 Sensor) — one
                             # entity in, one fact out, no combination
     "analyzer",            # derived from combining or analyzing existing data rather than one direct
-                            # entity read — a same-cycle deterministic combination (Layer 2 FusionRule),
-                            # a slow-cycle statistical computation (Layer 3 PatternLearner), or a
-                            # structural match (Layer 5's Reaction-descriptor matcher). The unifying property is
+                            # entity read — a same-cycle deterministic combination (Layer 2 FusionRule)
+                            # or a structural match (Layer 5's Reaction-descriptor matcher). The unifying property is
                             # "derived from something other than a single direct entity read", not
                             # "statistical" specifically — FusionRule belongs here, not under "sensor"
     "extension",          # produced by a Layer-7 extension instance from its declared input
@@ -1856,6 +1861,10 @@ administrator flag. An administrator is not necessarily a resident (an installer
 in a B2B deployment), and a resident is not necessarily an administrator. At every authenticated
 boundary Layer 0 derives `ha_admin` from HA's own permission check and `household_role` from the
 active Layer-2 `Person` whose stored `ha_user_id` matches the HA user, never from client data.
+Layer 0 does not read the Person registry for this: at each composed-generation cutover Layer 2
+pushes a frozen `ha_user_id -> household_role` projection, as it pushes Actuator policy for §7.4,
+and the boundary resolves it with one O(1) lookup; an HA user absent from it has
+`household_role="none"`.
 
 One provenance taxonomy has two shapes with distinct closed fact/action kinds, never two
 independently evolving designs. `ApplyStepSource` carries the action-side kind, source identity,
@@ -2072,7 +2081,7 @@ class ResponseRequestDeclaration:
     allowed_actions: frozenset[str]   # closed per owner, e.g. {"approve", "dismiss"}
     admitted_actors: frozenset[Literal["resident", "admin"]]  # "resident": household_role ==
                                       # "resident"; "admin": ha_admin; either suffices
-    expires_at: EvidenceInstant
+    expires_at: EvidenceInstant | None  # None: open until the owner withdraws it
 
 @dataclass(frozen=True)
 class VerifiedResponse:
@@ -2090,7 +2099,9 @@ The frozen `ResponseOwnerRegistry` is closed to administrators, learners and ext
 registers three owners: `layer0.recovery_confirmation` (§7.4.1), `layer5.household_consent` and
 `layer5.advisory_feedback` (Layer 5 §6.0). A later owner, such as proposal review or disabling an
 automation from a notification, needs its own reviewed registration. An owner declares each request when it
-becomes actionable and withdraws it when it closes; only a currently declared, unexpired request
+becomes actionable and withdraws it when it closes; `expires_at=None` declares a request that ends
+only by withdrawal (a household consent request, advisory feedback), while a recovery confirmation
+declares its 24-hour deadline (§7.4.1). Only a currently declared, unexpired request
 accepts a response.
 
 At ingress Layer 0 verifies the Home Assistant user through HA's own authentication, derives its
@@ -2128,7 +2139,8 @@ an intermediate step. Origin points:
 - **A Layer 3 learning analysis run**: `PatternLearner.analyze()` runs on its own slow cycle, mining
   potentially days of history spanning many prior `correlation_id`s — it is a new causal origin, not
   a continuation of any one of them, so it mints its own fresh `correlation_id` for whatever
-  `LearnedPattern`/`LearningProposalCandidate` it produces. That output's evidence references the
+  artifact, `ResultEnvelope`, `DiagnosticFinding` or `LearningProposalCandidate` it produces (none
+  is a `HouseFact`, Layer 3 §2). That output's evidence references the
   `fact_type`/`Location`/time-window query used to mine it, so the chain is still walkable backward
   to the source data, even though the relationship is many-to-one rather than one-to-one.
 - **An admin or resident action** (accepting a proposal, directly controlling a device, or
@@ -2136,6 +2148,10 @@ an intermediate step. Origin points:
   boundary. A hold transition caused by the observed device edge inherits that causal id; it does
   not become a separately authorized resident action. The recorded origin category remains
   evidence-based (§6.1).
+- **A Layer-7 extension run** (Layer 7 §7): it runs off the cycle from earlier committed inputs, so,
+  like a Layer-3 analysis run, it mints its own fresh `correlation_id` at run start; every fact it
+  returns carries that id in its runtime-assigned `FactSource`, and later cycles that read the fact
+  carry their own cycle id.
 - **A Recovery-driven event** (§7), including a recovery diagnostic after a restart (§6.3): mints
   its own new `correlation_id` with `kind="recovery"`; no pre-restart hold chain or active
   identity is continued.
@@ -2973,6 +2989,12 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   freshness, unavailable/degraded fields and their reasons, effective limits where available, recent
   cycle-latency sample count/distribution, and the last probe failure. These diagnostics expose
   measurement only; they do not claim a Layer-3 admission decision.
+- **Producer diagnostics**: the one diagnostic-event path for Layer-1 and Layer-2 producer
+  contract violations (an `evidence` shape or size violation, source-shape drift, a non-boolean
+  fusion input, a formula-contract violation). Each event is recorded in memory under
+  `(producer_id, code)` with a bounded offending reference, a count and the last instant; repeats
+  only increment the entry (O(1), no I/O in the cycle). Entries are handed read-only to Layer 8's
+  diagnostics; they are never a `HouseFact` and never change a fact's value.
 
 ### 10.1 Runtime error condition (CA4-109)
 
@@ -3124,7 +3146,7 @@ concrete checklist rather than re-deriving one:
   the affected read is incomplete (§4.0/§4.2/§4.4).
 - Two cycles whose wall-clock readings are the same microsecond receive cycle
   instants `T` and `T + 1 µs`; an ingress edge stamped before the previous
-  cycle instant is raised just after it. A `present` then `away` presence
+  cycle instant is raised just after it. A `home` then `away` presence
   across those cycles satisfies Layer 4's strict `last_available_when <
   observed_at` and emits one departure (§3.5; Layer 4 §9.3).
 - With a fake monotonic clock and fake wall clock: a 0.5 s wall correction
@@ -3534,8 +3556,9 @@ concrete checklist rather than re-deriving one:
 - A durable-tier write failure, a checkpoint write failure, or a job callback exception, exercised in
   a test, never crashes the engine and always produces a diagnostic event (§8).
 - Recovery's periodic checkpoint is an `IntervalRecurrence` of 60 seconds and writes only while dirty:
-  a clean sequence of ticks performs no disk writes; multiple accepted target changes for one entity
-  before the next tick produce one last-write-wins snapshot commit; and a failed checkpoint remains
+  a clean sequence of ticks performs no disk writes; multiple accepted target changes for one
+  `(actuator_id, controlled_channel)` before the next tick produce one merged snapshot commit with
+  per-facet replacement (§7.4); and a failed checkpoint remains
   dirty for retry while the evaluation path continues without disk I/O (§7.3/§7.4). With otherwise
   normal current inputs, that write failure leaves `RecoveryState="normal"` and reports the
   persistence failure separately; genuinely unavailable entities still produce the §7.1
@@ -3544,7 +3567,8 @@ concrete checklist rather than re-deriving one:
   next in-process cycle even when the preceding durable batch failed. After a simulated clean
   shutdown/restart, the key is pre-hydrated before the first DAG from the matching committed cycle;
   after an unclean restart, missing/mismatched clean marker, or unhealed durable-batch failure it
-  instead resolves `available=False` for that first cycle and performs no evaluation-path disk read
+  instead has no value for that first cycle (Layer 4 `previous=None`, never a fabricated
+  `available=False` fact) and performs no evaluation-path disk read
   (§4.1).
 - Recovery/Checkpoint classification is settled before the first semantic resolver runs in every
   test cycle, including the first cycle after a simulated restart, and reaches Layer 5 read-only

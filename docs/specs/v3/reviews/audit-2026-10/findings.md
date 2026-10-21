@@ -9,16 +9,16 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L0-01 | L0 | C | P2 | `previous_cycle` snapshot "never seeded from durable history" contradicts clean-restart pre-hydration | confirmed; resolved in CA4-138 |
 | F-L0-02 | L0 | C | P2 | "Every class creates a hold" contradicts the hold qualification rule | confirmed; resolved in CA4-138 |
 | F-L0-03 | L0 | R | P2 | `system.health` notification event fact has no reserved claim or owner | confirmed; resolved in CA4-143 |
-| F-L0-04 | L0 | C | P3 | Layer 0 is said to read nothing above it, yet derives `household_role` from the Layer-2 Person registry | confirmed |
-| F-L0-05 | L0 | D | P3 | §13 checkpoint criterion says "last-write-wins per entity", while §7.4 merges per facet per channel | confirmed |
+| F-L0-04 | L0 | C | P3 | Layer 0 is said to read nothing above it, yet derives `household_role` from the Layer-2 Person registry | confirmed; resolved in CA4-145 |
+| F-L0-05 | L0 | D | P3 | §13 checkpoint criterion says "last-write-wins per entity", while §7.4 merges per facet per channel | confirmed; resolved in CA4-145 |
 | F-L0-06 | L0 | D | P3 | Hold-audit restatements require durable acknowledgement before the watermark advances, while §4.4/§4.6 also accept a declared overflow loss | confirmed; resolved in e92234c (kept by the developer, 2026-10-21) |
-| F-L0-07 | L0 | R | P3 | `route_fingerprint` cites Layer 2 §5.2, but the route is defined in Layer 2 §7 | confirmed |
-| F-L1-01 | L1 | D | P3 | `UnanimityStrategy.min_available` cited with a default of 1 that Layer 2 forbids | confirmed |
-| F-L1-02 | L1 | R | P3 | `importance` (`OBSERVE`/`SUGGEST`/`ASSERT`) on `InferenceSignal` is defined nowhere | confirmed |
-| F-L1-03 | L1 | R | P3 | `PatternLearnerConfig.target_shape` cited as a Layer-3 construct that Layer 3 does not define | confirmed |
-| F-L1-04 | L1 | D | P3 | §8 attributes analysis-run correlation ids to "learned facts", which Layer 0 and Layer 3 do not produce | confirmed |
-| F-L1-05 | L1 | R | P3 | Self-reference "under §4.5" points to a section Layer 1 does not have | confirmed |
-| F-L1-06 | L1 | R | P3 | "(§4 intro)" cited for a statement that is not in the §4 introduction | confirmed |
+| F-L0-07 | L0 | R | P3 | `route_fingerprint` cites Layer 2 §5.2, but the route is defined in Layer 2 §7 | confirmed; resolved in CA4-145 |
+| F-L1-01 | L1 | D | P3 | `UnanimityStrategy.min_available` cited with a default of 1 that Layer 2 forbids | confirmed; resolved in CA4-145 |
+| F-L1-02 | L1 | R | P3 | `importance` (`OBSERVE`/`SUGGEST`/`ASSERT`) on `InferenceSignal` is defined nowhere | confirmed; resolved in CA4-145 |
+| F-L1-03 | L1 | R | P3 | `PatternLearnerConfig.target_shape` cited as a Layer-3 construct that Layer 3 does not define | confirmed; resolved in CA4-145 |
+| F-L1-04 | L1 | D | P3 | §8 attributes analysis-run correlation ids to "learned facts", which Layer 0 and Layer 3 do not produce | confirmed; resolved in CA4-145 |
+| F-L1-05 | L1 | R | P3 | Self-reference "under §4.5" points to a section Layer 1 does not have | confirmed; resolved in CA4-145 |
+| F-L1-06 | L1 | R | P3 | "(§4 intro)" cited for a statement that is not in the §4 introduction | confirmed; resolved in CA4-145 |
 | F-L2-01 | L2 | C | P2 | Core-generated `presence.household` FusionRule is invalid when no resident is tracked | confirmed; resolved in CA4-140 |
 | F-L2-02 | L2 | C | P2 | Two core-generated Sensors read the same HA person state, against "one readable signal path, one owner" | confirmed; resolved in CA4-140 |
 | F-L2-03 | L2 | C | P3 | Physical-evidence "recipe applies equally to presence", but its validator admits only `occupancy.physical` | confirmed |
@@ -76,7 +76,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L7-05 | L7 | C | P2 | Input contract gives every bound key a "current committed value", but a slot may bind an event fact | confirmed; resolved in CA4-137 |
 | F-L7-06 | L7 | O | P2 | Extension analyzer evidence source needs a serving-generation fingerprint that only learners define | confirmed; resolved in CA4-137 |
 | F-L7-07 | L7 | D | P3 | Returned source field: whole-run rejection (§13) is absent from the §8 failure list and differs from Layer 0's sanitize rule | confirmed |
-| F-L7-08 | L7 | O | P3 | Layer 0 §4.7 enumerations omit extension consumer references and extension code upgrades that Layer 7 relies on | confirmed |
+| F-L7-08 | L7 | O | P3 | Layer 0 §4.7 enumerations omit extension consumer references and extension code upgrades that Layer 7 relies on | confirmed; resolved in CA4-145 |
 | F-L8-01 | L8 | C | P2 | Consent-authority change is an immediate action, but Person removal requires it in the same change set | confirmed; duplicate of F-L5a-03; resolved in CA4-136 |
 | F-L8-02 | L8 | C | P2 | `extension_requirement` suggestions are computed from the active generation, where an instance with a missing producer cannot exist | confirmed; resolved in CA4-137 |
 | F-L8-03 | L8 | D | P3 | Finding acknowledgement is called installation-wide; Layer 3 limits it to the acknowledging administrator | confirmed |
@@ -87,28 +87,28 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X1-01 | X1 | C | P2 | Recovery-target snapshots and outbox records are declared `PersistedProjection`s but cannot satisfy its depth and no-dataclass rule | confirmed; resolved in CA4-138 |
 | F-X1-02 | X1 | C | — | A calendar Sensor reads Layer 0's `active_now` directly, which Layer 0 neither registers nor permits | false positive (Layer 0 §3.4, l. 414–416, names the calendar Sensor sharing the classifier, and §3.4.1, l. 436–449, defines `active_now` as a cycle read of the cache; the §4.1 requirement list and the §13 rejection at l. 3481–3486 apply to staged `CalendarViewRequirement` consumers, not to the Sensor's active-now read) |
 | F-X1-03 | X1 | O | P2 | Layer 2 hands Layer 0 an "entity delta" that deletes recovery snapshots; Layer 0 §7.4 has no such input or rule | confirmed; resolved in CA4-138 |
-| F-X1-04 | X1 | R | P3 | Producer diagnostics are routed to "Layer 0 §10", which defines no producer diagnostic event | confirmed |
-| F-X1-05 | X1 | D | P3 | Layer 1 restates when `actuator.channel_state.*` changes more narrowly than Layer 0 | confirmed |
-| F-X1-06 | X1 | D | P3 | `FactSource.source_id` example "an entity id" conflicts with Layer 2's Sensor `source_id` | confirmed |
+| F-X1-04 | X1 | R | P3 | Producer diagnostics are routed to "Layer 0 §10", which defines no producer diagnostic event | confirmed; resolved in CA4-145 |
+| F-X1-05 | X1 | D | P3 | Layer 1 restates when `actuator.channel_state.*` changes more narrowly than Layer 0 | confirmed; resolved in CA4-145 |
+| F-X1-06 | X1 | D | P3 | `FactSource.source_id` example "an entity id" conflicts with Layer 2's Sensor `source_id` | confirmed; resolved in CA4-145 |
 | F-X2-01 | X2 | C | P2 | Recovery classification is promised to every semantic resolver, but no Layer-4 input carries it | confirmed; resolved in CA4-138 |
 | F-X2-02 | X2 | O | P2 | Live Layer-3 feature evaluation needs a frozen buffer read that Layer 0 offers only to Layer 5 | confirmed; resolved in CA4-138 |
 | F-X2-03 | X2 | O | P2 | `InferenceSignal` must carry the cycle `correlation_id`, but its closed payload has no such field | confirmed; resolved in CA4-138 |
 | F-X2-04 | X2 | O | P2 | Layer 3's CPU-credit planner needs process CPU measurements that `RuntimeHealthSnapshot` does not contain | confirmed; resolved in CA4-138 |
-| F-X2-05 | X2 | C | P3 | `FactSourceKind="analyzer"` names the Layer-3 `PatternLearner` as a fact producer, which Layer 3 excludes | confirmed |
-| F-X2-06 | X2 | R | P3 | `LearnedPattern` is cited as a Layer-3 output but Layer 3 defines no such type | confirmed |
-| F-X2-07 | X2 | R | P3 | Retention rationale cites a learner `history_window` that Layer 3 does not define | confirmed |
-| F-X2-08 | X2 | D | P3 | §13 criterion expects a departure from a `present` → `away` presence, which no Layer-4 adapter emits | confirmed |
-| F-X2-09 | X2 | D | P3 | A missing predecessor is `available=False` in Layer 0 but `previous=None` in Layer 4 | confirmed |
-| F-X2-10 | X2 | D | P3 | `LearnedWindow` calibration is assigned to a `SemanticResolver`, which cannot read history | confirmed |
-| F-X2-11 | X2 | C | P3 | Changing the learning installation profile is a configuration mutation outside the composed generation | confirmed |
+| F-X2-05 | X2 | C | P3 | `FactSourceKind="analyzer"` names the Layer-3 `PatternLearner` as a fact producer, which Layer 3 excludes | confirmed; resolved in CA4-145 |
+| F-X2-06 | X2 | R | P3 | `LearnedPattern` is cited as a Layer-3 output but Layer 3 defines no such type | confirmed; resolved in CA4-145 |
+| F-X2-07 | X2 | R | P3 | Retention rationale cites a learner `history_window` that Layer 3 does not define | confirmed; resolved in CA4-145 |
+| F-X2-08 | X2 | D | P3 | §13 criterion expects a departure from a `present` → `away` presence, which no Layer-4 adapter emits | confirmed; resolved in CA4-145 |
+| F-X2-09 | X2 | D | P3 | A missing predecessor is `available=False` in Layer 0 but `previous=None` in Layer 4 | confirmed; resolved in CA4-145 |
+| F-X2-10 | X2 | D | P3 | `LearnedWindow` calibration is assigned to a `SemanticResolver`, which cannot read history | confirmed; resolved in CA4-145 |
+| F-X2-11 | X2 | C | P3 | Changing the learning installation profile is a configuration mutation outside the composed generation | confirmed; resolved in CA4-145 |
 | F-X3-01 | X3 | O | P2 | Layer 5 classifies a timing-model binding as breaking, but Layer 0's dependency index has no Layer-3 learning-definition producer or Layer-5 timing-model consumer | confirmed; resolved in CA4-139 |
 | F-X3-02 | X3 | O | P2 | Layer 0 says Layer 5 supplies the recovery-confirmation proposal, subject and proposed facets; Layer 5's body defines no such hand-off | confirmed; resolved in CA4-138 |
-| F-X3-03 | X3 | O | P3 | `ResponseRequestDeclaration.expires_at` is mandatory, but Layer 5's consent and feedback requests have no expiry instant | confirmed |
-| F-X3-04 | X3 | O | P3 | Layer 0 says a Layer-5 calendar consumer declares a `KeywordClassifier`; Layer 5 has no such binding and routes calendar meaning through Layer 2 | confirmed |
+| F-X3-03 | X3 | O | P3 | `ResponseRequestDeclaration.expires_at` is mandatory, but Layer 5's consent and feedback requests have no expiry instant | confirmed; resolved in CA4-145 |
+| F-X3-04 | X3 | O | P3 | Layer 0 says a Layer-5 calendar consumer declares a `KeywordClassifier`; Layer 5 has no such binding and routes calendar meaning through Layer 2 | confirmed; resolved in CA4-145 |
 | F-X3-05 | X3 | D | P3 | Layer 0 §4.7 lists the Layer-6 generation without house endpoints, which Layer 6 adds with no dependents | confirmed; resolved in CA4-135 |
 | F-X3-06 | X3 | R | P3 | Layer 6 builds on a "Layer-0 Runtime Scheduler" that Layer 0 does not define | confirmed |
-| F-X4-01 | X4 | D | P3 | Layer 1 limits the registry-id-suffixed evidence shape to room occupancy; Layer 2 also uses it at casa and for presence, with an HA person id suffix | confirmed |
-| F-X4-02 | X4 | C | P3 | Layer 1 says unavailability is recorded at once and an all-unavailable fusion is unavailable; Layer 2's `unavailable_grace` keeps the last available output | confirmed |
+| F-X4-01 | X4 | D | P3 | Layer 1 limits the registry-id-suffixed evidence shape to room occupancy; Layer 2 also uses it at casa and for presence, with an HA person id suffix | confirmed; resolved in CA4-145 |
+| F-X4-02 | X4 | C | P3 | Layer 1 says unavailability is recorded at once and an all-unavailable fusion is unavailable; Layer 2's `unavailable_grace` keeps the last available output | confirmed; resolved in CA4-145 |
 | F-X4-03 | X4 | D | — | Layer 1 puts `opening_id` on an Actuator channel; Layer 2 defines it on the Actuator only | false positive (Layer 1 §7, l. 911–913, "an `Actuator` channel with `opening_id` (Layer 2 §3, §6)" reads as a channel of an Actuator carrying `opening_id`, which is what Layer 2 §6, l. 2081–2083, defines; no difference in meaning) |
 | F-X5-01 | X5 | C | P2 | `opening.open` is reserved to Layer-5 readers, so a window contact cannot also feed Layer-3 opening evidence | confirmed; resolved in CA4-141 |
 | F-X5-02 | X5 | C | P2 | `occupancy.physical` is "the sole" ground truth a learner may bind, but the survival model binds resolved Layer-4 occupancy | confirmed; resolved in CA4-141 |
@@ -125,7 +125,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X8-03 | X8 | O | P2 | Extension history slots declare a read window, but Layer 0 extends durable retention only for registered learners | confirmed; resolved in CA4-137 |
 | F-X8-04 | X8 | C | P2 | "A due extension always fits" is contradicted by a slow-path memory budget smaller than the largest extension envelope | confirmed; resolved in CA4-137 |
 | F-X8-05 | X8 | O | P3 | The extension expiry `AtJob` declares no `basis`, which Layer 0 requires of every owner | confirmed |
-| F-X8-06 | X8 | O | P3 | Layer 0's closed list of `correlation_id` origin points has no extension run | confirmed |
+| F-X8-06 | X8 | O | P3 | Layer 0's closed list of `correlation_id` origin points has no extension run | confirmed; resolved in CA4-145 |
 | F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | confirmed |
 | F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | confirmed; resolved in CA4-137 |
 | F-X9-01 | X9 | O | P1 | Layer-6 `HouseEndpoint`s are administrator-configured generation records, but Layer 8 has no editable kind for them | confirmed; resolved in CA4-135 |

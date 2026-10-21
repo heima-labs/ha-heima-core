@@ -2641,7 +2641,7 @@ class ConsentRequestOccurrence:
 Its audience is the residents named by `HouseholdConsentAuthority` (§7.1.1); Layer 6 appends it as
 one `reaction.consent_request` event fact per phase. The notice is actionable: on `opened` the
 response owner `layer5.household_consent` declares a request to Layer 0's response ingress (Layer 0 §5.1.3) with actions `grant` and `decline` and admitted actors
-`{"resident"}`, expiring when the request closes. A `VerifiedResponse` is applied only if its
+`{"resident"}` and `expires_at=None`, withdrawn when the request closes. A `VerifiedResponse` is applied only if its
 `actor_ref` (the HA user id) is the stored `ha_user_id` of a `Person` currently in `HouseholdConsentAuthority`, whatever its administrator flag: `grant` appends exactly the authority
 transition of `set_reaction_household_consent` against the opening authority transition as its
 precondition, using the ingress id as the operation id; `decline` changes no authority and closes
@@ -2661,7 +2661,7 @@ available; both paths share one authority rule.
 Each `ReactionAdvisoryOccurrence(opened)` is actionable for feedback only: before giving it to
 Layer 6, the owner `layer5.advisory_feedback` declares a request, whose id the occurrence carries
 as `response_request_id`, with actions `done`, `dismiss` and `not_useful`, admitted actors
-`{"resident"}`, open for as long as the activation lasts and withdrawn at its `closed` phase;
+`{"resident"}` and `expires_at=None`, open for as long as the activation lasts and withdrawn at its `closed` phase;
 there is no separate feedback window. Feedback is resident evidence: a guest, a device account and a
 non-resident administrator cannot give it. A `VerifiedResponse` appends one `reaction.advisory_feedback` event fact
 (`advisory_operation_id`, `action`, `recorded_at`), once per advisory and action; its provenance

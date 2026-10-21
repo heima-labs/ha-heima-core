@@ -2376,6 +2376,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-145",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-145.md",
+      "contracts": ["L0-STATE-HISTORY", "L0-FACT-SOURCE", "L0-COMPOSED-GENERATION", "L0-RESPONSE-INGRESS", "L0-CHECKPOINT", "L0-RETENTION", "L0-RUNTIME-ERROR", "L1-OPERATIONAL-EVENT", "L1-EVIDENCE-FAILURE", "L1-CATEGORICAL-CONFIDENCE", "L7-OUTPUTS"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }
