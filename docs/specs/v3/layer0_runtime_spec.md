@@ -460,7 +460,10 @@ A predictive consumer that needs seven days therefore declares `horizon=Window(s
 60)` and can decide today about an event starting tomorrow. Active and upcoming are distinct views, so
 an active event is never presented a second time as future work.
 
-Consumers declare their largest upcoming horizon at registration. The cache prefetches through the
+Consumers declare their largest upcoming horizon at registration. A Layer-2 Sensor with a
+`CalendarWindowReadBinding` (Layer 2 §3.1), which reads only `active_now`, registers its entity with
+a zero upcoming horizon: the cache then holds that entity's active windows and refreshes at its
+boundaries without prefetching future windows. The cache prefetches through the
 maximum declared horizon for that entity, refreshes asynchronously on a `calendar.*` change, before
 the next known start/end boundary, and before its prefetched horizon runs out. This lets a scheduled
 reaction be armed for an event boundary even when Home Assistant emits no unrelated state change, while

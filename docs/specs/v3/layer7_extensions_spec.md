@@ -4,8 +4,8 @@
 **Open corrections:** none.
 
 **Layer:** 7 of 8. Builds on Layer 0's claims (§4), composed configuration generation (§4.7),
-committed-state observers (§4.8), `FactSource` and non-forgeability (§5, §5.1), Runtime Scheduler
-(§3.1) and diagnostics (§10); Layer 2's producer uniqueness (§2.3), report-age expiry (§3.2) and
+committed-state observers (§4.8), `FactSource` and non-forgeability (§5, §5.1), Timing
+(`AtJob`, §3.1) and diagnostics (§10); Layer 2's producer uniqueness (§2.3), report-age expiry (§3.2) and
 previous-cycle inputs (§5.6); Layer 3's blueprint/instance contract (§4.1.2), slow-path scheduling and
 resource governance (§5.1, §5.3), finding egress (§6.1.1) and proposal path (§6.2); and Layer 5's
 evidence source (§4.1). Its decisions are recorded in `docs/v3_backlog.md` (CA4-127, CA4-129).

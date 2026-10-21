@@ -43,9 +43,10 @@ Operational handoff for the triage step (unit T). A new session resumes from thi
 | CA4-146 (P3, L2/L3) | 13 P3 findings owned by Layer 2 or Layer 3 | `3e0895e` |
 | CA4-147 (P3, L4/L5) | 9 P3 findings owned by Layer 4 or Layer 5 | `90ef861` |
 | CA4-148 (P3, L6–L8) | 13 P3 findings owned by Layers 6–8 | `2a967b3` |
-| CA4-149 (P3, overview/recap) | F-O1-01–07, F-O2-02–04 | commit "docs: fix overview and recap drift (CA4-149)" |
+| CA4-149 (P3, overview/recap) | F-O1-01–07, F-O2-02–04 | `5403bb1` |
+| CA4-150 (new candidates) | verification A (calendar cache entry), C (Layer 7 "Runtime Scheduler"); C advisory family already closed by CA4-134 | commit "docs: resolve audit new candidates (CA4-150)" |
 
-All four P1 are resolved. Next CA4 id: **CA4-150**.
+All four P1 are resolved. Next CA4 id: **CA4-151**.
 
 ## P2 groups
 
@@ -64,8 +65,7 @@ After the P2 groups: the P3 findings in bulk per layer (`findings.md`, severity 
 `confirmed`, not a duplicate, not resolved). The verification files also list a few unverified "New
 candidates" (A, C) to consider at the end.
 
-## Next step
+## Status
 
-Every confirmed, non-duplicate P1/P2/P3 finding is resolved (CA4-133–149). What remains is the
-unverified "New candidates" sections of `verification/A.md`, `B.md`, `C.md` and `D.md`: verify each
-against the current text before treating it as a finding.
+The audit-2026-10 triage is complete: every confirmed, non-duplicate finding and every verified new
+candidate is resolved (CA4-133–150). Further work needs a new audit or new issues.

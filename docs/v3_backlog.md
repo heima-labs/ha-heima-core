@@ -6323,6 +6323,12 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-150 — Audit new candidates: calendar Sensor cache entry and a stale V2 term
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, "New candidates" of verification A and C, verified at triage. **References:** [Layer 0 §3.4.1](specs/v3/layer0_runtime_spec.md), [Layer 2 §3.1](specs/v3/layer2_registries_spec.md), [Layer 7 header](specs/v3/layer7_extensions_spec.md).
+
+**Approved resolution (2026-10-21).** A Sensor with a `CalendarWindowReadBinding` registers its `calendar.*` entity in Layer 0's cache with a zero upcoming horizon (active windows and boundary refresh, no future prefetch); Layer 7's header names Layer 0 Timing (`AtJob`) instead of the V2 "Runtime Scheduler". The third candidate (Layer 6 `default_family` for `reaction.advisory`) was already resolved by CA4-134 and needs no change. No hot-path cost. See the [CA4-150 review](specs/v3/reviews/CA4-150.md); no V3 runtime test ran.
+
 #### CA4-149 — Overview and recap drift (P3 bulk)
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, overview and recap P3 findings (F-O1-01, F-O1-02, F-O1-03, F-O1-04, F-O1-05, F-O1-06, F-O1-07, F-O2-02, F-O2-03, F-O2-04). **References:** [overview](specs/v3/architecture_overview_defined_layers.md), [recap](v3_architecture_recap.md), [Layer 5 §3.2 rule 9](specs/v3/layer5_action_reactions_spec.md).

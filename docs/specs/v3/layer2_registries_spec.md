@@ -709,7 +709,8 @@ Three binding shapes are enough for the concrete HA surfaces Heima already uses:
   such as `climate.*` (`current_temperature`, `temperature`, `hvac_action`) without pretending the
   entire entity is one fact or forcing bespoke code outside this registry.
 - **`CalendarWindowReadBinding`** reads only the raw windows active **now** for one `calendar.*`
-  entity through Layer 0's `active_now` view (§3.4.1 of the Layer 0 spec). It passes raw event
+  entity through Layer 0's `active_now` view (§3.4.1 of the Layer 0 spec); staging registers that
+  entity in Layer 0's calendar cache with a zero upcoming horizon (same section). It passes raw event
   summary/start/end data to `CalendarInterpretation` (§4); category classification still happens here
   in Layer 2, never in Layer 0. A predictive Layer-5 consumer does not route future events through a
   `Sensor`: its plan stages a finite `CalendarViewRequirement` and reads the matching
