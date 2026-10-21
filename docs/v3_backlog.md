@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-147 — Layer 4 and Layer 5 wording (P3 bulk)
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, P3 findings owned by Layer 4 and Layer 5 (F-L4-02, F-L5a-05, F-L5a-06, F-L5a-08, F-L5a-10, F-L5b-05, F-L5b-06, F-L5b-08, F-X8-07). **References:** [Layer 4 §10](specs/v3/layer4_domain_spec.md), [Layer 5 §3.2, §4.0–§4.2, §6.0, §7.3, §8](specs/v3/layer5_action_reactions_spec.md).
+
+**Approved resolution (2026-10-21, cumulative).** The baseline-seeding and staging sentences move to the casa transition-adapter criterion; stale "§6.2" citations become §6.0 (or §4.2 for disablement and revocation); `ArtifactAdoptionCandidate` cites Layer 3 §6.3.1 and the admitted run context Layer 3 §5.2/§4.1.2; execution-audit records are never user-visible without an exclusive occurrence list; advice members include `safety.posture_check`; §8 admits `normal_exit` for its declared terminal step; "Layer 0 §4.5.1"; the `evidence_source_unavailable` commit rule also covers Layer-7 analyzer instances.
+
+No hot-path cost. See the [CA4-147 review](specs/v3/reviews/CA4-147.md); no V3 runtime test ran.
+
 #### CA4-146 — Layer 2 and Layer 3 wording (P3 bulk)
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, P3 findings owned by Layer 2 and Layer 3 (F-L2-03, F-L2-04, F-L2-05, F-L2-06, F-L2-07, F-L2-08, F-X5-04, F-X5-05, F-L3a-04, F-L3a-05, F-L3a-06, F-L3a-07, F-L3b-01). **References:** [Layer 2 §2.4, §2.9, §3, §5.3, §5.6, §7](specs/v3/layer2_registries_spec.md), [Layer 3 §4.3, §4.8, §4.9, §9](specs/v3/layer3_learning_spec.md), [Layer 5 §2](specs/v3/layer5_action_reactions_spec.md).

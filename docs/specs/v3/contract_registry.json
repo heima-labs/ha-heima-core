@@ -2398,6 +2398,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-147",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-147.md",
+      "contracts": ["L5-STEP-HOLD", "L5-DIAGNOSTIC-REGISTRY", "L5-PROPOSAL-EVIDENCE-SOURCE", "L5-REACTION-AUTHORITY", "L5-CATALOG-MATRIX", "L5-MEMBER-DELIVERY"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

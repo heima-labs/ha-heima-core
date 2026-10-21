@@ -634,7 +634,7 @@ neighboring context or remembered target cannot fill the gap. The same
 step from fresh current inputs, including a normal-exit terminal step, but
 cannot invent a fallback target at runtime. Verified normal exit remains
 valid if its estimate-dependent terminal target is unavailable: that command
-is skipped and reported by the existing terminal follow-up path (§6.2).
+is skipped and reported by the existing terminal follow-up path (§6.0).
 Suppressing an ongoing step does not implicitly close the activation. Every
 selected step still passes current authority, guards, hold, physical-state
 and whole-channel admission. For a learned multi-step proposal, staging
@@ -1114,8 +1114,8 @@ code outside the registry:
 
 An execution-audit code is neither an `ApplyCallFailureReason` (a call that was attempted), an
 `AutomationSuppressionReason`, nor a `ReactionFollowUpOutcome`. These records feed Layer-5 audit and
-the read-only shadow view only; user-visible output remains exclusively
-`ReactionFollowUpOccurrence` and `AvailabilitySuppressionOccurrence` through Layer 6. A skipped step
+the read-only shadow view only; execution-audit records are never user-visible, and user-visible
+output goes only through Layer 6's typed occurrences (§6.0). A skipped step
 that releases a hold produces its audit record and, under §6.0, its follow-up occurrence.
 
 Layer 3 submits the closed `ReactionDescriptorCandidate` defined in Layer 3 §6.4 with
@@ -1130,7 +1130,7 @@ either rejects the transient candidate with a typed diagnostic reason or creates
 `ReactionProposal` for ordinary administrative review.
 
 For the closed `("reaction.artifact_adoption", 1)` kind, Layer 3 submits only
-the `ArtifactAdoptionCandidate` of Layer 3 §6.2: current Reaction/generation,
+the `ArtifactAdoptionCandidate` of Layer 3 §6.3.1: current Reaction/generation,
 declared serving-artifact role and exact immutable revision, with the
 ordinary bounded evidence and validity fields. Layer 5 resolves the current
 Reaction and role before creating a `ReactionArtifactAdoptionProposal`; this
@@ -1358,7 +1358,7 @@ transition to record a failed attempt.
 
 **Evidence source (CA4-128).** Each evidence revision records the `ProposalEvidenceSource` that
 produced it. The core runtime assigns all three fields from the admitted run context (the
-learning instance and serving generation under which the run was admitted, Layer 3 §5.1); a
+learning instance and serving generation under which the run was admitted, Layer 3 §5.2, §4.1.2); a
 learner never declares them, and a candidate whose payload carries a conflicting source identity
 is rejected at admission, as `configuration_fingerprint` is assigned only by the active
 generation (Layer 0 §5.1). A pending proposal is not approvable with
@@ -1752,7 +1752,7 @@ neither evaluates, shadows nor schedules work until an administrator commits a s
 configuration generation that validates; that successor starts `notification_only` under the
 ordinary rules and needs fresh promotion and consent. Pending proposals bound to the invalid
 dependency become not approvable with the existing readiness codes. The commit that removes or
-invalidates a learning instance, changes its `serving_semantics`, or makes an evidence artifact
+invalidates a learning instance or a Layer-7 analyzer instance (Layer 7 §6), changes its `serving_semantics`, or makes an evidence artifact
 unavailable likewise records `evidence_source_unavailable` for every pending proposal whose current
 evidence it affects (§4.1), and acceptance revalidates the same condition. A **semantic_only** upstream
 change keeps the Reaction's generation and authority unchanged; it appears in the impact record so
@@ -2197,7 +2197,7 @@ command target. The next fresh snapshot passes this token to the same
 `evaluate_program`; only its staged typed continuation condition can select
 a current target. The token is consumed after that evaluation and is never
 persisted or restored. A failed continuation produces the existing skipped
-step outcome, not a replayed event or an unguarded command (§6.2). A guard
+step outcome, not a replayed event or an unguarded command (§6.0). A guard
 veto in that post-release attempt cannot re-arm the consumed event boundary;
 only a later fresh qualifying input may select another step under the
 descriptor's rule.
@@ -2478,7 +2478,7 @@ observation may resolve after the activation closes, but that activation cannot
 dispatch another call. Layer 5 reports a skipped or unconfirmed final action and the actual observed
 state to the resident. No final-target call is admitted after authority has been revoked;
 administrative disablement and resident-consent revocation remain immediate as specified
-in §6.2. Staging rejects `next_reaction_step` unless the descriptor provides
+in §4.2 (commands 5 and 6). Staging rejects `next_reaction_step` unless the descriptor provides
 both its bounded future-step identity contract and its provable normal-exit
 contract; otherwise the configured channel uses `fixed_duration`. A descriptor
 with no normal-exit contract cannot infer one
@@ -2784,7 +2784,7 @@ components as nonempty staged identities and rejects a collision between
 distinct tuples. One exit covering several channels produces distinct ids;
 the same channel/boundary retry keeps one id even if a new evaluation snapshot
 arrives. The first prepared intent is frozen for exact retries; a later
-observation may change only the final occurrence fields that §4.5 permits,
+observation may change only the final occurrence fields that Layer 0 §4.5.1 permits,
 never the prepared payload under the same id. No administrator, learner or
 adapter supplies the id or a substitute boundary identity.
 
@@ -4414,7 +4414,7 @@ candidate. Valid examples:
 
 No example requires a placeholder outcome unit, a fictitious measured effect, an invented relation
 profile or a guard outside its registered contract. Advice members (§3.2) are available only for
-`environment.external_exchange` and `environment.solar_shading` intents; for example, an
+`environment.external_exchange`, `environment.solar_shading` and `safety.posture_check` intents; for example, an
 external-exchange Reaction on a manual window has one `open_for_exchange` advice member naming only
 `opening_id` and produces a `reaction.advisory` instead of a command.
 
@@ -4750,7 +4750,7 @@ class PostureCheckConfiguration:
   undeclared, stale or binding-incompatible support is not approvable.
   Neither a redacted snapshot nor a root parameter can replace the typed
   supporting reference (§4.1–4.2).
-- Evidence source (CA4-128): removing or invalidating the source learning instance, changing its
+- Evidence source (CA4-128): removing or invalidating the source learning or Layer-7 analyzer instance, changing its
   `serving_semantics`, or making its primary or a required supporting artifact unavailable makes a
   pending proposal not approvable with `evidence_source_unavailable` in the same commit, closing
   its review notice; acceptance revalidates and rejects with `validation_failed` carrying the code.
@@ -4930,7 +4930,8 @@ class PostureCheckConfiguration:
   a Layer-5 policy in that cycle. A predictive plan reads only its staged requirement id in the
   `FrozenCalendarView`; an attempted direct `upcoming_starts_within` call or widened horizon during
   evaluation is rejected. Layer 4 transports but never classifies the calendar view.
-- Each evaluation has exactly one closed outcome. Only `eligible` reaches bundle admissibility; an
+- Each evaluation has exactly one closed outcome. Only `eligible` and, for its declared terminal
+  step, `normal_exit` reach bundle admissibility; an
   admitted bundle yields its canonical ordered one-endpoint `ApplyStep`s for
   `(reaction_id, configuration_generation_id, reaction_activation_id, snapshot_id)`.
   An active or unresolved intersecting
@@ -5109,7 +5110,7 @@ class PostureCheckConfiguration:
   and follow-up paths. Re-evaluation of the same event, a stale callback,
   restart and a closed activation do not duplicate or replay the step.
   The normal-exit rule is consumed only inside that evaluator (§3.2, §5.1,
-  §6.0, §6.2).
+  §6.0).
 - A descriptor with a declared final target returns it as the terminal step,
   or returns that step's identity with a typed unavailable-target reason, of
   its `normal_exit` program decision. The mandatory fresh post-release
@@ -5117,7 +5118,7 @@ class PostureCheckConfiguration:
   an invalid or unavailable current target is skipped and reported under
   the existing terminal follow-up path, while the verified exit still closes
   the activation. No independently chosen second target or duplicate
-  terminal `ApplyStep` is admitted (§3.2, §6.2).
+  terminal `ApplyStep` is admitted (§3.2, §6.0).
 - A step-programmed descriptor registration without its versioned pure
   `program_evaluator` is rejected. The persisted plan contains only validated
   data and resolves the exact registered specialization after restart. That
@@ -5145,7 +5146,7 @@ class PostureCheckConfiguration:
   and current admission. If verified normal exit has an unavailable
   estimate-dependent terminal target, the activation closes and the
   terminal follow-up reports the skipped command; no generic actuator-off
-  default is inserted (§3.2, §6.2, §7).
+  default is inserted (§3.2, §6.0, §7).
 - A managed fan, cover or valve has an eligible modification cell but its
   current staged condition no longer calls for a change: `evaluate_program`
   selects no modification. If current need persists but the exact class cell

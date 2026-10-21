@@ -652,11 +652,12 @@ room; it cannot suppress urgent safety/security communication or establish an ac
   `present -> absent` emits one `occupancy.departure` and `absent -> present` one `occupancy.return`;
   on `presence@casa`, `home -> away` emits one `presence.departure` and `away -> home` one
   `presence.return`; an unchanged or unavailable value emits none. A guest alone at home after the
-  last resident leaves yields `presence.departure` and no occupancy episode.
+  last resident leaves yields `presence.departure` and no occupancy episode. The first post-restart
+  available value of each adapter's input seeds its baseline without inventing a transition.
+  Staging rejects an unregistered initial episode producer or transition table.
 - `occupied_without_residents` (CA4-122) is `True` for occupancy `present` with presence `away`,
   `False` for `present`/`home`, `absent`/`away` and `absent`/`home`, and unavailable when either input
-  is unavailable; it has no transition adapter and raises no notification. The first post-restart available value seeds its baseline without inventing a
-  transition. Staging rejects an unregistered initial episode producer or transition table.
+  is unavailable; it has no transition adapter, no retained state and raises no notification.
 - An activity definition resolves only a frozen core `ActivityProfile`; staging rejects an unknown
   profile, illegal scope, an unresolved/mis-typed role binding, a context-only positive route, an
   unauthorized signal, or a requested `inactive` result for a positive-only profile. The initial

@@ -40,26 +40,26 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L3b-03 | L3b | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` | confirmed; duplicate of F-L3a-01; resolved in CA4-133 |
 | F-L3b-04 | L3b | C | P2 | Adoption-producing type has no `ShadowPreviewBinding`, yet every proposal producer must have one | confirmed; resolved in CA4-133 |
 | F-L4-01 | L4 | C | P2 | Activity profiles told to bind event/episode slots that `ActivityEvidenceSlot` rejects | confirmed; resolved in CA4-141 |
-| F-L4-02 | L4 | C | P3 | `occupied_without_residents` acceptance gives it a baseline it cannot have | confirmed |
+| F-L4-02 | L4 | C | P3 | `occupied_without_residents` acceptance gives it a baseline it cannot have | confirmed; resolved in CA4-147 |
 | F-L4-03 | L4 | C | — | Evaluator lookup key omits the per-profile activity evaluator and version | false positive (§4.1 l.135–136 states the `activity` kind selects its frozen `ActivityProfile` through `claim_parameters.activity_id` as profile data within the kind, so the `(resolver_kind_id, implementation_version)` key and the profile dispatch coexist; whether a profile-version bump alone impacts a generation is an ambiguity, not a contradiction) |
 | F-L5a-01 | L5a | C | P2 | `safety.posture_check` has no guard contract although §3.2 requires one for every profile-free direct descriptor | confirmed; resolved in CA4-142 |
 | F-L5a-02 | L5a | R | P2 | The guard contract of `hvac_thermal_response` / `environment.planned_comfort_trajectory` is never named, and its required set is administrator-supplied | confirmed; resolved in CA4-142 |
 | F-L5a-03 | L5a | C | P1 | `stage_household_consent_authority` is classified as an immediate command but §7.1.1 requires it in a change set | confirmed; resolved in CA4-136 |
 | F-L5a-04 | L5a | R | P2 | A "successor-generation path" for learner-origin configuration changes via proposal is cited but not defined | confirmed; resolved in CA4-142 |
-| F-L5a-05 | L5a | R | P3 | Dangling internal reference to Layer 5 §6.2 | confirmed |
-| F-L5a-06 | L5a | R | P3 | `ArtifactAdoptionCandidate` cited in Layer 3 §6.2 but defined in §6.3.1 | confirmed |
+| F-L5a-05 | L5a | R | P3 | Dangling internal reference to Layer 5 §6.2 | confirmed; resolved in CA4-147 |
+| F-L5a-06 | L5a | R | P3 | `ArtifactAdoptionCandidate` cited in Layer 3 §6.2 but defined in §6.3.1 | confirmed; resolved in CA4-147 |
 | F-L5a-07 | L5a | R | P3 | `environmental_response.v1` cells cited to Layer 3 §4.8.2, which defines input bindings | confirmed; duplicate of F-L3a-04 |
-| F-L5a-08 | L5a | R | P3 | Admitted run context cited to Layer 3 §5.1 (refresh scheduling) | confirmed |
+| F-L5a-08 | L5a | R | P3 | Admitted run context cited to Layer 3 §5.1 (refresh scheduling) | confirmed; resolved in CA4-147 |
 | F-L5a-09 | L5a | R | P3 | Hold invalidation reason `authority_revoked` cited to Layer 0 §6.2 instead of §6.1 | false positive (Layer 0 §6.2 L2418-2419 states the cited rule: "Administrative disablement and consent revocation of the release owner remain immediate, invalidate the whole hold"; the literal enum lives in §6.1 but the behavioral citation resolves) |
-| F-L5a-10 | L5a | C | P3 | "User-visible output remains exclusively" follow-up and availability occurrences, contradicting advisory and notice occurrences | confirmed |
+| F-L5a-10 | L5a | C | P3 | "User-visible output remains exclusively" follow-up and availability occurrences, contradicting advisory and notice occurrences | confirmed; resolved in CA4-147 |
 | F-L5b-01 | L5b | C | P2 | Evaluation reason codes that no outcome may carry | confirmed; resolved in CA4-142 |
 | F-L5b-02 | L5b | C | P2 | Weather-protection example uses a `state_transition` trigger that cannot fire after restart | confirmed; resolved in CA4-142 |
 | F-L5b-03 | L5b | C | P1 | Posture-check advisories: `safety` family vs Layer 6 fixed `suggestion` family | confirmed; resolved in CA4-134 |
 | F-L5b-04 | L5b | D | P3 | §7 program-shape summary omits weather protection and posture check | false positive (L3601 says "the three other trigger-driven descriptors above", scoped to those specified before it; §7.4 L4348-4350 and §7.5 L4404-4408 register their own fields, so no restated rule differs in meaning) |
-| F-L5b-05 | L5b | D | P3 | Advice members restricted to two descriptors in §7.3 | confirmed |
-| F-L5b-06 | L5b | D | P3 | Acceptance says only `eligible` reaches admissibility | confirmed |
+| F-L5b-05 | L5b | D | P3 | Advice members restricted to two descriptors in §7.3 | confirmed; resolved in CA4-147 |
+| F-L5b-06 | L5b | D | P3 | Acceptance says only `eligible` reaches admissibility | confirmed; resolved in CA4-147 |
 | F-L5b-07 | L5b | R | P3 | References to a nonexistent Layer-5 §6.2 | confirmed; duplicate of F-L5a-05 |
-| F-L5b-08 | L5b | R | P3 | Unqualified "§4.5" in the follow-up operation-id rule | confirmed |
+| F-L5b-08 | L5b | R | P3 | Unqualified "§4.5" in the follow-up operation-id rule | confirmed; resolved in CA4-147 |
 | F-L5b-09 | L5b | O | P3 | Planned-absence horizon does not strictly exceed ceiling plus largest recovery | confirmed; duplicate of F-L2-08 |
 | F-L6-01 | L6 | C | P1 | `safety.posture_check` advisories are declared `safety` but `reaction.advisory` has the fixed family `suggestion` | confirmed; duplicate of F-L5b-03; resolved in CA4-134 |
 | F-L6-02 | L6 | C | P2 | Per-proposal `closed` clearing contradicts the shared digest tag | confirmed; resolved in CA4-143 |
@@ -126,7 +126,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X8-04 | X8 | C | P2 | "A due extension always fits" is contradicted by a slow-path memory budget smaller than the largest extension envelope | confirmed; resolved in CA4-137 |
 | F-X8-05 | X8 | O | P3 | The extension expiry `AtJob` declares no `basis`, which Layer 0 requires of every owner | confirmed |
 | F-X8-06 | X8 | O | P3 | Layer 0's closed list of `correlation_id` origin points has no extension run | confirmed; resolved in CA4-145 |
-| F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | confirmed |
+| F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | confirmed; resolved in CA4-147 |
 | F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | confirmed; resolved in CA4-137 |
 | F-X9-01 | X9 | O | P1 | Layer-6 `HouseEndpoint`s are administrator-configured generation records, but Layer 8 has no editable kind for them | confirmed; resolved in CA4-135 |
 | F-X9-02 | X9 | O | P2 | Layer-3 artifact lifecycle transitions (shadow, `proposal_eligible`, rollback, disablement) have no Layer-8 command | confirmed; resolved in CA4-144 |
