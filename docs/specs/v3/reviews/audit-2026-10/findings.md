@@ -21,21 +21,21 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L1-06 | L1 | R | P3 | "(§4 intro)" cited for a statement that is not in the §4 introduction | confirmed; resolved in CA4-145 |
 | F-L2-01 | L2 | C | P2 | Core-generated `presence.household` FusionRule is invalid when no resident is tracked | confirmed; resolved in CA4-140 |
 | F-L2-02 | L2 | C | P2 | Two core-generated Sensors read the same HA person state, against "one readable signal path, one owner" | confirmed; resolved in CA4-140 |
-| F-L2-03 | L2 | C | P3 | Physical-evidence "recipe applies equally to presence", but its validator admits only `occupancy.physical` | confirmed |
-| F-L2-04 | L2 | D | P3 | §5.6 rationale says FusionRules are "core-team-authored only (§2.1)"; §2.1 and the rest of Layer 2 make them administrator-configured | confirmed |
-| F-L2-05 | L2 | D | P3 | §2.4 and §5.3 restate the "other formulas take `configuration=None`" rule differently | confirmed |
-| F-L2-06 | L2 | R | P3 | `related_opening_id` staging rule cites §2.4, which contains no Sensor rule | confirmed |
-| F-L2-07 | L2 | D | P3 | §7 describes `Stability` as "composed of two `Window`s"; §5.2 defines three Window fields | confirmed |
-| F-L2-08 | L2 | D | P3 | The 14-day horizon "must exceed ceiling plus largest recovery", but Layer 5 allows the sum to equal 14 days | confirmed |
+| F-L2-03 | L2 | C | P3 | Physical-evidence "recipe applies equally to presence", but its validator admits only `occupancy.physical` | confirmed; resolved in CA4-146 |
+| F-L2-04 | L2 | D | P3 | §5.6 rationale says FusionRules are "core-team-authored only (§2.1)"; §2.1 and the rest of Layer 2 make them administrator-configured | confirmed; resolved in CA4-146 |
+| F-L2-05 | L2 | D | P3 | §2.4 and §5.3 restate the "other formulas take `configuration=None`" rule differently | confirmed; resolved in CA4-146 |
+| F-L2-06 | L2 | R | P3 | `related_opening_id` staging rule cites §2.4, which contains no Sensor rule | confirmed; resolved in CA4-146 |
+| F-L2-07 | L2 | D | P3 | §7 describes `Stability` as "composed of two `Window`s"; §5.2 defines three Window fields | confirmed; resolved in CA4-146 |
+| F-L2-08 | L2 | D | P3 | The 14-day horizon "must exceed ceiling plus largest recovery", but Layer 5 allows the sum to equal 14 days | confirmed; resolved in CA4-146 |
 | F-L3a-01 | L3a | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` despite an action-serving egress | confirmed; resolved in CA4-133 |
 | F-L3a-02 | L3a | O | P2 | Person-related fact list omits Layer 2's `presence.evidence.person.<id>` | confirmed; resolved in CA4-140 |
 | F-L3a-03 | L3a | C | P2 | Promotion/disablement called "generation transitions" contrary to Layer 0 §4.7 | confirmed; resolved in CA4-139 |
-| F-L3a-04 | L3a | R | P3 | `environmental_response.v1` cells cited to §4.8.2, which defines input bindings | confirmed |
-| F-L3a-05 | L3a | D | P3 | Envelope abstention code spelled `out_of_operating_envelope` vs closed `outside_operating_envelope` | confirmed |
-| F-L3a-06 | L3a | D | P3 | Categorical tie state named `ambiguous_top_outcome` vs coded `ambiguous_top` | confirmed |
-| F-L3a-07 | L3a | R | P3 | `ReactionArtifactAdoptionProposal` cited as bare "§4.1" inside Layer 3 | confirmed |
+| F-L3a-04 | L3a | R | P3 | `environmental_response.v1` cells cited to §4.8.2, which defines input bindings | confirmed; resolved in CA4-146 |
+| F-L3a-05 | L3a | D | P3 | Envelope abstention code spelled `out_of_operating_envelope` vs closed `outside_operating_envelope` | confirmed; resolved in CA4-146 |
+| F-L3a-06 | L3a | D | P3 | Categorical tie state named `ambiguous_top_outcome` vs coded `ambiguous_top` | confirmed; resolved in CA4-146 |
+| F-L3a-07 | L3a | R | P3 | `ReactionArtifactAdoptionProposal` cited as bare "§4.1" inside Layer 3 | confirmed; resolved in CA4-146 |
 | F-L3a-08 | L3a | C | P2 | Radiation slots resolve at `casa`, but `incident_solar_exposure` is produced at the opening's room | confirmed; resolved in CA4-141 |
-| F-L3b-01 | L3b | R | P3 | `ContextHypothesisCandidate` cited at §6.4, defined in §6.3 | confirmed |
+| F-L3b-01 | L3b | R | P3 | `ContextHypothesisCandidate` cited at §6.4, defined in §6.3 | confirmed; resolved in CA4-146 |
 | F-L3b-02 | L3b | D | P2 | Initial member-intent list omits the routine descriptor's `light_state` | confirmed; resolved in CA4-141 |
 | F-L3b-03 | L3b | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` | confirmed; duplicate of F-L3a-01; resolved in CA4-133 |
 | F-L3b-04 | L3b | C | P2 | Adoption-producing type has no `ShadowPreviewBinding`, yet every proposal producer must have one | confirmed; resolved in CA4-133 |
@@ -113,8 +113,8 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X5-01 | X5 | C | P2 | `opening.open` is reserved to Layer-5 readers, so a window contact cannot also feed Layer-3 opening evidence | confirmed; resolved in CA4-141 |
 | F-X5-02 | X5 | C | P2 | `occupancy.physical` is "the sole" ground truth a learner may bind, but the survival model binds resolved Layer-4 occupancy | confirmed; resolved in CA4-141 |
 | F-X5-03 | X5 | C | P2 | Layer 3 resolves learner bindings against the active Layer-2 generation, not the candidate | confirmed; resolved in CA4-139 |
-| F-X5-04 | X5 | O | P3 | Layer 2 says Layer 3 binds a `FutureStateFractionOutcome` for solar shading; Layer 3 registers none | confirmed |
-| F-X5-05 | X5 | R | P3 | Layer 2 §5.3 quotes a Layer-3 sentence and `PatternLearnerConfig` that Layer 3 does not contain | confirmed |
+| F-X5-04 | X5 | O | P3 | Layer 2 says Layer 3 binds a `FutureStateFractionOutcome` for solar shading; Layer 3 registers none | confirmed; resolved in CA4-146 |
+| F-X5-05 | X5 | R | P3 | Layer 2 §5.3 quotes a Layer-3 sentence and `PatternLearnerConfig` that Layer 3 does not contain | confirmed; resolved in CA4-146 |
 | F-X5-06 | X5 | D | P3 | An impacted producer's predecessor is `available=False` in Layer 2 but `previous=None` in Layer 4 | confirmed; duplicate of F-X2-09 |
 | F-X6-01 | X6 | C | P2 | Learned-timing binding must match a `FutureStateFractionOutcome`, but the routine's only timing path is a survival model that Layer 5 forbids coercing to one | confirmed; resolved in CA4-141 |
 | F-X7-01 | X7 | C | P2 | The "automatic authorization requires an enabled user-visible binding" check is placed at publication staging, where no binding can be enabled | confirmed; resolved in CA4-139 |

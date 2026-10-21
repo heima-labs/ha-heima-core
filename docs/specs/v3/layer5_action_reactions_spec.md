@@ -194,7 +194,7 @@ Changing schema id/version or validator semantics creates a new profile version
 and invalidates incompatible artifacts/candidates rather than silently coercing
 them. Initial `thermal_shading`, `solar_shading`, `thermal_exchange`, `air_quality_exchange`,
 `hygrometric_exchange` and `humidity_extraction` use the registered `environmental_response.v1` output
-shape for bounded response-artifact cells in Layer 3 §4.8.2. This
+shape for bounded response-artifact cells in Layer 3 §4.8 and §4.8.1. This
 policy-consumable artifact schema is distinct from Layer 3's per-inference
 `ResultEnvelope` and its closed `ResultPayload` union. The schema's exact
 cell key includes the registered `transition_class_id` together with profile,

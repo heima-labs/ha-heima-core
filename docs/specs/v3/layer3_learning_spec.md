@@ -730,7 +730,7 @@ both its `tier_id` and complete `ContextBucketKey`; an unselected inference carr
 
 For a categorical target, a bucket is usable by single-value `infer()` only when it has one unique
 highest-support outcome and that outcome meets the learner-wide `min_confidence`. Equal
-highest-support outcomes produce the explicit diagnostic state `ambiguous_top_outcome`: the full
+highest-support outcomes produce the explicit diagnostic state `ambiguous_top`: the full
 distribution and support remain inspectable, but no arbitrary categorical value is selected and
 fallback proceeds to the next tier. Ordering, insertion time, IDs, and any other incidental runtime
 property are forbidden as tie-breakers. A consumer that genuinely needs an outcome distribution
@@ -1943,7 +1943,7 @@ schema id/version and pure validator (Layer 5 §3.1). The artifact records that
 exact schema identity; publication validates its typed output under any required
 core-frozen release-gate calibration before a candidate can be formed. The six non-HVAC
 Initial-V3 profiles use the common `environmental_response.v1` schema for the
-bounded response-artifact cells defined in §4.8.2: exact
+bounded response-artifact cells defined in §4.8 (with `transition_class_id` in §4.8.1): exact
 profile/transition-class/context/horizon
 identity, canonical outcome unit, transition and reference quantiles and support,
 response difference, bootstrap interval and provenance, and coverage/eligibility.
@@ -2672,7 +2672,7 @@ the observed finite lower and upper bound for every continuous feature in both c
 profile-declared coarse support partition with minimum support in both cohorts. The partition is a
 versioned canonical context transform staged with the profile, not a nearest-neighbor search or a
 learned similarity score. A context outside any such bound, vocabulary, or supported partition is
-`out_of_operating_envelope` and produces no response estimate or candidate. Inside the envelope,
+`outside_operating_envelope` and produces no response estimate or candidate. Inside the envelope,
 the estimator may model a continuous non-linear response between observed values; it may never
 extrapolate beyond the envelope or silently borrow another relation profile.
 
@@ -2878,7 +2878,7 @@ eligible new revision while the role is in `pinned` mode, yields a
 `("reaction.artifact_adoption", 1)` kind: exact
 Reaction/generation, descriptor-declared artifact role and immutable
 `ArtifactRef`. Layer 5 validates that target and persists a
-revision-specific `ReactionArtifactAdoptionProposal` (§4.1); its admin review
+revision-specific `ReactionArtifactAdoptionProposal` (Layer 5 §4.1); its admin review
 uses `review_proposal` and can only append the corresponding adoption
 transition. The existing semantic configuration proposal remains terminal.
 The adoption candidate's deduplication identity includes the artifact
@@ -4288,7 +4288,7 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   intervals and holdout gates before proposal eligibility (§4.4.3).
   Compatible evidence refresh changes no candidate semantic fingerprint.
   The future `ContextHypothesisCandidate` remains
-  unpublishable until a closed uncertainty schema is registered (§6.4).
+  unpublishable until a closed uncertainty schema is registered (§6.3, §4.4.7).
 - One descriptor that permits both authoring origins can register a
   zero-axis direct `CanonicalEnvelope` and nonempty profile-restricted
   learned axes. The direct cell has `support=None, calibrated=None` and

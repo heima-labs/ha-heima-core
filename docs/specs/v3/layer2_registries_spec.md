@@ -205,7 +205,8 @@ result, additionally obeys Layer 1's numeric domain (Layer 1 §3), so an integer
   `PhysicalEvidenceWeightedConfig`. The environmental solar-incidence and
   humidity-ratio formulas and the generic `numeric.hysteresis_condition.v1` and
   `numeric.difference.v1` formulas have their own closed compiled configurations in
-  §5.3; every other Initial-V3 formula requires `configuration=None`. The physical-evidence
+  §5.3; every other formula's configuration follows the one rule of §5.3 (`configuration=None`
+  unless its own core registration declares another closed compiled type). The physical-evidence
   formula's
   bindings contain every input index exactly once, in `[0, len(inputs))`; both weights are finite,
   `true_weight > 0`, `false_weight >= 0`, and a `required_for_false` binding has
@@ -490,9 +491,9 @@ class HouseholdDeclaration:
 **`household.planned_absence`** has the value `{"active": bool, "start": EvidenceInstant | None,
 "end": EvidenceInstant | None, "end_beyond_horizon": bool}`.
 
-- It reads active and upcoming calendar windows over a core-fixed horizon of **14 days**, which must
-  exceed the ceiling of the comfort-trajectory minimum absence duration plus the largest recovery
-  duration (Layer 5 `planned_absence_program`); it never needs to see a whole long absence.
+- It reads active and upcoming calendar windows over a core-fixed horizon of **14 days**, which is at
+  least the ceiling of the comfort-trajectory minimum absence duration plus the largest admitted
+  recovery duration (7 + 7 days, Layer 5 §7.1); it never needs to see a whole long absence.
 - Matching intervals from every calendar source and every active panel declaration form one
   union: exact duplicates collapse, and overlapping or directly adjacent intervals coalesce to their
   earliest start and latest end. Source identity has no precedence. The fact is `active` only while
@@ -577,7 +578,8 @@ class Sensor:
                                             # at/through one opening (contact, cover position, local
                                             # illuminance, etc.). It is not a Location tier and never
                                             # an HA entity id; staging requires a room-scoped Sensor
-                                            # whose room is the owning room of this Opening (§2.4).
+                                            # whose room is the owning room of this Opening (§3,
+                                            # `related_opening_id` paragraph).
     unit: str | None = None         # HA's unit_of_measurement expected at registration time. Together
                                      # with expected_device_class/state_class, this is a source-shape
                                      # expectation; quantitative use is governed by unit_contract (§3.3).
@@ -1613,10 +1615,11 @@ For irradiance-triggered `environment.solar_shading`, staging binds one such
 boolean output to the `environment.incident_solar_exposure.<solar_binding_id>`
 fact from `environment.solar_incidence.v1` in `incident_irradiance` mode for
 the subject opening. Layer 5 consumes this exact output as its qualifying
-condition; Layer 3 binds its episode and `FutureStateFractionOutcome` to the
-same boolean state stream. Entry/exit thresholds therefore have one staged
-owner in the Layer-2 formula, rather than two independent copies in the
-Reaction and learner. The geometry-only proxy is rejected for this binding.
+condition. Initial V3 registers no Layer-3 solar-exposure-fraction profile
+(Layer 3 §4.4); a future one, if registered, must bind its episode and
+`FutureStateFractionOutcome` to this same boolean state stream. Entry/exit
+thresholds therefore have one staged owner in the Layer-2 formula, rather
+than independent copies in the Reaction and a learner. The geometry-only proxy is rejected for this binding.
 
 #### Generic numeric difference
 
@@ -1759,14 +1762,14 @@ staged, distinct corroborating groups can jointly reach the threshold
 without any immediate source. Otherwise it has only the immediate route.
 The one fusion owns the ordinary declared false stability. No intermediate
 physical fact, FusionRule input to this formula, separate true dwell, or
-special deadline is needed. This recipe applies equally to occupancy,
-presence, or another registered physical boolean family. Other legal
+special deadline is needed. This recipe applies only to the two admitted
+`occupancy.physical` shapes (room and casa); another physical boolean family
+needs a reviewed new formula version. Other legal
 formula configurations may still use an explicitly positive true dwell;
 they are not this two-route recipe.
 
-Core-team-curated, not admin-authored and not open to third parties — same governance as
-`PatternLearnerConfig` (Layer 3: "declared in code only... no learning family is admin-authored
-today"). A `FormulaStrategy(formula_id=...)` looks up its `RegisteredFormula` here; the registry can
+Core-team-curated, not admin-authored and not open to third parties — the same governance as
+Layer 3's core learning-type registry (Layer 3 §4.1.1). A `FormulaStrategy(formula_id=...)` looks up its `RegisteredFormula` here; the registry can
 grow through a core specification change without ever touching `FusionStrategy` or the code that pattern-matches on it. Mirrors
 `NormalizationFusionRegistry`'s existing plugin pattern in the current codebase — not a new
 mechanism, the same one, given an explicit home in this model.
@@ -1886,8 +1889,9 @@ Concrete motivating case: "zone occupancy" reusing "room occupancy" (itself alre
 duplicating weights/threshold/stability across every consumer that wants a coarser view.
 
 **Why this is safe for the "decide and act fast" goal, not a regression from the earlier "two waves
-only" position.** `FusionRule` is core-team-authored only (§2.1) — the dependency graph between
-`FusionRule`s is therefore **static and fully known before the engine ever runs a cycle**, not
+only" position.** `FusionRule`s are fixed per staged composed generation (§2.5) — the dependency
+graph between `FusionRule`s is therefore **static and fully known before the engine runs a cycle of
+that generation**, not
 something that changes at runtime. This means the two expensive-sounding operations — detecting a
 cycle (a `FusionRule` must never depend on itself, directly or transitively) and computing an
 evaluation order — happen **once, at registration/startup**, via a standard topological sort over the
@@ -2293,12 +2297,14 @@ command itself.
   instead of unexercised prose.
 - **Storage/timing**: every produced `HouseFact` goes through Layer 0's Persistence and Timing
   exactly as any other fact. `FusionRule.stability` (§5.2) is the one Layer-2-specific addition on
-  top: `Window`/`Stability` themselves are comparison values (`Stability` composed of two
-  `Window`s), reusing Layer 0's own elapsed-time discipline (§3.2) for the actual check — but the
+  top: `Window`/`Stability` themselves are comparison values (`Stability` composed of three
+  `Window` fields: `to_true`, `to_false`, `unavailable_grace`), reusing Layer 0's own elapsed-time discipline (§3.2) for the actual check — but the
   pending-transition *tracking* that debounce requires (which candidate is pending, since when) is
-  new here, not something Layer 0's `Window` type provides on its own. Every `Window`-typed field in
-  this document (`FusionRule.stability`, `Stability.to_true`/`to_false`) accepts a `LearnedWindow` in
-  its place, per Layer 0 §3.2's general substitution rule — not restated at each field individually.
+  new here, not something Layer 0's `Window` type provides on its own. Exactly the dwell fields
+  `Stability.to_true`/`to_false` accept a `LearnedWindow` in their place, per Layer 0 §3.2's
+  substitution rule. `Stability.unavailable_grace`, `Sensor.max_source_age` and
+  `Actuator.hold_duration` are explicit declared policies or promises and accept only a fixed
+  `Window`.
 - **`FactSource`**: a `Sensor`-produced fact carries `kind="sensor"` — a direct single-binding read.
   A `FusionRule`-produced fact carries `kind="analyzer"`, per Layer 0 §5's now-precise definition
   ("derived from combining or analyzing existing data rather than one direct entity read" —

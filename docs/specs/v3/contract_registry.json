@@ -2387,6 +2387,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-146",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-146.md",
+      "contracts": ["L2-PHYSICAL-EVIDENCE-FORMULA", "L2-FUSION-STABILITY", "L2-ENVIRONMENTAL-FORMULAS", "L2-NUMERIC-HYSTERESIS", "L2-DECLARED-CONTEXT", "L2-TYPED-STATE-INGRESS", "L3-ENVIRONMENTAL-OUTPUT", "L3-RESULT-TIME", "L3-EGRESS-ARTIFACT-ADOPTION"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }
