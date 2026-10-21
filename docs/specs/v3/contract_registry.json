@@ -1037,6 +1037,12 @@
       "owner": "docs/specs/v3/layer8_administration_spec.md",
       "heading": "5.4 Extensions section (CA4-131)",
       "depends_on": ["L7-INSTANCES", "L7-FAILURE", "L7-LIFECYCLE", "L3-SLOW-PATH-CLASSES"]
+    },
+    {
+      "id": "L5-RECOVERY-CONFIRMATION-PROPOSAL",
+      "owner": "docs/specs/v3/layer5_action_reactions_spec.md",
+      "heading": "Recovery confirmation proposal",
+      "depends_on": ["L0-RECOVERY-CONFIRMATION", "L0-RECOVERY-BASELINE", "L5-REACTION-AUTHORITY"]
     }
   ],
   "reviewed_slices": [
@@ -2289,6 +2295,17 @@
       "backlog": "docs/v3_backlog.md",
       "review": "docs/specs/v3/reviews/CA4-137.md",
       "contracts": ["L7-REGISTRY", "L7-INSTANCES", "L7-INPUTS", "L7-OUTPUTS", "L7-INVOCATION", "L7-FAILURE", "L7-LIFECYCLE", "L7-REOPENING", "L3-SLOW-PATH-CLASSES", "L3-HEALTH-BASELINE", "L8-EXTENSIONS", "L5-PROPOSAL-EVIDENCE-SOURCE"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-138",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-138.md",
+      "contracts": ["L0-STATE-HISTORY", "L0-FROZEN-HISTORY", "L0-MANUAL-CONTROL", "L0-NOTIFICATION-OUTBOX", "L0-RECOVERY-CLASSIFICATION", "L0-RECOVERY-BASELINE", "L0-RECOVERY-CONFIRMATION", "L0-FACT-SOURCE", "L3-SAMPLE-TIME", "L3-SIGNAL-EGRESS", "L3-HEALTH-BASELINE", "L5-RECOVERY-CONFIRMATION-PROPOSAL"],
       "design_constraints": [],
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",

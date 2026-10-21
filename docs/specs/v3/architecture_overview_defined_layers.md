@@ -273,7 +273,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
 
 Layer 3 analysis, training and validation are off the engine hot path. Its only in-cycle step is the
 bounded emission of an adopted live `InferenceSignal`, after the Layer-2 barrier and before Layer 4,
-with one replaceable expiry `AtJob` per contract and subject (Layer 3 §6.3). It reads only Layer-0 fact history and immutable staged contracts;
+with one replaceable expiry `AtJob` per contract and subject (Layer 3 §6.3). That emission reads the
+frozen intake and only its own staged requirements in the cycle's `FrozenHistoryView` (Layer 0 §4.1),
+never the mutable buffer. It reads only Layer-0 fact history and immutable staged contracts;
 it never reads HA runtime objects or a mutable HA payload.
 
 ### Shared learning platform

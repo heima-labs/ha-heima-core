@@ -470,7 +470,10 @@ requiredness, aggregate choices, value shape, cross-location use, and topology (
 room-opening relation of an environmental learner), but may not add an undeclared data read. A type
 that publishes a live signal or proposal must additionally require `usage="runtime_resolvable"`.
 For that usage, the same versioned feature resolver evaluates the same `SampleBinding` against the
-current Layer-0 snapshot and its declared bounded buffer; the only difference from historical
+cycle's frozen Layer-0 intake and, for a windowed feature, the `HistoryViewRequirement`s that staging
+derives from it (one per feature source, its persistence kind selecting the slice kind and its window
+the horizon), read through that cycle's `FrozenHistoryView` (Layer 0 §4.1). An incomplete slice
+(`None`) is a missing required feature, so the signal is absent. The only difference from historical
 construction is the source of records, not a duplicated transformation. `analysis_only` bindings may
 use historical facilities that are intentionally unavailable on the live path.
 
@@ -3003,7 +3006,8 @@ not provide.
 Layer 3 consumes Layer 0's immutable read-only `RuntimeHealthSnapshot` (§9), never a host-wide guess
 or a live HA object. It retains an `EngineHealthBaseline` only from an engine-ready interval with no
 slow-path work of either class running and all available health signals green. The baseline contains
-the high-water Heima RSS and the healthy cycle-latency distribution; it is recalibrated only during a
+the high-water Heima RSS, the healthy cycle-latency distribution and the healthy engine CPU usage of
+the snapshot, which is `C_engine_baseline`; it is recalibrated only during a
 later comparable quiet healthy interval, so a degradation induced by learning or by extensions cannot
 slowly become the new normal. §5.3.2 defines the quiet interval and the forced calibration window.
 `DetectedSlowPathCapacity` is the resulting diagnostic view of the snapshot, baseline, and their
@@ -3026,8 +3030,8 @@ memory, CPU-credit, slice-deadline, queue, and admission limits at `lower`, `tar
 declared envelope fits the protected budget; `target` is the normal fair set whose conservative observed
 cost forecasts fit both `M_slow` and `C_slow`. Before enough healthy run data exists, a
 forecast is the declared envelope; later observations may refine it downward only within that declared
-maximum. CPU credit accrues from elapsed monotonic time and actual process CPU time, never raw host CPU
-percentages. Each invocation receives `WorkSliceBudget = min(remaining_run_deadline, slice_fraction *
+maximum. CPU credit accrues from elapsed monotonic time and actual process CPU time (the snapshot's
+cumulative Heima process CPU time), never raw host CPU percentages. Each invocation receives `WorkSliceBudget = min(remaining_run_deadline, slice_fraction *
 latency_slack)`; non-positive slack admits no next slice. The plan's limits apply in addition to every
 type's `ResourceEnvelope`.
 
@@ -3385,7 +3389,7 @@ unbounded scripting surface into Heima.
 generic event bus. Its core-owned signal type declares the value shape; each frozen
 `IndirectAssistanceContract` identifies exactly one target resolver kind, claim-parameter tuple and
 set of legal scope kinds. Several contracts may share one signal type without sharing authority.
-Every instance carries its subject `Location`, learner/model and artifact identity,
+Every instance carries the emitting cycle's `correlation_id` (Layer 0 §5.2), its subject `Location`, learner/model and artifact identity,
 definition fingerprint, selected tier or model context where applicable, confidence/uncertainty,
 `evidence_through`, and an explicit expiry. It carries neither raw history/HA payload nor command
 intent. It is emitted only when its exact artifact is the current adopted
@@ -3397,7 +3401,9 @@ fabricated as a low-quality signal.
 **Emission timing and expiry wakeup.** Signal emission is a synchronous step of the engine cycle:
 it runs after Layer 0 closes the `CycleInputBarrier` with the cycle's Layer-2 facts and before
 Layer 4 builds its `SemanticInputSnapshot`. The emitter reads only the adopted artifact and its
-declared bounded inputs from that frozen intake and the sealed previous-cycle values; it never
+declared bounded inputs from that frozen intake, its own staged requirements in the same barrier's
+`FrozenHistoryView` (Layer 0 §4.1) and the sealed previous-cycle values; it never reads the mutable
+short-term buffer, and it never
 reads a Layer-4 output of the same cycle, which preserves the no-feedback rule below. Its
 `emitted_at` is the cycle instant (Layer 0 §3.5). A signal belongs to its emitting cycle only:
 it is never carried into a later snapshot, and every cycle re-emits or omits it from fresh inputs.
@@ -3429,6 +3435,7 @@ class IndirectSemanticAssistSignal:
     validation_summary: IndirectValidationSummary
     emitted_at: EvidenceInstant
     expires_at: EvidenceInstant
+    correlation_id: str               # the emitting cycle's id (Layer 0 §5.2), never minted here
     artifact: ArtifactRef
     definition_fingerprint: str
     tier_id: str
@@ -4397,7 +4404,9 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   only the latter. A removed binding/schema selectively withdraws the affected previews and makes only
   its producer artifacts unavailable for the corresponding shadow/promotion path.
 - A learner with live egress accepts only `usage="runtime_resolvable"`. Its historical sample and
-  live inference use the same versioned `SampleBinding` and feature resolver; a test changes a
+  live inference use the same versioned `SampleBinding` and feature resolver; a windowed live feature
+  reads only its staged `HistoryViewRequirement` from the cycle's `FrozenHistoryView`, and an
+  incomplete slice omits the signal; a test changes a
   declared binding version and proves that the previous artifact is unavailable until revalidated,
   rather than allowing a second, divergent serving transform.
 - A non-diagnostic suppression owner emits one transient `AvailabilitySuppressionOccurrence` when it

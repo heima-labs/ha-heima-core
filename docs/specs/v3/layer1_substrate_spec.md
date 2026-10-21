@@ -404,7 +404,10 @@ form. A naive `datetime`, a non-UTC offset, or a merely arbitrary string is neve
 `EvidenceInstant`.
 
 `PersistedProjection` is the deliberately narrow contract for a named structured value retained by a
-Layer-0 durable facility without making it a `HouseFact` (for example, one recovery target). Its keys and values are copied and normalized, not retained from an
+Layer-0 durable facility without making it a `HouseFact` (for example, one outbox intent or one
+critical-entity checkpoint projection). The typed record that holds it, such as an outbox record or
+a recovery-target snapshot, is a Layer-0 storage envelope, not a `PersistedProjection` (Layer 0
+§4.1). Its keys and values are copied and normalized, not retained from an
 HA object. It admits no frozen dataclass or arbitrary object: it is a JSON mapping whose values obey
 the ordinary `EvidenceValue` rule, have maximum nesting depth 2, obey the numeric domain of §3, and have
 canonical UTF-8 serialization of at most **8 KiB**. It is a persistence boundary, not a general

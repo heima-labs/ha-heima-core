@@ -356,8 +356,8 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
 Mines the history Layer 2 produces; it is not itself a fact producer in the live, per-cycle sense
 Layer 2 is — it runs on its own slow cycle (on the order of hours), reading accumulated `HouseFact`
 history rather than the current cycle's live entity states. The one exception is serving: an adopted
-live `InferenceSignal` is emitted inside the cycle, after Layer 2 and before Layer 4, from bounded
-declared inputs.
+live `InferenceSignal` is emitted inside the cycle, after Layer 2 and before Layer 4, from the frozen
+intake and its own staged requirements in the same `FrozenHistoryView` that Layer 5 uses.
 
 Learning requests a retention duration from Layer 0, but that request is not allowed to defeat the
 50,000-record per-`fact_type` hard ceiling or the 512 MiB global pruning watermark. Each history read

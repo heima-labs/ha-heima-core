@@ -6,8 +6,8 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 
 | Id | Unit | Category | Severity | Title | Verification |
 |---|---|---|---|---|---|
-| F-L0-01 | L0 | C | P2 | `previous_cycle` snapshot "never seeded from durable history" contradicts clean-restart pre-hydration | confirmed |
-| F-L0-02 | L0 | C | P2 | "Every class creates a hold" contradicts the hold qualification rule | confirmed |
+| F-L0-01 | L0 | C | P2 | `previous_cycle` snapshot "never seeded from durable history" contradicts clean-restart pre-hydration | confirmed; resolved in CA4-138 |
+| F-L0-02 | L0 | C | P2 | "Every class creates a hold" contradicts the hold qualification rule | confirmed; resolved in CA4-138 |
 | F-L0-03 | L0 | R | P2 | `system.health` notification event fact has no reserved claim or owner | confirmed |
 | F-L0-04 | L0 | C | P3 | Layer 0 is said to read nothing above it, yet derives `household_role` from the Layer-2 Person registry | confirmed |
 | F-L0-05 | L0 | D | P3 | §13 checkpoint criterion says "last-write-wins per entity", while §7.4 merges per facet per channel | confirmed |
@@ -84,16 +84,16 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L8-05 | L8 | C | P3 | §7 defines what residents see in history, but history is administrator-only | confirmed |
 | F-L8-06 | L8 | D | P3 | Up-direction change clears placements on every floor (§9.1, §9.4) or on one floor (§16) | confirmed |
 | F-L8-07 | L8 | C | P2 | Redaction keeps Heima ids, but a Heima `recipient_id` is administrator-chosen and may be a person's name | confirmed |
-| F-X1-01 | X1 | C | P2 | Recovery-target snapshots and outbox records are declared `PersistedProjection`s but cannot satisfy its depth and no-dataclass rule | confirmed |
+| F-X1-01 | X1 | C | P2 | Recovery-target snapshots and outbox records are declared `PersistedProjection`s but cannot satisfy its depth and no-dataclass rule | confirmed; resolved in CA4-138 |
 | F-X1-02 | X1 | C | — | A calendar Sensor reads Layer 0's `active_now` directly, which Layer 0 neither registers nor permits | false positive (Layer 0 §3.4, l. 414–416, names the calendar Sensor sharing the classifier, and §3.4.1, l. 436–449, defines `active_now` as a cycle read of the cache; the §4.1 requirement list and the §13 rejection at l. 3481–3486 apply to staged `CalendarViewRequirement` consumers, not to the Sensor's active-now read) |
-| F-X1-03 | X1 | O | P2 | Layer 2 hands Layer 0 an "entity delta" that deletes recovery snapshots; Layer 0 §7.4 has no such input or rule | confirmed |
+| F-X1-03 | X1 | O | P2 | Layer 2 hands Layer 0 an "entity delta" that deletes recovery snapshots; Layer 0 §7.4 has no such input or rule | confirmed; resolved in CA4-138 |
 | F-X1-04 | X1 | R | P3 | Producer diagnostics are routed to "Layer 0 §10", which defines no producer diagnostic event | confirmed |
 | F-X1-05 | X1 | D | P3 | Layer 1 restates when `actuator.channel_state.*` changes more narrowly than Layer 0 | confirmed |
 | F-X1-06 | X1 | D | P3 | `FactSource.source_id` example "an entity id" conflicts with Layer 2's Sensor `source_id` | confirmed |
-| F-X2-01 | X2 | C | P2 | Recovery classification is promised to every semantic resolver, but no Layer-4 input carries it | confirmed |
-| F-X2-02 | X2 | O | P2 | Live Layer-3 feature evaluation needs a frozen buffer read that Layer 0 offers only to Layer 5 | confirmed |
-| F-X2-03 | X2 | O | P2 | `InferenceSignal` must carry the cycle `correlation_id`, but its closed payload has no such field | confirmed |
-| F-X2-04 | X2 | O | P2 | Layer 3's CPU-credit planner needs process CPU measurements that `RuntimeHealthSnapshot` does not contain | confirmed |
+| F-X2-01 | X2 | C | P2 | Recovery classification is promised to every semantic resolver, but no Layer-4 input carries it | confirmed; resolved in CA4-138 |
+| F-X2-02 | X2 | O | P2 | Live Layer-3 feature evaluation needs a frozen buffer read that Layer 0 offers only to Layer 5 | confirmed; resolved in CA4-138 |
+| F-X2-03 | X2 | O | P2 | `InferenceSignal` must carry the cycle `correlation_id`, but its closed payload has no such field | confirmed; resolved in CA4-138 |
+| F-X2-04 | X2 | O | P2 | Layer 3's CPU-credit planner needs process CPU measurements that `RuntimeHealthSnapshot` does not contain | confirmed; resolved in CA4-138 |
 | F-X2-05 | X2 | C | P3 | `FactSourceKind="analyzer"` names the Layer-3 `PatternLearner` as a fact producer, which Layer 3 excludes | confirmed |
 | F-X2-06 | X2 | R | P3 | `LearnedPattern` is cited as a Layer-3 output but Layer 3 defines no such type | confirmed |
 | F-X2-07 | X2 | R | P3 | Retention rationale cites a learner `history_window` that Layer 3 does not define | confirmed |
@@ -102,7 +102,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X2-10 | X2 | D | P3 | `LearnedWindow` calibration is assigned to a `SemanticResolver`, which cannot read history | confirmed |
 | F-X2-11 | X2 | C | P3 | Changing the learning installation profile is a configuration mutation outside the composed generation | confirmed |
 | F-X3-01 | X3 | O | P2 | Layer 5 classifies a timing-model binding as breaking, but Layer 0's dependency index has no Layer-3 learning-definition producer or Layer-5 timing-model consumer | confirmed |
-| F-X3-02 | X3 | O | P2 | Layer 0 says Layer 5 supplies the recovery-confirmation proposal, subject and proposed facets; Layer 5's body defines no such hand-off | confirmed |
+| F-X3-02 | X3 | O | P2 | Layer 0 says Layer 5 supplies the recovery-confirmation proposal, subject and proposed facets; Layer 5's body defines no such hand-off | confirmed; resolved in CA4-138 |
 | F-X3-03 | X3 | O | P3 | `ResponseRequestDeclaration.expires_at` is mandatory, but Layer 5's consent and feedback requests have no expiry instant | confirmed |
 | F-X3-04 | X3 | O | P3 | Layer 0 says a Layer-5 calendar consumer declares a `KeywordClassifier`; Layer 5 has no such binding and routes calendar meaning through Layer 2 | confirmed |
 | F-X3-05 | X3 | D | P3 | Layer 0 §4.7 lists the Layer-6 generation without house endpoints, which Layer 6 adds with no dependents | confirmed; resolved in CA4-135 |

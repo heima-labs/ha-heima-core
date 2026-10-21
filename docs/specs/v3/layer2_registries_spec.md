@@ -275,10 +275,12 @@ changed **execution semantic** fingerprint is handled in the same transaction:
 usable only when the candidate Actuator semantic fingerprint and recovery policy match the
 snapshot's recorded values. A mismatch
 discards that snapshot rather than reconciling an intent under changed capabilities or policy; display-only
-Actuator metadata does neither. Removal of an Actuator, or a changed `entity_id` for the same stable
-`actuator_id`, also deletes the old endpoint's per-channel snapshots; they are never
+Actuator metadata does neither. An Actuator's execution semantic fingerprint includes its HA
+`entity_id`, so a changed `entity_id` for the same stable `actuator_id` is a mismatch under this
+rule, and a removed Actuator or channel leaves no candidate entry, which Layer 0 §7.4 treats the
+same way. Either case therefore deletes the old endpoint's per-channel snapshots; they are never
 migrated to another HA endpoint merely because the logical id stayed the same.
-Layer 0 receives this resolved policy/fingerprint/entity delta
+Layer 0 receives this resolved policy/fingerprint delta
 at composition commit; it never queries Layer 2’s live registry during recovery.
 
 ---

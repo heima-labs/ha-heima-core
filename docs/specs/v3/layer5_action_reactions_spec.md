@@ -3042,6 +3042,47 @@ as failed. Automatic compensation could produce a less safe physical state than 
 result. No member or call can attach an entity selector, service target, nested policy call, or arbitrary
 command graph.
 
+#### Recovery confirmation proposal
+
+For a channel whose surviving baseline has `policy="require_confirmation"`, the recovery
+evaluation of Layer 0 §7.4 (steps 1–3) produces no `ApplyStep`. In the same synchronous
+evaluation, Layer 5 hands Layer 0 §7.4.1 exactly one outcome for each such channel of the current
+`FrozenRecoveryView` episode:
+
+```python
+@dataclass(frozen=True)
+class RecoveryConfirmationProposal:
+    recovery_episode_id: str
+    actuator_id: str
+    controlled_channel: str
+    subject: Location                 # the Actuator's registered Location
+    proposed_facets: dict[str, str]   # final target, facet -> canonical JSON text (§6.0 codec)
+    proposal_fingerprint: str
+
+RecoveryProposalOutcome = RecoveryConfirmationProposal | Literal["already_satisfied", "inadmissible"]
+```
+
+A proposal exists only when the merged final target is admitted by the ordinary channel, safety,
+hold, ownership and authority checks and differs from the complete current observation.
+`"already_satisfied"` means the complete observation already matches the final target; Layer 0
+records it as `cancelled`. `"inadmissible"` covers every other case (unreadable channel, failed
+guard, filtered or revoked anchor, unavailable baseline); Layer 0 records it as `invalidated`.
+`proposal_fingerprint` is SHA-256 over RFC-8785 canonical JSON of the channel key, the recovery
+episode id, the canonical proposed facets, the channel's observed projection and observation
+epoch, the digest of that channel's `RecoveryTargetSnapshot`, the per-facet authority anchors of
+the merged target, and the Actuator configuration fingerprint. It excludes other channels and
+unrelated facts, so only a change to this channel's proposal invalidates its request. The outcome
+uses only the frozen snapshot inputs; it adds no read, I/O or wait to the cycle.
+
+When Layer 0 passes an approval, Layer 5 reruns this evaluation on the fresh barrier snapshot.
+Only when the recomputed outcome is a proposal with the same fingerprint, and Layer 0's
+compare-and-swap records `approved`, does Layer 5 issue the single ordinary `ApplyStep` through
+the dispatch fence, with `ApplyStepSource.kind="user_response"`, the verified `UserActor` and
+`source_id` set to the request id. The Reaction identity fields follow the rule above: present only
+for a separately admitted current Reaction. Accepted-target bookkeeping preserves each facet's
+existing authority anchor; approval does not relabel a Reaction or direct facet as a response
+anchor, and its physical confirmation opens no hold by itself.
+
 ### 6.0.1 Pending apply and physical observation
 
 Layer 5 owns one `PendingApply` per dispatched `ApplyStep`, keyed by its stable `apply_step_id` and
@@ -4768,9 +4809,10 @@ class PostureCheckConfiguration:
   `ThermalResponseParameter` under a complete frozen `ThermalEvidenceGateCalibration`;
   the common environmental response schema rejects a thermal-only payload.
 - A `require_confirmation` recovery proposal uses Layer 0 §7.4.1 for one request per
-  channel and recovery episode. Layer 5 recomputes its final target and ordinary
+  channel and recovery episode, handed over as one `RecoveryProposalOutcome` per channel
+  and cycle (§6.0, Recovery confirmation proposal). Layer 5 recomputes its final target and ordinary
   guards from fresh cycle inputs before a response may dispatch through the common
-  `ApplyStep` path. A changed target, unreadable channel, revoked consent, failed
+  `ApplyStep` path with `kind="user_response"`, preserving each facet's authority anchor. A changed target, unreadable channel, revoked consent, failed
   guard or changed configuration invalidates the old request; an unrelated fact
   update does not. An already satisfied target sends no command, and a response to
   a pre-restart request id is rejected.

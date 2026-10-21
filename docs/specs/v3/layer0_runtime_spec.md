@@ -822,10 +822,14 @@ durable queue immediately, independent of background disk latency (§6.4).
 
 **Stored-data boundary.** These tiers, the current index, `PreviousCycleSnapshot`, durable retry queue,
 notification delivery outbox, recovery-target snapshot, and checkpoint retain only complete `HouseFact`s or
-their explicitly declared normalized projections. Every such non-fact projection is a Layer-1
+their explicitly declared normalized projections. Every such non-fact payload is a Layer-1
 `PersistedProjection`: copied JSON-compatible data, maximum nesting depth 2, numbers within Layer 1's
 numeric domain (Layer 1 §3), and at
-most 8 KiB after canonical UTF-8 serialization. The audit queue retains
+most 8 KiB after canonical UTF-8 serialization. A record that holds such a payload — an outbox
+record, a recovery-target snapshot, a checkpoint entry — is a bounded typed storage envelope owned
+by this layer, not itself a `PersistedProjection`: its fields are scalars or closed typed
+sub-records, a nested target value is stored as canonical JSON text (Layer 5 §6.0 facet codec), and
+its canonical serialization obeys the same 8 KiB bound. The audit queue retains
 only complete validated inline event facts, never an oversized non-fact
 projection. These facilities never retain a Home Assistant `State` object,
 its full attributes mapping, HA event context, or another mutable HA runtime object. Layer 2 extracts
@@ -843,14 +847,18 @@ declared keys and their final `HouseFact`s (including an unavailable value where
 result). The next evaluation reads this immutable snapshot in O(1); it never scans the short-term
 history buffer and never waits for the durable store. A durable-batch failure does not invalidate this
 snapshot while the process remains alive.
-The snapshot starts empty after every process restart. A newly declared or impacted
-producer key also has no usable predecessor until one complete evaluation under
-current execution semantics has sealed it; durable history never seeds this view.
+The snapshot starts empty after an unclean restart or a missing/mismatched clean marker;
+only the single-use clean-shutdown pre-hydration below seeds it from durable state. A newly
+declared or impacted producer key also has no usable predecessor until one complete evaluation
+under current execution semantics has sealed it; durable history never seeds such a key, nor
+any key outside that clean-shutdown exception.
 
 **`FrozenHistoryView` is the bounded current-cycle history view for policy evaluation, not a second
 store.** During Layer-5 staging, every enabled `ReactionEvaluationPlan` declares its finite set of
 short-term `HistoryViewRequirement`s (typed state/event stream, `Window`, and slice
-shape). A requirement has the following closed form; Layer 5 computes its own bounded
+shape). At generation staging, a Layer-3 live signal emitter declares, in the same form, the
+requirements derived from its `runtime_resolvable` `SampleBinding` features (Layer 3 §4.2, §6.3).
+A requirement has the following closed form; its declaring consumer computes its own bounded
 aggregate from the returned slice, rather than asking Layer 0 to run a policy expression:
 
 ```python
@@ -869,7 +877,7 @@ positive bounded horizon retained for that stream, and the matching
 versa. The resolved requirement and producer generation enter the plan
 fingerprint; Layer 0 validates their union against the active in-memory retention and, at the cycle input
 barrier, creates one immutable view over exactly those retained records at or before that barrier.
-The view has no general query API: Layer 5 may read only a declared requirement id and receives its
+The view has no general query API: a consumer may read only a requirement id it declared and receives its
 canonical `HouseFact` slice or `None` for an incomplete interval. An empty tuple means a
 complete interval with no matching event, never incomplete history. A state requirement
 without an at-or-before-start record is incomplete; either kind of requirement is
@@ -877,7 +885,7 @@ incomplete when its requested start precedes known in-process observation covera
 required records were evicted, or the declared stream intersects a known
 Layer-2 source-age gap (§4.4). This result is frozen for the cycle. It never opens the durable store, scans a mutable live buffer, reaches
 Home Assistant, or observes an append accepted after the barrier. Retention is pinned for the short
-duration of that cycle's policy evaluation, then released.
+duration of that cycle's signal emission and policy evaluation, then released.
 
 **`FrozenCalendarView` is the corresponding bounded future-calendar view, not a semantic plan or a
 second calendar cache.** A Layer-5 plan or a core Layer-2 declared-context producer (Layer 2 §2.9)
@@ -1349,7 +1357,8 @@ existing record; a different payload under the same key is rejected. A `ready` r
 whatever ordinary fact retention says, until it is delivered or retired. Delivery is recoverable
 at-least-once, not exactly-once display: a crash after the destination accepted a message but before
 `delivered` commits may repeat it, and `notification_key` lets an idempotent destination suppress the
-repeat. Records are bounded `PersistedProjection`s (Layer 1 §4); the outbox is separate from the
+repeat. Each record is a bounded typed storage envelope (§4.1 stored-data boundary); only its
+`intent` is a `PersistedProjection` (Layer 1 §4). The outbox is separate from the
 §4.6 retry queue and from the Recovery checkpoint. A storage failure leaves an affected notification
 best effort and is diagnosed; it never blocks an evaluation cycle, an `ApplyStep` or a revocation.
 
@@ -1832,7 +1841,7 @@ administrator flag; `guest` gives `guest`; `none` with `ha_admin=True` gives `ad
 non-resident administrator, for example an installer); `none` with `ha_admin=False` gives `device`
 (an account with no Person, for example a guest-room tablet); a core-approved physical-control
 adapter gives `physical`. Only `resident` and `physical` controls can be resident learning evidence
-(Layer 3); every class creates a hold (§6).
+(Layer 3); every class can open a hold when the edge qualifies under §6.2.
 
 **Two independent actor axes.** An authenticated user is described by its household role and by HA's
 administrator flag, never by one combined category. Learning evidence and household authority
@@ -2501,9 +2510,10 @@ no live hold or identity is restored.
 ## 7. Recovery / Checkpoint
 
 A lightweight, pre-DAG context computed once per evaluation cycle, before any semantic resolver runs. It
-classifies runtime state and makes that classification available, **read-only**, to everything
-downstream — including the hold observation boundary (§6.3) — so behavior can be conservative and
-explainable right after a restart or during a partial outage.
+classifies runtime state and makes that classification available, **read-only**, to the consumers
+that declare it — Layer 5 through `FrozenRecoveryView` (§7.4) and the hold observation boundary
+(§6.3) — so behavior can be conservative and explainable right after a restart or during a partial
+outage. Layer-4 semantic resolvers do not receive it (§11).
 
 ### 7.1 Cycle-level classification
 
@@ -2587,7 +2597,8 @@ nor issues an actuator command:
 @dataclass(frozen=True)
 class RecoveryFacetBaseline:
     facet: str                               # closed by target_contract_id
-    value: EvidenceValue                     # copied canonical target value
+    value: str                               # canonical JSON text of the copied target value
+                                             # (Layer 5 §6.0 facet codec)
     captured_at: EvidenceInstant
     authority_kind: Literal["reaction", "direct"]
     reaction_id: str | None                   # required exactly for reaction authority
@@ -2634,8 +2645,8 @@ The key is `(actuator_id, controlled_channel)`, not HA `entity_id`. The owner th
 composition-time `power_recovery_policy` (Layer 2 `Actuator`) is `"reconcile"` or
 `"require_confirmation"`. For each `ChannelTarget.targeted_facets`, it replaces only that
 facet's copied value and trusted authority anchor; untouched facets and other channels
-remain. The coalesced snapshot is validated against the channel's closed target contract
-and Layer-1 projection bound. An invalid update omits the touched channel's recovery
+remain. The coalesced snapshot is a storage envelope (§4.1), validated against the channel's
+closed target contract and the envelope bound. An invalid update omits the touched channel's recovery
 snapshot and emits a diagnostic without cancelling the already-admitted command; it
 never leaves a misleading partial merge. Identical updates coalesce. The snapshot is
 queued for the next checkpoint commit, at most one write per channel in that commit. There is no synchronous
@@ -2654,13 +2665,16 @@ checkpointed desired target. A single channel may have facet entries from differ
 authorized sources; no fictitious whole-channel Reaction owner is inferred.
 
 Snapshot persistence is not an additional acceptance condition for an `ApplyStep`. If its proposed
-target cannot form a valid `PersistedProjection`, the already-authorized command still proceeds, the
+target cannot be encoded within the §4.1 envelope bound, the already-authorized command still proceeds, the
 owner omits that channel's recovery snapshot and emits a diagnostic. A later restart then has no
 baseline for that channel rather than retaining an oversized or malformed target.
 
 At configuration-generation cutover (Layer 2 §2.5), Layer 0 receives resolved Actuator policy and
 fingerprint deltas rather than reading a registry. A snapshot whose recorded fingerprint or
-recovery policy differs from the active candidate is discarded; `policy="never"` deletes it.
+recovery policy differs from the active candidate, or whose channel is absent from it (a removed
+Actuator or channel), is discarded; `policy="never"` deletes it. The Actuator execution semantic
+fingerprint includes the HA `entity_id` (Layer 2 §2.5), so rebinding an endpoint discards its
+snapshots by the same rule.
 A target therefore cannot be applied
 under changed capabilities or a newly stricter policy. Layer 5's active generation also
 filters every Reaction-anchored facet: a missing, superseded, disabled or non-automatic
@@ -2702,8 +2716,9 @@ identity/audit continuity rather than command replay.
 ### 7.4.1 Runtime confirmation of a recovery target
 
 The confirmation request is a process-local authorization opportunity, not a restored command.
-Layer 5 supplies the current admitted recovery proposal from §7.4; Layer 0 owns its identity,
-deadline and lifecycle. This mechanism applies to any opted-in Actuator channel and never
+Layer 5 supplies, for each such channel and cycle, one `RecoveryProposalOutcome` (Layer 5 §6.0,
+Recovery confirmation proposal): the current admitted proposal from §7.4, `already_satisfied` or
+`inadmissible`. Layer 0 owns the request's identity, deadline and lifecycle. This mechanism applies to any opted-in Actuator channel and never
 introduces an actuator-kind-specific response path.
 
 ```python
@@ -2775,8 +2790,8 @@ class RecoveryConfirmationOccurrence:
     occurred_at: EvidenceInstant
 ```
 
-Layer 5 supplies the subject and the bounded proposed-facet projection together with the proposal;
-Layer 0 adds no Actuator lookup. `terminal_state` is `None` exactly for `opened`. The occurrence
+Layer 5 supplies the subject and the bounded proposed-facet projection in the
+`RecoveryConfirmationProposal`; Layer 0 adds no Actuator lookup. `terminal_state` is `None` exactly for `opened`. The occurrence
 carries no actor identity, raw HA state or service data. Layer 6 alone appends it as the
 `recovery.confirmation_request` event fact with its delivery record in the unified outbox (§4.5);
 the operation id appends each phase at most once. A delivery failure does not change the request:
@@ -2875,12 +2890,17 @@ retry-queue budget from its effective memory limit when a new snapshot is publis
 
 `RuntimeHealthSnapshot` is immutable and capability-explicit. It contains `captured_monotonic`, the
 source/capability set and last successful probe time, effective CPU capacity when known, an effective
-enforceable memory limit when known, current Heima process RSS when available, cgroup memory-event and
+enforceable memory limit when known, current Heima process RSS when available, cumulative Heima
+process CPU time, cgroup memory-event and
 CPU/memory-pressure evidence when available, plus a bounded recent distribution of completed engine
-cycle latency. A latency sample starts when Layer 0 accepts a meaningful event into a cycle and ends
-when that cycle has completed its ordinary engine evaluation and result commit. The coordinator records
-one O(1) monotonic sample into a bounded ring; percentile aggregation and probe refresh are performed
-outside the engine evaluation path. Equal-`when` concurrent facts remain one cycle and therefore one
+cycle latency and the recent engine CPU usage. A latency sample starts when Layer 0 accepts a meaningful event into a cycle and ends
+when that cycle has completed its ordinary engine evaluation and result commit. Over the same span the
+coordinator reads the process CPU clock once at each end. It records one O(1) monotonic sample and
+one O(1) CPU-time delta into bounded rings; percentile aggregation, the engine CPU usage (the sum of
+recent cycle CPU deltas divided by the elapsed monotonic time they cover, in CPU-seconds per second,
+the unit of effective CPU capacity) and probe refresh are performed outside the engine evaluation
+path. Process CPU time comes from the process's own standard-library accounting, never a host-wide
+percentage. Equal-`when` concurrent facts remain one cycle and therefore one
 latency sample.
 
 `RuntimeResourceProbe` has no required third-party dependency. On Linux cgroup v2 it reads the
@@ -3010,8 +3030,10 @@ Layer 4 owns an acyclic same-cycle semantic DAG: a resolver may read only its de
 semantic claims already resolved earlier in the deterministic topological order. A `previous_cycle`
 value is instead an explicitly declared Layer-0 snapshot input, never an implicit substitute for an
 upstream semantic edge. Layer 0 is outside that DAG by construction: wall-clock time and Recovery's
-classification are **engine-computed context**, read-only input available to every semantic resolver within the
-current cycle, not another resolver's output. Layer-7 extensions run outside the cycle and never
+classification are **engine-computed context**, read-only input available within the current cycle
+to the layer that declares it, not another resolver's output. A semantic resolver receives only the
+cycle identity and time (Layer 4 §5.1); Recovery's classification reaches only Layer 5, through
+`FrozenRecoveryView` (§7.4). Layer-7 extensions run outside the cycle and never
 read it (Layer 7 §7). A semantic resolver reads Layer-0
 context fresh every cycle, as it reads Layer-2 facts fresh every cycle; neither is produced by an
 earlier semantic resolver in the same pass.
@@ -3084,7 +3106,8 @@ concrete checklist rather than re-deriving one:
   At one `CycleInputBarrier`, the frozen view returns the same bounded slice
   on retry; a later append is invisible. A complete empty event interval is
   `()`, while a missing state-at-start record, gap or evicted interval is
-  `None`, never an empty slice (§4.1).
+  `None`, never an empty slice (§4.1). A Layer-3 live signal emitter reads its own staged
+  requirements from the same barrier's view and cannot read a Layer-5 requirement id, or the reverse.
 - A state that changes once and is then read unchanged for hours creates one
   `HouseFact`, while complete required-stream coverage permits a later
   historical as-of read. A known source-report expiry opens a durable
@@ -3440,7 +3463,9 @@ concrete checklist rather than re-deriving one:
 - A configuration-generation swap assigns a new non-forgeable `configuration_fingerprint` to every
   impacted source, forcing an otherwise unchanged state fact to persist; an Actuator recovery snapshot
   whose fingerprint no longer matches is discarded before recovery can propose or apply it (§5/§7.4).
-- Every non-fact durable projection is checked as a copied Layer-1 `PersistedProjection`: an oversized recovery target leaves its
+- Every non-fact durable payload is checked as a copied Layer-1 `PersistedProjection`, and every
+  outbox record, recovery-target snapshot and checkpoint entry as a typed storage envelope within
+  the §4.1 bound whose nested target values are canonical JSON text: an oversized recovery target leaves its
   already accepted `ApplyStep` intact but creates no baseline; and one invalid critical-entity
   projection is omitted without invalidating other checkpoint entries (§4.1/§7.3/§7.4).
 - Retention (time-based or count-ceiling) never evicts the single most recent record for a given
@@ -3513,10 +3538,12 @@ concrete checklist rather than re-deriving one:
   after an unclean restart, missing/mismatched clean marker, or unhealed durable-batch failure it
   instead resolves `available=False` for that first cycle and performs no evaluation-path disk read
   (§4.1).
-- Recovery/Checkpoint classification is available, read-only, before the first semantic resolver runs in every
-  test cycle, including the first cycle after a simulated restart.
+- Recovery/Checkpoint classification is settled before the first semantic resolver runs in every
+  test cycle, including the first cycle after a simulated restart, and reaches Layer 5 read-only
+  through that cycle's `FrozenRecoveryView`; no Layer-4 resolver input carries it (§11).
 - `RuntimeHealthSnapshot` is refreshed outside engine evaluation and one completed cycle contributes
-  exactly one bounded, O(1) monotonic latency sample. A cgroup-v2 fixture verifies effective
+  exactly one bounded, O(1) monotonic latency sample and one O(1) process-CPU-time delta; the engine
+  CPU usage is aggregated outside the cycle in CPU-seconds per second. A cgroup-v2 fixture verifies effective
   CPU/memory/pressure parsing; an unavailable or non-enforceable platform value remains absent with its
   capability unset, never a guessed host allocation. Probe failure and percentile aggregation neither
   block a cycle nor produce a `HouseFact`, semantic-resolver input, policy decision, or action (§9).
@@ -3525,7 +3552,8 @@ concrete checklist rather than re-deriving one:
   `user_response` provenance and no raw HA identity/context; its `ControlActor` is `resident` for a
   resident (also when an administrator), `guest`, `administrator` for an installer with no Person,
   `device` for a tablet user with no Person, and `physical` for the adapter (CA4-119). Every class
-  creates a hold with `origin="manual"` and that `manual_actor`. The same edge from an unavailable
+  can open a hold with `origin="manual"` and that `manual_actor` when the edge qualifies under
+  §6.2; an edge with no physically confirmed current admitted Reaction target opens none. The same edge from an unavailable
   channel, an unknown/automation/service context, or a duplicate ingress report emits none. A device that becomes unavailable after a dumb wall switch power-cut is
   persisted as an unavailable channel-state transition; it never becomes `off`, a manual-control event, an implicit
   hold, or a zero-correction observation, and recovery of availability cannot synthesize the missing
