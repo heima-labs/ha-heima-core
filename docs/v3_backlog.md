@@ -6323,6 +6323,18 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-144 — Layer-8 governance surface missed owner paths
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G8 (F-X9-02, F-X9-03, F-X9-05). **References:** [Layer 3 §4.7](specs/v3/layer3_learning_spec.md), [Layer 5 §4.2](specs/v3/layer5_action_reactions_spec.md), [Layer 6 §5.2](specs/v3/layer6_notification_spec.md), [Layer 8 §5, §6.1, §6.2, §7, §10.3, §13](specs/v3/layer8_administration_spec.md).
+
+**Problem.** Layer 3's administrative lifecycle transitions (shadow, `proposal_eligible`, rollback, disable) had no command or record, so a proposal learner could not reach review from the panel; the map-card house banner had no source; and Layer 5 said Layer 8 sends "only" seven commands while rename, removal and restore are separate staging edits, restore missing from Layer 8's `reaction` kind.
+
+**Approved resolution (2026-10-21).**
+1. Lifecycle command (F-X9-02): one Layer-3 command `set_learning_lifecycle_stage` (`enter_shadow`, `promote_proposal_eligible`, `rollback`, `disable`) appending `LearningLifecycleTransition` to a per-instance, per-definition chain on the model of the §4.9 signal adoption chain (expected head, idempotent operation id, gates rechecked at commit); Layer 8 exposes `learning/set_lifecycle_stage`. Live-signal promotion keeps its own command. Rejected: four separate commands.
+2. Mechanical: Layer 6 hands `house` item phases to a Layer-8 house-banner projection (F-X9-03); Layer 5's command surface names the catalog and revalidation staging edits, and Layer 8's `reaction` kind includes restore (F-X9-05).
+
+No hot-path cost. See the [CA4-144 review](specs/v3/reviews/CA4-144.md); no V3 runtime test ran.
+
 #### CA4-143 — Notification contracts had gaps and over-broad rules
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G7 (F-L0-03, F-L6-02, F-L6-03, F-L6-04, F-L6-06; F-L6-05 duplicate of F-L0-03). **References:** [Layer 0 §4](specs/v3/layer0_runtime_spec.md), [Layer 1 §3.1](specs/v3/layer1_substrate_spec.md), [Layer 3 §6.3.1](specs/v3/layer3_learning_spec.md), [Layer 6 §4.3, §5.4, §6.2, §7.6, §9.3, §14](specs/v3/layer6_notification_spec.md).

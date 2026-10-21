@@ -179,7 +179,9 @@ principal (Layer 8 §4), is its Person's stored `ha_user_id`.
   `guest` while `household.guest_stay` (Layer 2 §2.9) is active, and the Heima map card's banner
   (Layer 8 §9.14). A `house` item's content is safe for anyone present: closed fields, room and
   device names only, never a person's identity or a personal fact. Being in `house` never makes a
-  guest a resident and grants nothing.
+  guest a resident and grants nothing. Layer 6 hands each `house` item phase (opening and closing),
+  read-only and off the hot path, to Layer 8's house-banner projection (Layer 8 §10.3); the banner
+  is that projection, not a `notify.*` endpoint.
 - `administrators` is the recipients with `administrator=True`. An administrator may be a non-resident
   (an installer, B2B), so an `administrators` kind (`proposal.review_pending`, `system.health`)
   carries no resident personal data: no person identity, presence or household context.

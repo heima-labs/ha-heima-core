@@ -129,10 +129,10 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X8-07 | X8 | O | P3 | Layer 5's commit-time `evidence_source_unavailable` rule names only learning instances, but Layer 7 requires the same commit for analyzer instances | confirmed |
 | F-X8-08 | X8 | O | P2 | Layer 0 delegates breaking-consumer invalidation to Layer 2 §2.5, which defines none, while Layer 7 relies on it for Layer-2 consumers | confirmed; resolved in CA4-137 |
 | F-X9-01 | X9 | O | P1 | Layer-6 `HouseEndpoint`s are administrator-configured generation records, but Layer 8 has no editable kind for them | confirmed; resolved in CA4-135 |
-| F-X9-02 | X9 | O | P2 | Layer-3 artifact lifecycle transitions (shadow, `proposal_eligible`, rollback, disablement) have no Layer-8 command | confirmed |
-| F-X9-03 | X9 | O | P2 | The map-card house banner has no owner hand-off: Layer 6 does not give Layer 8 the open `house` items | confirmed |
+| F-X9-02 | X9 | O | P2 | Layer-3 artifact lifecycle transitions (shadow, `proposal_eligible`, rollback, disablement) have no Layer-8 command | confirmed; resolved in CA4-144 |
+| F-X9-03 | X9 | O | P2 | The map-card house banner has no owner hand-off: Layer 6 does not give Layer 8 the open `house` items | confirmed; resolved in CA4-144 |
 | F-X9-04 | X9 | C | P2 | Layer 8 gives a guest no role, but a guest who is an HA administrator is an administrator for Layer 0 and for Layer 8's own role rule | confirmed; resolved in CA4-140 |
-| F-X9-05 | X9 | C | P2 | Layer 5 says Layer 8 sends "only these" seven commands, but Layer 8 also submits rename, removal and restore of Reactions, including learner-origin ones | confirmed |
+| F-X9-05 | X9 | C | P2 | Layer 5 says Layer 8 sends "only these" seven commands, but Layer 8 also submits rename, removal and restore of Reactions, including learner-origin ones | confirmed; resolved in CA4-144 |
 | F-X9-06 | X9 | O | P3 | Layer 6 places an "every recipient off" warning in Layer 8's Notifications section, which Layer 8 does not list | confirmed |
 | F-X9-07 | X9 | O | P3 | Layer 2 has the panel suggest a Person's `ha_user_id`, a source missing from Layer 8's closed suggestion list | confirmed |
 | F-O1-01 | O1 | D | P3 | Overview says Layer 6 produces seven event fact types; Layer 6 registers eight | confirmed |

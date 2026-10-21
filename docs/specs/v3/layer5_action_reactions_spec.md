@@ -1823,8 +1823,10 @@ governance ledger.
 
 #### Common Layer-8 command surface
 
-Layer 8 renders descriptor-specific forms but sends only these shared typed
-Reaction commands to Layer 5. Command 1 and the descriptor-specific
+Layer 8 renders descriptor-specific forms and sends Layer 5 only these shared typed
+Reaction commands, plus the Layer-5 staging contributions of its change set that are catalog or
+revalidation edits of any Reaction: rename, removal, restore and unchanged-configuration
+revalidation (§4.2; for a learner-origin Reaction restore must equal a committed configuration). Command 1 and the descriptor-specific
 preparation inputs are configuration staging: Layer 8 submits them as edits of
 its session change set, Layer 5 validates them as its contribution to the
 candidate composition, and they take effect only when that change set commits

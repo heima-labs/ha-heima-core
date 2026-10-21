@@ -123,7 +123,7 @@ Sections are organized by the user's question, not by layer.
 | Understanding | admin | How does Heima understand the situation? | Semantic resolver definitions: occupancy, presence, activity (Layer 4) |
 | People | admin | Who lives here? | Persons: HA persons classified `resident` or `guest` and their HA user link (Layer 2 §2.8); consent authority (Layer 5 §7.1.1); calendar sources and keywords for guest stays and planned absences, default guest rooms (Layer 2 §2.9) |
 | Automations | admin | What does Heima do, and why? | Reactions (state, decisions, history), proposals, artifact adoption (Layer 5) |
-| Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, live-signal promotion and adoption (Layer 3) |
+| Learning | admin | What is it learning? | Learning definitions and family enablement, artifacts, findings, lifecycle stages (shadow, proposal eligibility, rollback, disable), live-signal promotion and adoption (Layer 3) |
 | Extensions | admin | What does each extension add, and is it working? | Registered extensions; their instances (parameters, input slots, claims, analyzer bindings); runtime state, cost, produced facts and their consumers; missing requirements (Layer 7, §5.4) |
 | Notifications | admin | Who receives what? | Recipients, house endpoints (device accounts such as the guest-room tablet), family options, each recipient's preferences, notification history (Layer 6) |
 | System | admin | Is Heima healthy? | Health, diagnostics, holds (read-only), recovery, history (§7) |
@@ -260,7 +260,8 @@ accounts never see extensions as objects.
   rename never creates a configuration generation (Layer 5 §4.2).
 - **Immediate actions** are governance or answer commands that are not configuration mutations:
   promotion, disablement, consent grant or revoke, consent-authority changes, proposal review,
-  artifact adoption mode, Layer-3 live-signal promotion and signal-artifact adoption (Layer 3 §4.9),
+  artifact adoption mode, Layer-3 lifecycle stage changes (Layer 3 §4.7), live-signal promotion and
+  signal-artifact adoption (Layer 3 §4.9),
   answers to requests, finding acknowledgement, house-map layout saves (§9.9: presentation only,
   so no consequence dialog).
   They take effect at once after a confirmation dialog that states their consequence, and never
@@ -299,7 +300,7 @@ the Layer-2 generation, Layer 0 §4.7):
 | `layer2` (extensions) | `extension_producer` (the producer role of an extension instance, Layer 7 §4) |
 | `layer3` | `learning_definition` (including its family enabled state), `extension_analyzer` (the analyzer role of an extension instance) |
 | `layer4` | `semantic_resolver_definition` |
-| `layer5` | `reaction` (admin-direct configuration; `display_name`, removal or unchanged-configuration revalidation for any Reaction), `guard_profile`, `comfort_trajectory_prerequisite` |
+| `layer5` | `reaction` (admin-direct configuration; `display_name`, removal, restore or unchanged-configuration revalidation for any Reaction, Layer 5 §4.2), `guard_profile`, `comfort_trajectory_prerequisite` |
 | `layer6` | `recipient`, `house_endpoint` (CA4-135), `family_options` |
 
 An extension instance with both roles is one entity with two edits sharing its `instance_id`: the
@@ -401,7 +402,7 @@ System → History is one timeline built only from existing durable records:
 | Entry | Source |
 |---|---|
 | Configuration commit | Layer 0 manifest and layer generation records (retained indefinitely, Layer 0 §4.7) |
-| Governance action | Layer 5 authority, consent, consent-authority, adoption and proposal-review transitions; Layer 3 signal-artifact adoption transitions |
+| Governance action | Layer 5 authority, consent, consent-authority, adoption and proposal-review transitions; Layer 3 signal-artifact adoption and learning lifecycle transitions |
 | System commit | Layer 0 bootstrap manifest after a code upgrade |
 
 Each configuration entry shows who, when, the field-level diff against the previous generation and
@@ -870,6 +871,7 @@ read-only to Layer 8 as an additional consumer:
 | Automation state | Layer 5 authority transitions (mode), the active composed generation (catalog entries, and `configuration_invalid` from each commit's invalidated dependents), Layer-6 availability tracker episodes (block and reason) |
 | Pending items | Layer 5 proposal-review, consent and advisory occurrences, Layer 0 recovery-confirmation occurrences |
 | Heima health | Layer 0 runtime-error occurrences (§10.1), health snapshots, degradation-diagnostic changes and recovery-state changes (§5.2) |
+| House banner | Layer 6 `house` item phases (Layer 6 §5.2): an opening phase adds the item, its closing phase removes it (§9.14) |
 
 Health is `error` while Layer 0's runtime error condition holds (Layer 0 §10.1: no active manifest,
 or failing durable writes), the same predicate as the `system.health` notification; `degraded` when any degradation diagnostic is active, `ok` otherwise. At process start every
@@ -964,6 +966,7 @@ Message catalog (websocket type prefix `heima/v3/`); "admin" and "resident" are 
 | `requests/answer` | command | admin, resident (the owner's admitted actors and own checks apply: a non-resident administrator only where the owner admits `admin`, Layer 0 §5.1.3) | Layer 0 response ingress |
 | `reactions/promote`, `reactions/disable`, `reactions/set_adoption_mode` | command | admin | Layer 5 §4.2 |
 | `learning/promote_signal`, `learning/adopt_signal_artifact`, `learning/set_signal_adoption_mode` | command | admin | Layer 3 §4.9 (initial `live_signal_eligible` promotion, `adopt_pinned_signal_artifact`, `set_signal_artifact_adoption_mode`) |
+| `learning/set_lifecycle_stage` | command | admin | Layer 3 §4.7 (`set_learning_lifecycle_stage`: enter shadow, promote to `proposal_eligible`, rollback, disable) |
 | `reactions/set_consent` | command | resident with consent authority | Layer 5 §4.2 |
 | `consent_authority/stage` | command | admin | Layer 5 §4.2 |
 | `proposals/review` | command | admin | Layer 5 §4.2 |
@@ -1131,6 +1134,11 @@ developer or a script.
   procedure, and after its apply the map redraws without the check; "Continue" with open checks
   moves to devices; returning to the procedure with a device already registered skips the step;
   without devices and with topology applied, the step is shown again.
+- Governance surface (CA4-144): the Learning section moves a proposal learner to shadow and to
+  `proposal_eligible` through `learning/set_lifecycle_stage`; restoring a removed learner-origin
+  Reaction from History enters the change set as a `reaction` restore; a weather-protection action
+  notice with `house_delivery=True` appears on the guest-room card banner from the house-banner
+  projection and disappears at its closing phase.
 - Map card and access (CA4-113): an HA user with no role opens the panel and sees only the Overview
   map in public text, and `objects/list` from that user is rejected; a card added to a
   dashboard renders without any resource step; with `control_rooms: [guest_room]` a tap on the

@@ -2365,6 +2365,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-144",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-144.md",
+      "contracts": ["L3-EGRESS-ARTIFACT-ADOPTION", "L5-REACTION-AUTHORITY", "L6-AUDIENCES", "L8-PROJECTIONS", "L8-MAP-CARD", "L8-CHANGE-SET", "L8-BACKEND", "L8-HISTORY-RESTORE"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

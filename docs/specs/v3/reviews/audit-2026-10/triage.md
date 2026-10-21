@@ -37,9 +37,10 @@ Operational handoff for the triage step (unit T). A new session resumes from thi
 | CA4-140 (G4) | F-L2-01, F-L2-02, F-L3a-02, F-X9-04, F-L8-07 | `e9f0760` |
 | CA4-141 (G5) | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | `d03766c` |
 | CA4-142 (G6) | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | `96e2b17` |
-| CA4-143 (G7) | F-L0-03 (+F-L6-05), F-L6-02, F-L6-03, F-L6-04, F-L6-06 | commit "docs: close notification contract gaps (CA4-143)" |
+| CA4-143 (G7) | F-L0-03 (+F-L6-05), F-L6-02, F-L6-03, F-L6-04, F-L6-06 | `6418e5f` |
+| CA4-144 (G8) | F-X9-02, F-X9-03, F-X9-05 | commit "docs: complete Layer-8 governance surface (CA4-144)" |
 
-All four P1 are resolved. Next CA4 id: **CA4-144**.
+All four P1 are resolved. Next CA4 id: **CA4-145**.
 
 ## P2 groups
 
@@ -52,7 +53,7 @@ All four P1 are resolved. Next CA4 id: **CA4-144**.
 | G5 | Learning ↔ Reaction contracts | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | done (CA4-141) |
 | G6 | Layer-5 descriptor rules | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | done (CA4-142) |
 | G7 | Notifications | F-L0-03, F-L6-02, F-L6-03, F-L6-04, F-L6-06 | done (CA4-143) |
-| G8 | Layer-8 governance surface | F-X9-02, F-X9-03, F-X9-05 | todo |
+| G8 | Layer-8 governance surface | F-X9-02, F-X9-03, F-X9-05 | done (CA4-144) |
 
 After the P2 groups: the P3 findings in bulk per layer (`findings.md`, severity P3, verification
 `confirmed`, not a duplicate, not resolved). The verification files also list a few unverified "New
@@ -60,6 +61,6 @@ candidates" (A, C) to consider at the end.
 
 ## Next step
 
-G7 is done (CA4-143). Resume with G8 (Layer-8 governance surface): read its findings in
-`findings/<unit>.md` and `verification/<area>.md`, write the impact record, list the mechanical
-corrections for approval and ask the product questions one at a time.
+All P2 groups are done (CA4-137–144). Next: the P3 findings in bulk per layer (`findings.md`,
+severity P3, verification `confirmed`, not a duplicate, not resolved), wording only, presented per
+layer for cumulative approval; then the unverified "New candidates" of the verification files.

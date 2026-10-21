@@ -1874,6 +1874,36 @@ consumer (§4.9), and only under its existing current-input/freshness gates. No
 model self-promotes; a later compatible artifact may receive bounded adoption without another
 per-revision decision only after an explicit core/admin authority defines that policy (§4.9).
 
+**Lifecycle command.** Every administrative stage change outside live-signal promotion uses one
+command, `set_learning_lifecycle_stage`, recorded in one durable ordered chain per exact
+`(learning_instance_id, definition_fingerprint)`, on the model of the §4.9 adoption chain:
+
+```python
+@dataclass(frozen=True)
+class LearningLifecycleTransition:
+    transition_id: str
+    operation_id: str                  # stable retry identity
+    learning_instance_id: str
+    definition_fingerprint: str
+    previous_transition_id: str | None
+    action: Literal["enter_shadow", "promote_proposal_eligible", "rollback", "disable"]
+    resulting_stage: Literal["eligible_for_shadow", "diagnostic_only", "shadow", "proposal_eligible"]
+    artifact: ArtifactRef | None       # the gated artifact for promote_proposal_eligible
+    actor_ref: str                     # authenticated administrator
+    recorded_when: EvidenceInstant
+```
+
+The request names the exact instance, definition fingerprint, expected current transition (or the
+empty-current sentinel), action, authenticated actor and operation id. `enter_shadow` requires the
+type's shadow policy and an artifact `eligible_for_shadow`; `promote_proposal_eligible` rechecks the
+declared shadow gate (or, for `optional_before_proposal`, the offline validation) at commit and
+records the gated artifact; `rollback` returns to the stage before the current transition;
+`disable` withdraws every administrative stage and returns to the core-derived stage. Each commit
+serializes against the current head, a stale head changes nothing, and a retry with the same
+operation id returns the same result. A changed definition fingerprint starts a new chain at the
+core-derived stage. Live-signal promotion keeps its own §4.9 command because it also binds an
+artifact and an adoption mode. These are governance commands off the evaluation cycle.
+
 Each published model declares the observables it monitors for drift: input-feature distribution and
 missingness, target/outcome distribution once available, prediction residuals and calibration, and
 schema/topology/configuration fingerprints. A material change is a diagnostic event, never a reason
@@ -4413,6 +4443,11 @@ only by [Layer 5](layer5_action_reactions_spec.md); they are not unresolved Laye
   select a schema by relation profile, descriptor text or payload shape; an optional routine shadow uses
   only the latter. A removed binding/schema selectively withdraws the affected previews and makes only
   its producer artifacts unavailable for the corresponding shadow/promotion path.
+- Lifecycle command (CA4-144): a `required_before_proposal` learner reaches review only through
+  `set_learning_lifecycle_stage` `enter_shadow` then `promote_proposal_eligible`, the latter
+  rejected while the shadow gate fails; a stale expected transition changes nothing; a retried
+  operation id returns the same transition; `rollback` from `proposal_eligible` returns to `shadow`;
+  `disable` returns to the core-derived stage; a changed definition fingerprint starts a new chain.
 - A learner with live egress accepts only `usage="runtime_resolvable"`. Its historical sample and
   live inference use the same versioned `SampleBinding` and feature resolver; a windowed live feature
   reads only its staged `HistoryViewRequirement` from the cycle's `FrozenHistoryView`, and an
