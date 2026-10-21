@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-149 — Overview and recap drift (P3 bulk)
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, overview and recap P3 findings (F-O1-01, F-O1-02, F-O1-03, F-O1-04, F-O1-05, F-O1-06, F-O1-07, F-O2-02, F-O2-03, F-O2-04). **References:** [overview](specs/v3/architecture_overview_defined_layers.md), [recap](v3_architecture_recap.md), [Layer 5 §3.2 rule 9](specs/v3/layer5_action_reactions_spec.md).
+
+**Approved resolution (2026-10-21, cumulative).** Overview: eight Layer-6 event fact types including `system.health` and runtime-health occurrences into Layer 6; both Initial-V3 candidate kinds; guests and device accounts without HA admin see only the map in public text; absence programs pause for others and end only through rule 4's exits (also corrected in Layer 5 rule 9, which restated "only a household return"); presence simulation starts from the planned-absence family with stabilized casa occupancy as its one guard; Layer 3's inputs include previous-cycle values and the runtime-health snapshot; the global storage limit is a pruning watermark. Recap: Layers 0–8 authoritative; `occupied_without_residents` among initial claims; fact-only and action kinds listed separately, `user_response`, and no action of `kind="extension"`.
+
+Orientation only, except the Layer-5 rule-9 wording. See the [CA4-149 review](specs/v3/reviews/CA4-149.md); no V3 runtime test ran.
+
 #### CA4-148 — Layer 6, 7 and 8 wording (P3 bulk)
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P3. **Origin:** V3 coherence audit 2026-10, P3 findings owned by Layers 6–8 (F-L6-07, F-L6-08, F-X3-06, F-X7-02, F-X7-03, F-L7-07, F-X8-05, F-L8-03, F-L8-04, F-L8-05, F-L8-06, F-X9-06, F-X9-07). **References:** [Layer 6 §2, §6, §9.2, §13, §14](specs/v3/layer6_notification_spec.md), [Layer 7 §8](specs/v3/layer7_extensions_spec.md), [Layer 0 §5.1](specs/v3/layer0_runtime_spec.md), [Layer 8 §5, §6.5, §7, §9.4, §13, §16](specs/v3/layer8_administration_spec.md).

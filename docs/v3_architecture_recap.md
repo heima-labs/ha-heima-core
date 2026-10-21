@@ -6,7 +6,7 @@ familiarity with any earlier version of Heima. Each block links to the backlog s
 where the full reasoning/evidence trail lives, for anyone who wants to go deeper — but the recap
 itself should be enough to understand the system on its own.
 
-**Authority and maintenance.** The Layer 0--6 and Layer 8 specifications are authoritative; where this recap
+**Authority and maintenance.** The Layer 0--8 specifications are authoritative; where this recap
 differs from one, the specification wins. This is a manually maintained orientation document and is
 updated whenever a confirmed decision is promoted into an authoritative specification. **Reviewed
 through:** 2026-10-14 for every CA4 correction closed in `docs/v3_backlog.md`, including the
@@ -155,14 +155,14 @@ depend on them changing mid-cycle, and nothing here depends on a semantic claim.
   inferred resident edge or correction.
   → `v3_backlog.md` §`HouseFact` persistence model, CA4-05, CA4-09 and CA4-33.
 - **`FactSource` / `ApplyStepSource`**: one structured-provenance vocabulary spanning both facts and
-  actions — every `HouseFact` and every `ApplyStep` carries a `kind` (sensor, analyzer, extension,
-  reaction, admin command, resident response, timeout, recovery, system...), a `source_id`,
+  actions — every `HouseFact` and every `ApplyStep` carries a `kind` (fact-only: sensor, analyzer,
+  extension, semantic_resolver; shared or action: reaction, admin_command, user_response, timeout,
+  recovery, system...), a `source_id`,
   an `actor_type`, and a `correlation_id`. Non-forgeable (an untrusted or malformed source gets
   sanitized into a clearly non-authoritative value, never silently trusted) and redacted before it
   reaches diagnostics or storage. This is what makes "why is the house in this state" answerable:
   follow one `correlation_id` from a resolved state back through the facts that fed it to whatever
-  produced them. An extension-related `ApplyStepSource` is provenance only; it never grants an extension a
-  direct command capability.
+  produced them. An action never has `kind="extension"`: an extension has no command capability.
   → `v3_backlog.md` §Observability, re-grounded.
 - **Divergence Hold Manager**: residents use ordinary HA device controls. Layer 0 §6 tracks
   one process-local hold per Actuator channel when a valid observation diverges from a
@@ -457,8 +457,8 @@ fresh Layer-2 facts and only its declared same-cycle upstream claims already res
 topological order; separately declared `previous_cycle` values come from Layer 0's bounded snapshot.
 The resulting evaluation is acyclic and deterministic in one pass.
 
-The initial semantic claims are room and casa `occupancy`, household `presence`, and independently
-scoped `activity.<activity_id>`; planned absence and guest stay are declared Layer-2 facts
+The initial semantic claims are room and casa `occupancy`, household `presence`, casa
+`occupied_without_residents` (CA4-122), and independently scoped `activity.<activity_id>`; planned absence and guest stay are declared Layer-2 facts
 (`household.*`, CA4-121). They intentionally do not form one global enum: occupancy, presence,
 activity, quiet/sleep context, planned absence and guest stay can coexist and require their own vocabulary,
 evidence, availability and safety contracts. The monolithic V2 `house_state` is retired rather than

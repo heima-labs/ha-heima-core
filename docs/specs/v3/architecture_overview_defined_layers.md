@@ -65,7 +65,7 @@ an immutable contract or staging dependency, never runtime message delivery.
 | 3 | Historical analysis; shared statistical lifecycle; optional ML governance; artifacts; findings; typed signals and learned candidates | `DiagnosticFinding`, `InferenceSignal`, `LearningProposalCandidate`, typed availability suppression occurrences | Fact persistence, HA access, semantic-claim resolution, policy approval, commands, notification rendering |
 | 4 | Core semantic-resolver registry; staged semantic DAG; authorized signal gateway; current semantic-claim resolution | Resolved semantic `HouseFact`s, completed immutable `DecisionSnapshot`, typed availability suppression occurrences | HA reads, historical learning/model lifecycle, policy/guard/envelope evaluation, Actuator commands, notification delivery |
 | 5 | Candidate validation/review; configured-Reaction staging; Reaction evaluation; action admissibility; `ApplyStep` generation | `ReactionProposal`, `ConfiguredReaction`, ordered one-endpoint `ApplyStep`s, per-Reaction decision state, typed suppression, follow-up and notice occurrences | HA read bindings, raw state interpretation, historical learning, notification delivery |
-| 6 | Notification kind registry and adapters; recipients and audiences; families, quiet hours, digests; delivery, rendering, retries, fallback; availability episode tracker | The seven Layer-6 event facts with their outbox records; HA `notify.*` deliveries and `heima_notification` events | Response decisions, governance, occurrence meaning, configuration and history surfaces |
+| 6 | Notification kind registry and adapters; recipients and audiences; families, quiet hours, digests; delivery, rendering, retries, fallback; availability episode tracker | The eight Layer-6 event facts with their outbox records; HA `notify.*` deliveries and `heima_notification` events | Response decisions, governance, occurrence meaning, configuration and history surfaces |
 | 8 | The Heima panel by role; session change set, preview and apply; history and restore; explanations; house map; published HA entities; translations | Typed commands to owning layers; read-only HA entities; rendered views | Any configuration meaning, validation, authority, decision or fact; evaluation-cycle work |
 
 ## 4. Foundation: Layers 0 and 1
@@ -189,9 +189,10 @@ Layer 0 standardizes the machinery every higher layer needs:
 - **Runtime health:** Layer 0 measures latency, memory, CPU and runtime capabilities. It never
   decides whether a learner may run; Layer 3 consumes the read-only snapshot on its slow path.
 
-Layer 0 reserves the seven Layer-6 notification kinds as Layer-6-owned event fact types:
+Layer 0 reserves the eight Layer-6 notification kinds as Layer-6-owned event fact types:
 `reaction.follow_up`, `automation.availability`, `reaction.advisory`, `reaction.action_notice`,
-`recovery.confirmation_request`, `reaction.consent_request` and `proposal.review_pending`. A lower
+`recovery.confirmation_request`, `reaction.consent_request`, `proposal.review_pending` and
+`system.health`. A lower
 layer may not append any of them directly. `reaction.follow_up` alone has a narrow durable-intent
 preparation boundary (Layer 0 §4.5); event rendering and delivery remain Layer-6 work.
 
@@ -236,7 +237,9 @@ Layer 2 is the semantic ingress and current-cycle fusion layer.
   fact with its own value contract; consumers read the fact, never a calendar (CA4-121).
 - **Occupied without residents** (someone inside, no resident home) is one Layer-4 casa claim;
   each Reaction descriptor version fixes `continue` or `pause` for it, and behavior learning censors
-  it. Absence programs pause and resume, ending only on a household return; the comfort trajectory
+  it. Absence programs pause while others are inside and resume, never ending for that; they end
+  only through the family's exits (household return, plan removed or ended early, natural end of
+  the interval; Layer 5 rule 4); the comfort trajectory
   also needs a minimum absence derived from the learned thermal response (default 48 h, CA4-122).
 - **Posture checks** (`safety.posture_check`) advise residents, never commanding, when observed alarm,
   lock or opening state contradicts casa occupancy: alarm armed away while occupied, entry unlocked or
@@ -275,7 +278,8 @@ Layer 3 analysis, training and validation are off the engine hot path. Its only 
 bounded emission of an adopted live `InferenceSignal`, after the Layer-2 barrier and before Layer 4,
 with one replaceable expiry `AtJob` per contract and subject (Layer 3 §6.3). That emission reads the
 frozen intake and only its own staged requirements in the cycle's `FrozenHistoryView` (Layer 0 §4.1),
-never the mutable buffer. It reads only Layer-0 fact history and immutable staged contracts;
+never the mutable buffer. Otherwise it reads Layer-0 fact history, immutable staged contracts, the
+sealed previous-cycle values for emission and the read-only `RuntimeHealthSnapshot` for admission;
 it never reads HA runtime objects or a mutable HA payload.
 
 ### Shared learning platform
@@ -377,7 +381,7 @@ action.
   `environment.*`, `lighting.*`, and `security.*` are descriptors, not separate rule engines.
 - The frozen `ProposalCandidateKindRegistry` validates the outer candidate kind/version before the
   selected Reaction descriptor validates its own independent version and payload. Initial V3 supports
-  `("reaction.descriptor", 1)`.
+  `("reaction.descriptor", 1)` and `("reaction.artifact_adoption", 1)`.
 - A learned candidate becomes a persisted `ReactionProposal`, then an explicitly reviewed configured
   policy. Strong evidence never enables an automatic action on its own.
 - A learner's measured effect has one authoritative, profile-registered
@@ -490,8 +494,8 @@ action.
 | 5 -> HA | Execution | Ordered one-endpoint `ApplyStep`s | Raw multi-entity command graph or arbitrary service payload |
 | 3/4/5 -> 6 | Availability | Typed runtime suppression occurrences; own immutable staged publication declarations | Rendering, direct notification, policy lookup, or `automation.availability` persistence |
 | 5 -> 6 | Reaction follow-up | Typed `ReactionFollowUpOccurrence` and a durably prepared intent at the qualifying boundary; Layer 6 persists the existing `reaction.follow_up` event fact and renders text only when it delivers its derived `HeimaEvent` | Layer-5 rendering, a second delivery envelope, or replaying an Actuator command from the outbox |
-| 5/0 -> 6 | Notices and requests | Typed advisory, action-notice, proposal-review and consent occurrences (Layer 5) and recovery-confirmation occurrences (Layer 0) | Pre-rendered text or any lower-layer append of a Layer-6 event fact |
-| 6 -> 0/1 | Delivery audit | Sole producer of the seven Layer-6 event fact types, each committed with its outbox record (Layer 0 §4.5); answers forwarded only to Layer 0's response ingress | Any lower-layer claim of these reserved event fact types, or Layer 6 deciding a response |
+| 5/0 -> 6 | Notices and requests | Typed advisory, action-notice, proposal-review and consent occurrences (Layer 5) and recovery-confirmation and runtime-health occurrences (Layer 0) | Pre-rendered text or any lower-layer append of a Layer-6 event fact |
+| 6 -> 0/1 | Delivery audit | Sole producer of the eight Layer-6 event fact types, each committed with its outbox record (Layer 0 §4.5); answers forwarded only to Layer 0's response ingress | Any lower-layer claim of these reserved event fact types, or Layer 6 deciding a response |
 | 8 -> 0/3/5 | Administration | Change sets committed through Layer 0 §4.7; governance commands of Layer 5 §4.2 and Layer 3; answers through the response ingress | Writing another layer's store, evaluating a policy, or running in an evaluation cycle |
 
 ## 10. Performance and Technology Choices Already Fixed
@@ -514,8 +518,8 @@ These are architectural technology choices, not incidental implementation prefer
   or background operations.
 - **Canonical identity:** stable keys, explicit versions, and RFC 8785 canonical JSON make reload,
   deduplication, audit, and cache invalidation deterministic.
-- **Bounded storage and work:** retention floors are declared; count and global storage ceilings are
-  hard; learning and finding capacities are explicit; admission is guided by measured runtime health.
+- **Bounded storage and work:** retention floors are declared; per-type count ceilings are hard and
+  the global storage limit is a pruning watermark that never drops a latest state record; learning and finding capacities are explicit; admission is guided by measured runtime health.
 - **Clean V3 start:** no V2 configuration, state, model, approval, or history migration enters a V3
   runtime path. This removes conversion branches from bootstrap and the hot path.
 
@@ -545,7 +549,8 @@ handling, normal exit, next-step hold release, restart and consent rules once:
   fresh bounded step at a time; it has no fallback behavior.
 - **Admin-direct Initial-V3 descriptor:** `security.presence_simulation` is registered from the
   start as a bounded planned-absence deterrence aid, never a security guarantee. Its initial
-  core-generated light-activity episodes use the common calendar/presence guards, scheduler,
+  core-generated light-activity episodes start from the planned-absence family (declared absence and
+  household presence) and use one guard, stabilized casa `occupancy`, with the common scheduler,
   `ConfiguredReaction` authority lifecycle and one-endpoint `ApplyStep` path. It is not a Layer-3
   learning family. Selected endpoints are admitted by their registered light-state channel and
   adapter, not by a free-text Actuator role. It also uses `next_reaction_step` hold release.
@@ -573,7 +578,8 @@ level per family, own endpoints) live in a separate Layer-6 store outside the ge
 
 **Layer 8 (defined).** [Layer 8](layer8_administration_spec.md) is the single Heima panel, with
 content by role resolved server-side from the HA user (administrator from HA's flag, resident from
-the user's Layer-2 `Person`, or no access for guests and device accounts; CA4-118). Text has three
+the user's Layer-2 `Person`; a guest or device account that is not an HA administrator has no role
+and sees only the house map in public text; CA4-118, CA4-113, CA4-140). Text has three
 registers (administrator, resident, public); a non-resident administrator does not see household
 personal data; map control scope resolves card, user, stay guest rooms, then every room (CA4-125). The
 config flow only creates the integration. Configuration edits accumulate in a session change set

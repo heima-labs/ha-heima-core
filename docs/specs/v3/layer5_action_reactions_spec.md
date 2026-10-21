@@ -956,7 +956,7 @@ override a family rule.
 9. **Occupied without residents.** Every declaring descriptor declares
    `when_occupied_without_residents="pause"`: a house sitter, cleaner or guest inside during the
    absence suspends the program without ending it, and it resumes when the house is empty again.
-   Only a household `presence.return` ends it (rule 4). The family never reads
+   Occupancy by others never ends it; its exits are exactly those of rule 4. The family never reads
    `household.guest_stay`.
 
 The family component returns `AbsenceProgramState`; the descriptor's `normal_exit_contract` uses

@@ -135,14 +135,14 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X9-05 | X9 | C | P2 | Layer 5 says Layer 8 sends "only these" seven commands, but Layer 8 also submits rename, removal and restore of Reactions, including learner-origin ones | confirmed; resolved in CA4-144 |
 | F-X9-06 | X9 | O | P3 | Layer 6 places an "every recipient off" warning in Layer 8's Notifications section, which Layer 8 does not list | confirmed; resolved in CA4-148 |
 | F-X9-07 | X9 | O | P3 | Layer 2 has the panel suggest a Person's `ha_user_id`, a source missing from Layer 8's closed suggestion list | confirmed; resolved in CA4-148 |
-| F-O1-01 | O1 | D | P3 | Overview says Layer 6 produces seven event fact types; Layer 6 registers eight | confirmed |
-| F-O1-02 | O1 | D | P3 | Overview lists one Initial-V3 candidate kind; Layer 5 registers two | confirmed |
-| F-O1-03 | O1 | D | P3 | Overview gives guests and device accounts no panel access; Layer 8 gives them the map | confirmed |
-| F-O1-04 | O1 | D | P3 | "Ending only on a household return" omits the family's other normal exits | confirmed |
-| F-O1-05 | O1 | D | P3 | Presence simulation is said to use "calendar/presence guards"; its guard contract has only occupancy | confirmed |
-| F-O1-06 | O1 | D | P3 | "Layer 3 reads only Layer-0 fact history and staged contracts" omits its other declared inputs | confirmed |
-| F-O1-07 | O1 | D | P3 | "Global storage ceilings are hard", but the 512 MiB limit is a non-blocking watermark | confirmed |
+| F-O1-01 | O1 | D | P3 | Overview says Layer 6 produces seven event fact types; Layer 6 registers eight | confirmed; resolved in CA4-149 |
+| F-O1-02 | O1 | D | P3 | Overview lists one Initial-V3 candidate kind; Layer 5 registers two | confirmed; resolved in CA4-149 |
+| F-O1-03 | O1 | D | P3 | Overview gives guests and device accounts no panel access; Layer 8 gives them the map | confirmed; resolved in CA4-149 |
+| F-O1-04 | O1 | D | P3 | "Ending only on a household return" omits the family's other normal exits | confirmed; resolved in CA4-149 |
+| F-O1-05 | O1 | D | P3 | Presence simulation is said to use "calendar/presence guards"; its guard contract has only occupancy | confirmed; resolved in CA4-149 |
+| F-O1-06 | O1 | D | P3 | "Layer 3 reads only Layer-0 fact history and staged contracts" omits its other declared inputs | confirmed; resolved in CA4-149 |
+| F-O1-07 | O1 | D | P3 | "Global storage ceilings are hard", but the 512 MiB limit is a non-blocking watermark | confirmed; resolved in CA4-149 |
 | F-O2-01 | O2 | D | P3 | Recap lists seven Layer-6 kinds; Layer 6 §4.2 registers eight | confirmed; duplicate of F-O1-01 |
-| F-O2-02 | O2 | D | P3 | Recap authority statement omits Layer 7 | confirmed |
-| F-O2-03 | O2 | D | P3 | Recap's initial semantic-claim list omits `occupied_without_residents` | confirmed |
-| F-O2-04 | O2 | D | P3 | Recap provenance summary names a "resident response" kind and an extension-related `ApplyStepSource` | confirmed |
+| F-O2-02 | O2 | D | P3 | Recap authority statement omits Layer 7 | confirmed; resolved in CA4-149 |
+| F-O2-03 | O2 | D | P3 | Recap's initial semantic-claim list omits `occupied_without_residents` | confirmed; resolved in CA4-149 |
+| F-O2-04 | O2 | D | P3 | Recap provenance summary names a "resident response" kind and an extension-related `ApplyStepSource` | confirmed; resolved in CA4-149 |
