@@ -49,5 +49,5 @@ Status: `todo`, `in progress (<date>)`, `done (<date>)`. One pass takes one unit
 
 | Unit | Scope | Status | Note |
 |---|---|---|---|
-| V | Verify every finding and classify `mechanical.md` | todo | |
+| V | Verify every finding and classify `mechanical.md` | done (2026-10-21) | `verification/A–D.md`: 135 confirmed, 5 false positives, 9 duplicates, 126 distinct confirmed defects; mechanical: no new dangling reference. F-L0-06 resolved in e92234c. |
 | T | Triage with the developer into CA4 issues | todo | |
