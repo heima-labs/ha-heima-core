@@ -2321,6 +2321,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-140",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-140.md",
+      "contracts": ["L2-PERSONS", "L2-HOUSEHOLD-PRESENCE", "L2-TYPED-STATE-INGRESS", "L3-HOUSEHOLD-CENSORING", "L8-ROLES", "L8-DIAGNOSTICS-EXPORT"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

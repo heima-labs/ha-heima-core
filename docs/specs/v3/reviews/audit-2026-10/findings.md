@@ -19,8 +19,8 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L1-04 | L1 | D | P3 | §8 attributes analysis-run correlation ids to "learned facts", which Layer 0 and Layer 3 do not produce | confirmed |
 | F-L1-05 | L1 | R | P3 | Self-reference "under §4.5" points to a section Layer 1 does not have | confirmed |
 | F-L1-06 | L1 | R | P3 | "(§4 intro)" cited for a statement that is not in the §4 introduction | confirmed |
-| F-L2-01 | L2 | C | P2 | Core-generated `presence.household` FusionRule is invalid when no resident is tracked | confirmed |
-| F-L2-02 | L2 | C | P2 | Two core-generated Sensors read the same HA person state, against "one readable signal path, one owner" | confirmed |
+| F-L2-01 | L2 | C | P2 | Core-generated `presence.household` FusionRule is invalid when no resident is tracked | confirmed; resolved in CA4-140 |
+| F-L2-02 | L2 | C | P2 | Two core-generated Sensors read the same HA person state, against "one readable signal path, one owner" | confirmed; resolved in CA4-140 |
 | F-L2-03 | L2 | C | P3 | Physical-evidence "recipe applies equally to presence", but its validator admits only `occupancy.physical` | confirmed |
 | F-L2-04 | L2 | D | P3 | §5.6 rationale says FusionRules are "core-team-authored only (§2.1)"; §2.1 and the rest of Layer 2 make them administrator-configured | confirmed |
 | F-L2-05 | L2 | D | P3 | §2.4 and §5.3 restate the "other formulas take `configuration=None`" rule differently | confirmed |
@@ -28,7 +28,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L2-07 | L2 | D | P3 | §7 describes `Stability` as "composed of two `Window`s"; §5.2 defines three Window fields | confirmed |
 | F-L2-08 | L2 | D | P3 | The 14-day horizon "must exceed ceiling plus largest recovery", but Layer 5 allows the sum to equal 14 days | confirmed |
 | F-L3a-01 | L3a | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` despite an action-serving egress | confirmed; resolved in CA4-133 |
-| F-L3a-02 | L3a | O | P2 | Person-related fact list omits Layer 2's `presence.evidence.person.<id>` | confirmed |
+| F-L3a-02 | L3a | O | P2 | Person-related fact list omits Layer 2's `presence.evidence.person.<id>` | confirmed; resolved in CA4-140 |
 | F-L3a-03 | L3a | C | P2 | Promotion/disablement called "generation transitions" contrary to Layer 0 §4.7 | confirmed; resolved in CA4-139 |
 | F-L3a-04 | L3a | R | P3 | `environmental_response.v1` cells cited to §4.8.2, which defines input bindings | confirmed |
 | F-L3a-05 | L3a | D | P3 | Envelope abstention code spelled `out_of_operating_envelope` vs closed `outside_operating_envelope` | confirmed |
@@ -83,7 +83,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L8-04 | L8 | D | P3 | History timeline includes Layer 3 adoption transitions; the `history/list` owner path omits them | confirmed |
 | F-L8-05 | L8 | C | P3 | §7 defines what residents see in history, but history is administrator-only | confirmed |
 | F-L8-06 | L8 | D | P3 | Up-direction change clears placements on every floor (§9.1, §9.4) or on one floor (§16) | confirmed |
-| F-L8-07 | L8 | C | P2 | Redaction keeps Heima ids, but a Heima `recipient_id` is administrator-chosen and may be a person's name | confirmed |
+| F-L8-07 | L8 | C | P2 | Redaction keeps Heima ids, but a Heima `recipient_id` is administrator-chosen and may be a person's name | confirmed; resolved in CA4-140 |
 | F-X1-01 | X1 | C | P2 | Recovery-target snapshots and outbox records are declared `PersistedProjection`s but cannot satisfy its depth and no-dataclass rule | confirmed; resolved in CA4-138 |
 | F-X1-02 | X1 | C | — | A calendar Sensor reads Layer 0's `active_now` directly, which Layer 0 neither registers nor permits | false positive (Layer 0 §3.4, l. 414–416, names the calendar Sensor sharing the classifier, and §3.4.1, l. 436–449, defines `active_now` as a cycle read of the cache; the §4.1 requirement list and the §13 rejection at l. 3481–3486 apply to staged `CalendarViewRequirement` consumers, not to the Sensor's active-now read) |
 | F-X1-03 | X1 | O | P2 | Layer 2 hands Layer 0 an "entity delta" that deletes recovery snapshots; Layer 0 §7.4 has no such input or rule | confirmed; resolved in CA4-138 |
@@ -131,7 +131,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X9-01 | X9 | O | P1 | Layer-6 `HouseEndpoint`s are administrator-configured generation records, but Layer 8 has no editable kind for them | confirmed; resolved in CA4-135 |
 | F-X9-02 | X9 | O | P2 | Layer-3 artifact lifecycle transitions (shadow, `proposal_eligible`, rollback, disablement) have no Layer-8 command | confirmed |
 | F-X9-03 | X9 | O | P2 | The map-card house banner has no owner hand-off: Layer 6 does not give Layer 8 the open `house` items | confirmed |
-| F-X9-04 | X9 | C | P2 | Layer 8 gives a guest no role, but a guest who is an HA administrator is an administrator for Layer 0 and for Layer 8's own role rule | confirmed |
+| F-X9-04 | X9 | C | P2 | Layer 8 gives a guest no role, but a guest who is an HA administrator is an administrator for Layer 0 and for Layer 8's own role rule | confirmed; resolved in CA4-140 |
 | F-X9-05 | X9 | C | P2 | Layer 5 says Layer 8 sends "only these" seven commands, but Layer 8 also submits rename, removal and restore of Reactions, including learner-origin ones | confirmed |
 | F-X9-06 | X9 | O | P3 | Layer 6 places an "every recipient off" warning in Layer 8's Notifications section, which Layer 8 does not list | confirmed |
 | F-X9-07 | X9 | O | P3 | Layer 2 has the panel suggest a Person's `ha_user_id`, a source missing from Layer 8's closed suggestion list | confirmed |

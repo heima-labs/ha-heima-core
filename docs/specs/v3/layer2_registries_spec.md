@@ -394,17 +394,22 @@ author them, and they change only with a `Person` commit.
   administrator may include it in the casa occupancy `FusionRule`; a phone at home is a supporting
   vote that someone is inside, never sufficient alone without the rule's explicit confirmation
   dwell (§5.3).
-- **Household presence evidence.** For each `Person` with `household_role="resident"` whose HA
-  person has at least one device tracker, one Sensor `presence.evidence.person.<ha_person_id>` at
-  casa reads the HA person's state with the same mapping. A resident whose HA person has no device
-  tracker is **untracked**: it contributes nothing and a diagnostic names it. A guest never
-  contributes household presence evidence.
+- **Household presence evidence.** No second Sensor reads the same HA person (§3, one owner per
+  readable signal path): the fact `occupancy.evidence.person.<ha_person_id>` above is the person's
+  "HA person home" signal and serves both consumers. A `Person` with `household_role="resident"`
+  whose HA person has at least one device tracker is **tracked**; only its fact is household
+  presence evidence. A resident whose HA person has no device tracker is **untracked**: it
+  contributes nothing and a diagnostic names it. A guest's fact remains casa occupancy evidence but
+  never household presence evidence; the selection is by role and tracker, never by namespace.
 - **Household presence.** One core-generated `FusionRule` produces the boolean
-  `presence.household` at casa from every resident evidence Sensor, with
+  `presence.household` at casa from the person facts of every tracked resident, with
   `WeightedQuorumStrategy(threshold=1.0)` (any resident home is `True`) and `min_available_weight`
   equal to the number of tracked residents: while a tracked resident is unavailable the result is
-  `available=False`, never `False` (an unavailable resident may be home). With no tracked resident it
-  is `available=False`. Its `stability` is a `Stability` the administrator may edit on the generated
+  `available=False`, never `False` (an unavailable resident may be home). With no tracked resident the
+  core generates no rule, which §2.4 would reject for empty inputs; it keeps the
+  `presence.household` claim and, at the generation's activation, emits one state fact with
+  `available=False` and a diagnostic, as for a claim left without a producer (§2.5). The first
+  tracked resident's `Person` commit generates the rule. Its `stability` is a `Stability` the administrator may edit on the generated
   rule (default `Stability(to_true=Window(seconds=120), to_false=Window(seconds=600),
   unavailable_grace=Window(seconds=300))`); its non-null `to_true` is the return-confirmation dwell
   that Layer 5 requires (Layer 5 §3.2 `planned_absence_program`).
@@ -607,7 +612,9 @@ class Sensor:
 ```
 
 Every Home Assistant **readable signal path** Heima cares about is registered exactly once, here —
-one registry, not several independently-configured entity lists for different purposes (§1). A
+one registry, not several independently-configured entity lists for different purposes (§1).
+Staging rejects a second Sensor, administrator-authored or core-generated, on a readable signal
+path that already has one; several consumers read the one fact instead. A
 readable signal path is more precise than an entity id: one HA entity may legitimately produce
 several `Sensor`s when different parts of it mean different facts (for example a `climate.*` entity's
 state, `current_temperature`, and `hvac_action`; or a device whose sibling entities share the same
@@ -2358,7 +2365,10 @@ this layer.
 - Casa occupancy and household presence (§2.8.1, CA4-120): a casa `occupancy.evidence` Sensor
   bound to a `device_tracker.*` or `person.*` entity is rejected; the core-derived
   `occupancy.evidence.person.<id>` is `corroborating` and alone never makes casa occupancy `True`
-  without a positive true dwell. With two tracked residents, one `home` gives `presence.household`
+  without a positive true dwell. No `presence.evidence.*` Sensor exists: the household fusion reads
+  the tracked residents' `occupancy.evidence.person.<id>` facts, and a second Sensor on a `person.*`
+  path is rejected. With no tracked resident no rule is generated and `presence.household` is
+  `available=False` with a diagnostic. With two tracked residents, one `home` gives `presence.household`
   `True`; both `not_home` give `False`; one `not_home` and one `unavailable` give `available=False`
   after `unavailable_grace`. A resident whose HA person has no tracker is excluded with a diagnostic,
   and alone at home yields `presence.household=False` while casa occupancy is `True`. A guest's

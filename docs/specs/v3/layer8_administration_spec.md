@@ -79,8 +79,9 @@ from client data:
 
 The two roles follow the two independent actor axes. One person may hold both roles; an
 administrator may be a non-resident (an installer or property manager in a B2B deployment), and a
-resident may not be an administrator. A guest, and a device account with no `Person` (a guest-room
-tablet), has no role. Being a Layer-6 recipient grants no role. The house map is open to every authenticated HA user, with or
+resident may not be an administrator. A guest, or a device account with no `Person` (a guest-room
+tablet), that is not an HA administrator has no role; one that is an HA administrator holds only
+`administrator` (Layer 0 §5), never `resident`. Being a Layer-6 recipient grants no role. The house map is open to every authenticated HA user, with or
 without a role (CA4-113): HA already shows every entity state to every user, so the map reveals
 little beyond the automations' short reasons. An HA user with neither role sees the Overview with
 the map only, in public text (§4.1), without links to explanations, items to do or other sections.
@@ -97,7 +98,7 @@ The backend chooses one text register per viewer from the roles, never from clie
 |---|---|---|
 | administrator | `administrator` | codes, identifiers and links |
 | resident | `resident` | plain language without codes or identifiers |
-| public | a guest, a device account, any user with no role, the map card | plain language without a person's identity, a resident's presence or times, or security posture (alarm, locks, presence simulation) |
+| public | a guest or device account that is not an HA administrator, any user with no role, the map card | plain language without a person's identity, a resident's presence or times, or security posture (alarm, locks, presence simulation) |
 
 An automation whose reason concerns security shows in public text only as "automation active", with
 no reason. A viewer with both roles gets the administrator register.
@@ -1006,7 +1007,11 @@ developer or a script.
 - **Redaction.** Person names, HA user ids, notification recipient targets (phone numbers, email
   addresses, notify targets), coordinates and every secret are replaced by a pseudonym that is
   stable within the file, so the same value always maps to the same token and correlations survive.
-  Heima ids and HA `entity_id`s stay, because debugging needs them. Sources already redacted by
+  Every identifier that denotes a person — a Layer-6 `recipient_id`, a Layer-2 `ha_person_id`,
+  including its occurrence as a suffix in a fact type such as `occupancy.evidence.person.<id>` and
+  in any reference — takes the same stable pseudonym as that person, since such ids are usually
+  names. Other Heima ids and HA `entity_id`s stay, because debugging needs them; inside Heima every
+  identifier keeps its configured value. Sources already redacted by
   their owners (Layer 0 `FactSource`/`ApplyStepSource`, Layer 5 redacted snapshots) are copied as
   they are.
 - **Bounds.** At most 5 MB. A section over its share is truncated with
@@ -1040,7 +1045,8 @@ developer or a script.
 - People and roles (CA4-118): an HA user linked to a `Person(resident)` gets `resident`; the same
   user as HA administrator gets both roles; an installer administrator with no `Person` gets only
   `administrator`; a user linked to a `Person(guest)` and a tablet user with no `Person` get no role
-  and see only the Overview map; a recipient with no `Person` grants no role. A non-resident
+  and see only the Overview map, unless the HA user is an HA administrator, which gives only
+  `administrator`; a recipient with no `Person` grants no role. A non-resident
   administrator answering a recovery confirmation from To do within 2 hours of opening is rejected
   with `awaiting_resident_answer` while a resident recipient exists, and accepted afterwards.
   Classifying persons and editing consent authority live in the People section.
@@ -1112,7 +1118,8 @@ developer or a script.
   on a lock in it opens more-info.
 - Downloadable diagnostics (CA4-115): the System download and HA's "Download diagnostics" produce
   the same sections for the same window; a recipient's phone number and a person's name appear only
-  as pseudonyms, the same value with the same token throughout the file, while `entity_id`s stay;
+  as pseudonyms, the same value with the same token throughout the file; `recipient_id="stefano"`
+  and an `ha_person_id` in a fact-type suffix take that person's token, while `entity_id`s stay;
   with health `error` and no active manifest the file is still produced, with the runtime error
   section filled; a section whose builder raises reports `section_error` and the others are
   complete; a 7-day window over a busy house stays within 5 MB with `truncated` markers; a resident

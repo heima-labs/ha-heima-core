@@ -6323,6 +6323,19 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-140 — People and presence rules disagreed across layers
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G4 (F-L2-01, F-L2-02, F-L3a-02, F-X9-04, F-L8-07). **References:** [Layer 2 §2.8.1, §3](specs/v3/layer2_registries_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md), [Layer 8 §4, §14.1](specs/v3/layer8_administration_spec.md).
+
+**Problem.** The core-generated `presence.household` rule was invalid with no tracked resident; two core Sensors read the same HA person against "one readable signal path, one owner"; `presence.evidence.person.*` was missing from Layer 3's person-related list; Layer 8 gave no role to a guest who is an HA administrator; and diagnostics redaction kept person names used as ids.
+
+**Approved resolution (2026-10-21).**
+1. One Sensor per HA person (F-L2-02, F-L3a-02): `presence.evidence.person.*` is removed; the household fusion reads the tracked residents' `occupancy.evidence.person.<id>` facts, selected by role and tracker; a guest's fact stays casa occupancy evidence only. One owner per readable signal path is an explicit staging rule. CA4-120's decisions (tracked residents only, quorum, `min_available_weight`, stability) are unchanged; the separate Sensor had no recorded rationale. F-L3a-02 dissolves: `occupancy.evidence.*` is already person-related. Rejected: several Sensors per path (weakens §1's single-registration rule).
+2. Diagnostics (F-L8-07): in the exported file only, every identifier denoting a person (`recipient_id`, `ha_person_id`, including fact-type suffixes) takes that person's stable pseudonym; inside Heima ids keep their configured value. Rejected: recipient id only; opaque core-minted recipient ids.
+3. Mechanical: with no tracked resident no rule is generated and `presence.household` gets one `available=False` fact with a diagnostic, as for a claim left without a producer (F-L2-01); a guest or device account has no role only when not an HA administrator (F-X9-04).
+
+One fewer Sensor per resident; no hot-path cost. See the [CA4-140 review](specs/v3/reviews/CA4-140.md); no V3 runtime test ran.
+
 #### CA4-139 — Generation and dependency-index rules disagreed across layers
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G3 (F-X3-01, F-X5-03, F-L3a-03, F-X7-01). **References:** [Layer 0 §4.7](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.1.2, §4.7](specs/v3/layer3_learning_spec.md), [Layer 5 §3.2, §4.2](specs/v3/layer5_action_reactions_spec.md), [Layer 6 §9.2](specs/v3/layer6_notification_spec.md).
