@@ -2471,6 +2471,7 @@ class ReactionAdvisoryOccurrence:
                                       #  reaction_activation_id, member_index, phase]
     phase: Literal["opened", "closed"]
     reaction_id: str
+    reaction_descriptor_id: str       # selects the Layer-6 notification family (CA4-134)
     configuration_generation_id: str
     reaction_activation_id: str
     snapshot_id: str
@@ -5182,7 +5183,7 @@ class PostureCheckConfiguration:
 - Posture check (CA4-126): arming `armed_away` with a 60 s exit delay yields no advisory (5 min
   default); a house sitter inside with `armed_away` for 6 min yields one `check_alarm` advisory to
   residents only, never to `house`; a front door `unlocked` with the house empty for 10 min at 03:00
-  yields a `safety` `lock_entry` advisory despite quiet hours, which closes with `activation_ended`
+  yields a `safety` `lock_entry` advisory despite quiet hours, never held or digested (CA4-134), which closes with `activation_ended`
   when the door is locked; a `jammed` lock counts as not locked; an open window without an actuator,
   house empty and precipitation hazard active yields `close_opening`, while a window protected by
   weather protection yields none; `disarmed` with the house empty for 15 min yields `check_alarm`;

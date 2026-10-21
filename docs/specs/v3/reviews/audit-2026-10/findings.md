@@ -54,14 +54,14 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L5a-10 | L5a | C | P3 | "User-visible output remains exclusively" follow-up and availability occurrences, contradicting advisory and notice occurrences | confirmed |
 | F-L5b-01 | L5b | C | P2 | Evaluation reason codes that no outcome may carry | confirmed |
 | F-L5b-02 | L5b | C | P2 | Weather-protection example uses a `state_transition` trigger that cannot fire after restart | confirmed |
-| F-L5b-03 | L5b | C | P1 | Posture-check advisories: `safety` family vs Layer 6 fixed `suggestion` family | confirmed |
+| F-L5b-03 | L5b | C | P1 | Posture-check advisories: `safety` family vs Layer 6 fixed `suggestion` family | confirmed; resolved in CA4-134 |
 | F-L5b-04 | L5b | D | P3 | §7 program-shape summary omits weather protection and posture check | false positive (L3601 says "the three other trigger-driven descriptors above", scoped to those specified before it; §7.4 L4348-4350 and §7.5 L4404-4408 register their own fields, so no restated rule differs in meaning) |
 | F-L5b-05 | L5b | D | P3 | Advice members restricted to two descriptors in §7.3 | confirmed |
 | F-L5b-06 | L5b | D | P3 | Acceptance says only `eligible` reaches admissibility | confirmed |
 | F-L5b-07 | L5b | R | P3 | References to a nonexistent Layer-5 §6.2 | confirmed; duplicate of F-L5a-05 |
 | F-L5b-08 | L5b | R | P3 | Unqualified "§4.5" in the follow-up operation-id rule | confirmed |
 | F-L5b-09 | L5b | O | P3 | Planned-absence horizon does not strictly exceed ceiling plus largest recovery | confirmed; duplicate of F-L2-08 |
-| F-L6-01 | L6 | C | P1 | `safety.posture_check` advisories are declared `safety` but `reaction.advisory` has the fixed family `suggestion` | confirmed; duplicate of F-L5b-03 |
+| F-L6-01 | L6 | C | P1 | `safety.posture_check` advisories are declared `safety` but `reaction.advisory` has the fixed family `suggestion` | confirmed; duplicate of F-L5b-03; resolved in CA4-134 |
 | F-L6-02 | L6 | C | P2 | Per-proposal `closed` clearing contradicts the shared digest tag | confirmed |
 | F-L6-03 | L6 | C | P2 | The "open request with buttons is never filtered or silenced" rule also covers advisories, emptying the `suggestion` preferences | confirmed |
 | F-L6-04 | L6 | R | P2 | §4.3 maps `subject` and `occurred_at`, which `RuntimeHealthOccurrence` does not have | confirmed |

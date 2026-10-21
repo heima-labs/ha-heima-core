@@ -99,7 +99,7 @@ class NotificationKindDescriptor:
 |---|---|---|---|---|---|---|
 | `reaction.follow_up` | `ReactionFollowUpOccurrence` (Layer 5 §6.0) | residents | by descriptor namespace (§6.1) | warning | the one outcome | none |
 | `automation.availability` | `AvailabilitySuppressionOccurrence` via the tracker (§9.2) | residents | by descriptor namespace (§6.1) | warning | `abstaining`, `reason_changed`, `restored` | none |
-| `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents, house (when `house_delivery`) | suggestion | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
+| `reaction.advisory` | `ReactionAdvisoryOccurrence` (Layer 5 §6.0) | residents, house (when `house_delivery`) | by descriptor namespace, advisory table (§6.1) | info | `opened` (`closed` clears) | `layer5.advisory_feedback`: done / dismiss / not_useful |
 | `reaction.action_notice` | `ReactionActionNoticeOccurrence` (Layer 5 §6.0) | residents, house (when `house_delivery`) | by descriptor namespace (§6.1) | info | the one notice | none |
 | `recovery.confirmation_request` | `RecoveryConfirmationOccurrence` (Layer 0 §7.4.1) | residents | attention | warning | `opened` (`closed` clears) | `layer0.recovery_confirmation`: approve / dismiss |
 | `reaction.consent_request` | `ConsentRequestOccurrence` (Layer 5 §6.0) | consent_authorities | governance | info | `opened`, `reissued` (`closed` clears) | `layer5.household_consent`: grant / decline |
@@ -251,10 +251,22 @@ binding it is delivered for), through one closed core table:
 | `environment.*`, `security.*`, `routine.*` | `attention` |
 
 So a window held open while weather protection is active, a weather-protection step left
-unconfirmed, the weather-protection action notice and every `safety.posture_check` advisory
-(Layer 5 §7.5) are all `safety` notices. A future descriptor
-namespace must add its row with the descriptor's core release; bootstrap fails if a registered
-Reaction descriptor's namespace has no row, so no namespace falls into a family by default.
+unconfirmed and the weather-protection action notice are all `safety` notices.
+
+`reaction.advisory` also takes its family from its Reaction's descriptor namespace
+(`ReactionAdvisoryOccurrence.reaction_descriptor_id`), through a separate closed advisory table,
+because advice that is not about safety stays a held, digestible suggestion (CA4-134):
+
+| Descriptor namespace | Advisory family |
+|---|---|
+| `safety.*` | `safety` |
+| `environment.*`, `security.*`, `routine.*` | `suggestion` |
+
+So every `safety.posture_check` advisory (Layer 5 §7.5) is a `safety` notice: delivered
+immediately, quiet hours included, never digested and never silenced, with its feedback buttons.
+A future descriptor namespace must add its row to both tables with the descriptor's core release;
+bootstrap fails if a registered Reaction descriptor's namespace has no row, so no namespace falls
+into a family by default.
 
 Priority maps to Home Assistant mobile push options: `safety` uses the time-sensitive
 interruption level (iOS) and high priority (Android); the other families use the platform default.
@@ -308,7 +320,8 @@ person from the end-of-quiet-hours digest. The household option is unchanged for
 The digest applies to residents only; `house` delivery is never digested: the map card shows open
 items, and a device endpoint receives each phase under the same quiet-hours rule as the household.
 
-During quiet hours, each `reaction.advisory` `opened` record is held. When quiet hours end, Layer 6
+During quiet hours, each `reaction.advisory` `opened` record of the `suggestion` family is held; a
+`safety` advisory is delivered immediately and never enters the digest (§6.1). When quiet hours end, Layer 6
 selects the held advisories whose activation is still open (no `closed` phase yet) and delivers them
 per resident as one notification. A closed advisory retires undelivered. A digest that contains one
 advisory is delivered as that advisory's ordinary actionable notification. A digest of several
@@ -647,6 +660,11 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
 - **CA4-77** — actionable phases with an open request are never silenced (§6.2).
 
 ## 14. Initial acceptance criteria
+
+- Advisory family (CA4-134): a `safety.posture_check` advisory opened at 03:00 during quiet hours is
+  delivered immediately as `safety` with its feedback buttons and never joins the advisory digest; an
+  `environment.external_exchange` advisory at the same time is held as `suggestion` and digested at
+  the end of quiet hours; a registered descriptor namespace missing from either table fails bootstrap.
 
 - `system.health`: an `error_opened` reaches every administrator recipient with the `attention`
   family (held during quiet hours, silenceable), severity `error` and the address

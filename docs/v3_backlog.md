@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-134 — Posture-check advisories were safety in Layer 5 and suggestion in Layer 6
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P1. **Origin:** V3 coherence audit 2026-10 (F-L5b-03, duplicate F-L6-01). **References:** [Layer 5 §6.0, §7.5](specs/v3/layer5_action_reactions_spec.md), [Layer 6 §4.2, §6.1, §6.4](specs/v3/layer6_notification_spec.md).
+
+**Problem.** CA4-126 put `safety.posture_check` advisories in the `safety` family (immediate, quiet hours included), but Layer 6 fixed `reaction.advisory` to `suggestion` (held and digested), its namespace rule covered only follow-up, availability and action notices, and the advisory occurrence carried no descriptor id. A door left unlocked at 03:00 in an empty house would have been reported in the morning digest.
+
+**Approved resolution (2026-10-21).** `reaction.advisory` resolves its family from the descriptor namespace through a separate advisory table (`safety.*` → `safety`; `environment.*`, `security.*`, `routine.*` → `suggestion`), so existing advisories are unchanged; `ReactionAdvisoryOccurrence` gains `reaction_descriptor_id`; the §6.4 digest holds only `suggestion` advisories. Rejected: a new notification kind (duplicates `reaction.advisory`) and reverting to `suggestion` (defeats CA4-126). The related F-L6-03 (personal levels on answerable advisories) stays a separate P2. See the [CA4-134 review](specs/v3/reviews/CA4-134.md); no V3 runtime test ran.
+
 #### CA4-133 — The room-return survival model had no shadow requirement
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P1. **Origin:** V3 coherence audit 2026-10 (F-L3a-01, duplicate F-L3b-03; related F-L3b-04). **References:** [Layer 3 §4.4.1, §4.7, §9](specs/v3/layer3_learning_spec.md).
