@@ -374,6 +374,8 @@ audience of Layer 6 §5.2), `proposal.review_pending` (a
 new, again-approvable or closed proposal, administrators) and `reaction.consent_request` (household
 consent needed or no longer needed, consent-authorized residents) are approved V3 event fact types with
 the same sole-Layer-6-producer rule, each built from its typed Layer-5 occurrence (Layer 5 §6.0).
+`system.health` (an engine error opened or restored, administrators) is an approved V3 event fact
+type under the same rule, built from Layer 0's typed `RuntimeHealthOccurrence` (Layer 0 §10.1).
 `reaction.advisory_feedback` is an approved V3 event fact type but not a notification: Layer 5 alone
 appends it when a resident answers an advisory, as non-authoritative learning evidence.
 

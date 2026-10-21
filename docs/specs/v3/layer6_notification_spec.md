@@ -122,8 +122,9 @@ user-visible binding delivery (§9.2), not once per owner occurrence. On an occu
 1. validates the occurrence against its closed contract (identities non-empty, phase and reason
    fields consistent, sizes bounded) and rejects it otherwise with a diagnostic;
 2. builds the event fact: `fact_type=notification_kind`, `where=subject`, `when=occurred_at`
-   (`detected_at` for an availability occurrence; the recovery instant for
-   `interrupted_before_outcome`), `how.source=FactSource(kind="system",
+   (`detected_at` for an availability occurrence; `where=Location(scope="casa")` and
+   `when=detected_at` for a `system.health` occurrence, which has neither field; the recovery
+   instant for `interrupted_before_outcome`), `how.source=FactSource(kind="system",
    source_id=claim_owner_id)`, and an `OperationalEventValue` with the kind's severity, its
    `context_version`, its `notification_key` (§7.6) and the occurrence's closed fields mapped to
    scalar `context` entries;
@@ -219,9 +220,10 @@ class RecipientPreferences:
 - **Family levels.** `default` follows the household behavior (§6.2). `quiet_silent` applies §6.2's
   silent rule to this person only. `off` excludes this person from that family at all times.
   `safety` has no personal level.
-- **Never filtered.** A phase with answer buttons whose request is still open (a consent request, a
-  recovery confirmation) reaches the person whatever the family level (CA4-77), and `safety` is
-  never filtered by family.
+- **Never filtered.** An open consent request or recovery confirmation, the closed list of
+  requests that need an answer from a person, reaches the person whatever the family level (CA4-77),
+  and `safety` is never filtered by family. An advisory's answer buttons do not exempt it: a
+  `suggestion` advisory follows the personal level, while a `safety` advisory is never filtered.
 - **Endpoints.** Delivery skips the disabled endpoints. A save that would disable every endpoint of
   the recipient is rejected. If an administrator later removes endpoints so that only disabled ones
   remain, the disabled set is ignored until the next save and a diagnostic is raised.
@@ -288,8 +290,8 @@ no quiet hours.
 | `governance` | held; delivered when quiet hours end, proposals through their digest | may be set to silent |
 
 "Silent" for a family means its informative notifications produced during quiet hours are retired
-undelivered when quiet hours end; their audit facts remain. A phase with answer buttons whose request
-is still open (a recovery confirmation, a consent request) is never silenced: it is held and
+undelivered when quiet hours end; their audit facts remain. An open recovery confirmation or consent
+request (the closed list of §5.4) is never silenced: it is held and
 delivered when quiet hours end, and retires undelivered only if its request closes or expires
 first (§7.5). While `quiet_hours.active` is unavailable, Layer 6
 treats quiet hours as not active, so nothing is held indefinitely.
@@ -426,8 +428,10 @@ Every kind uses `notification_key = notification_kind + ":" + operation_id`; for
 `reaction.follow_up` this is exactly the key of Layer 5 §6.0. The availability adapter derives its
 `operation_id` as SHA-256 of `"automation.availability.operation.v1:"` + RFC-8785
 `[run_id, automation_scope_id, subject_key, reasons, transition, episode_sequence]`, where `run_id`
-is the tracker's fresh per-process identity and `episode_sequence` counts the episodes of that key
-in the run (Layer 3 §6.3.1). Retries within one run keep the key; a restart creates a new one.
+is the tracker's fresh per-process identity and `episode_sequence` is the 1-based count of episodes
+opened in the run for the occurrence's exact suppression key `(suppression_owner_id,
+suppression_scope_id, subject_key)`, kept by the tracker (§9.2, Layer 3 §6.3.1), like
+`transition_sequence` of `RuntimeHealthOccurrence` (Layer 0 §10.1). Retries within one run keep the key; a restart creates a new one.
 
 There is no time-based deduplication window: a notification is never delayed or dropped because a
 similar one was sent recently. Repeats are prevented by the outbox's per-operation uniqueness and,
@@ -556,8 +560,10 @@ automation-state projection (Layer 8 §10.3), whether or not a binding is user-v
 ### 9.3 Advisory, action notice, consent and proposal adapters
 
 These adapters map their Layer-5 occurrences one to one. Closing phases (`closed` of an advisory,
-consent request or proposal) append their audit fact, retire any undelivered opening record of the
-same item, and apply §7.4 clearing when the opening phase was delivered. The advisory and consent
+consent request or proposal) append their audit fact and retire any undelivered opening record of the
+same item. An advisory or consent request applies §7.4 clearing when the opening phase was
+delivered; a proposal never clears per item, because its tag is the shared digest tag, which §6.3
+clears only when no proposal remains open. The advisory and consent
 adapters build the answer buttons from the occurrence's `response_request_id`.
 
 A consent request goes to every consent authority. The first answer decides for the household: a
@@ -667,6 +673,13 @@ Diagnostics never contain rendered text or person identities beyond `recipient_i
   `environment.external_exchange` advisory at the same time is held as `suggestion` and digested at
   the end of quiet hours; a registered descriptor namespace missing from either table fails bootstrap.
 
+- Notification contracts (CA4-143): a `system.health` event fact is appended under the reserved
+  `layer6.system_health` claim at casa with `when=detected_at`. Two proposals in one digest, one
+  approved: the digest stays on the phone until the second closes. A resident with `suggestion=off`
+  receives no `environment.external_exchange` advisory although it has answer buttons, but still
+  receives a consent request and a `safety.posture_check` advisory. Two availability episodes of one
+  key in a run get `episode_sequence` 1 and 2 and distinct keys; a restart starts again from 1 under
+  a new `run_id`.
 - `system.health`: an `error_opened` reaches every administrator recipient with the `attention`
   family (held during quiet hours, silenceable), severity `error` and the address
   `/heima/system/health`; `restored` replaces it on the phone through the fixed tag; a

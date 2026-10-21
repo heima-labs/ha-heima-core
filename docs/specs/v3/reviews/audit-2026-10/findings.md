@@ -8,7 +8,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 |---|---|---|---|---|---|
 | F-L0-01 | L0 | C | P2 | `previous_cycle` snapshot "never seeded from durable history" contradicts clean-restart pre-hydration | confirmed; resolved in CA4-138 |
 | F-L0-02 | L0 | C | P2 | "Every class creates a hold" contradicts the hold qualification rule | confirmed; resolved in CA4-138 |
-| F-L0-03 | L0 | R | P2 | `system.health` notification event fact has no reserved claim or owner | confirmed |
+| F-L0-03 | L0 | R | P2 | `system.health` notification event fact has no reserved claim or owner | confirmed; resolved in CA4-143 |
 | F-L0-04 | L0 | C | P3 | Layer 0 is said to read nothing above it, yet derives `household_role` from the Layer-2 Person registry | confirmed |
 | F-L0-05 | L0 | D | P3 | §13 checkpoint criterion says "last-write-wins per entity", while §7.4 merges per facet per channel | confirmed |
 | F-L0-06 | L0 | D | P3 | Hold-audit restatements require durable acknowledgement before the watermark advances, while §4.4/§4.6 also accept a declared overflow loss | confirmed; resolved in e92234c (kept by the developer, 2026-10-21) |
@@ -62,11 +62,11 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L5b-08 | L5b | R | P3 | Unqualified "§4.5" in the follow-up operation-id rule | confirmed |
 | F-L5b-09 | L5b | O | P3 | Planned-absence horizon does not strictly exceed ceiling plus largest recovery | confirmed; duplicate of F-L2-08 |
 | F-L6-01 | L6 | C | P1 | `safety.posture_check` advisories are declared `safety` but `reaction.advisory` has the fixed family `suggestion` | confirmed; duplicate of F-L5b-03; resolved in CA4-134 |
-| F-L6-02 | L6 | C | P2 | Per-proposal `closed` clearing contradicts the shared digest tag | confirmed |
-| F-L6-03 | L6 | C | P2 | The "open request with buttons is never filtered or silenced" rule also covers advisories, emptying the `suggestion` preferences | confirmed |
-| F-L6-04 | L6 | R | P2 | §4.3 maps `subject` and `occurred_at`, which `RuntimeHealthOccurrence` does not have | confirmed |
-| F-L6-05 | L6 | O | P2 | `system.health` has no Layer-0 `FactTypeClaim` although the descriptor requires one | confirmed; duplicate of F-L0-03 |
-| F-L6-06 | L6 | R | P2 | Availability `episode_sequence` is attributed to Layer 3 §6.3.1, which defines no episode counter and limits tracker state | confirmed |
+| F-L6-02 | L6 | C | P2 | Per-proposal `closed` clearing contradicts the shared digest tag | confirmed; resolved in CA4-143 |
+| F-L6-03 | L6 | C | P2 | The "open request with buttons is never filtered or silenced" rule also covers advisories, emptying the `suggestion` preferences | confirmed; resolved in CA4-143 |
+| F-L6-04 | L6 | R | P2 | §4.3 maps `subject` and `occurred_at`, which `RuntimeHealthOccurrence` does not have | confirmed; resolved in CA4-143 |
+| F-L6-05 | L6 | O | P2 | `system.health` has no Layer-0 `FactTypeClaim` although the descriptor requires one | confirmed; duplicate of F-L0-03; resolved in CA4-143 |
+| F-L6-06 | L6 | R | P2 | Availability `episode_sequence` is attributed to Layer 3 §6.3.1, which defines no episode counter and limits tracker state | confirmed; resolved in CA4-143 |
 | F-L6-07 | L6 | C | P3 | §2's "reads from HA only configuration: language and `notify.*`" omits the unit system and live names used by rendering | confirmed |
 | F-L6-08 | L6 | R | P3 | Publication-index revision number and `AvailabilityPublicationIndex` are cited but not defined by the owning layer | confirmed |
 | F-L7-01 | L7 | R | P2 | Calendar input is promised to producers but has no blueprint field and no Layer-0 requirement path | confirmed; resolved in CA4-137 |

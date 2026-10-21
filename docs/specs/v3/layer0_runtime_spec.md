@@ -678,6 +678,9 @@ typed `RecoveryConfirmationOccurrence` (§7.4.1). It likewise reserves `reaction
 (owner `layer6.reaction_action_notice`), `proposal.review_pending` (owner
 `layer6.proposal_review`) and `reaction.consent_request` (owner `layer6.consent_request`) as
 Layer-6 event claims for the typed Layer-5 occurrences of Layer 5 §6.0; Layer 5 never appends them.
+The core reserves `FactTypeClaim(fact_type_pattern="system.health", owner_id="layer6.system_health",
+emission_kind="event")` for the Layer-6 adapter of the typed `RuntimeHealthOccurrence` (§10.1); no
+other layer appends it.
 The core reserves `FactTypeClaim(fact_type_pattern="reaction.advisory_feedback",
 owner_id="layer5.advisory_feedback", emission_kind="event")` for the resident feedback that Layer 5
 records from an answered advisory (Layer 5 §6.0); it is not a notification.

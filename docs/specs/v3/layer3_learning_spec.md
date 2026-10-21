@@ -3560,7 +3560,9 @@ a notification or persistence request: it is the only typed input from an owner 
 configuration reconciliation.
 
 The tracker retains only the current episode for each exact suppression key, its canonical reason set,
-and the distinct automation bindings to which it actually delivered an availability notification. It
+the distinct automation bindings to which it actually delivered an availability notification, and,
+per suppression key seen in the run, the episode counter that Layer 6 uses as `episode_sequence`
+(Layer 6 §7.6); one integer per staged key. It
 uses the staged index itself; Layer 3, Layer 4 and Layer 5 never query that index at runtime. On an
 `abstaining` or `reason_changed` occurrence, each currently enabled user-visible binding that has
 not already received that episode is delivered independently. On `restored`, Layer 6 delivers only to
