@@ -485,8 +485,10 @@ An unavailable reading cannot satisfy any role. Freshness is the producer's: a
 state's `when` is its last accepted change, so an old `when` never makes a
 continuously observed state stale; source report age is Layer 2's
 `max_source_age` (Layer 1 §4.1, Layer 0 §4.4). A profile that needs to know that
-something changed recently binds an event or episode slot, never the age of a
-state. Only an explicit available `closure` match may support
+something changed recently binds a Layer-2 state whose producer's declared
+`Stability` holds the qualifying value for the needed window (Layer 2 §5.2),
+never an event, an episode or the age of a state; the resolver reads no history
+(§3). Only an explicit available `closure` match may support
 `inactive`; a missing or false `anchor` never does.
 
 An `anchor` is an explicitly normalized fact whose positive value has direct semantics for the

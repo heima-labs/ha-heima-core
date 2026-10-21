@@ -6323,6 +6323,18 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-141 — Learning and Reaction contracts disagreed on facts and shapes
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G5 (F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01). **References:** [Layer 2 §2.10, §3](specs/v3/layer2_registries_spec.md), [Layer 3 §4.8.2, §6.4](specs/v3/layer3_learning_spec.md), [Layer 4 §9.4](specs/v3/layer4_domain_spec.md).
+
+**Problem.** One window contact could not serve both `safety.posture_check` and an exchange learner; Layer 2 named `occupancy.physical` the sole learner ground truth while the survival model binds resolved occupancy; Layer 3 §6.4 restated an incomplete intent list and only the state-fraction timing outcome; `incident_solar_exposure` was resolved at `casa` where no producer exists; and Layer 4 told activity profiles to bind event slots its own type rejects.
+
+**Approved resolution (2026-10-21).**
+1. Opening state (F-X5-01): `opening.open` is the one opening-state fact; Layer-5 policies and the Layer-3 `observed_opening_state` slot (physical exchange evidence only) read it; alarm and lock stay Layer-5-only, and no security conclusion is derived elsewhere. Follows CA4-140's one owner per readable signal path. Rejected: two namespaces with a selection rule (duplicates the fact).
+2. Mechanical: a core learner may bind resolved Layer-4 `occupancy` restricted to physical provenance, equal to `occupancy.physical` and identical to the Layer-5 room-return trigger (F-X5-02); Layer 3 defers member intents to the Layer-5 registry (F-L3b-02) and the timing binding to the outcome contract of the registered Layer-5 timing path (F-X6-01); `incident_solar_exposure` resolves at its opening's owner room (F-L3a-08); an activity profile expresses "changed recently" through a Layer-2 state held by its producer's `Stability`, never an event or history read (F-L4-01).
+
+No hot-path cost; one Sensor per contact. See the [CA4-141 review](specs/v3/reviews/CA4-141.md); no V3 runtime test ran.
+
 #### CA4-140 — People and presence rules disagreed across layers
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G4 (F-L2-01, F-L2-02, F-L3a-02, F-X9-04, F-L8-07). **References:** [Layer 2 §2.8.1, §3](specs/v3/layer2_registries_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md), [Layer 8 §4, §14.1](specs/v3/layer8_administration_spec.md).

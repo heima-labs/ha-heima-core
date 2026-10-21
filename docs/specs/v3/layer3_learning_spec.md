@@ -2393,13 +2393,17 @@ The initial core-owned slots are `room_temperature`, `outdoor_temperature`, `roo
 its `relation_profile` permits. `observed_hvac_target` and `hvac_delivered_power` are optional
 installation capabilities, never values read from an HA attribute by a learner.
 
-`room_*` slots resolve at the subject room, while outdoor/radiation slots resolve at `casa`.
+`room_*` slots resolve at the subject room; the outdoor slots, `solar_irradiance` and
+`outdoor_air_quality` resolve at `casa`. `incident_solar_exposure` resolves at the owner room of the
+opening named by its `solar_binding_id`, where Layer 2 produces it (Layer 2 §5.3).
 `observed_opening_state` and `observed_cover_position` resolve at the opening owner's room and must
-trace to a Layer-2 Sensor with one `related_opening_id`; a derived fact is accepted only when every
+trace to a Layer-2 Sensor with one `related_opening_id`; `observed_opening_state` binds that
+opening's `opening.open` fact (Layer 2 §2.10), the one opening-state fact, as physical exchange
+evidence only; a derived fact is accepted only when every
 physical source traces to that same id. This preserves the distinction between two openings in one
-room without adding an opening scope to `Location`. Opening and cover readings use stable logical
-Sensor identities in their fact types, for example `environment.opening_state.<sensor_id>` and
-`environment.cover_position.<sensor_id>`, never a Home Assistant `entity_id`.
+room without adding an opening scope to `Location`. Cover readings use stable logical Sensor
+identities in their fact types, for example `environment.cover_position.<sensor_id>`, never a Home
+Assistant `entity_id`.
 `observed_actuator_channel_state` resolves to exactly one staged
 `actuator.channel_state.<digest>` state `FactRef` for the profile's registered
 `(actuator_id, controlled_channel)` at its owning room, with the declared
@@ -3745,9 +3749,9 @@ Layer-5 `ApplyStep`; its canonical order is the requested execution order. The c
 count bound, duplicate-channel rule, opening/Actuator relation, numeric-outcome requirement applicability
 and bounds, parameter schema/bounds, guard requirements, exact registered
 profile-output compatibility, and Layer-5 translation for each
-`(reaction_descriptor_id, version)`. Initial intents are `increase_shading`, `decrease_shading`,
-`open_for_exchange`, `close_to_retain`, `activate_extraction`, `adjust_extraction`,
-`stop_extraction` and `follow_comfort_trajectory`. User-facing text belongs to Layer 6's rendering of
+`(reaction_descriptor_id, version)`. The admitted member intents are exactly those that the Layer-5
+`ReactionDescriptorRegistry` registers for that descriptor version (Layer 5 §2, §7.3); Layer 3 keeps
+no separate intent list. User-facing text belongs to Layer 6's rendering of
 the typed Layer-5 occurrences, never to learner-provided text. A bundle is never empty; a member
 without an endpoint is legal only as an advice member under Layer 5 §3.2.
 
@@ -3794,9 +3798,11 @@ Where a descriptor version permits learned timing, its closed root schema may
 carry the canonical data projection of the stable `ReactionTimingModelBinding`
 that Layer 5 §4.2 validates.
 That binding names the learning definition, sample/result contracts, exact
-typed state, qualifying values and authorized window; the condition state
-and qualifying values must exactly match the
-`FutureStateFractionOutcome` source and set. It never contains an `ArtifactRef`, analysis
+typed state, qualifying values and authorized window; they must match the outcome
+contract of the descriptor's registered Layer-5 timing path (Layer 5 §4.2, §6.0): the
+`FutureStateFractionOutcome` source and set for a state-fraction path, or the
+`RoomOccupancySurvivalModel.return_delay` anchor, target and `("absent",)` continuation for the
+room-return path, which is never coerced into a state-fraction outcome. It never contains an `ArtifactRef`, analysis
 revision, predicted `q`, admin approval or live timer. A candidate that needs
 a supplemental timing artifact must identify its exact supporting revision
 in typed evidence separate from the semantic payload before Layer 5 can

@@ -2332,6 +2332,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-141",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-141.md",
+      "contracts": ["L2-SECURITY-STATE", "L2-TYPED-STATE-INGRESS", "L3-ENVIRONMENTAL-OUTPUT", "L3-ROOM-RETURN-SURVIVAL", "L3-PROPOSAL-EFFECT", "L5-TIMING-MODEL-BINDING", "L5-ROOM-RETURN-DELAY", "L5-POSTURE-CHECK"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

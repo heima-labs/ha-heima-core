@@ -519,9 +519,11 @@ unavailable state yields `available=False`).
 | `opening.open` | the room owning the opening, with `related_opening_id` | boolean (`True` = open) |
 
 At most one `security.alarm_mode` Sensor exists, and at most one `security.lock` and one
-`opening.open` Sensor per opening. These facts are read only by Layer-5 policies (for example
-`safety.posture_check`, Layer 5 §7.5); no Layer-4 security claim is introduced, and Heima never
-derives a security conclusion of its own from them.
+`opening.open` Sensor per opening. `security.alarm_mode` and `security.lock` are read only by
+Layer-5 policies (for example `safety.posture_check`, Layer 5 §7.5). `opening.open` is the one
+opening-state fact: Layer-5 policies read it, and a Layer-3 `observed_opening_state` slot may bind it
+as physical exchange evidence (Layer 3 §4.8.2), never as a security input. No Layer-4 security claim
+is introduced, and Heima never derives a security conclusion of its own from these facts.
 
 ## 3. `Sensor`
 
@@ -631,9 +633,12 @@ the logical evidence identity and its history. Conversely, a semantically differ
 gets a new `sensor_id`, even if it happens to read the same HA device. This makes several PIR/mmWave
 readings in one room separately addressable by `FactRef` while preserving the one-producer-per-
 `(fact_type, Location)` invariant. The derived physical room fact is `occupancy.physical`; Layer 4
-alone resolves the canonical semantic `occupancy`. `occupancy.physical` is the sole standardized
+alone resolves the canonical semantic `occupancy`. `occupancy.physical` is the standardized
 physical room-occupancy ground truth a core learner may bind; individual evidence facts are never
-training labels. Only the evidence layer carries a per-sensor suffix.
+training labels. A core learner may equally bind Layer 4's resolved `occupancy` claim restricted
+to labels of physical provenance (Layer 4 §9.1): with that filter its `present`/`absent` labels are
+exactly the physical conclusion, and a runtime path that triggers on resolved occupancy keeps its
+training and serving signal identical (Layer 3 §4.4.1). Only the evidence layer carries a per-sensor suffix.
 
 **Casa occupancy evidence follows the same boundary.** Whether anyone is physically in the house is
 occupancy at casa scope, the same fact family as a room (CA4-120). A physical reading that
@@ -2376,7 +2381,10 @@ this layer.
 - Security and opening state (§2.10, CA4-126): an `alarm_control_panel` bound to
   `security.alarm_mode` with a mapping missing `armed_vacation` is rejected; a `security.lock`
   Sensor without `related_opening_id`, or a second one for the same opening, is rejected; an
-  unmapped lock state yields `available=False`.
+  unmapped lock state yields `available=False`. One exterior window contact registered once as
+  `opening.open` feeds both `safety.posture_check` and an `external_exchange` learner's
+  `observed_opening_state`; a second Sensor on that contact is rejected, and a Layer-3 or Layer-4
+  binding of `security.alarm_mode` or `security.lock` is rejected.
 - Declared household context (§2.9, CA4-121): a calendar event matching only the guest-stay keywords
   activates `household.guest_stay` with the default guest rooms; a resident's panel declaration
   "guests, room 2" with no end keeps it active until ended; a guest or device-account declaration is
