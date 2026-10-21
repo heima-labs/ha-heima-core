@@ -29,7 +29,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-L2-08 | L2 | D | P3 | The 14-day horizon "must exceed ceiling plus largest recovery", but Layer 5 allows the sum to equal 14 days | confirmed |
 | F-L3a-01 | L3a | O | P1 | `RoomOccupancySurvivalModel` declares no `shadow_requirement` despite an action-serving egress | confirmed; resolved in CA4-133 |
 | F-L3a-02 | L3a | O | P2 | Person-related fact list omits Layer 2's `presence.evidence.person.<id>` | confirmed |
-| F-L3a-03 | L3a | C | P2 | Promotion/disablement called "generation transitions" contrary to Layer 0 §4.7 | confirmed |
+| F-L3a-03 | L3a | C | P2 | Promotion/disablement called "generation transitions" contrary to Layer 0 §4.7 | confirmed; resolved in CA4-139 |
 | F-L3a-04 | L3a | R | P3 | `environmental_response.v1` cells cited to §4.8.2, which defines input bindings | confirmed |
 | F-L3a-05 | L3a | D | P3 | Envelope abstention code spelled `out_of_operating_envelope` vs closed `outside_operating_envelope` | confirmed |
 | F-L3a-06 | L3a | D | P3 | Categorical tie state named `ambiguous_top_outcome` vs coded `ambiguous_top` | confirmed |
@@ -101,7 +101,7 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X2-09 | X2 | D | P3 | A missing predecessor is `available=False` in Layer 0 but `previous=None` in Layer 4 | confirmed |
 | F-X2-10 | X2 | D | P3 | `LearnedWindow` calibration is assigned to a `SemanticResolver`, which cannot read history | confirmed |
 | F-X2-11 | X2 | C | P3 | Changing the learning installation profile is a configuration mutation outside the composed generation | confirmed |
-| F-X3-01 | X3 | O | P2 | Layer 5 classifies a timing-model binding as breaking, but Layer 0's dependency index has no Layer-3 learning-definition producer or Layer-5 timing-model consumer | confirmed |
+| F-X3-01 | X3 | O | P2 | Layer 5 classifies a timing-model binding as breaking, but Layer 0's dependency index has no Layer-3 learning-definition producer or Layer-5 timing-model consumer | confirmed; resolved in CA4-139 |
 | F-X3-02 | X3 | O | P2 | Layer 0 says Layer 5 supplies the recovery-confirmation proposal, subject and proposed facets; Layer 5's body defines no such hand-off | confirmed; resolved in CA4-138 |
 | F-X3-03 | X3 | O | P3 | `ResponseRequestDeclaration.expires_at` is mandatory, but Layer 5's consent and feedback requests have no expiry instant | confirmed |
 | F-X3-04 | X3 | O | P3 | Layer 0 says a Layer-5 calendar consumer declares a `KeywordClassifier`; Layer 5 has no such binding and routes calendar meaning through Layer 2 | confirmed |
@@ -112,12 +112,12 @@ Maintained by the coordinator. Each pass's full findings are in `findings/<unit>
 | F-X4-03 | X4 | D | — | Layer 1 puts `opening_id` on an Actuator channel; Layer 2 defines it on the Actuator only | false positive (Layer 1 §7, l. 911–913, "an `Actuator` channel with `opening_id` (Layer 2 §3, §6)" reads as a channel of an Actuator carrying `opening_id`, which is what Layer 2 §6, l. 2081–2083, defines; no difference in meaning) |
 | F-X5-01 | X5 | C | P2 | `opening.open` is reserved to Layer-5 readers, so a window contact cannot also feed Layer-3 opening evidence | confirmed |
 | F-X5-02 | X5 | C | P2 | `occupancy.physical` is "the sole" ground truth a learner may bind, but the survival model binds resolved Layer-4 occupancy | confirmed |
-| F-X5-03 | X5 | C | P2 | Layer 3 resolves learner bindings against the active Layer-2 generation, not the candidate | confirmed |
+| F-X5-03 | X5 | C | P2 | Layer 3 resolves learner bindings against the active Layer-2 generation, not the candidate | confirmed; resolved in CA4-139 |
 | F-X5-04 | X5 | O | P3 | Layer 2 says Layer 3 binds a `FutureStateFractionOutcome` for solar shading; Layer 3 registers none | confirmed |
 | F-X5-05 | X5 | R | P3 | Layer 2 §5.3 quotes a Layer-3 sentence and `PatternLearnerConfig` that Layer 3 does not contain | confirmed |
 | F-X5-06 | X5 | D | P3 | An impacted producer's predecessor is `available=False` in Layer 2 but `previous=None` in Layer 4 | confirmed; duplicate of F-X2-09 |
 | F-X6-01 | X6 | C | P2 | Learned-timing binding must match a `FutureStateFractionOutcome`, but the routine's only timing path is a survival model that Layer 5 forbids coercing to one | confirmed |
-| F-X7-01 | X7 | C | P2 | The "automatic authorization requires an enabled user-visible binding" check is placed at publication staging, where no binding can be enabled | confirmed |
+| F-X7-01 | X7 | C | P2 | The "automatic authorization requires an enabled user-visible binding" check is placed at publication staging, where no binding can be enabled | confirmed; resolved in CA4-139 |
 | F-X7-02 | X7 | D | P3 | U4 says `HouseholdConsentAuthority` references are HA user ids; Layer 5 and Layer 6 §5.2 make them `ha_person_id`s | confirmed |
 | F-X7-03 | X7 | C | P3 | Layer 6 acceptance tests an action notice of an `environment.*` Reaction, which Layer 5 forbids | confirmed |
 | F-X8-01 | X8 | C | P2 | Layer 0 says Layer-2 registrations contribute only `state` claims, but the Layer-2 extension producer may declare event claims | confirmed; resolved in CA4-137 |

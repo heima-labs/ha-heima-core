@@ -2310,6 +2310,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-139",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-139.md",
+      "contracts": ["L0-COMPOSED-GENERATION", "L3-ANALYSIS-SERVING-IDENTITY", "L5-TIMING-MODEL-BINDING", "L5-MANAGED-RESUMPTION", "L5-REACTION-AUTHORITY", "L6-AVAILABILITY-PUBLICATION"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

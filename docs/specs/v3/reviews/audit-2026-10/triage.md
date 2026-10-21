@@ -32,9 +32,10 @@ Operational handoff for the triage step (unit T). A new session resumes from thi
 | CA4-135 | F-X9-01, F-X3-05 | `ef28253` |
 | CA4-136 | F-L5a-03, F-L8-01 | `4c6ba3f` |
 | CA4-137 (G1) | F-L7-01–06, F-L8-02, F-X8-01–04, F-X8-08 | `88886c0` |
-| CA4-138 (G2) | F-L0-01, F-L0-02, F-X1-01, F-X1-03, F-X2-01–04, F-X3-02 | commit "docs: align Layer-0 contracts with upper layers (CA4-138)" |
+| CA4-138 (G2) | F-L0-01, F-L0-02, F-X1-01, F-X1-03, F-X2-01–04, F-X3-02 | `f0f39f5` |
+| CA4-139 (G3) | F-X3-01, F-X5-03, F-L3a-03, F-X7-01 | commit "docs: align generation and dependency-index rules (CA4-139)" |
 
-All four P1 are resolved. Next CA4 id: **CA4-139**.
+All four P1 are resolved. Next CA4 id: **CA4-140**.
 
 ## P2 groups
 
@@ -42,7 +43,7 @@ All four P1 are resolved. Next CA4 id: **CA4-139**.
 |---|---|---|---|
 | G1 | Layer 7 integration | (see CA4-137) | done |
 | G2 | Layer-0 contracts toward upper layers | F-L0-01, F-L0-02, F-X1-01, F-X1-03, F-X2-01, F-X2-02, F-X2-03, F-X2-04, F-X3-02 | done (CA4-138) |
-| G3 | Generations and dependency index | F-X3-01, F-X5-03, F-L3a-03, F-X7-01 | todo |
+| G3 | Generations and dependency index | F-X3-01, F-X5-03, F-L3a-03, F-X7-01 | done (CA4-139) |
 | G4 | People and presence | F-L2-01, F-L2-02, F-L3a-02, F-X9-04, F-L8-07 | todo |
 | G5 | Learning ↔ Reaction contracts | F-L3b-02, F-X6-01, F-X5-01, F-X5-02, F-L3a-08, F-L4-01 | todo |
 | G6 | Layer-5 descriptor rules | F-L5a-01, F-L5a-02, F-L5a-04, F-L5b-01, F-L5b-02 | todo |
@@ -55,6 +56,6 @@ candidates" (A, C) to consider at the end.
 
 ## Next step
 
-G2 is done (CA4-138). Resume with G3 (generations and dependency index): read its findings in
+G3 is done (CA4-139). Resume with G4 (people and presence): read its findings in
 `findings/<unit>.md` and `verification/<area>.md`, write the impact record, list the mechanical
 corrections for approval and ask the product questions one at a time.

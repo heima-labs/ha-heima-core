@@ -545,9 +545,10 @@ Performance is bounded by construction:
 
 Layer 6 composes the generation at staging from the exact owner keys declared by Layers 3, 4 and 5
 and the bindings declared by Layer 5. It rejects a binding whose key has no declared owner, a
-duplicate `automation_scope_id` for one key, and an automatically authorized resumable Reaction
-without an enabled user-visible binding for `active_channel_unmanaged_after_restart` (Layer 5
-§3.2). The `AvailabilityEpisodeTracker`, its episode/sub-episode rules, the reconciliation at a
+duplicate `automation_scope_id` for one key, and a resumable Reaction without a binding declared
+`user_visible=True` for `active_channel_unmanaged_after_restart` (Layer 5 §3.2). Staging checks
+existence and visibility only; `enabled` follows the Reaction's mode through
+`BindingEnablementChange`. The `AvailabilityEpisodeTracker`, its episode/sub-episode rules, the reconciliation at a
 generation swap, `binding_deactivated` and the per-run identity are exactly those of Layer 3 §6.3.1.
 The tracker hands each episode change (start, reason change, restoration) read-only to Layer 8's
 automation-state projection (Layer 8 §10.3), whether or not a binding is user-visible.

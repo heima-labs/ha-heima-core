@@ -1623,10 +1623,11 @@ class ComposedGenerationManifest:
 **Staging.** A candidate is the active composition plus the edited definitions. Each layer
 validates its own part against the candidate lower layers, using only its staged declarations.
 Layer 0 builds a staging-only dependency index from those declarations: producer claims
-(`FactTypeClaim` and `(fact_type, Location)`) and Actuator channels on one side; every consumer
+(`FactTypeClaim` and `(fact_type, Location)`), Actuator channels and Layer-3 learning definitions
+(identified by id and analysis-definition fingerprint, Layer 3 §4.1.2) on one side; every consumer
 reference on the other — Fusion inputs, Layer-3 `FactSlot`/`SampleBinding` sources, Layer-4 input
-bindings and upstream claims, Layer-5 trigger, guard, envelope-axis, history, calendar and
-Actuator-channel bindings, every consumer of a derived Topology or Actuator property
+bindings and upstream claims, Layer-5 trigger, guard, envelope-axis, history, calendar,
+timing-model and Actuator-channel bindings, every consumer of a derived Topology or Actuator property
 (`opening_faces_exterior`, `weather_exposed`, thermal-envelope membership; Layer 1 §6.1/§7,
 Layer 2 §6), and Layer-6 publication keys. Layer-6 recipients, house endpoints and family options have no
 dependents: a change to them alone yields an empty impact record and needs no confirmation. A changed room enclosure, opening `other_side`,
@@ -1634,7 +1635,9 @@ dependents: a change to them alone yields an empty impact record and needs no co
 the directly edited objects:
 
 - **breaking** — its binding no longer validates against the candidate: missing producer or
-  channel, changed claim kind, value type, unit, vocabulary or legal scope;
+  channel, changed claim kind, value type, unit, vocabulary or legal scope, or, for a timing-model
+  binding, a missing learning definition or a changed analysis-definition fingerprint (a
+  serving-, scheduling- or presentation-only learner edit leaves it unaffected);
 - **semantic_only** — its binding still validates, but an upstream producer's execution semantic
   fingerprint changed;
 - **unaffected**.
@@ -3453,7 +3456,9 @@ concrete checklist rather than re-deriving one:
 - A candidate removing a Sensor used by a Fusion input, a Layer-3 binding, a
   Layer-4 resolver and a Layer-5 guard yields one impact record listing all
   four as `breaking`; changing only that Sensor's reliability lists them as
-  `semantic_only`. A commit with a stale base generation or a different
+  `semantic_only`. Removing a learning definition, or changing its analysis
+  semantics, lists a Layer-5 timing-model binding pinned to it as `breaking`; a
+  serving-, scheduling- or presentation-only learner edit leaves it `unaffected`. A commit with a stale base generation or a different
   `impact_fingerprint` mutates nothing; an empty impact needs no
   confirmation. A crash before the manifest write leaves the old composition
   active; after it, bootstrap loads the new manifest. No cycle observes a mix

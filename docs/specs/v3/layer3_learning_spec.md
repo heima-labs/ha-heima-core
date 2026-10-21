@@ -157,8 +157,8 @@ code, an open JSON extension field, a raw HA entity/service selector, an arbitra
 class, codec, target, egress path, tier algorithm, or resource envelope.
 
 At staging, Layer 3 combines blueprint and instance into one immutable `ResolvedLearningDefinition`.
-It resolves scope membership and only the blueprint-declared configurable bindings against the active
-Layer-2 generation; validates fact type, unit, `Location` compatibility, history/retention needs and
+It resolves scope membership and only the blueprint-declared configurable bindings against the candidate
+Layer-2 generation (Layer 0 §4.7); validates fact type, unit, `Location` compatibility, history/retention needs and
 parameter values; derives separate analysis-definition and serving-generation
 fingerprints; and classifies the reload impact from the changed
 fields. Any unresolved/ambiguous binding, missing required input, unapproved scope, unknown parameter
@@ -171,7 +171,8 @@ such a candidate becomes not approvable, Layer 5 §4.1);
 `presentation_only` changes neither evidence nor scheduling.
 
 A learning definition is also a consumer in the composed configuration generation of Layer 0
-§4.7. When a confirmed upstream change makes one of its bindings fail validation (**breaking**),
+§4.7, and a producer for the Layer-5 timing-model bindings that pin its analysis-definition
+fingerprint. When a confirmed upstream change makes one of its bindings fail validation (**breaking**),
 the commit invalidates that definition: no analysis, refresh, finding, signal or candidate is
 produced under it, its artifacts are unavailable for every egress, its pending proposals become
 not approvable (Layer 5 §4.1), and its live-signal adoption chain closes. It stays invalid until an administrator stages a successor definition that
@@ -1860,7 +1861,8 @@ compares predictions with subsequently observed outcomes across the declared cov
 evaluates the frequency, scope and guard compatibility that a preview would have had.
 
 Promotion, continued shadowing, rollback and disablement are explicit
-administrative generation transitions. Entry to or exit from
+authenticated administrative lifecycle transitions, never a configuration-generation
+change (Layer 0 §4.7). Entry to or exit from
 `bounded_adaptive` instead appends an authenticated adoption-mode transition
 under §4.9 without changing the analysis definition or a configured Reaction
 generation. On promotion to `proposal_eligible`, a

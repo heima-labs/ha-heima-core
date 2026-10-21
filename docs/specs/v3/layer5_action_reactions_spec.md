@@ -730,10 +730,12 @@ one-shot version cannot opt in merely because its target was reached. Layer 5
 requires that descriptor's staged admission-reason applicability to include
 `active_channel_unmanaged_after_restart` and an exact Layer-6 availability
 publication binding for each resumable channel; a multi-channel descriptor
-must provide distinct staged suppression scopes for its channels. An
-automatically authorized resumable Reaction requires an enabled,
-user-visible binding for this cause; publication staging rejects a
-missing binding. Layer 5
+must provide distinct staged suppression scopes for its channels. Each such
+binding must be declared `user_visible=True`; publication staging rejects a
+missing or non-user-visible binding. Its `enabled` flag is not a staging
+input: it follows the Reaction's mode and is true exactly while that mode is
+`automatic` (§4.2), so an automatically authorized resumable Reaction always
+has an enabled, user-visible binding for this cause. Layer 5
 opens the Layer-0 §5.1.1.2 projection only after a fresh inactive entry and a
 subsequent physical active edge linked to its own admitted `ApplyStep`.
 `already_satisfied`, an HA service acknowledgement, a partial target match,
@@ -5159,8 +5161,8 @@ class PostureCheckConfiguration:
   historical training interval crosses the process gap (§3.2; Layer 0 §5.1.1.2).
 - Staging a resumable descriptor without
   `active_channel_unmanaged_after_restart` in its closed applicability map,
-  or authorizing it automatically without an exact enabled user-visible
-  availability binding per resumable channel, fails. A multi-channel
+  or without an exact user-visible availability binding per resumable channel,
+  fails; after promotion to `automatic` each such binding is enabled (§4.2). A multi-channel
   descriptor cannot collapse two distinct channels into one suppression
   scope. The availability occurrence contains neither rendered text nor an
   Actuator/HA id and does not use `reaction.follow_up`'s prepared-intent

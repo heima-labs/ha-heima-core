@@ -6323,6 +6323,18 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-139 — Generation and dependency-index rules disagreed across layers
+
+**Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G3 (F-X3-01, F-X5-03, F-L3a-03, F-X7-01). **References:** [Layer 0 §4.7](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.1.2, §4.7](specs/v3/layer3_learning_spec.md), [Layer 5 §3.2, §4.2](specs/v3/layer5_action_reactions_spec.md), [Layer 6 §9.2](specs/v3/layer6_notification_spec.md).
+
+**Problem.** Layer 5 classified a timing-model binding as breaking, but Layer 0's dependency index had no learning-definition producer or timing-model consumer; Layer 3 resolved learner bindings against the active instead of the candidate Layer-2 generation; Layer 3 called promotion and disablement generation transitions; and the "enabled user-visible binding" check sat at staging, where a binding is never enabled.
+
+**Approved resolution (2026-10-21).**
+1. Dependency index (F-X3-01): Layer-3 learning definitions are producers, identified by id and analysis-definition fingerprint, and Layer-5 timing-model bindings are consumers. Removal or a changed analysis fingerprint is `breaking`, consistent with the existing exact pin; a serving-, scheduling- or presentation-only edit is `unaffected`. Staging-only, no hot-path cost. Rejected: a separate Layer-5 invalidation rule (duplicates the classification and hides the Reaction from the confirmed impact record).
+2. Mechanical: Layer 3 resolves bindings against the candidate Layer-2 generation (F-X5-03); promotion, shadowing, rollback and disablement are authenticated administrative lifecycle transitions, not configuration-generation changes (F-L3a-03); staging requires each resumable channel's binding to be declared `user_visible=True`, while `enabled` follows the `automatic` mode (F-X7-01).
+
+See the [CA4-139 review](specs/v3/reviews/CA4-139.md); no V3 runtime test ran.
+
 #### CA4-138 — Layer-0 contracts did not hold toward the upper layers
 
 **Status:** DONE (2026-10-21; specification readiness). **Severity:** P2. **Origin:** V3 coherence audit 2026-10, group G2 (F-L0-01, F-L0-02, F-X1-01, F-X1-03, F-X2-01, F-X2-02, F-X2-03, F-X2-04, F-X3-02). **References:** [Layer 0 §4.1, §4.5, §5, §7, §7.4, §7.4.1, §9, §11, §13](specs/v3/layer0_runtime_spec.md), [Layer 1 §4](specs/v3/layer1_substrate_spec.md), [Layer 2 §2.5](specs/v3/layer2_registries_spec.md), [Layer 3 §4.2, §5.3, §6.3](specs/v3/layer3_learning_spec.md), [Layer 5 §6.0](specs/v3/layer5_action_reactions_spec.md).
