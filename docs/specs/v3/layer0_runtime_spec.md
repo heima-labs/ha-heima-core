@@ -2550,14 +2550,52 @@ RecoveryState = Literal[
     "power_recovery",            # evidence of an actual power loss/restore, not just a process
                                    # restart (e.g. a configured UPS/power sensor, or a gap pattern
                                    # across many entities consistent with a power event)
-    "degraded_recovery",         # many entities are currently unavailable
+    "degraded_recovery",         # many members of the recovery observation set are unavailable
     "recovery_settling",         # transitioning back toward normal after one of the above
 ]
+
+@dataclass(frozen=True)
+class RecoveryObservationMember:
+    member_key: str              # canonical key: a Layer-2 sensor_id, or
+                                 # "<actuator_id>/<controlled_channel>"
+    kind: Literal["sensor", "actuator_channel", "power_evidence"]
+
+@dataclass(frozen=True)
+class RecoveryObservationSet:
+    generation_id: str
+    members: tuple[RecoveryObservationMember, ...]   # canonical order; at most one power_evidence
+    fingerprint: str
 ```
+
+**Which entities count is declared, not inferred (CA4-151).** Layer 0 does not know what a fact
+means, so it never decides which entities are critical. At each composed-generation cutover Layer 2
+pushes one frozen `RecoveryObservationSet` (Layer 2 §2.5): every Actuator channel whose
+`power_recovery_policy` is not `"never"`, every Sensor declared `recovery_observation="observed"`,
+and at most one boolean Sensor declared `"power_evidence"`. Layer 0 never reads the registry for
+it. The set replaces a hand-curated allowlist: §7.2 and the §7.3 checkpoint use exactly its members.
+
+**How the state is computed is a core mechanism, blind to meaning.** It uses only each member's
+`available` and time. With `S` the current set and `U` its members currently unavailable (a member
+without a fresh read since the process started counts as unavailable), the Initial-V3 core rules,
+versioned like every core-fixed bound and to be recalibrated after live inventory with a new core
+contract version, are:
+
+| State | Entered when | Left when |
+|---|---|---|
+| `startup_recovery` | every process start | every member of `S` has its first fresh post-start read, or 60 s have elapsed; then the rules below apply |
+| `power_recovery` | after startup, the `power_evidence` member reports an off-to-on transition during the downtime, or, without one, at least 50 % of the members that have a checkpoint baseline are unavailable or differ from it at their first read | the episode is confirmed and its id minted (§7.4); then `recovery_settling` |
+| `degraded_recovery` | at any time, `|U| >= max(2, ceil(0.5 * |S|))` | the condition no longer holds; then `recovery_settling` |
+| `recovery_settling` | on leaving any of the three states above | `normal` after 120 consecutive seconds without the degraded condition and without an availability transition of any member |
+
+An empty `S` never enters `degraded_recovery` or the pattern form of `power_recovery`. A member that
+stays unavailable without further transitions does not block the return to `normal`; per-consumer
+gates (a fusion's `min_available`, a channel's readability for §7.4) handle its own consumers.
+Layer 0 keeps `|U|` and the last member transition instant incrementally at intake, so the
+per-cycle classification is O(1). A generation swap re-evaluates the rules against the new set.
 
 ### 7.2 Entity-level classification
 
-For each critical entity in the checkpoint's allowlist whose state differs from the last checkpoint
+For each member of the recovery observation set (§7.1) whose state differs from the last checkpoint
 after a restart, Recovery attaches one of:
 
 - **`unknown_during_downtime`**: the difference's cause cannot be determined — it may be a
@@ -2571,8 +2609,9 @@ Both labels, and the cycle-level states `power_recovery`, `degraded_recovery`, a
 
 ### 7.3 Checkpoint mechanics
 
-Backed by a deliberately minimal checkpoint: only an allowlist of critical entities' attributes,
-redacted, copied into one `PersistedProjection` per entity, and persisted to disk. A candidate
+Backed by a deliberately minimal checkpoint: only the members of the recovery observation set
+(§7.1), each as its bounded redacted projection copied into one `PersistedProjection` per member,
+and persisted to disk. A candidate
 critical-entity projection that is not representable within that contract is omitted from that one
 checkpoint commit and emits a diagnostic; it never causes raw HA data to be retained or invalidates
 the rest of the checkpoint. At recovery, an entity without a usable prior projection has no baseline
@@ -2599,7 +2638,7 @@ ordered audit queue (§6.4).
 
 It answers "did anything change while Heima was offline" cheaply; it is **not** a general restore
 mechanism, and — deliberately — it never forces every piece of runtime state through the full
-`HouseFact`/`Provenance` shape. The narrowness (only allowlisted attributes, only critical entities)
+`HouseFact`/`Provenance` shape. The narrowness (only the declared observation-set members)
 is a safety/efficiency property, not an oversight: most runtime state genuinely should start clean
 after a restart. §7.4's opt-in desired-target baseline is the narrow, explicitly-gated exception; it is not a
 precedent for widening this into a general restore engine.
@@ -2959,7 +2998,8 @@ runtime/plugins/event-store diagnostics surface already exists for other layers)
   delivery is pending, and subscriber failures (§4.8).
 - **Observation continuity**: last durable watermark, any open process interruption, its
   start/end and write failure, plus per-stream availability and incomplete-window reasons.
-- **Recovery**: current `RecoveryState`, age of the last checkpoint write, count and identity of
+- **Recovery**: current `RecoveryState` and the rule that produced it, the observation-set
+  fingerprint, `|S|`, `|U|` and the last member transition instant, age of the last checkpoint write, count and identity of
   entities currently carrying `unknown_during_downtime`/`power_restore_candidate`, plus the count,
   age, and `(actuator_id, controlled_channel)` keys of pending `RecoveryTargetSnapshot`s,
   with surviving facet counts and the recovery baseline/final-target decision for each
@@ -3577,6 +3617,16 @@ concrete checklist rather than re-deriving one:
 - Recovery/Checkpoint classification is settled before the first semantic resolver runs in every
   test cycle, including the first cycle after a simulated restart, and reaches Layer 5 read-only
   through that cycle's `FrozenRecoveryView`; no Layer-4 resolver input carries it (§11).
+- Recovery classification (CA4-151) uses only the pushed `RecoveryObservationSet`: with 10 members,
+  5 unavailable enter `degraded_recovery` and 4 do not; with 3 members, 2 enter it and 1 does not;
+  with 1 member, its loss never does; an empty set never does. After the condition clears the
+  state is `recovery_settling`, and `normal` follows only after 120 s without the condition and
+  without a member availability transition; a transition at 119 s restarts the window, and a member
+  that stays unavailable without transitions does not block it. A start whose members all read
+  fresh in 2 s leaves `startup_recovery` at 2 s; one with a silent member leaves it at 60 s with
+  that member counted unavailable. A declared power-evidence member's off-to-on, or 50 % of
+  baselined members unavailable or changed at first read, yields `power_recovery`; 49 % does not.
+  No Layer-0 rule names a fact type or reads the Layer-2 registry.
 - `RuntimeHealthSnapshot` is refreshed outside engine evaluation and one completed cycle contributes
   exactly one bounded, O(1) monotonic latency sample and one O(1) process-CPU-time delta; the engine
   CPU usage is aggregated outside the cycle in CPU-seconds per second. A cgroup-v2 fixture verifies effective

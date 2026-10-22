@@ -281,8 +281,11 @@ Actuator metadata does neither. An Actuator's execution semantic fingerprint inc
 rule, and a removed Actuator or channel leaves no candidate entry, which Layer 0 §7.4 treats the
 same way. Either case therefore deletes the old endpoint's per-channel snapshots; they are never
 migrated to another HA endpoint merely because the logical id stayed the same.
-Layer 0 receives this resolved policy/fingerprint delta
-at composition commit; it never queries Layer 2’s live registry during recovery.
+Layer 0 receives this resolved policy/fingerprint delta, and the frozen `RecoveryObservationSet`
+(Actuator channels with `power_recovery_policy` other than `"never"` plus Sensors declared
+`recovery_observation`, Layer 0 §7.1), at composition commit; it never queries Layer 2’s live
+registry during recovery. Staging rejects a second `"power_evidence"` Sensor, or one that is not a
+boolean state Sensor at casa.
 
 ---
 
@@ -607,6 +610,10 @@ class Sensor:
                                      # primary positive input; "corroborating" may contribute only
                                      # through a configured quorum or confirmation path. There is no
                                      # implicit upgrade based on HA device class or reliability.
+    recovery_observation: Literal["none", "observed", "power_evidence"] = "none"
+                                     # membership in Layer 0's RecoveryObservationSet (Layer 0 §7.1);
+                                     # "power_evidence" requires a boolean state Sensor at casa
+                                     # (True = mains power present) and is unique per generation
     correlation_group: str | None = None
                                      # Required with physical_evidence_admission. Same non-empty
                                      # stable id means readings share a physical/device/model

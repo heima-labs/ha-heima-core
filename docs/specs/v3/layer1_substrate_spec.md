@@ -678,8 +678,8 @@ the opposite policy from `value` (§3): a `value` violation is a hard constructi
 still legitimately contain a secret, a token, or a precise GPS coordinate — no generic structural
 validator can tell "this string is a room name" from "this string is a credential." `evidence` must
 never carry secrets, tokens, credentials, or precise geolocation; this is enforced by producer
-discipline and review, the same way Layer 0's checkpoint allowlist is curated by hand rather than
-inferred — not a contradiction of the mechanical checks above, a different, necessary layer on top of
+discipline and review, the same way the membership of Layer 0's recovery checkpoint is declared by Layer 2 rather than
+inferred (Layer 0 §7.1) — not a contradiction of the mechanical checks above, a different, necessary layer on top of
 them. The same restraint that keeps Layer 0's checkpoint minimal applies here for the same reason:
 `evidence` explains a fact, it does not duplicate the fact's own history or the raw state behind it
 wholesale.
