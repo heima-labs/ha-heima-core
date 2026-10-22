@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-152 — Recovery states had no precedence when several conditions hold
+
+**Status:** DONE (2026-10-22; specification readiness). **Severity:** P2. **Origin:** implementation question after CA4-151 (2026-10-22). **References:** [Layer 0 §7.1, §13](specs/v3/layer0_runtime_spec.md), [Layer 8 §5.2](specs/v3/layer8_administration_spec.md).
+
+**Problem.** CA4-151 defined each state's entry, but not which state wins when, after startup, one cycle shows both power evidence and the degraded condition.
+
+**Approved resolution (2026-10-22).** Precedence `startup_recovery` > `degraded_recovery` > `power_recovery` > `recovery_settling` > `normal`: the state is the current observation constraint, the cause lives in the episode. Power evidence mints the episode id even while the state is `degraded_recovery`; leaving degradation goes to `recovery_settling`, never back to `power_recovery`; §7.4 reconciles the episode once after `normal`. The Layer-8 degraded banner also names an open power episode. Rejected: `power_recovery` first (would let the §7.4 gate depend only on per-channel readability while half the set is unreadable). O(1). See the [CA4-152 review](specs/v3/reviews/CA4-152.md); no V3 runtime test ran.
+
 #### CA4-151 — Recovery classification had no countable rule and no owner for its entity set
 
 **Status:** DONE (2026-10-22; specification readiness). **Severity:** P2. **Origin:** implementation question (C1/A4, 2026-10-22). **References:** [Layer 0 §7.1–§7.3, §10, §13](specs/v3/layer0_runtime_spec.md), [Layer 2 §2.5, §3](specs/v3/layer2_registries_spec.md), [Layer 1 §4.3](specs/v3/layer1_substrate_spec.md).

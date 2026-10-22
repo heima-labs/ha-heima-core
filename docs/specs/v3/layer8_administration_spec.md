@@ -186,7 +186,7 @@ polls.
 | Live subscription interrupted while open | Last values stay, dimmed, with "updated at <time>"; resynchronized on reconnection | Same |
 | `startup_recovery`, before the first committed cycle | Banner "Heima is starting"; map without live overlays | Same |
 | No active configuration yet (first start not done) | Empty Overview with "Start setup" (§11) | "Heima is not set up yet; ask an administrator" |
-| `power_recovery` or `degraded_recovery` | Banner naming the recovery kind, the pending recovery confirmations and a link to System | "Heima is resuming after an interruption"; confirmations are already in To do |
+| `power_recovery` or `degraded_recovery` | Banner naming the recovery kind (for `degraded_recovery`, also an open power episode when `FrozenRecoveryView` carries one, Layer 0 §7.1), the pending recovery confirmations and a link to System | "Heima is resuming after an interruption"; confirmations are already in To do |
 | Health `degraded` | Banner listing the active degradation diagnostics, linked to System | No banner; affected objects already show as unavailable |
 | Health `error` | Banner with the cause, linked to System | "Heima has a problem and may not act as expected" |
 

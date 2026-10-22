@@ -2587,6 +2587,15 @@ contract version, are:
 | `degraded_recovery` | at any time, `|U| >= max(2, ceil(0.5 * |S|))` | the condition no longer holds; then `recovery_settling` |
 | `recovery_settling` | on leaving any of the three states above | `normal` after 120 consecutive seconds without the degraded condition and without an availability transition of any member |
 
+**Precedence (CA4-152).** When several entry conditions hold in one cycle, the state is the first
+that applies in the order `startup_recovery` > `degraded_recovery` > `power_recovery` >
+`recovery_settling` > `normal`. The state describes the current observation constraint; the cause
+lives in the episode. Power evidence mints the episode id (`FrozenRecoveryView.recovery_episode_id`)
+even while the shown state is `degraded_recovery`, and the episode stays pending through settling
+until the single §7.4 reconciliation. When the degraded condition clears, the state becomes
+`recovery_settling`, never `power_recovery` again; the same holds when degradation starts during an
+already open episode.
+
 An empty `S` never enters `degraded_recovery` or the pattern form of `power_recovery`. A member that
 stays unavailable without further transitions does not block the return to `normal`; per-consumer
 gates (a fusion's `min_available`, a channel's readability for §7.4) handle its own consumers.
@@ -3626,7 +3635,10 @@ concrete checklist rather than re-deriving one:
   fresh in 2 s leaves `startup_recovery` at 2 s; one with a silent member leaves it at 60 s with
   that member counted unavailable. A declared power-evidence member's off-to-on, or 50 % of
   baselined members unavailable or changed at first read, yields `power_recovery`; 49 % does not.
-  No Layer-0 rule names a fact type or reads the Layer-2 registry.
+  No Layer-0 rule names a fact type or reads the Layer-2 registry. With power evidence and 50 % of
+  members unavailable in one post-startup cycle, the state is `degraded_recovery` and the episode
+  id is present; when the condition clears it is `recovery_settling`, and §7.4 reconciles that
+  episode only after `normal`.
 - `RuntimeHealthSnapshot` is refreshed outside engine evaluation and one completed cycle contributes
   exactly one bounded, O(1) monotonic latency sample and one O(1) process-CPU-time delta; the engine
   CPU usage is aggregated outside the cycle in CPU-seconds per second. A cgroup-v2 fixture verifies effective
