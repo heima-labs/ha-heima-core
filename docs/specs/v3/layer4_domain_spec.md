@@ -122,14 +122,15 @@ scope ownership or an unregistered reason. Runtime reasons must be a subset of
 that frozen set, and the subject is the resolver's staged `Location`.
 
 `SemanticOutputTemplate` fixes claim kind (`state` or `episode`), matching emission kind, core-owned
-fact-type template, value vocabulary/unit, axis cardinality, legal `Location` scope, and output
+fact-type template, its Layer-1 `FactValueContract` (value vocabulary/unit, Layer 1 §3), axis cardinality, legal `Location` scope, and output
 availability behavior. An episode additionally fixes the `SemanticEpisodeOccurrence` contract above.
 The template is either fixed or has a finite named set of core-declared claim parameters. Staging
 validates `claim_parameters`, materializes one exact `SemanticOutputClaim`, and contributes its ordinary
 Layer-0 `FactTypeClaim` plus, for a state, its exact state-producer claim. An episode contributes only
 its event claim and rejects `previous_cycle`. `SemanticInputSchema` is a finite ordered set of typed lower-fact,
 upstream-semantic-claim, and optional authorized-signal slots. It fixes requiredness, scope
-compatibility, value/unit, availability/freshness, and whether an input can establish, refine, or only
+compatibility, the required `FactValueContract` (validated against the input producer's staged
+contract), availability/freshness, and whether an input can establish, refine, or only
 constrain a conclusion.
 
 The `activity` resolver kind additionally selects one member of its finite, core-owned

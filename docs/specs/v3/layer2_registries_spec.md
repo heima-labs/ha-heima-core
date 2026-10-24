@@ -130,6 +130,20 @@ composition time, loudly, never silently accepted — the same discipline §5.6 
 as Layer 0's reserved `manual_hold.lifecycle` event claim. This is a startup/configuration lookup only, never an
 evaluation-path lookup.
 
+**Fact value contracts (CA4-153).** The same pass derives the Layer-1 `FactValueContract` of every
+Layer-2 state claim, in the Fusion DAG's topological order so that each input's contract exists
+before its consumer is validated: a `Sensor` from its interpretation (`MappingInterpretation` to
+`boolean` when its outputs are exactly `True`/`False`, otherwise `categorical` with the mapped
+values; `NumericInterpretation` and `BucketInterpretation` to `numeric` with
+`unit_contract.canonical_unit`, a bucket to `categorical` with its bucket labels); a core-derived
+producer (Person evidence, `household.*`, solar facts, `quiet_hours.active`) from its core
+registration; a non-Formula `FusionRule` from its strategy (`WeightedQuorumStrategy` and
+`UnanimityStrategy` produce `boolean`; `DirectStrategy` keeps its one input's contract;
+`PrecedenceStrategy` requires all inputs to share one contract and keeps it); a `FormulaStrategy` from the
+`output_contract` its validator returns (§5.3). Staging rejects a binding whose consumer contract
+differs, and these contracts are what Layer 0 §4.7 compares for "changed value type, unit or
+vocabulary".
+
 That pass also resolves each producer `Location` before it is admitted: `scope="room"` must name a
 registered room; every id in `scope="rooms"` must name a registered room; and `scope="zone"` must name
 a registered Zone. Zone, `ZoneRoleBinding` and Topology registration perform their own Room-registry
@@ -1482,7 +1496,15 @@ class InheritedFormulaResult:
 
 FormulaResult = ContinuousFormulaResult | CategoricalFormulaResult | InheritedFormulaResult
 FormulaConfigurationCompiler = Callable[[FormulaConfigurationPayload], CompiledFormulaConfiguration]
-FormulaBindingValidator = Callable[["FusionRule", FormulaStrategy, CompiledFormulaConfiguration], CompiledFormulaConfiguration]
+FormulaBindingValidator = Callable[
+    ["FusionRule", FormulaStrategy, CompiledFormulaConfiguration, tuple[FactValueContract, ...]],
+    "ResolvedFormulaPlan",
+]
+
+@dataclass(frozen=True)
+class ResolvedFormulaPlan:
+    configuration: CompiledFormulaConfiguration   # unchanged or enriched (below)
+    output_contract: FactValueContract            # the FusionRule output's Layer-1 value contract
 
 @dataclass(frozen=True)
 class RegisteredFormula:
@@ -1529,9 +1551,13 @@ their declared order; numbers are finite; nesting is at most 8; and the UTF-8 se
 16 KiB. It is configuration data, not Layer 1 `EvidenceValue`: formula
 configuration may legitimately contain an ordered array of binding objects. During staging, after
 `resolve`, the registry first calls the formula's pure `compile_configuration(payload)`, then passes its
-immutable result to `validate_binding(fusion_rule, formula_strategy, compiled_configuration)`. The
-validator returns the final immutable plan held by the active generation; an ordinary formula returns
-its input unchanged, while a formula that must resolve staged input metadata may enrich it there.
+immutable result to `validate_binding(fusion_rule, formula_strategy, compiled_configuration,
+input_contracts)`, where `input_contracts` holds the staged `FactValueContract` of each
+`FusionRule.inputs` entry in order (§2.3); a `previous_cycle` self-reference receives the output
+contract the formula declares for that rule. The validator returns the final immutable
+`ResolvedFormulaPlan` held by the active generation: an ordinary formula returns its configuration
+unchanged, a formula that must resolve staged input metadata may enrich it, and every formula
+declares its `output_contract`.
 Together they must reject every semantic mismatch knowable before evaluation: JSON shape/fields/values,
 input count/order and fact-type contract, output `produces`/`where`, and every `previous_cycle` input
 unless it exactly self-references that FusionRule and this formula explicitly permits its
@@ -1593,8 +1619,8 @@ with `previous_cycle=True`; it produces a boolean state at the numeric input's
 `Location`. Its configuration has exactly `source_unit`, `direction` (`above`
 or `below`), `entry_threshold`, and `exit_threshold`. The compiler requires
 finite, non-boolean thresholds and rejects extra fields. The binding validator
-requires the declared canonical unit to equal the numeric source claim's unit,
-one exact boolean output claim, the same Location, and the permitted self-memory
+requires the declared canonical unit to equal the numeric source claim's unit (its input
+`FactValueContract.canonical_unit`), declares a `boolean` output contract, the same Location, and the permitted self-memory
 position. For `above`, entry must exceed exit; for `below`, entry must be less
 than exit. All parameters and the formula implementation version enter the
 ordinary fusion fingerprint. There is no resident-supplied expression or
@@ -1635,7 +1661,8 @@ The core registers `numeric.difference.v1` with `implementation_version="1"`. It
 ordered current-cycle canonical numeric state `FactRef`s, `minuend` then `subtrahend`, and produces
 one numeric state `minuend - subtrahend` at the minuend's `Location` (§5.7's formula-declared
 destination). Its configuration has exactly
-`source_unit`; staging requires both inputs to carry that canonical unit and the output to use it,
+`source_unit`; staging requires both input contracts to be `numeric` with that canonical unit and
+declares a `numeric` output contract with it,
 and rejects extra fields or a previous-cycle input. The entry uses `min_inputs=2` and
 `confidence_mode="inherit_input"`, inheriting the lower confidence of the two inputs, ties toward the
 minuend. Either input unavailable, stale, invalid or in the wrong unit yields `available=False`; no
@@ -2392,6 +2419,14 @@ this layer.
   after `unavailable_grace`. A resident whose HA person has no tracker is excluded with a diagnostic,
   and alone at home yields `presence.household=False` while casa occupancy is `True`. A guest's
   person never feeds `presence.household`.
+- Fact value contracts (CA4-153): a temperature Sensor with canonical unit `°C` has a `numeric`
+  `°C` contract; `numeric.difference.v1` over two such inputs validates and declares a `numeric`
+  `°C` output, and over `°C` and `%` it is rejected at staging; `numeric.hysteresis_condition.v1`
+  with `source_unit="W/m²"` over a `°C` input is rejected; its boolean self-memory input receives
+  its own declared output contract. A `PrecedenceStrategy` over a `boolean` and a `numeric` input is
+  rejected; a Layer-4 slot requiring `categorical(present, absent)` over a `boolean` producer is
+  rejected. Changing a Sensor's canonical unit lists every consumer as `breaking`. No contract is
+  computed or read in an evaluation cycle.
 - Security and opening state (§2.10, CA4-126): an `alarm_control_panel` bound to
   `security.alarm_mode` with a mapping missing `armed_vacation` is rejected; a `security.lock`
   Sensor without `related_opening_id`, or a second one for the same opening, is rejected; an

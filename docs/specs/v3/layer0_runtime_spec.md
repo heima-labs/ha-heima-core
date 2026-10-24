@@ -1647,7 +1647,8 @@ dependents: a change to them alone yields an empty impact record and needs no co
 the directly edited objects:
 
 - **breaking** — its binding no longer validates against the candidate: missing producer or
-  channel, changed claim kind, value type, unit, vocabulary or legal scope, or, for a timing-model
+  channel, changed claim kind, a changed Layer-1 `FactValueContract` (value type, unit or
+  vocabulary, Layer 1 §3), changed legal scope, or, for a timing-model
   binding, a missing learning definition or a changed analysis-definition fingerprint (a
   serving-, scheduling- or presentation-only learner edit leaves it unaffected);
 - **semantic_only** — its binding still validates, but an upstream producer's execution semantic

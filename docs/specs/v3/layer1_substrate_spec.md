@@ -261,6 +261,23 @@ protocol, an intent to act, an ML artifact/result, a transient `InferenceSignal`
 workflow record. A duration is still read by comparing facts' `when`, or via a `Window` (Layer 0
 §3.2). An `ApplyStep` (Layer 5) is the corresponding command shape; a `HouseFact` never is one.
 
+**Fact value contract (CA4-153).** Every state claim has one staging-time value contract, derived by
+its producing layer and never read off a runtime value:
+
+```python
+@dataclass(frozen=True)
+class FactValueContract:
+    kind: Literal["boolean", "categorical", "numeric"]
+    vocabulary: tuple[str, ...] | None   # categorical only: closed, non-empty, canonical order
+    canonical_unit: str | None           # numeric only; "1" for a dimensionless quantity
+```
+
+`vocabulary` is present exactly for `categorical` and `canonical_unit` exactly for `numeric`. Two
+contracts are equal only when all three fields are equal. Layer 2 derives it for its producers
+(Layer 2 §2.3), Layer 4 fixes it in each `SemanticOutputTemplate`, and Layer 7 declares it for each
+extension claim and input slot. Consumers validate their bindings against it at staging; it adds no
+field to `HouseFact` and no runtime lookup.
+
 ### 3.1 Operational-event mapping
 
 `HeimaEvent` is the operational envelope consumed by the notification pipeline, not a second durable

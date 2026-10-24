@@ -68,7 +68,7 @@ class ExtensionInputSlot:
     slot_id: str
     fact_type: str                    # exact core or ext.* fact type; never a pattern
     emission_kind: FactEmissionKind   # state or event, as claimed by the bound producer
-    value_contract: CanonicalJsonObject  # value type, canonical unit or closed vocabulary
+    value_contract: FactValueContract  # Layer 1 §3; must equal the bound producer's contract
     location_kinds: frozenset[str]    # legal Location scope kinds for the instance binding
     history: Window | None            # bounded history read; None reads the current value only;
                                       # required for an event slot (§5)
@@ -77,7 +77,7 @@ class ExtensionInputSlot:
 class ExtensionClaim:
     fact_type: str                    # ext.<extension_id>.<name>, exact
     emission_kind: FactEmissionKind
-    value_contract: CanonicalJsonObject
+    value_contract: FactValueContract  # Layer 1 §3
     max_result_age: Window | None     # required for a state claim, None for an event claim;
                                       # >= cadence + CALIBRATION_WINDOW + run deadline;
                                       # expiry makes the state unavailable (§8)
