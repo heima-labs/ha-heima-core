@@ -132,9 +132,11 @@ evaluation-path lookup.
 
 **Fact value contracts (CA4-153).** The same pass derives the Layer-1 `FactValueContract` of every
 Layer-2 state claim, in the Fusion DAG's topological order so that each input's contract exists
-before its consumer is validated: a `Sensor` from its interpretation (`MappingInterpretation` to
-`boolean` when its outputs are exactly `True`/`False`, otherwise `categorical` with the mapped
-values; `NumericInterpretation` and `BucketInterpretation` to `numeric` with
+before its consumer is validated: a `Sensor` from its interpretation (a `MappingInterpretation`'s
+output set is its mapped values plus its `default` unless `NO_DEFAULT`: a non-empty subset of
+`{True, False}` gives `boolean`, only distinct non-empty strings give `categorical` with those values
+in canonical order, and any other set, including `None`, a number, an object or a mix of booleans and
+strings, is rejected at staging (CA4-154); `NumericInterpretation` and `BucketInterpretation` to `numeric` with
 `unit_contract.canonical_unit`, a bucket to `categorical` with its bucket labels); a core-derived
 producer (Person evidence, `household.*`, solar facts, `quiet_hours.active`) from its core
 registration; a non-Formula `FusionRule` from its strategy (`WeightedQuorumStrategy` and
@@ -781,8 +783,8 @@ assertion is first decided, by a concrete rule, not by each producer's discretio
     diagnostic, never a coerced number or a guessed bucket.
   - `MappingInterpretation` is total, or not, depending on its own `default` field (§4):
     `default=<value>` means a raw state absent from `mapping` still produces a defined value — no
-    "can't interpret" case for that registration, including `default=None` when `None` is deliberately
-    the produced value. `default=NO_DEFAULT` means a raw state absent from `mapping` is deliberately
+    "can't interpret" case for that registration; that value is a boolean or a string of the
+    mapping's own contract (§2.3). `default=NO_DEFAULT` means a raw state absent from `mapping` is deliberately
     treated the same way `CalendarInterpretation`'s open vocabulary is
     (below) — an explicit, reviewable choice a `Sensor` producer makes ("I only know how to speak for
     these specific states, nothing else"), not an assumption baked into a dataclass type the way the
@@ -1023,14 +1025,14 @@ class NoDefault:
     pass
 
 NO_DEFAULT = NoDefault()
-MappingDefault = EvidenceValue | NoDefault
+MappingDefault = bool | str | NoDefault
 
 @dataclass(frozen=True)
 class MappingInterpretation:
-    mapping: dict[str, EvidenceValue]   # raw string input -> normalized HouseFact.value, exact match.
-                                          # Value type is EvidenceValue (Layer 1 §3/§4 — the same
-                                          # shape constraint HouseFact.value itself already carries),
-                                          # not Any.
+    mapping: dict[str, bool | str]      # raw string input -> normalized HouseFact.value, exact match.
+                                          # All values plus default are booleans or all are strings
+                                          # (§2.3, CA4-154): the output set fixes the Sensor's
+                                          # boolean or categorical FactValueContract.
     default: MappingDefault = NO_DEFAULT
     # default=<value>: a raw string absent from `mapping` produces this value instead — always
     #   available=True once the binding succeeds (§3.2). This is how a boolean-style sensor
@@ -1039,8 +1041,7 @@ class MappingInterpretation:
     #   "paused": "paused", "buffering": "buffering"}, default="idle") are expressed — the same
     #   exact-match-lookup mechanism, a configurable vocabulary instead of a hardcoded one per HA
     #   domain (resolved 2026-09-05, see below).
-    #   `None` is a valid EvidenceValue, so default=None means the produced HouseFact.value is really
-    #   None with available=True.
+    #   default=None is rejected at staging (CA4-154): "no value" is NO_DEFAULT.
     # default=NO_DEFAULT: a raw string absent from `mapping` means "no interpretable value" —
     #   available=False (§3.2), the same mechanism CalendarInterpretation's own "no match" uses,
     #   generalized to any discrete vocabulary, not just calendar keywords.
@@ -1126,14 +1127,14 @@ that pattern again. A future variant is added the same deliberate way `FusionStr
 one sensor's convenience, which is exactly the discipline this collapse restores after
 `MediaActivityInterpretation` had quietly drifted from it.
 
-**`NO_DEFAULT`, not `None`, means "no fallback" — resolved 2026-09-08.** Layer 1's `EvidenceValue`
-explicitly includes `None`, so `MappingInterpretation(default=None)` must remain available as a real,
-intentional output value (`HouseFact.value is None`, `available=True`) rather than being overloaded to
-mean "no interpretable value." The in-memory sentinel is the frozen dataclass singleton
-`NoDefault()`/`NO_DEFAULT` above; in configuration/storage, the preferred representation is that the
-`default` field is absent. If the field is present with JSON `null`, that is the real `None` value,
-not the sentinel. This makes total vs. partial mappings mechanically distinguishable in tests and in
-admin-authored config.
+**`NO_DEFAULT` means "no fallback" — resolved 2026-09-08, narrowed by CA4-154.** "No interpretable
+value" is always `default=NO_DEFAULT`, which yields `available=False`. A mapping's values and default
+are restricted to booleans or to strings (§2.3), so `default=None` is no longer a legal output: the
+2026-09-08 allowance for a real `None` value contradicted the typed `FactValueContract` (CA4-153). The
+in-memory sentinel is the frozen dataclass singleton `NoDefault()`/`NO_DEFAULT` above; in
+configuration/storage, the preferred representation is that the `default` field is absent, and a
+JSON `null` is rejected. This keeps total and partial mappings mechanically distinguishable in tests
+and in admin-authored config.
 
 **Room occupancy, casa occupancy and household presence — independently tuned, never a shared timing policy.**
 Layer 2 consumes the per-sensor evidence namespace above and produces `occupancy.physical` through
@@ -2425,7 +2426,9 @@ this layer.
   with `source_unit="W/m²"` over a `°C` input is rejected; its boolean self-memory input receives
   its own declared output contract. A `PrecedenceStrategy` over a `boolean` and a `numeric` input is
   rejected; a Layer-4 slot requiring `categorical(present, absent)` over a `boolean` producer is
-  rejected. Changing a Sensor's canonical unit lists every consumer as `breaking`. No contract is
+  rejected. A mapping `{"on": True}` with `default=False` is `boolean`; `{"playing": "playing"}` with
+  `default="idle"` is `categorical(idle, playing)`; `{"on": True, "x": "y"}`, `{"low": 1}` and
+  `default=None` are rejected (CA4-154). Changing a Sensor's canonical unit lists every consumer as `breaking`. No contract is
   computed or read in an evaluation cycle.
 - Security and opening state (§2.10, CA4-126): an `alarm_control_panel` bound to
   `security.alarm_mode` with a mapping missing `armed_vacation` is rejected; a `security.lock`
@@ -2500,8 +2503,8 @@ this layer.
   current event matches no configured category — plus, to verify the two `MappingInterpretation`
   configurations are actually distinguished and not accidentally conflated, a
   `MappingInterpretation(default=<value>)` `Sensor` reading that same absent-from-`mapping` raw state
-  and instead producing `default`, `available=True`, including a separate case where
-  `default=None` produces `value=None` with `available=True`.
+  and instead producing `default`, `available=True`; a `default=None`, a numeric or object mapping
+  value, or a mapping mixing booleans and strings is rejected at staging (CA4-154).
 - Registration rejects every incompatible binding/interpretation pair: calendar bindings are paired
   only with `CalendarInterpretation`, and state/attribute bindings only with mapping, numeric, or
   bucket interpretation. Numeric and bucket tests accept finite non-boolean numeric values and strict
