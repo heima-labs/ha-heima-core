@@ -6323,6 +6323,30 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-157 — An empty calendar classifier staged an always-unavailable Sensor
+
+**Status:** DONE (2026-10-25; specification readiness). **Severity:** P3. **Origin:** implementation question after CA4-153/154 (C1, 2026-10-25). **References:** [Layer 2 §2.3, §4, §9](specs/v3/layer2_registries_spec.md).
+
+**Problem.** `KeywordClassifier({}, [])` passed registration vacuously and produced a Sensor that is always `available=False`, while CA4-153 requires a `categorical` contract with a non-empty vocabulary.
+
+**Approved resolution (2026-10-25).** Rejected at staging: a classifier needs at least one category; a `CalendarInterpretation` derives `categorical` with its categories in canonical order. A permanently unavailable Sensor would silently hold every consumer in abstention. An archived generation holding one fails restage and invalidates the Sensor and its consumers with a diagnostic through the bootstrap code-upgrade path (Layer 0 §4.7); V3 has no production archives to preserve. Rejected: an explicit "always absent" contract (unusable by any consumer). See the [CA4-157 review](specs/v3/reviews/CA4-157.md); no V3 runtime test ran.
+
+#### CA4-156 — Formula self-memory made the output contract circular
+
+**Status:** DONE (2026-10-25; specification readiness). **Severity:** P2. **Origin:** implementation question after CA4-153 (C1, 2026-10-25). **References:** [Layer 2 §5.3, §9](specs/v3/layer2_registries_spec.md).
+
+**Problem.** The validator received the self-memory input's contract equal to the output contract it was itself returning.
+
+**Approved resolution (2026-10-25).** A new pure registration function `declare_output_contract(compiled_configuration, non_self_input_contracts)` and a fixed staging order: compile; declare the output (self positions `None`, never a runtime value); validate with the self positions filled by the declared contract. The validator may reject or enrich configuration but not change the output contract. The self edge stays out of the topological order. Hysteresis declares `boolean`; difference declares `numeric(source_unit)` from configuration. Rejected: a fixed output contract per formula (fails for configuration-dependent units). See the [CA4-156 review](specs/v3/reviews/CA4-156.md); no V3 runtime test ran.
+
+#### CA4-155 — Structured household facts had no typed value contract
+
+**Status:** DONE (2026-10-25; specification readiness). **Severity:** P2. **Origin:** implementation question after CA4-153 (C1, 2026-10-25). **References:** [Layer 1 §3](specs/v3/layer1_substrate_spec.md), [Layer 2 §2.3, §2.9, §9](specs/v3/layer2_registries_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md), [Layer 5 §5.1](specs/v3/layer5_action_reactions_spec.md), [Layer 8 §10.1](specs/v3/layer8_administration_spec.md).
+
+**Problem.** `household.guest_stay` and `household.planned_absence` carry object values, but `FactValueContract` had only `boolean`, `categorical` and `numeric`.
+
+**Approved resolution (2026-10-25).** A fourth kind `structured` with a mandatory core-registered closed `schema_id` (`household.guest_stay.v1`, `household.planned_absence.v1`, field types in Layer 2 §2.9). Structured contracts are equal only by exact schema id, never by shape: an object with `active` is never a boolean. Consumers name the exact schema and read only its fields (Layer 5 plan input, Layer 3 censoring, Layer 8 entities); no Fusion strategy or Initial-V3 formula accepts them; Layer 7 slots cannot bind them. A field change is a new schema version, hence `breaking`. Rejected: splitting into scalar facts (breaks CA4-121 atomicity of `active` and `end`); an `opaque` kind (unverifiable). See the [CA4-155 review](specs/v3/reviews/CA4-155.md); no V3 runtime test ran.
+
 #### CA4-154 — Mapping Sensors could emit values outside any fact value contract
 
 **Status:** DONE (2026-10-24; specification readiness). **Severity:** P2. **Origin:** implementation question after CA4-153 (C1, 2026-10-24). **References:** [Layer 2 §2.3, §3.2, §4, §9](specs/v3/layer2_registries_spec.md).

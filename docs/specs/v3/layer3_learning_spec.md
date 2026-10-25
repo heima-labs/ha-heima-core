@@ -353,7 +353,7 @@ end of its outcome or assembly window):
 
 1. intersects a period in which the Layer-4 claim `occupied_without_residents` (Layer 4 §9.2) was
    `True` or unavailable, anywhere in the house; or
-2. intersects an active `household.guest_stay` (Layer 2 §2.9) and its subject, or any feature,
+2. intersects an active `household.guest_stay` (Layer 2 §2.9, schema `household.guest_stay.v1`) and its subject, or any feature,
    outcome or member slot, is a room in that stay's `guest_room_ids`; while `household.guest_stay` is
    unavailable, its default guest rooms are used. Other rooms keep learning.
 

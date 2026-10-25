@@ -1998,7 +1998,8 @@ or a stable prior state. A complete empty event slice retains its ordinary no-ev
 #### Declared household plan
 
 A policy that needs a household plan reads the Layer-2 fact `household.planned_absence` (Layer 2
-§2.9, CA4-121) like any current fact; it declares no calendar binding of its own and never reads a
+§2.9, CA4-121) like any current fact, binding its exact `structured` contract
+`household.planned_absence.v1` (Layer 2 §2.9, CA4-155) and reading only that schema's fields; it declares no calendar binding of its own and never reads a
 calendar or a panel declaration. The fact already applies the one core union rule over every
 calendar source and panel declaration and carries the active interval's `start`, `end` and
 `end_beyond_horizon`; an unavailable fact makes a plan-dependent decision undecidable, never false.

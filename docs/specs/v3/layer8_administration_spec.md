@@ -828,8 +828,8 @@ that Heima reads (Sensors) and commands (Actuators). They are read-only: Heima p
 |---|---|---|---|
 | House occupancy | `binary_sensor` / occupancy | Layer 4 `occupancy@casa` (anyone inside) | enabled |
 | Household presence | `binary_sensor` / presence | Layer 4 `presence@casa` (any resident home) | enabled |
-| Guest stay | `binary_sensor`, attribute `guest_room_ids` | Layer 2 `household.guest_stay` | enabled |
-| Planned absence | `binary_sensor`, attributes `end`, `end_beyond_horizon` | Layer 2 `household.planned_absence` | enabled |
+| Guest stay | `binary_sensor` (state from field `active`), attribute `guest_room_ids` | Layer 2 `household.guest_stay`, schema `household.guest_stay.v1` | enabled |
+| Planned absence | `binary_sensor` (state from field `active`), attributes `end`, `end_beyond_horizon` | Layer 2 `household.planned_absence`, schema `household.planned_absence.v1` | enabled |
 | Room occupancy (one per room with an occupancy resolver) | `binary_sensor` / occupancy | Layer 4 room occupancy | enabled |
 | Activity (one per activity resolver: scope × `activity_id`) | `binary_sensor` | Layer 4 `activity.<activity_id>` | enabled |
 | Automation state (one per Reaction) | `sensor` / enum: `automatic`, `trial`, `awaiting_consent`, `blocked`, `invalid` | Layer 5 mode and current block | diagnostic, disabled |

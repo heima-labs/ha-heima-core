@@ -267,13 +267,19 @@ its producing layer and never read off a runtime value:
 ```python
 @dataclass(frozen=True)
 class FactValueContract:
-    kind: Literal["boolean", "categorical", "numeric"]
+    kind: Literal["boolean", "categorical", "numeric", "structured"]
     vocabulary: tuple[str, ...] | None   # categorical only: closed, non-empty, canonical order
     canonical_unit: str | None           # numeric only; "1" for a dimensionless quantity
+    schema_id: str | None = None         # structured only: a core-registered closed record schema,
+                                         # versioned in its id (e.g. "household.guest_stay.v1")
 ```
 
-`vocabulary` is present exactly for `categorical` and `canonical_unit` exactly for `numeric`. Two
-contracts are equal only when all three fields are equal. Layer 2 derives it for its producers
+`vocabulary` is present exactly for `categorical`, `canonical_unit` exactly for `numeric` and
+`schema_id` exactly for `structured`. Two contracts are equal only when all four fields are equal.
+A `structured` value is a JSON object whose fields are exactly those of its core schema, each with
+its own declared field type; its owning layer registers the schema (CA4-155). Structured contracts
+are never compatible by shape: an object that happens to contain `active` is never a `boolean`, and
+two schemas are different contracts even when their fields coincide. Layer 2 derives it for its producers
 (Layer 2 §2.3), Layer 4 fixes it in each `SemanticOutputTemplate`, and Layer 7 declares it for each
 extension claim and input slot. Consumers validate their bindings against it at staging; it adds no
 field to `HouseFact` and no runtime lookup.

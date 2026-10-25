@@ -137,11 +137,13 @@ output set is its mapped values plus its `default` unless `NO_DEFAULT`: a non-em
 `{True, False}` gives `boolean`, only distinct non-empty strings give `categorical` with those values
 in canonical order, and any other set, including `None`, a number, an object or a mix of booleans and
 strings, is rejected at staging (CA4-154); `NumericInterpretation` and `BucketInterpretation` to `numeric` with
-`unit_contract.canonical_unit`, a bucket to `categorical` with its bucket labels); a core-derived
-producer (Person evidence, `household.*`, solar facts, `quiet_hours.active`) from its core
-registration; a non-Formula `FusionRule` from its strategy (`WeightedQuorumStrategy` and
+`unit_contract.canonical_unit`, a bucket to `categorical` with its bucket labels;
+`CalendarInterpretation` to `categorical` with its classifier's categories in canonical order,
+CA4-157); a core-derived producer (Person evidence, solar facts, `quiet_hours.active`) from its core
+registration, and `household.*` from its §2.9 structured schema (CA4-155); a non-Formula `FusionRule` from its strategy (`WeightedQuorumStrategy` and
 `UnanimityStrategy` produce `boolean`; `DirectStrategy` keeps its one input's contract;
-`PrecedenceStrategy` requires all inputs to share one contract and keeps it); a `FormulaStrategy` from the
+`PrecedenceStrategy` requires all inputs to share one contract and keeps it; no strategy accepts a
+`structured` input); a `FormulaStrategy` from the
 `output_contract` its validator returns (§5.3). Staging rejects a binding whose consumer contract
 differs, and these contracts are what Layer 0 §4.7 compares for "changed value type, unit or
 vocabulary".
@@ -496,8 +498,22 @@ class HouseholdDeclaration:
   declaration is retained only in the declaration audit. A `guest_room_ids` room removed by a later
   generation is dropped from the declaration.
 
-**`household.guest_stay`** has the value `{"active": bool, "guest_room_ids": [room_id, ...]}`
-(canonical order; empty when inactive).
+**Structured value contracts (CA4-155).** Each fact has the Layer-1 `FactValueContract` of kind
+`structured` with a core-registered closed schema, below. A consumer binds a fact only by naming the
+exact `schema_id` (a Layer-5 plan input, Layer 3's household-context censoring, a Layer-8 entity
+mapping) and reads only the schema's fields; staging rejects a binding that names another schema
+or expects a `boolean`, `categorical` or `numeric` contract. No `FusionRule` strategy accepts a
+structured input and no Initial-V3 formula declares one, so these facts cannot be fused or relabeled;
+Layer 7 slots cannot bind them (Layer 7 §5). A new or changed field is a new schema version, hence a
+changed contract and a `breaking` impact (Layer 0 §4.7).
+
+| Schema | Fields (all required) |
+|---|---|
+| `household.guest_stay.v1` | `active: bool`; `guest_room_ids: tuple[room_id, ...]` (registered rooms, canonical order) |
+| `household.planned_absence.v1` | `active: bool`; `start: EvidenceInstant \| None`; `end: EvidenceInstant \| None`; `end_beyond_horizon: bool` |
+
+**`household.guest_stay`** has the `household.guest_stay.v1` value `{"active": bool,
+"guest_room_ids": [room_id, ...]}` (canonical order; empty when inactive).
 
 - It reads only calendar windows active now; its requirement declares the core minimum horizon of
   one hour, required by Layer 0 to be positive, and reads no upcoming window.
@@ -507,8 +523,8 @@ class HouseholdDeclaration:
 - If a configured calendar read fails and an active panel declaration exists, the fact is still
   `active` (the stay is known); with no active declaration it is `available=False`.
 
-**`household.planned_absence`** has the value `{"active": bool, "start": EvidenceInstant | None,
-"end": EvidenceInstant | None, "end_beyond_horizon": bool}`.
+**`household.planned_absence`** has the `household.planned_absence.v1` value `{"active": bool,
+"start": EvidenceInstant | None, "end": EvidenceInstant | None, "end_beyond_horizon": bool}`.
 
 - It reads active and upcoming calendar windows over a core-fixed horizon of **14 days**, which is at
   least the ceiling of the comfort-trajectory minimum absence duration plus the largest admitted
@@ -1103,7 +1119,8 @@ staging, never as a runtime guess.
 applies Unicode NFKC normalization, `casefold()`, and whitespace collapsing to temporary copies of
 each supplied text and configured keyword. A keyword matches when its normalized text is a substring
 of the normalized input. It gathers every matching category across the supplied texts, then returns the
-category occurring earliest in `priority_order`, or `None`. Registration rejects a `priority_order`
+category occurring earliest in `priority_order`, or `None`. Registration rejects an empty `keywords` mapping (CA4-157: a classifier must have at least one
+category, so its `categorical` contract has a non-empty vocabulary), a `priority_order`
 that does not list every key in `keywords` exactly once and no other category, any category with an
 empty keyword list, or any individual keyword whose normalized text is empty. This includes an empty
 or whitespace-only keyword beside valid keywords; no empty substring reaches matching.
@@ -1502,10 +1519,14 @@ FormulaBindingValidator = Callable[
     "ResolvedFormulaPlan",
 ]
 
+FormulaOutputDeclarer = Callable[
+    [CompiledFormulaConfiguration, tuple[FactValueContract | None, ...]], FactValueContract
+]  # None at every previous_cycle self-reference position
+
 @dataclass(frozen=True)
 class ResolvedFormulaPlan:
     configuration: CompiledFormulaConfiguration   # unchanged or enriched (below)
-    output_contract: FactValueContract            # the FusionRule output's Layer-1 value contract
+    output_contract: FactValueContract            # exactly the declared contract of step 2 (below)
 
 @dataclass(frozen=True)
 class RegisteredFormula:
@@ -1517,6 +1538,8 @@ class RegisteredFormula:
                                                                           # might need 2 of 3
     confidence_mode: FormulaConfidenceMode
     compile_configuration: FormulaConfigurationCompiler  # pure staging-time JSON decoder/validator
+    declare_output_contract: FormulaOutputDeclarer  # pure: compiled config + non-self input contracts
+                                                    # -> the output FactValueContract (CA4-156)
     validate_binding: FormulaBindingValidator  # pure staging-time check of inputs, order, output,
                                                # previous_cycle use; returns immutable resolved plan
     compute: Callable[[Sequence[HouseFact], CompiledFormulaConfiguration], FormulaResult | None]
@@ -1552,13 +1575,16 @@ their declared order; numbers are finite; nesting is at most 8; and the UTF-8 se
 16 KiB. It is configuration data, not Layer 1 `EvidenceValue`: formula
 configuration may legitimately contain an ordered array of binding objects. During staging, after
 `resolve`, the registry first calls the formula's pure `compile_configuration(payload)`, then passes its
-immutable result to `validate_binding(fusion_rule, formula_strategy, compiled_configuration,
-input_contracts)`, where `input_contracts` holds the staged `FactValueContract` of each
-`FusionRule.inputs` entry in order (§2.3); a `previous_cycle` self-reference receives the output
-contract the formula declares for that rule. The validator returns the final immutable
-`ResolvedFormulaPlan` held by the active generation: an ordinary formula returns its configuration
-unchanged, a formula that must resolve staged input metadata may enrich it, and every formula
-declares its `output_contract`.
+immutable result through a fixed, acyclic order (CA4-156). (1) `compile_configuration(payload)`.
+(2) `declare_output_contract(compiled_configuration, partial_contracts)`, where `partial_contracts`
+holds each non-self input's staged `FactValueContract` (§2.3) in `FusionRule.inputs` order and
+`None` at a `previous_cycle` self-reference; it never sees the self contract and never a runtime
+value. (3) `validate_binding(fusion_rule, formula_strategy, compiled_configuration,
+input_contracts)`, where `input_contracts` equals `partial_contracts` with each self position
+replaced by the step-2 contract. The validator may reject, or enrich the configuration, but cannot
+change the output contract: the final `ResolvedFormulaPlan.output_contract` is the step-2 contract.
+The self edge is `previous_cycle` and is excluded from the Fusion DAG's topological order (§5.6),
+so step 2 depends only on already-derived contracts.
 Together they must reject every semantic mismatch knowable before evaluation: JSON shape/fields/values,
 input count/order and fact-type contract, output `produces`/`where`, and every `previous_cycle` input
 unless it exactly self-references that FusionRule and this formula explicitly permits its
@@ -1620,8 +1646,9 @@ with `previous_cycle=True`; it produces a boolean state at the numeric input's
 `Location`. Its configuration has exactly `source_unit`, `direction` (`above`
 or `below`), `entry_threshold`, and `exit_threshold`. The compiler requires
 finite, non-boolean thresholds and rejects extra fields. The binding validator
-requires the declared canonical unit to equal the numeric source claim's unit (its input
-`FactValueContract.canonical_unit`), declares a `boolean` output contract, the same Location, and the permitted self-memory
+declares a `boolean` output contract at step 2 regardless of inputs; its validator requires the
+declared canonical unit to equal the numeric source claim's unit (its input
+`FactValueContract.canonical_unit`) and the self input's contract to be that `boolean`, the same Location, and the permitted self-memory
 position. For `above`, entry must exceed exit; for `below`, entry must be less
 than exit. All parameters and the formula implementation version enter the
 ordinary fusion fingerprint. There is no resident-supplied expression or
@@ -1662,8 +1689,8 @@ The core registers `numeric.difference.v1` with `implementation_version="1"`. It
 ordered current-cycle canonical numeric state `FactRef`s, `minuend` then `subtrahend`, and produces
 one numeric state `minuend - subtrahend` at the minuend's `Location` (§5.7's formula-declared
 destination). Its configuration has exactly
-`source_unit`; staging requires both input contracts to be `numeric` with that canonical unit and
-declares a `numeric` output contract with it,
+`source_unit`; it declares `numeric(source_unit)` as output contract at step 2 from configuration,
+and its validator requires both input contracts to be `numeric` with that canonical unit,
 and rejects extra fields or a previous-cycle input. The entry uses `min_inputs=2` and
 `confidence_mode="inherit_input"`, inheriting the lower confidence of the two inputs, ties toward the
 minuend. Either input unavailable, stale, invalid or in the wrong unit yields `available=False`; no
@@ -2428,7 +2455,24 @@ this layer.
   rejected; a Layer-4 slot requiring `categorical(present, absent)` over a `boolean` producer is
   rejected. A mapping `{"on": True}` with `default=False` is `boolean`; `{"playing": "playing"}` with
   `default="idle"` is `categorical(idle, playing)`; `{"on": True, "x": "y"}`, `{"low": 1}` and
-  `default=None` are rejected (CA4-154). Changing a Sensor's canonical unit lists every consumer as `breaking`. No contract is
+  `default=None` are rejected (CA4-154).
+- Structured claims (CA4-155): `household.guest_stay` and `household.planned_absence` derive
+  `structured` contracts with schemas `household.guest_stay.v1` and `household.planned_absence.v1`.
+  A Layer-5 plan input naming `household.planned_absence.v1` validates; one expecting `boolean`, or
+  naming `household.guest_stay.v1`, is rejected; a `DirectStrategy`, `PrecedenceStrategy` or Formula
+  over either fact is rejected; a Layer-7 slot on either is rejected. A value with an extra or
+  missing field fails the producer contract. Restaging an archive whose consumer names a retired
+  schema version marks that consumer `breaking`.
+- Self-memory order (CA4-156): for `numeric.hysteresis_condition.v1` step 2 declares `boolean` with
+  the self position `None`; step 3 receives `(numeric(<unit>), boolean)` and validates; a validator
+  cannot return a different output contract; staging never evaluates `compute` or inspects a stored
+  value to type the self input. `numeric.difference.v1` declares `numeric(source_unit)` from
+  configuration alone. Restaging an archived hysteresis rule yields the same order and contracts.
+- Empty calendar classifier (CA4-157): `CalendarInterpretation(KeywordClassifier({}, []))` is
+  rejected at staging; a classifier with categories `vacation` and `guests` derives
+  `categorical(guests, vacation)`. An archived generation holding an empty classifier fails restage,
+  invalidates that Sensor and its consumers with a diagnostic through the bootstrap code-upgrade
+  path (Layer 0 §4.7), and never yields a permanently unavailable Sensor. Changing a Sensor's canonical unit lists every consumer as `breaking`. No contract is
   computed or read in an evaluation cycle.
 - Security and opening state (§2.10, CA4-126): an `alarm_control_panel` bound to
   `security.alarm_mode` with a mapping missing `armed_vacation` is rejected; a `security.lock`
