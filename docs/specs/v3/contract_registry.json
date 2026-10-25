@@ -2519,6 +2519,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-158",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-158.md",
+      "contracts": ["L2-DECLARED-CONTEXT", "L2-HOUSEHOLD-PRESENCE", "L2-PERSONS", "L0-COMPOSED-GENERATION"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

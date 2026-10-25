@@ -268,6 +268,16 @@ reason to reset dwell/grace state, invalidate prior-cycle memory, or force a fac
 fingerprint, not an installation-wide generation hash; persisted generation metadata retains the full
 definition fingerprint when audit needs the complete administrative configuration.
 
+**Core producers are versioned like formulas (CA4-158).** A core-derived producer that is not an
+ordinary `Sensor` or `FusionRule` carries a stable `core_producer_id` and a core-maintained semantic
+`implementation_version` (same rule as `FormulaImplementationVersion`, §5.3: any change of rule,
+core constant or failure semantics that can alter value or availability bumps it). Its execution
+semantic fingerprint is SHA-256 over RFC-8785 canonical JSON of `[core_producer_id,
+implementation_version, schema_id, inputs]`, where `schema_id` is its `FactValueContract`'s schema
+(or `null` for a non-structured contract) and `inputs` are exactly the staged configuration fields
+listed for that producer (§2.8.1, §2.9). Runtime data such as panel declarations and calendar
+windows never enter it; diagnostic-only and presentation fields never do either.
+
 The reload computes a direct-and-transitive **impact set** from those staging-time comparisons. A
 producer is directly impacted when it is added, removed, relocated, or its execution semantic
 fingerprint differs; this includes a changed Sensor binding/interpretation/unit contract/
@@ -430,8 +440,12 @@ author them, and they change only with a `Person` commit.
   `available=False`, never `False` (an unavailable resident may be home). With no tracked resident the
   core generates no rule, which §2.4 would reject for empty inputs; it keeps the
   `presence.household` claim and, at the generation's activation, emits one state fact with
-  `available=False` and a diagnostic, as for a claim left without a producer (§2.5). The first
-  tracked resident's `Person` commit generates the rule. Its `stability` is a `Stability` the administrator may edit on the generated
+  `available=False` and a diagnostic, as for a claim left without a producer (§2.5). That fixed
+  producer is `core_producer_id="layer2.presence_household.untracked"`, `implementation_version="1"`,
+  with fingerprint inputs `{"tracked_ha_person_ids": []}`; the list of untracked residents is
+  diagnostic only and excluded (CA4-158). The first tracked resident's `Person` commit replaces it
+  with the generated rule, whose fingerprint is the ordinary `FusionRule` one: the impact is the
+  ordinary removal and addition of a producer. Its `stability` is a `Stability` the administrator may edit on the generated
   rule (default `Stability(to_true=Window(seconds=120), to_false=Window(seconds=600),
   unavailable_grace=Window(seconds=300))`); its non-null `to_true` is the return-confirmation dwell
   that Layer 5 requires (Layer 5 §3.2 `planned_absence_program`).
@@ -481,6 +495,15 @@ class HouseholdDeclaration:
     revision: int
 ```
 
+- **Fingerprints (CA4-158).** `household.guest_stay` is `core_producer_id="layer2.household.guest_stay"`,
+  `implementation_version="1"`, inputs `{"calendar_entity_ids": [...], "keywords": [...],
+  "guest_room_ids": [...]}` (its source's entities in canonical order, keywords after the
+  `KeywordClassifier` normalization in canonical order, `GuestStayDefaults.guest_room_ids` in
+  canonical order; an absent source contributes empty lists). `household.planned_absence` is
+  `core_producer_id="layer2.household.planned_absence"`, `implementation_version="1"`, inputs
+  `{"calendar_entity_ids": [...], "keywords": [...]}`. The one-hour and 14-day horizons and the
+  union and coalescing rules are part of the version. Panel declarations are runtime data and never
+  change a fingerprint.
 - **Configuration.** At most one `DeclaredContextCalendarSource` per fact and one
   `GuestStayDefaults` are staged with the registry generation (§2.5) by an administrator. The calendar
   category names `guest_stay` and `planned_absence` are core-reserved; the keywords are
@@ -2468,6 +2491,15 @@ this layer.
   cannot return a different output contract; staging never evaluates `compute` or inspects a stored
   value to type the self input. `numeric.difference.v1` declares `numeric(source_unit)` from
   configuration alone. Restaging an archived hysteresis rule yields the same order and contracts.
+- Core producer fingerprints (CA4-158): adding a keyword to the planned-absence source changes its
+  fingerprint and lists the Layer-5 planned-absence Reactions as `semantic_only`; changing
+  `GuestStayDefaults.guest_room_ids` does the same for `household.guest_stay` consumers; reordering
+  the same entities or re-casing a keyword to the same normalized text changes nothing; saving or
+  ending a panel declaration changes no fingerprint and produces no impact record. A house with no
+  tracked resident has the fixed untracked producer; the first tracked resident's commit lists
+  `presence.household` consumers as impacted by a producer replacement. Restaging an archive with
+  the same configuration and versions yields identical fingerprints; a core upgrade that bumps a
+  version re-classifies dependents at bootstrap (Layer 0 §4.7).
 - Empty calendar classifier (CA4-157): `CalendarInterpretation(KeywordClassifier({}, []))` is
   rejected at staging; a classifier with categories `vacation` and `guests` derives
   `categorical(guests, vacation)`. An archived generation holding an empty classifier fails restage,
