@@ -606,6 +606,30 @@ read as current state. `FactTypeClaim` is bootstrap/configuration metadata, not 
 and not a runtime lookup: the engine composes all claims before admitting producers and resolves the
 emission kind once into each producer's Persistence call.
 
+**Exact event producer inventory (CA4-159).** A type-level event claim does not say where events
+occur, and "no occurrence" is a valid observation for a historical event consumer. Every owner of an
+event claim therefore also declares, at staging, the finite set of exact places it can emit:
+
+```python
+@dataclass(frozen=True)
+class EventProducerDeclaration:
+    fact_type: str      # concrete, matched by one of the owner's event FactTypeClaims
+    where: Location     # exact, resolved against the candidate registry
+    owner_id: str       # the FactTypeClaim owner
+```
+
+Each owner derives its declarations from its own staged configuration, never from runtime data: an
+Actuator channel's room for `actuator.manual_control` and `manual_hold.lifecycle`; a Layer-4
+episode resolver's `Location`; a Reaction's subject for its `reaction.advisory_feedback` and
+Layer-6 occurrence kinds; a Layer-7 instance's bound `Location` for its event claims; casa for
+`system.health`. Layer 0 composes them in the same pass as the state claims into one inventory
+keyed by `(fact_type, where)` and adds them to the §4.7 dependency index. A consumer that reads
+event history at an exact `(fact_type, Location)` resolves it against this inventory; staging
+rejects a key with no declaration, and removing the declaring producer is `breaking`. An append at
+an undeclared `(fact_type, where)` is a producer contract violation: it is rejected with a §10
+producer diagnostic (one O(1) set lookup). The inventory is staging metadata, not a runtime query
+surface.
+
 **Claim pattern grammar.** A concrete `fact_type` is one or more non-empty segments separated by
 `.`; it never contains `*`. A `fact_type_pattern` has the same dotted shape, and each pattern segment
 is a non-empty sequence of literal Unicode code points and zero or more `*` characters. The pattern
@@ -1634,7 +1658,8 @@ class ComposedGenerationManifest:
 **Staging.** A candidate is the active composition plus the edited definitions. Each layer
 validates its own part against the candidate lower layers, using only its staged declarations.
 Layer 0 builds a staging-only dependency index from those declarations: producer claims
-(`FactTypeClaim` and `(fact_type, Location)`), Actuator channels and Layer-3 learning definitions
+(`FactTypeClaim` and `(fact_type, Location)`, for state producers and, through
+`EventProducerDeclaration`, for event producers; §4), Actuator channels and Layer-3 learning definitions
 (identified by id and analysis-definition fingerprint, Layer 3 §4.1.2) on one side; every consumer
 reference on the other — Fusion inputs, Layer-3 `FactSlot`/`SampleBinding` sources, Layer-4 input
 bindings and upstream claims, Layer-7 extension input-slot bindings and analyzer learner bindings
@@ -3617,6 +3642,12 @@ concrete checklist rather than re-deriving one:
   normal current inputs, that write failure leaves `RecoveryState="normal"` and reports the
   persistence failure separately; genuinely unavailable entities still produce the §7.1
   recovery classification regardless of checkpoint-write status.
+- Event producer inventory (CA4-159): a Layer-3 `EventOccurrenceAnchor` or `EventWindowOutcome` on
+  `actuator.manual_control` at the room of a registered Actuator channel validates; the same slot at
+  a room with no such channel is rejected at staging, never read as a stream of valid zeros;
+  removing that Actuator lists the learner as `breaking`; an append of an event at an undeclared
+  `(fact_type, where)` is rejected with a producer diagnostic; restaging an archive with the same
+  configuration yields the same inventory.
 - A declared `FactRef.previous_cycle` key resolves from the sealed O(1) in-memory snapshot on the
   next in-process cycle even when the preceding durable batch failed. After a simulated clean
   shutdown/restart, the key is pre-hydrated before the first DAG from the matching committed cycle;

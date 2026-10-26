@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-159 — No exact inventory of event producers by place
+
+**Status:** DONE (2026-10-26; specification readiness). **Severity:** P2. **Origin:** implementation question (Layer 3 `SampleBinding` event anchor/outcome, 2026-10-26). **References:** [Layer 0 §4, §4.7, §13](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md), [Layer 4 §4.1](specs/v3/layer4_domain_spec.md), [Layer 7 §6](specs/v3/layer7_extensions_spec.md).
+
+**Problem.** Layer 3 must resolve an event `FactSlot(fact_type, where)` to a Layer-0 event claim, but `FactTypeClaim` has no `Location`, so the composed inventory exposed event claims only by type. Since "no occurrence" is a valid observation, a slot at a place where nothing emits would yield fabricated zeros.
+
+**Approved resolution (2026-10-26).** Owner Layer 0 §4/§4.7: every event-claim owner declares at staging a finite set of `EventProducerDeclaration(fact_type, where, owner_id)` derived from its own configuration (Actuator channel room, Layer-4 resolver `Location`, Reaction subject, Layer-7 instance binding, casa for `system.health`); Layer 0 composes them with state claims into one `(fact_type, where)` inventory and the dependency index. Event consumers resolve against it; a missing declaration rejects staging, producer removal is `breaking`, an undeclared append is a producer contract violation (O(1)). Rejected: type-level checks only (fabricated zero windows). See the [CA4-159 review](specs/v3/reviews/CA4-159.md); no V3 runtime test ran.
+
 #### CA4-158 — Core producers had no semantic version or fingerprint inputs
 
 **Status:** DONE (2026-10-25; specification readiness). **Severity:** P2. **Origin:** implementation question (C1 impact analysis, 2026-10-25). **References:** [Layer 2 §2.5, §2.8.1, §2.9, §9](specs/v3/layer2_registries_spec.md).

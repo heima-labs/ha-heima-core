@@ -2530,6 +2530,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-159",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-159.md",
+      "contracts": ["L0-COMPOSED-GENERATION", "L0-MANUAL-CONTROL", "L0-HOLD-AUDIT", "L3-SAMPLE-TIME", "L3-CAUSAL-WINDOW", "L7-OUTPUTS"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

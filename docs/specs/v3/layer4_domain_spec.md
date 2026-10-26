@@ -127,7 +127,8 @@ availability behavior. An episode additionally fixes the `SemanticEpisodeOccurre
 The template is either fixed or has a finite named set of core-declared claim parameters. Staging
 validates `claim_parameters`, materializes one exact `SemanticOutputClaim`, and contributes its ordinary
 Layer-0 `FactTypeClaim` plus, for a state, its exact state-producer claim. An episode contributes only
-its event claim and rejects `previous_cycle`. `SemanticInputSchema` is a finite ordered set of typed lower-fact,
+its event claim, with one Layer-0 `EventProducerDeclaration` at the resolver's staged `Location`
+(Layer 0 §4, CA4-159), and rejects `previous_cycle`. `SemanticInputSchema` is a finite ordered set of typed lower-fact,
 upstream-semantic-claim, and optional authorized-signal slots. It fixes requiredness, scope
 compatibility, the required `FactValueContract` (validated against the input producer's staged
 contract), availability/freshness, and whether an input can establish, refine, or only

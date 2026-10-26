@@ -227,7 +227,8 @@ class StateTransitionAnchor:
 
 @dataclass(frozen=True)
 class EventOccurrenceAnchor:
-    source: FactSlot              # must resolve to a Layer-0 event claim
+    source: FactSlot              # must resolve to an exact Layer-0 EventProducerDeclaration
+                                  # (Layer 0 §4, CA4-159), not only a type-level event claim
     values: tuple[EvidenceValue, ...] | None = None        # None: every occurrence
 
 SampleAnchor = IntervalAnchor | StateTransitionAnchor | EventOccurrenceAnchor
@@ -459,7 +460,9 @@ The core stages every `SampleBinding` before the generation becomes active. It r
 duplicate feature name; unknown fact/location; a duration that violates its field contract (including
 an interval below the five-minute floor, and `PointOutcome.horizon=None` for a transition/event
 anchor); a source whose
-Layer-0 claim has the wrong state/event persistence kind; an invalid aggregate/claim pairing;
+Layer-0 claim has the wrong state/event persistence kind; an event source (anchor, feature or
+outcome) whose exact `(fact_type, where)` has no Layer-0 `EventProducerDeclaration` (CA4-159), since
+an absent producer would otherwise read as complete windows with no occurrence; an invalid aggregate/claim pairing;
 an empty, duplicate, unregistered or wrong-type `FutureStateFractionOutcome.qualifying_values`
 set, or a fraction outcome whose declared source is not a typed state;
 unbounded sequence; a required feature with any missing representation; an optional feature without

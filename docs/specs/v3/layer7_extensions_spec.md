@@ -219,7 +219,8 @@ may claim only `ext.<own extension_id>.*`, never a core namespace or another ext
 blueprint contributes `FactTypeClaim`s with `owner_id="layer7.extension.<extension_id>"`, and each
 instance its exact `(fact_type, Location, owner_id)` state claims, so two instances cannot produce
 the same key (Layer 2 §2.3). An extension producer may declare state and event claims; it is the
-Layer-2 producer kind whose claims are not limited to state (Layer 0 §4). The runtime assigns the
+Layer-2 producer kind whose claims are not limited to state (Layer 0 §4). Each instance contributes
+one Layer-0 `EventProducerDeclaration` per event claim at its bound `Location` (CA4-159). The runtime assigns the
 `FactSource`: `kind="extension"`, `source_id=instance_id`, `source_type=extension_id`, and the
 producer's execution semantic fingerprint (§3) as `configuration_fingerprint`, the run's own
 `correlation_id` (Layer 0 §5.2); `route_fingerprint` is `None`. Nothing an
