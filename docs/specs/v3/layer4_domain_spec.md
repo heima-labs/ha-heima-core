@@ -83,6 +83,14 @@ presence, activities, operational intent, plans, or social context into a synthe
 
 The core-owned `SemanticResolverRegistry` is built at bootstrap and frozen before any generation runs. It is not administrator-configurable or open to extensions. The persisted generation stores no callable; the active in-memory generation resolves the pure evaluator by `(resolver_kind_id, implementation_version)`.
 
+**Kind versions (CA4-161).** The registry holds exactly one `implementation_version` per
+`resolver_kind_id`. It is an integer the core increments for any change of `evaluate`,
+`validate_definition`, `input_schema`, `output_template` (including its `FactValueContract`), claim or
+parameter schema, `availability_contract` or signal routing that can alter value, availability,
+confidence, provenance, temporal behavior or the set of accepted definitions; cosmetic or internal
+changes that cannot do so need no bump. A definition does not choose the version: staging resolves
+the registry's current one and records it in the resolved definition of the generation.
+
 ```python
 ClaimParameterSchema = Mapping[str, frozenset[str]]
 CanonicalClaimParameters = tuple[tuple[str, str], ...]
@@ -161,25 +169,61 @@ and produces only its bounded diagnostic reason.
 ExplicitScope = Location  # exact Layer-1 value contract; resolver kind restricts legal scopes
 
 @dataclass(frozen=True)
+class SemanticInputBinding:
+    slot_id: str                        # a slot of the kind's SemanticInputSchema
+    fact_ref: FactRef | None            # lower fact or upstream semantic claim
+    signal_contract_id: str | None      # signal slot only
+    signal_contract_version: int | None # with signal_contract_id; exactly one of the two forms is set
+
+@dataclass(frozen=True)
 class SemanticResolverDefinition:
     resolver_id: str
     resolver_kind_id: str
-    implementation_version: int
     scope: ExplicitScope
     claim_parameters: CanonicalClaimParameters
     input_bindings: tuple[SemanticInputBinding, ...]
     parameters: CanonicalParameters
     enabled: bool
+
+@dataclass(frozen=True)
+class ResolvedSemanticResolver:          # staged member of a SemanticResolutionGeneration
+    definition: SemanticResolverDefinition
+    implementation_version: int          # resolved from the registry at staging (CA4-161)
+    zone_members: tuple[str, ...] | None # scope="zone" only: member room ids, canonical order
+    execution_fingerprint: str
+    definition_fingerprint: str
 ```
 
 `ExplicitScope` is exactly one Layer-1 `Location` with a `scope` value
 permitted by the resolver kind: `room`, `zone`, `rooms`, or `casa`. A zone id
 resolves to its declared membership during staging; a set of at least two
 rooms uses `Location(scope="rooms")`, while a singleton uses `room`.
-The canonical `LocationKey` and resolved ordered membership enter the
-definition fingerprint. Wildcards and live queries are forbidden because
-they could silently change input population, meaning, output claims, and
-downstream policy behavior.
+Wildcards and live queries are forbidden because they could silently change
+input population, meaning, output claims, and downstream policy behavior.
+
+**Fingerprints (CA4-161).** All three are SHA-256 over RFC-8785 canonical JSON, computed at staging.
+
+- **Execution semantic fingerprint** (the resolver's `FactSource.configuration_fingerprint`, used by
+  write-on-change, `previous_cycle` invalidation and Layer 0 §4.7 impact classification) covers
+  exactly the inputs that can change the resolver's output: `[resolver_kind_id,
+  implementation_version, LocationKey, zone_members, claim_parameters, input_bindings,
+  parameters]`. `zone_members` is present only for `scope="zone"` (for `room` and `rooms` the rooms
+  are already in the `LocationKey`; a `casa` resolver depends on no room set, so adding a room never
+  impacts it). `input_bindings` are sorted by `slot_id`, each as `(fact_type, LocationKey,
+  previous_cycle)` or `(signal_contract_id, signal_contract_version)`. It excludes `resolver_id`
+  (the producer identity, `FactSource.source_id`; a new id is a removed and an added producer),
+  `enabled` (a disabled resolver contributes no claim, which consumers see as a removed producer),
+  values derivable from these inputs (the materialized output claim, the routing index), and
+  upstream producers' fingerprints (propagated transitively by the dependency index, Layer 2 §2.5).
+- **Definition fingerprint** (audit and generation identity) is `[resolver_id, enabled, <the
+  execution payload>]`.
+- **Generation fingerprint** (`semantic_generation_fingerprint`, equal to
+  `LayerGenerationRef(layer="layer4").definition_fingerprint`, Layer 0 §4.7) is the list of
+  `[resolver_id, definition_fingerprint]` in canonical `resolver_id` order.
+
+At bootstrap a restage re-resolves each kind's current version: an upgraded version changes the
+execution fingerprint and is classified through Layer 0 §4.7's code-upgrade path; a definition the
+new validator rejects is invalidated with a diagnostic.
 
 Staging resolves all bindings against the candidate Layer-2 and upstream semantic generations; validates
 claim parameters and materializes each exact output claim; validates signal authorization and routing
@@ -634,6 +678,14 @@ room; it cannot suppress urgent safety/security communication or establish an ac
   a stable state changed hours ago still qualifies while available, and only
   an available matching closure slot can establish an inactive bipolar
   activity (§9.4).
+- Resolver fingerprints (CA4-161): adding a room to the house leaves a `casa_occupancy`
+  resolver's execution fingerprint unchanged; adding a member to a Zone changes it for a resolver
+  with that `zone` scope; changing a slot's `previous_cycle`, a bound `FactRef`, a claim parameter,
+  a parameter or a signal contract version changes it; toggling `enabled` changes only the
+  definition and generation fingerprints; renaming `resolver_id` is a removed plus an added
+  producer. A core upgrade with a new kind version re-resolves at bootstrap and lists consumers as
+  `semantic_only`; a version whose validator rejects the definition invalidates it with a
+  diagnostic. Restaging with identical configuration and code yields identical fingerprints.
 - Every enabled semantic resolver has a registered core kind/version, legal explicit scope, valid claim parameters, one materialized unique output claim, resolved typed inputs, valid parameters, and deterministic DAG position.
 - Staging rejects wildcards, raw HA selectors, expressions/callables, Actuator/policy references, unknown/unauthorized signals, invalid/unroutable signal parameters, duplicate claims, and same-cycle cycles.
 - A resolver evaluates only its frozen snapshot; later fact/signal/policy/action changes cannot alter that cycle's result.

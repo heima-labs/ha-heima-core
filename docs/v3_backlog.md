@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-161 — Semantic resolver fingerprints had no defined inputs
+
+**Status:** DONE (2026-10-27; specification readiness). **Severity:** P2. **Origin:** implementation question (Layer 4 staging, 2026-10-27). **References:** [Layer 4 §4.1, §4.2, §10](specs/v3/layer4_domain_spec.md), [Layer 0 §4.7](specs/v3/layer0_runtime_spec.md), [Layer 2 §2.5](specs/v3/layer2_registries_spec.md).
+
+**Problem.** Layer 4 §4.2 required definition and execution fingerprints for each `SemanticResolver` but fixed neither their canonical payload nor the generation fingerprint nor the version rule; `SemanticInputBinding` was undefined, and an administrator-stored `implementation_version` would orphan every definition at a core upgrade.
+
+**Approved resolution (2026-10-27).** `SemanticInputBinding` defined (FactRef, or signal contract id and version). Staging resolves the kind's single registered version (bumped for any output-affecting change) into a `ResolvedSemanticResolver`. Execution fingerprint = RFC-8785 SHA-256 of kind, resolved version, `LocationKey`, zone members (only for `zone` scope), claim parameters, sorted bindings and parameters; excludes `resolver_id`, `enabled`, derived values and upstream fingerprints. Definition fingerprint adds `resolver_id` and `enabled`; the generation fingerprint is the sorted `[resolver_id, definition_fingerprint]` list. Verified against write-on-change, `previous_cycle` invalidation, impact classification, Layer-3 source fingerprints and snapshot identity; a casa resolver is not impacted by adding a room. Staging only. See the [CA4-161 review](specs/v3/reviews/CA4-161.md); no V3 runtime test ran.
+
 #### CA4-160 — Several cooking heat sources in one room collided on one fact type
 
 **Status:** DONE (2026-10-27; specification readiness). **Severity:** P2. **Origin:** implementation question (Layer 4 `cooking` profile, 2026-10-27). **References:** [Layer 1 §3](specs/v3/layer1_substrate_spec.md), [Layer 2 §3, §9](specs/v3/layer2_registries_spec.md), [Layer 4 §9.4, §10](specs/v3/layer4_domain_spec.md).
