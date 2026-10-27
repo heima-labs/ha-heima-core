@@ -15,6 +15,10 @@ HEADING = re.compile(r"^#{1,6} (.+)$", re.MULTILINE)
 LOCAL_LINK = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 ISSUE = re.compile(r"^#### (CA4-\d+)\b[^\n]*\n(?P<body>.*?)(?=^#### CA4-\d+\b|\Z)", re.MULTILINE | re.DOTALL)
 STATUS = re.compile(r"\*\*Status:\*\*\s*([A-Z_]+)")
+ARCHITECTURE_MAP = "docs/specs/v3/architecture_overview_defined_layers.md"
+MAP_RECONCILED = re.compile(r"^\*\*Reconciled through:\*\* (CA4-\d+)\b", re.MULTILINE)
+MAP_CONTRACT_ID = re.compile(r"\bL[0-8]-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
+LAYER_FILE = re.compile(r"/layer(\d)_[a-z_]+_spec\.md$")
 
 
 def main() -> int:
@@ -146,8 +150,31 @@ def main() -> int:
                 if term in read_file(owner):
                     errors.append(f"retired term in authoritative V3 contract: {term} in {owner}")
         for path in slice_["orientation"]:
-            if path not in listed["orientation_only"]:
+            # Earlier slices may name an orientation document that is now historical.
+            if path not in listed["orientation_only"] | listed["historical_only"]:
                 errors.append(f"unknown orientation reference in {issue}: {path}")
+
+    # The architecture map must track every closed CA4 issue, cite only registered contracts
+    # and keep one section per authoritative layer.
+    if ARCHITECTURE_MAP not in listed["orientation_only"]:
+        errors.append(f"architecture map is not an orientation document: {ARCHITECTURE_MAP}")
+    architecture_map = read_file(ARCHITECTURE_MAP)
+    check_local_links(ARCHITECTURE_MAP)
+    reconciled = MAP_RECONCILED.search(architecture_map)
+    closed = [int(key.split("-")[1]) for key, value in statuses.items() if value != "TODO"]
+    if not reconciled:
+        errors.append("architecture map has no 'Reconciled through: CA4-N' line")
+    elif closed and int(reconciled.group(1).split("-")[1]) < max(closed):
+        errors.append(
+            f"architecture map reconciled through {reconciled.group(1)}, "
+            f"behind closed CA4-{max(closed)}: update it or confirm no change and raise the line"
+        )
+    for identifier in sorted(set(MAP_CONTRACT_ID.findall(architecture_map)) - set(by_id)):
+        errors.append(f"architecture map cites unknown contract: {identifier}")
+    for owner in sorted(listed["authoritative_layers"]):
+        layer = LAYER_FILE.search(owner)
+        if layer and f"\n### Layer {layer.group(1)} " not in architecture_map:
+            errors.append(f"architecture map has no section for Layer {layer.group(1)}")
 
     if errors:
         for error in errors:

@@ -3,7 +3,7 @@
 This protocol is for the **planned V3 design**, not the implemented V2 runtime. Its compact
 machine-readable navigation map is [`contract_registry.json`](contract_registry.json).
 The registry records ownership and evidence; it does not restate normative behavior. The
-Layer 0–8 specs remain authoritative. The overview and recap explain them. The backlog
+Layer 0–8 specs remain authoritative. The [architecture map](architecture_overview_defined_layers.md) explains them. The backlog
 preserves chronological decisions and findings. Historical drafts cannot override a layer spec.
 
 ## Work one bounded issue at a time
@@ -16,7 +16,8 @@ preserves chronological decisions and findings. Historical drafts cannot overrid
    distinct sensor/actuator kinds. Keep an unresolved product choice visible until the
    developer decides it. Reopen an approved decision only with a specific contradiction.
 3. Modify the authoritative owner and its affected acceptance criteria. Reconcile dependent
-   specs, overview, recap, examples and backlog status in the same change. Add registry
+   specs, the architecture map, examples and backlog status in the same change; when the issue
+   closes, raise the map's "Reconciled through" line (the checker enforces it). Add registry
    references for the bounded contract slice. Do not clone normative rules into the registry.
 4. Review a scenario matrix against the owning text and dependency closure. Include normal,
    unavailable, recovery, cancellation, concurrency and safety cases when applicable.

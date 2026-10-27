@@ -42,8 +42,9 @@ Related reference docs also live outside this tree, under `docs/`:
 - [Contract registry](v3/contract_registry.json) and [specification workflow](v3/spec_workflow.md)
   — current authority map, bounded dependency reading and review evidence. Start here for V3
   specification corrections; the backlog is the chronological decision and issue record.
-- [Architecture overview](v3/architecture_overview_defined_layers.md) — layer responsibilities and
-  reading order; [architecture recap](../v3_architecture_recap.md) summarizes the V2-to-V3 rationale.
+- [Architecture map](v3/architecture_overview_defined_layers.md) — the one V3 orientation document:
+  layers, the evaluation cycle, cross-cutting mechanisms and contract ids. The earlier
+  [architecture recap](../v3_architecture_recap.md) is historical.
 - [Layer 0 runtime](v3/layer0_runtime_spec.md), [Layer 1 substrate](v3/layer1_substrate_spec.md),
   [Layer 2 registries](v3/layer2_registries_spec.md), [Layer 3 learning](v3/layer3_learning_spec.md),
   [Layer 4 semantics](v3/layer4_domain_spec.md), [Layer 5 Reactions](v3/layer5_action_reactions_spec.md),

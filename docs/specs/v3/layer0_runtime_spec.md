@@ -586,6 +586,8 @@ t1 and t2." A generic consumer (including a Layer 7 extension) never needs to le
 bundle type to read Heima's history — it queries `HouseFact` by `fact_type`/`Location`/time window,
 the same API every consumer uses.
 
+### Fact emission semantics and claims
+
 **Fact emission semantics and ownership.** `HouseFact` remains one universal record shape, but its
 producer declares one of two persistence semantics before the engine starts:
 

@@ -1,5 +1,10 @@
 # Heima v3 — Architecture Recap
 
+> **Historical — superseded on 2026-10-27** by the
+> [architecture map](specs/v3/architecture_overview_defined_layers.md). Not maintained; it is known
+> to disagree with current specifications (for example on Mapping defaults, recovery membership and
+> the number of notification kinds). Do not use it for current work.
+
 Status: **synthesis of the full v3 design, not a spec.** This document describes how the v3
 architecture is meant to work, end to end, organized by logical dependency layer. It does not assume
 familiarity with any earlier version of Heima. Each block links to the backlog section or draft file

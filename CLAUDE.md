@@ -119,9 +119,9 @@ contracts in `docs/specs/v3/layer0_runtime_spec.md` through `layer5_action_react
 They are design specifications, not implemented V2 behavior or an approval to implement V3.
 Start with `docs/specs/v3/contract_registry.json` and `docs/specs/v3/spec_workflow.md`, then read
 the owning contract and its dependency closure for the current issue. `docs/v3_backlog.md` is the
-chronological issue and decision record. `docs/v3_architecture_recap.md` and the V3 architecture
-overview are orientation only. The root-level V3 drafts and `docs/img/v3_architecture.dot/png`
-are historical and do not override the layer specifications. Keep V2-to-V3 design constraints,
+chronological issue and decision record. The V3 architecture map
+(`docs/specs/v3/architecture_overview_defined_layers.md`) is orientation only. The root-level V3
+drafts, `docs/v3_architecture_recap.md` and `docs/img/v3_architecture.dot/png` are historical and do not override the layer specifications. Keep V2-to-V3 design constraints,
 approved choices, cross-layer dependencies and scenario evidence explicit as described in the
 workflow; present a genuinely unresolved product decision before making it definitive.
 
