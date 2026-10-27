@@ -713,6 +713,17 @@ from vision): a Sensor in this namespace may not bind an identity tracker (`devi
 `person.*`). The one exception is the core-derived person evidence of §2.8.1, always
 `corroborating`. Layer 2 never claims the semantic `occupancy` fact itself.
 
+**Cooking heat sources have a reserved per-source namespace (CA4-160).** A normalized reading that
+a specifically identified cooking heat source is actively heating (a cooktop or burner aggregate,
+an oven in active heating; never a generic smart plug) produces exactly
+`appliance.cooking_heat_source_active.<id>` at its kitchen room, with a `boolean` value contract.
+`<id>` is the producer's stable Heima id, a `sensor_id` or, for an aggregate such as several
+burners, the `fusion_id`; never a Home Assistant `entity_id`. A semantically different source gets a
+new id, even on the same device. Several sources therefore coexist in one room under the
+one-producer-per-`(fact_type, Location)` invariant, each with its own provenance. The unsuffixed
+`appliance.cooking_heat_source_active` is never a producible fact type; Layer 4's `cooking` profile
+binds the per-source facts (Layer 4 §9.4).
+
 Whether a resident is home is a different question, household presence, produced only from
 residents' HA persons (§2.8.1) as `presence.household` at casa; Layer 4 resolves the semantic
 `presence` claim from it. Occupancy says someone is inside; presence says the household is home.
@@ -2491,6 +2502,11 @@ this layer.
   cannot return a different output contract; staging never evaluates `compute` or inspects a stored
   value to type the self input. `numeric.difference.v1` declares `numeric(source_unit)` from
   configuration alone. Restaging an archived hysteresis rule yields the same order and contracts.
+- Cooking heat sources (CA4-160): a cooktop Sensor and an oven Sensor in one kitchen register
+  `appliance.cooking_heat_source_active.<sensor_id>` facts that coexist; a burner aggregate Fusion
+  produces `appliance.cooking_heat_source_active.<fusion_id>`; a second producer with the same
+  suffixed fact type at that room, the unsuffixed fact type, a non-room `Location` and a non-boolean
+  contract are rejected; renaming the HA entity changes no fact type.
 - Core producer fingerprints (CA4-158): adding a keyword to the planned-absence source changes its
   fingerprint and lists the Layer-5 planned-absence Reactions as `semantic_only`; changing
   `GuestStayDefaults.guest_room_ids` does the same for `household.guest_stay` consumers; reordering

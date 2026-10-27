@@ -511,9 +511,10 @@ prohibit it entirely; that choice is fixed by the core profile and visible in pr
 
 The initial `cooking` profile is `positive_only`, legal only at one explicit room scope selected by the
 administrator, and initially accepts no learning signal. It requires one or more same-room boolean
-`anchor` bindings of the normalized Layer-2 family
-`appliance.cooking_heat_source_active`; each binding represents a specifically identified cooking heat
-source (for example a cooktop burner/aggregate or an oven in active heating), never a generic smart
+`anchor` bindings of the normalized Layer-2 per-source family
+`appliance.cooking_heat_source_active.<id>` (Layer 2 §3, CA4-160): each binding names one exact
+suffixed fact type, so the anchors are distinct by construction, and represents a specifically
+identified cooking heat source (for example a cooktop burner/aggregate or an oven in active heating), never a generic smart
 plug. It may accept `occupancy` at the same scope and `extractor`/ventilation activity at that scope as
 optional `context` inputs, solely to refine confidence and provenance. It resolves `active` when any
 available anchor is `True`; with no such anchor it resolves `available=False`. A false or unavailable
@@ -663,7 +664,11 @@ room; it cannot suppress urgent safety/security communication or establish an ac
 - An activity definition resolves only a frozen core `ActivityProfile`; staging rejects an unknown
   profile, illegal scope, an unresolved/mis-typed role binding, a context-only positive route, an
   unauthorized signal, or a requested `inactive` result for a positive-only profile. The initial
-  `cooking` profile publishes `active` only from a true cooking-heat-source anchor; kitchen occupancy,
+  `cooking` profile publishes `active` only from a true cooking-heat-source anchor. Its staging
+  (CA4-160) accepts anchors `appliance.cooking_heat_source_active.cooktop` and
+  `appliance.cooking_heat_source_active.oven` in the same kitchen, each publishing `active` with its
+  own provenance; it rejects the unsuffixed family name, a fact type outside the family, an anchor
+  at another room, a non-`boolean` contract and the same anchor bound twice; kitchen occupancy,
   extractor activity, humidity, a false anchor, an unavailable anchor, or signal absence cannot alone
   publish either `active` or `inactive`.
 - The `sleeping` profile accepts an indirect route only from the exact

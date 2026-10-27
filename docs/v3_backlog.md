@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-160 — Several cooking heat sources in one room collided on one fact type
+
+**Status:** DONE (2026-10-27; specification readiness). **Severity:** P2. **Origin:** implementation question (Layer 4 `cooking` profile, 2026-10-27). **References:** [Layer 1 §3](specs/v3/layer1_substrate_spec.md), [Layer 2 §3, §9](specs/v3/layer2_registries_spec.md), [Layer 4 §9.4, §10](specs/v3/layer4_domain_spec.md).
+
+**Problem.** The `cooking` profile requires one or more distinct same-room heat-source anchors of a "family" `appliance.cooking_heat_source_active` that Layer 2 never defined; with one fact type, two sources in one kitchen collide on `(fact_type, Location)`.
+
+**Approved resolution (2026-10-27).** Reserved per-source namespace `appliance.cooking_heat_source_active.<id>`, room-scoped, `boolean`, suffix the producer's stable id (`sensor_id`, or `fusion_id` for an aggregate), never an HA `entity_id`; the unsuffixed name is not producible. The profile binds exact suffixed anchors, distinct by construction. Follows the approved suffixed-evidence precedent (`occupancy.evidence.<kind>.<id>`, CA4-145). Rejected: one OR Fusion per room (loses per-source provenance and moves the profile's rule into Layer 2); a sub-room `Location` (forbidden by Layer 1). Staging only. See the [CA4-160 review](specs/v3/reviews/CA4-160.md); no V3 runtime test ran.
+
 #### CA4-159 — No exact inventory of event producers by place
 
 **Status:** DONE (2026-10-26; specification readiness). **Severity:** P2. **Origin:** implementation question (Layer 3 `SampleBinding` event anchor/outcome, 2026-10-26). **References:** [Layer 0 §4, §4.7, §13](specs/v3/layer0_runtime_spec.md), [Layer 3 §4.2](specs/v3/layer3_learning_spec.md), [Layer 4 §4.1](specs/v3/layer4_domain_spec.md), [Layer 7 §6](specs/v3/layer7_extensions_spec.md).

@@ -250,7 +250,8 @@ A source-level observation may include a stable Heima registry id as its final n
 several observations of the same semantic kind must coexist at one `Location`; Layer 2 uses this
 shape for occupancy evidence, at a room or at casa, as `occupancy.evidence.<kind>.<id>`, where the
 suffix is the producer's stable id: a `sensor_id`, or the HA person storage id of a core-derived
-`occupancy.evidence.person.<ha_person_id>` (Layer 2 §3, §2.8.1). That suffix identifies the
+`occupancy.evidence.person.<ha_person_id>` (Layer 2 §3, §2.8.1), and for cooking heat sources as
+`appliance.cooking_heat_source_active.<id>` (Layer 2 §3, CA4-160). That suffix identifies the
 configured logical reading, never a mutable Home Assistant `entity_id`; Layer 2's fused physical
 meaning is `occupancy.physical`, while Layer 4 alone resolves the unsuffixed semantic `occupancy`.
 
