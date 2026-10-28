@@ -2569,6 +2569,17 @@
       "orientation": [],
       "evidence": "textual_contract_and_scenario_review",
       "runtime_test": "not_run_v3_not_implemented"
+    },
+    {
+      "issue": "CA4-162",
+      "status": "specification_reviewed",
+      "backlog": "docs/v3_backlog.md",
+      "review": "docs/specs/v3/reviews/CA4-162.md",
+      "contracts": ["L2-PHYSICAL-EVIDENCE-FORMULA", "L2-ENVIRONMENTAL-FORMULAS", "L2-NUMERIC-HYSTERESIS", "L2-NUMERIC-DIFFERENCE", "L2-SOLAR-GEOMETRY"],
+      "design_constraints": [],
+      "orientation": [],
+      "evidence": "textual_contract_and_scenario_review",
+      "runtime_test": "not_run_v3_not_implemented"
     }
   ]
 }

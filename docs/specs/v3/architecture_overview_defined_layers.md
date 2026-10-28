@@ -4,7 +4,7 @@
 authoritative Layer 0–8 specification and names the section it comes from. Where this map and a
 specification differ, the specification wins and this map is wrong.
 
-**Reconciled through:** CA4-161 (planning `eeeac8e5`).
+**Reconciled through:** CA4-162 (planning `c9a4dd8a` + CA4-162).
 
 **Maintenance:** a change that closes a CA4 issue updates this map in the same commit (or
 confirms it needs no change) and raises the line above. `scripts/check_v3_specs.py` fails when
@@ -187,7 +187,9 @@ validated against it at staging. It is never read from a runtime value and adds 
 - Mappings produce `boolean` or `categorical` only; "no value" is `NO_DEFAULT` (unavailable), never
   `None` (L2 §4).
 - Formulas declare their output contract from configuration and non-self input contracts before
-  validation; self-memory receives the declared contract (L2 §5.3).
+  validation; self-memory receives the declared contract (L2 §5.3). A validator reads staged
+  metadata only through its `StagedFormulaInput`s and a frozen Topology view; the resolved plan
+  enters the rule's fingerprint (L2 §5.3, §2.5).
 - `structured` facts (`household.guest_stay.v1`, `household.planned_absence.v1`) cannot be fused
   and are bound only by exact schema id (L2 §2.9).
 

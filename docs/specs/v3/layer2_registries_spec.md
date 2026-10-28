@@ -283,7 +283,11 @@ producer is directly impacted when it is added, removed, relocated, or its execu
 fingerprint differs; this includes a changed Sensor binding/interpretation/unit contract/
 source-age gate/numeric bounds/reliability, a changed
 FusionRule inputs/strategy/formula configuration/stability, a Zone membership change affecting its
-scope or coverage, and a changed resolved formula `(formula_id, implementation_version)`. Every
+scope or coverage, and a changed resolved formula `(formula_id, implementation_version)` or resolved formula plan.
+A `FormulaStrategy` rule's execution fingerprint includes the canonical form of its
+`ResolvedFormulaPlan`, which records everything its validator read (an input Sensor's
+`physical_evidence_admission` and `correlation_group`, a Topology fingerprint): changing those staged
+values impacts the rule even when the source Sensor's own fingerprint is unchanged (CA4-162). Every
 FusionRule dependent of an impacted producer is then impacted transitively through current-cycle
 `FactRef`s. Validated prior-cycle self-memory has no cross-producer dependent edge; the impacted rule's
 own snapshot key is invalidated by the cutover action below. The following actions are mandatory only
@@ -1548,8 +1552,20 @@ class InheritedFormulaResult:
 
 FormulaResult = ContinuousFormulaResult | CategoricalFormulaResult | InheritedFormulaResult
 FormulaConfigurationCompiler = Callable[[FormulaConfigurationPayload], CompiledFormulaConfiguration]
+@dataclass(frozen=True)
+class StagedFormulaInput:                # read-only staged facts about one FusionRule input (CA4-162)
+    contract: FactValueContract
+    producer_kind: Literal["sensor", "fusion", "core", "extension"]
+    producer_id: str
+    physical_evidence_admission: PhysicalEvidenceAdmission | None  # a Sensor's evidence profile only
+    correlation_group: str | None                                   # a Sensor's evidence profile only
+
+# FrozenTopologyView: the candidate Topology, frozen for staging. Closed reads only: an opening by
+# id (owner room, CompassOrientation, other_side, kind) and the view's fingerprint; no open query.
+
 FormulaBindingValidator = Callable[
-    ["FusionRule", FormulaStrategy, CompiledFormulaConfiguration, tuple[FactValueContract, ...]],
+    ["FusionRule", FormulaStrategy, CompiledFormulaConfiguration, tuple[StagedFormulaInput, ...],
+     "FrozenTopologyView"],
     "ResolvedFormulaPlan",
 ]
 
@@ -1613,9 +1629,11 @@ immutable result through a fixed, acyclic order (CA4-156). (1) `compile_configur
 (2) `declare_output_contract(compiled_configuration, partial_contracts)`, where `partial_contracts`
 holds each non-self input's staged `FactValueContract` (§2.3) in `FusionRule.inputs` order and
 `None` at a `previous_cycle` self-reference; it never sees the self contract and never a runtime
-value. (3) `validate_binding(fusion_rule, formula_strategy, compiled_configuration,
-input_contracts)`, where `input_contracts` equals `partial_contracts` with each self position
-replaced by the step-2 contract. The validator may reject, or enrich the configuration, but cannot
+value. (3) `validate_binding(fusion_rule, formula_strategy, compiled_configuration, inputs,
+topology)`, where each `StagedFormulaInput.contract` equals `partial_contracts` with each self
+position replaced by the step-2 contract (a self input's other fields name the rule itself), and
+`topology` is the frozen candidate `FrozenTopologyView` (CA4-162). These two values are the
+validator's only access to staged metadata; it cannot query the registry. The validator may reject, or enrich the configuration, but cannot
 change the output contract: the final `ResolvedFormulaPlan.output_contract` is the step-2 contract.
 The self edge is `previous_cycle` and is excluded from the Fusion DAG's topological order (§5.6),
 so step 2 depends only on already-derived contracts.
@@ -1738,7 +1756,7 @@ The core registers `environment.solar_incidence.v1` with one closed
 configuration object: `opening_id`, `solar_binding_id`, and `mode` equal to
 `geometry_proxy` or `incident_irradiance`. Its pure compiler rejects extra
 fields; its binding validator resolves the registered opening and its
-orientation from the staged Topology. The frozen core compass-azimuth mapping
+orientation from the `FrozenTopologyView` argument (CA4-162). The frozen core compass-azimuth mapping
 covers Layer 1's closed `CompassOrientation` (`north` … `northwest`) and maps
 it to 0, π/4, π/2, 3π/4, π, 5π/4, 3π/2, or 7π/4 radians clockwise from north. Its version and the exact opening/topology fingerprint
 enter the compiled configuration. The first mode requires current
@@ -1792,7 +1810,8 @@ configuration JSON object with exactly `bindings`, `true_threshold`, and `false_
 `bindings` entry has exactly `input_index`, `role`, `true_weight`, `false_weight`, and
 `required_for_false`. Its `compile_configuration` validates this JSON and builds the internal typed
 `PhysicalEvidenceWeightedConfig`. `validate_binding` then resolves `admission` and
-`correlation_group` from the corresponding staged `Sensor` into a `ResolvedPhysicalEvidencePlan`.
+`correlation_group` from the corresponding `StagedFormulaInput` (CA4-162) into a
+`ResolvedPhysicalEvidencePlan`, which enters the rule's execution fingerprint (§2.5).
 Neither step nor `compute` consumes raw JSON. The admin therefore assigns a source's quality profile
 once, in its Sensor registration, instead of copying it into every fusion that uses the source.
 
@@ -2502,6 +2521,14 @@ this layer.
   cannot return a different output contract; staging never evaluates `compute` or inspects a stored
   value to type the self input. `numeric.difference.v1` declares `numeric(source_unit)` from
   configuration alone. Restaging an archived hysteresis rule yields the same order and contracts.
+- Formula staging access (CA4-162): the physical-evidence validator reads each input's admission and
+  correlation group only from its `StagedFormulaInput`, and the solar validator reads its opening only
+  from the `FrozenTopologyView`; neither can query the registry. Changing a source Sensor's
+  `physical_evidence_admission` from `corroborating` to `immediate`, or its `correlation_group`,
+  changes the physical-evidence rule's execution fingerprint and impacts it (force-write,
+  `previous_cycle` reset) and its consumers; changing an opening's orientation impacts the solar
+  rule. An unrelated Sensor or opening change leaves both fingerprints unchanged. Restaging identical
+  configuration yields identical plans and fingerprints.
 - Cooking heat sources (CA4-160): a cooktop Sensor and an oven Sensor in one kitchen register
   `appliance.cooking_heat_source_active.<sensor_id>` facts that coexist; a burner aggregate Fusion
   produces `appliance.cooking_heat_source_active.<fusion_id>`; a second producer with the same
