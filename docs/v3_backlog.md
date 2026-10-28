@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-165 — Core household producers had no FactSource contract
+
+**Status:** DONE (2026-10-28; specification readiness). **Severity:** P2. **Origin:** implementation question after CA4-158 (`docs/v3/clarifications/CA4_158_CORE_HOUSEHOLD_SOURCE_PROVENANCE.md`, 2026-10-28). **References:** [Layer 2 §2.8.1, §2.9, §9](specs/v3/layer2_registries_spec.md), [Layer 0 §5](specs/v3/layer0_runtime_spec.md).
+
+**Problem.** The untracked `presence.household` producer, `household.guest_stay` and `household.planned_absence` had versions and fingerprints but no `FactSource` fields, which enter write-on-change and history.
+
+**Approved resolution (2026-10-28).** Guest stay and planned absence: `kind="analyzer"` (combination of calendar windows and declarations), `source_id` = CA4-158 `core_producer_id`, `source_type=None`, `actor_type="heima"` (declarer only in the declaration audit), `configuration_fingerprint` = execution fingerprint, `route_fingerprint` = digest of the sorted contributing sources (`calendar:<entity_id>`, `declaration:<declaration_id>`) or `None` when inactive/unavailable, cycle `correlation_id`. Untracked presence: `kind="system"`, `source_id="layer2.presence_household.untracked"`, no route, activating cycle's id. See the [CA4-165 review](specs/v3/reviews/CA4-165.md); no V3 runtime test ran.
+
 #### CA4-164 — Reaction descriptor labels had no authoritative translation source
 
 **Status:** DONE (2026-10-28; specification readiness). **Severity:** P3. **Origin:** implementation question after CA4-163 (`docs/v3/clarifications/CA4-163_TRANSLATION_SOURCE.md`, 2026-10-28). **References:** [Layer 5 §4.2](specs/v3/layer5_action_reactions_spec.md), [Layer 8 §12](specs/v3/layer8_administration_spec.md), [Layer 2 §2.7, §9](specs/v3/layer2_registries_spec.md).

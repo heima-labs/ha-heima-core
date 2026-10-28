@@ -460,7 +460,10 @@ author them, and they change only with a `Person` commit.
   `available=False` and a diagnostic, as for a claim left without a producer (§2.5). That fixed
   producer is `core_producer_id="layer2.presence_household.untracked"`, `implementation_version="1"`,
   with fingerprint inputs `{"tracked_ha_person_ids": []}`; the list of untracked residents is
-  diagnostic only and excluded (CA4-158). The first tracked resident's `Person` commit replaces it
+  diagnostic only and excluded (CA4-158). Its fact carries `FactSource(kind="system",
+  source_id="layer2.presence_household.untracked", source_type=None, actor_type="heima",
+  configuration_fingerprint=<its execution fingerprint>, route_fingerprint=None)` and the
+  activating cycle's `correlation_id` (CA4-165). The first tracked resident's `Person` commit replaces it
   with the generated rule, whose fingerprint is the ordinary `FusionRule` one: the impact is the
   ordinary removal and addition of a producer. Its `stability` is a `Stability` the administrator may edit on the generated
   rule (default `Stability(to_true=Window(seconds=120), to_false=Window(seconds=600),
@@ -521,6 +524,14 @@ class HouseholdDeclaration:
   `{"calendar_entity_ids": [...], "keywords": [...]}`. The one-hour and 14-day horizons and the
   union and coalescing rules are part of the version. Panel declarations are runtime data and never
   change a fingerprint.
+- **Provenance (CA4-165).** Each fact carries `FactSource(kind="analyzer", source_id=<its
+  core_producer_id>, source_type=None, actor_type="heima", configuration_fingerprint=<its execution
+  fingerprint>)` and the producing cycle's `correlation_id`: it is derived by combining calendar
+  windows and declarations, never a direct read. `actor_type` stays `heima`: who declared lives only
+  in the declaration audit, never in the fact. `route_fingerprint` is SHA-256 over RFC-8785
+  canonical JSON of the sorted list of the sources contributing to the active value
+  (`"calendar:<entity_id>"`, `"declaration:<declaration_id>"`), and `None` when the fact is inactive
+  or unavailable; a change of contributing sources at an unchanged value is therefore recorded.
 - **Configuration.** At most one `DeclaredContextCalendarSource` per fact and one
   `GuestStayDefaults` are staged with the registry generation (§2.5) by an administrator. The calendar
   category names `guest_stay` and `planned_absence` are core-reserved; the keywords are
@@ -2556,6 +2567,11 @@ this layer.
   produces `appliance.cooking_heat_source_active.<fusion_id>`; a second producer with the same
   suffixed fact type at that room, the unsuffixed fact type, a non-room `Location` and a non-boolean
   contract are rejected; renaming the HA entity changes no fact type.
+- Core household provenance (CA4-165): a guest stay active from a calendar window and then also
+  from a panel declaration keeps its value and is written once more with a new route fingerprint;
+  the fact never carries the declaring person; an inactive or unavailable fact has
+  `route_fingerprint=None`; the untracked presence fact has `kind="system"` and the generated rule
+  that replaces it `kind="analyzer"`.
 - Core producer fingerprints (CA4-158): adding a keyword to the planned-absence source changes its
   fingerprint and lists the Layer-5 planned-absence Reactions as `semantic_only`; changing
   `GuestStayDefaults.guest_room_ids` does the same for `household.guest_stay` consumers; reordering
