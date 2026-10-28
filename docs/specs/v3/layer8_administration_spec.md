@@ -925,6 +925,10 @@ displays or interprets a V2 export.
 - Extension names, descriptions, parameter labels and input-slot labels are translation keys in the
   Layer-8 resources, keyed by `extension_id`, slot id and parameter name; a blueprint carries no
   user-facing text (Layer 7 §3).
+- Each registered Reaction descriptor's label is the key `reaction_descriptor.<reaction_descriptor_id>.label`
+  in these core resources, versioned with the core (CA4-164). A resource test fails unless every
+  registered descriptor has a non-empty label in every shipped locale and labels are unique within
+  each locale, so distinct descriptors never render the same composed name.
 - A test fails if a user-facing literal string exists outside the translation resources.
 
 ## 13. Backend contract

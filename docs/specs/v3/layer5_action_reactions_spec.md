@@ -1734,7 +1734,10 @@ successor configuration generation, no return to `notification_only`, no job can
 empty impact record. It applies to learner-origin Reactions too, whose configuration remains
 editable only through a new proposal, whose acceptance creates a new Reaction rather than a
 successor generation of the existing one (§4.1). With `display_name=None`, presentation composes a name from
-the descriptor's translated label and the subject (for example "Shading · Living room").
+the descriptor's translated label and the subject (for example "Shading · Living room"). The label is
+the core translation key `reaction_descriptor.<reaction_descriptor_id>.label` in the Layer-8 core
+resources (Layer 8 §12, CA4-164); it is not a field of `RegisteredReactionDescriptor` and enters no
+fingerprint.
 Effective names follow the common rule of Layer 2 §2.7: they are unique across Reactions after
 trimming, Unicode NFC and case-folding, composed names compared in every shipped locale; a catalog
 in which two Reactions share one is rejected, and a Reaction whose composed name would collide needs

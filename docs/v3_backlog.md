@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-164 — Reaction descriptor labels had no authoritative translation source
+
+**Status:** DONE (2026-10-28; specification readiness). **Severity:** P3. **Origin:** implementation question after CA4-163 (`docs/v3/clarifications/CA4-163_TRANSLATION_SOURCE.md`, 2026-10-28). **References:** [Layer 5 §4.2](specs/v3/layer5_action_reactions_spec.md), [Layer 8 §12](specs/v3/layer8_administration_spec.md), [Layer 2 §2.7, §9](specs/v3/layer2_registries_spec.md).
+
+**Problem.** Composed Reaction names and their collision key use the translated descriptor label, but no layer defined where the `en`/`it` label lives.
+
+**Approved resolution (2026-10-28).** The label is the core translation key `reaction_descriptor.<reaction_descriptor_id>.label` in the Layer-8 core resources (§12), versioned with the core; it is not a descriptor field and enters no fingerprint. A resource test requires a non-empty label per descriptor in every shipped locale and per-locale uniqueness. A core label change that causes a presentation-only collision at restage yields a diagnostic, never an invalidation. Follows the extension-label precedent (keys by `extension_id`). Rejected: an explicit `label_key` field (derivable, mixes presentation into the semantic contract); a Layer-5 catalog (duplicates §12). See the [CA4-164 review](specs/v3/reviews/CA4-164.md); no V3 runtime test ran.
+
 #### CA4-163 — Composed names did not say whether a referenced room is compared by id or name
 
 **Status:** DONE (2026-10-28; specification readiness). **Severity:** P3. **Origin:** implementation question (Layer 2 §2.7, 2026-10-28). **References:** [Layer 2 §2.7, §9](specs/v3/layer2_registries_spec.md).

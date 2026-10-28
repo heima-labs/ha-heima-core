@@ -381,7 +381,11 @@ One rule governs the name of every object shown to people: `Room`, `Zone` (Layer
   (`display_name`, else the live HA area name), never the room id; its collision key, in every
   shipped locale, is `(translated type, translated orientation, room_id)`. A Reaction's composed name
   renders the descriptor label plus the subject's effective name, and its collision key is
-  `(translated descriptor label, subject LocationKey)`. The check therefore never depends on a live
+  `(translated descriptor label, subject LocationKey)`, the label being the core translation key
+`reaction_descriptor.<reaction_descriptor_id>.label` (Layer 8 §12, CA4-164). A core upgrade that
+changes a label and creates a collision only of presentation at restage (for example with an
+explicit `display_name`) yields a diagnostic to resolve with an explicit name; it never invalidates
+the object, since a name carries no semantics. The check therefore never depends on a live
   name: renaming an HA area changes what is shown, never a collision result or a fingerprint, and a
   restage from archive gives the same result.
 - **Person.** A `Person` (§2.8) has no `display_name`: its name is always the HA person's
@@ -2535,7 +2539,10 @@ this layer.
   kitchen renders as "North window · Kitchen" / "Finestra nord · Cucina" from the room's effective
   name; renaming the kitchen's HA area changes the rendered name only, not the collision check or any
   fingerprint; two Reactions of one descriptor on one subject collide; an identical restage gives
-  the same result.
+  the same result. A Reaction's label resolves from `reaction_descriptor.<id>.label` in `en` and
+  `it`; a descriptor without a label in a shipped locale, or two descriptors with the same label in
+  one locale, fail the resource test (CA4-164); a core label change that collides with an explicit
+  name at restage yields a diagnostic, not an invalidation.
 - Formula staging access (CA4-162): the physical-evidence validator reads each input's admission and
   correlation group only from its `StagedFormulaInput`, and the solar validator reads its opening only
   from the `FrozenTopologyView`; neither can query the registry. Changing a source Sensor's
