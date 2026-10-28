@@ -6323,6 +6323,14 @@ V2 has a `weather_safety` reaction that closes openings and retracts exterior aw
 
 **Approved resolution (2026-10-11).** New seventh Initial-V3 descriptor `safety.weather_protection` (Layer 5 §7.4): direct only, one Reaction per hazard with a Layer-2 hysteresis trigger whose exit threshold ends the hazard; explicit staged endpoints limited to `weather_exposed` Actuators; intent `secure_for_weather` declared safe-direction with a core-fixed safe target per channel kind and no required guard. A resident hold is respected with a `manual_hold_active` warning (no preemption); no automatic restore; no runtime confirmation, with a Layer-6 notice of the securing action. Matrix, consent lists and counts updated. See the [CA4-63 review](specs/v3/reviews/CA4-63.md); no V3 runtime test ran.
 
+#### CA4-163 — Composed names did not say whether a referenced room is compared by id or name
+
+**Status:** DONE (2026-10-28; specification readiness). **Severity:** P3. **Origin:** implementation question (Layer 2 §2.7, 2026-10-28). **References:** [Layer 2 §2.7, §9](specs/v3/layer2_registries_spec.md).
+
+**Problem.** An `Opening`'s composed name uses type, orientation and room, but §2.7 did not say whether "room" is the stable id or the effective (possibly live HA) name, for rendering and for the collision check; the Reaction's composed subject had the same ambiguity.
+
+**Approved resolution (2026-10-28).** A referenced component is compared by stable id and rendered by effective name. Opening: render translated type and orientation plus the room's effective name; collision key `(translated type, translated orientation, room_id)` in every shipped locale. Reaction: render descriptor label plus subject's effective name; key `(translated label, subject LocationKey)`. Collision results and fingerprints never depend on a live name. See the [CA4-163 review](specs/v3/reviews/CA4-163.md); no V3 runtime test ran.
+
 #### CA4-162 — Formula validators had no explicit access to staged input metadata
 
 **Status:** DONE (2026-10-28; specification readiness). **Severity:** P2. **Origin:** implementation question after CA4-153 (C1, 2026-10-28). **References:** [Layer 2 §2.5, §5.3, §9](specs/v3/layer2_registries_spec.md).

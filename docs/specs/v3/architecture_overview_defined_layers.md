@@ -4,7 +4,7 @@
 authoritative Layer 0–8 specification and names the section it comes from. Where this map and a
 specification differ, the specification wins and this map is wrong.
 
-**Reconciled through:** CA4-162 (planning `c9a4dd8a` + CA4-162).
+**Reconciled through:** CA4-163 (planning `38f75c07` + CA4-163).
 
 **Maintenance:** a change that closes a CA4 issue updates this map in the same commit (or
 confirms it needs no change) and raises the line above. `scripts/check_v3_specs.py` fails when

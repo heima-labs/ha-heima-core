@@ -375,6 +375,15 @@ One rule governs the name of every object shown to people: `Room`, `Zone` (Layer
   a composed name that would collide needs an explicit `display_name`. A live Home Assistant name
   is outside Heima's control and may change after staging, so it is not checked (HA itself keeps
   area names unique).
+- **Referenced components (CA4-163).** A component of a composed name that refers to another object
+  is compared by that object's stable id and rendered with its effective name. An `Opening` renders
+  as its translated type and orientation plus the owning room's effective name, read at render time
+  (`display_name`, else the live HA area name), never the room id; its collision key, in every
+  shipped locale, is `(translated type, translated orientation, room_id)`. A Reaction's composed name
+  renders the descriptor label plus the subject's effective name, and its collision key is
+  `(translated descriptor label, subject LocationKey)`. The check therefore never depends on a live
+  name: renaming an HA area changes what is shown, never a collision result or a fingerprint, and a
+  restage from archive gives the same result.
 - **Person.** A `Person` (§2.8) has no `display_name`: its name is always the HA person's
   current name, read at render time, and is never checked for uniqueness by Heima.
 - **Validation** of a name runs at the owning layer's staging, so the Layer-8 change set reports a
@@ -2521,6 +2530,12 @@ this layer.
   cannot return a different output contract; staging never evaluates `compute` or inspects a stored
   value to type the self input. `numeric.difference.v1` declares `numeric(source_unit)` from
   configuration alone. Restaging an archived hysteresis rule yields the same order and contracts.
+- Composed names (CA4-163): two north windows in one room are rejected without a `display_name`, in
+  `en` and in `it`; a north window in the kitchen and one in the living room do not collide; the
+  kitchen renders as "North window · Kitchen" / "Finestra nord · Cucina" from the room's effective
+  name; renaming the kitchen's HA area changes the rendered name only, not the collision check or any
+  fingerprint; two Reactions of one descriptor on one subject collide; an identical restage gives
+  the same result.
 - Formula staging access (CA4-162): the physical-evidence validator reads each input's admission and
   correlation group only from its `StagedFormulaInput`, and the solar validator reads its opening only
   from the `FrozenTopologyView`; neither can query the registry. Changing a source Sensor's
